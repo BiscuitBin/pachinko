@@ -95,25 +95,34 @@ The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
    primary checkout on an up-to-date `main`. Only that run installs the shared hook shim
    and prepares the hook environments.
 
+   Except in T00, run `just check` before changing anything, and quote its last line in
+   the hand-back notes as the baseline. If it is red, stop: `main` is broken, and the fix
+   is a `main` pull request, not part of this lane (`CONVENTIONS.md` §11).
+
 2. Read `CONVENTIONS.md`, then the ticket. Read the L, B and T files the ticket names at
    the commits `CONVENTIONS.md` §0 pins, with `git -C <clone> show <commit>:<path>`.
    Never modify a clone.
 3. Edit only the files the ticket lists, plus the `status:` line and hand-back notes of
    the ticket itself. A change needed elsewhere is handed back, not made.
-4. Run the ticket's verification commands and quote their output in the hand-back notes.
+4. Run the ticket's verification commands and quote their output in the hand-back notes,
+   each headed by the commit it ran at (`CONVENTIONS.md` §11).
 5. At each **Adversarial review** the ticket marks, follow `CONVENTIONS.md` §14 before
    going on.
-6. Commit on the ticket branch. Pushing and opening the pull request are separately
-   authorised: stop and ask.
+6. Commit on the ticket branch. Before asking to push, `git fetch origin` (network,
+   authorised), rebase onto `origin/main` and rerun `just check`. If it goes red only
+   after the rebase, hand the conflict back instead of editing another lane's files.
+7. Pushing and opening the pull request are separately authorised: stop and ask.
 
 ## Definition of done
 
-`just check` is green in this repository, the ticket's acceptance criteria are met, its
-verification commands ran with the output quoted in the hand-back notes, the adversarial
-reviews the ticket names have run (`CONVENTIONS.md` §14) and every valid finding is fixed
-or handed back, every open point is answered or explicitly carried forward, and the
-ticket's `status:` is `done` in the same pull request. A ticket is done when its gate
-passes, not when its files exist.
+`just check` is green in this repository, on the ticket branch rebased onto the current
+`main`: its output ends with `All checks passed and the worktree is unchanged.`, and
+`git status --short` prints nothing after the ticket's commit. The ticket's acceptance
+criteria are met, its verification commands ran with the output quoted in the hand-back
+notes, the adversarial reviews the ticket names have run (`CONVENTIONS.md` §14) and every
+valid finding is fixed or handed back, every open point is answered or explicitly
+carried forward, and the ticket's `status:` is `done` in the same pull request. A
+ticket is done when its gate passes, not when its files exist.
 
 ## Ticket format
 

@@ -35,7 +35,8 @@ missing, stop and report it.
 ## Goal
 
 A first commit on `ticket/t00-foundation` after which, in a fresh clone, `just initialize`
-then `just check` are green, and `just lint` passes there with the network blocked, with
+then `just check` are green, and `just lint` passes there under `CONVENTIONS.md` §11's
+network denial, with
 every T00 path in `CONVENTIONS.md` §3 present: final content for the frozen files, the
 dotfiles, the first-run script, the licence, the manifest, the map, the adapters and the
 bridges; a placeholder specification module; and a stub for every page, record, skill,
@@ -83,7 +84,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `crates/pachinko/tests/binary.rs` | skeleton -> T02 | runs the built binary |
 | `crates/pachinko/README.md` | stub -> T12 | 40 words |
 | `scripts/check-effects.sh` | working -> T10 | step 6 |
-| `scripts/initialize.sh` | final | L `scripts/initialize.sh`, with this repository's names |
+| `scripts/initialize.sh` | final | L `scripts/initialize.sh`, with this repository's names, minus `just format` and its comment (`CONVENTIONS.md` §5) |
 | `LICENSE` | final | the Apache-2.0 text from `https://www.apache.org/licenses/LICENSE-2.0.txt`, as L `LICENSE` |
 | `README.md` | stub -> T12 | replaces the one-line stub |
 | `CHANGELOG.md` | stub -> T12 | L `CHANGELOG.md`'s shape, one `[Unreleased]` section |
@@ -100,8 +101,8 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `.pre-commit-fix.yaml` | final | L `.pre-commit-fix.yaml` |
 | `.editorconfig` | final | L `.editorconfig`, with only this repository's file types |
 | `.gitattributes` | final | L `.gitattributes`'s lines for `Cargo.lock`, `pixi.lock`, `allium-skill-reference/**` |
-| `.gitignore` | final | L `.gitignore`, with the `mutants.out*/` comment reworded for T15 |
-| `.markdownlint-cli2.jsonc` | final | L `.markdownlint-cli2.jsonc` |
+| `.gitignore` | final | L `.gitignore`, with the `mutants.out*/` comment reworded for T15 and Claude Code's runtime state ignored |
+| `.markdownlint-cli2.jsonc` | final | L `.markdownlint-cli2.jsonc`, with `important` added to `MD033`'s `allowed_elements` (`CONVENTIONS.md` §5) |
 | `lychee.toml` | final | L `lychee.toml` |
 | `_typos.toml` | final | L `_typos.toml`, `CONVENTIONS.md` §5 |
 | `pyproject.toml` | final | `CONVENTIONS.md` §2, with comments that describe this repository |
@@ -145,7 +146,21 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
    - `_typos.toml`: keep `mis`; drop `als` unless `just check-docs` then fails on a file
      that needs it.
    - `.gitignore`: L's `mutants.out*/` comment says "if S03 adopts it"; reword it to name
-     T15. Add nothing a wave-2 ticket will add itself (the fuzz artefacts are T16's).
+     T15. Replace L's `.claude/settings.local.json` line with `.claude/*`, then
+     `!.claude/settings.json` and `!.claude/skills/`, so that state Claude Code writes
+     into a worktree mid-session (scheduled-task locks, checkpoints, nested worktrees) is
+     ignored and the tracked paths are not. B's `bg-validate-agents` lists files with
+     `git ls-files --cached --others --exclude-from=.gitignore` and reports any other
+     file under `.claude/` as an unexpected managed file; the comment above the lines
+     says so. Prove it: `touch .claude/scheduled_tasks.lock`, run `just check-agents`
+     and quote it green, then remove the file. Add nothing a wave-2 ticket will add
+     itself (the fuzz artefacts are T16's).
+   - `.markdownlint-cli2.jsonc`: `MD033`'s `allowed_elements` becomes
+     `["br", "important"]`, with a comment saying `AGENTS.md` uses `<important if>`
+     blocks (`CONVENTIONS.md` §7).
+   - `scripts/initialize.sh`: drop L's `just format` line and the comment above it
+     (`CONVENTIONS.md` §5). Keep the closing message's statement that nothing was staged,
+     committed, tagged or pushed, and add that nothing was formatted.
 
 5. **The Justfile and hooks.** Write the `Justfile` as `CONVENTIONS.md` §4 states it: L's
    text with the listed changes and no others. Then `just install-tools` (network;
@@ -187,9 +202,10 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
    `docs/README.md` from L `docs/README.md` (`CONVENTIONS.md` §6). Then one stub per
    manifest entry, as L `tickets/T00-foundation.md` step 10 describes stubs.
 
-9. **The agent contract.** `AGENTS.md` stub: L `AGENTS.md`'s section headings, the six
-   phrases of `CONVENTIONS.md` §1 fact 2 each in a real sentence, the runes sentence in
-   Provenance, 300 or more words. Fourteen skill stubs with the final frontmatter of
+9. **The agent contract.** `AGENTS.md` stub: the headings `CONVENTIONS.md` §7 names
+   (`Project map`, `Invariants`, `Provenance`), the six phrases of `CONVENTIONS.md` §1
+   fact 2 each in a real sentence outside any `<important if>` block, the runes sentence
+   in Provenance, 300 or more words. Fourteen skill stubs with the final frontmatter of
    `CONVENTIONS.md` §7 (L's, except `rust-change`'s description; each description states
    a trigger) and a body that cites `AGENTS.md` and one `just` recipe. Twenty-eight
    bridges copied from L, with `rust-change`'s two carrying the new description, because
@@ -208,9 +224,9 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     claims 4, 10, 11 and 12. For claim 4, run `cargo llvm-cov report --show-missing-lines`
     and confirm `crates/pachinko/src/main.rs` reports no missing line; if it does, apply
     `CONVENTIONS.md` §4's `--ignore-filename-regex` fallback now, before the Justfile
-    freezes. For claim 12, run `just effects` with
-    `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9`; run `just lint` with
-    the same two variables, which step 12 repeats in the fresh clone.
+    freezes. For claim 12, run `just effects` under `CONVENTIONS.md` §11's network
+    denial, with its negative control; run `just lint` the same way, which step 12
+    repeats in the fresh clone.
 
     **Adversarial review** (`CONVENTIONS.md` §14): the whole tree, before step 12 commits
     it. Ask: which acceptance criterion is asserted but not shown; whether the evidence
@@ -220,11 +236,12 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     stub has fewer than 40 real words; what the acceptance criteria's `pawdoku`, `sudoku`
     and `wasm` grep prints; which line step 4 removed from the dotfiles that something in
     this repository, a later lane or a wave-2 ticket still needs; whether the offline
-    `just lint` was offline, or passed only because a cache was warm.
+    `just lint` ran under a denial its negative control proved, or passed only because a
+    cache was warm.
 
 12. **A fresh clone, offline.** Commit, clone the worktree into `ai_tmp/fresh`, and run
-    `just initialize`, then `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9
-    just lint`, which must not fetch, then `just check` there, so that nothing green
+    `just initialize`, then `just lint` under `CONVENTIONS.md` §11's network denial, with
+    its negative control, then `just check` there, so that nothing green
     depends on a file outside Git. Then the secondary worktree, with the fresh clone as
     its primary: `git -C ai_tmp/fresh worktree add ../fresh-2`, then `just initialize` in
     `ai_tmp/fresh-2`, which skips `install-hooks` there, and `just lint` works without a
@@ -235,8 +252,11 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 
 - `just check` prints all nineteen gates of `CONVENTIONS.md` §4 and `check-clean`, green,
   in the worktree and in the fresh clone.
-- `just lint` passes offline in the fresh clone after `just initialize`, and in the
-  secondary worktree without a second `install-hooks`.
+- `just lint` passes in the fresh clone after `just initialize`, under
+  `CONVENTIONS.md` §11's network denial with both negative-control probes failing, and
+  in the secondary worktree without a second `install-hooks`.
+- `scripts/initialize.sh` contains no `just format`, and `just check-agents` stays green
+  with an untracked `.claude/scheduled_tasks.lock` present.
 - `rustup show active-toolchain` prints the pin; `rust-version` matches its minor.
 - `cargo nextest run --workspace --locked` runs three or more tests; `cargo test --doc
   --workspace --locked` runs one or more doctests; `just coverage` reports 90% or more.
@@ -263,8 +283,13 @@ cargo llvm-cov report --show-missing-lines
 just check-specs
 just analyse-specs
 just check-agents
-HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just effects
-HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just lint
+# macOS; on Linux, unshare -rn in place of sandbox-exec (CONVENTIONS.md §11)
+deny='(version 1)(allow default)(deny network*)'
+sandbox-exec -p "$deny" curl -fsS --max-time 10 https://static.rust-lang.org; echo "exit $?"
+sandbox-exec -p "$deny" curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1; echo "exit $?"
+sandbox-exec -p "$deny" just effects; echo "exit $?"
+sandbox-exec -p "$deny" just lint; echo "exit $?"
+rg -n 'just format' scripts/initialize.sh; echo "exit $?"   # must be 1
 rg -n -i 'pawdoku|sudoku|svelte|wasm' .editorconfig .gitattributes .gitignore .markdownlint-cli2.jsonc lychee.toml _typos.toml scripts/initialize.sh pyproject.toml
 git status --short
 ```

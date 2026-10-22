@@ -51,6 +51,7 @@ how-to and decision 0015 say what the image is and is not.
 | `docs/decisions/README.md` | shared, own lines | one row |
 | `docs/reference/commands.md` | shared, own lines | the `image` row |
 | `CHANGELOG.md` | shared, own lines | one `[Unreleased]` line |
+| `docs/explanation/architecture.md` | shared, own lines | T13's wave-2 sentence (T07 step 6) made present tense, citing decision 0015 |
 | `tickets/T13-container-image.md` | ticket | `status:` and hand-back notes |
 
 ## Steps
@@ -60,7 +61,10 @@ how-to and decision 0015 say what the image is and is not.
    toolchain pin, `-slim-bookworm` variant. Run stage: `gcr.io/distroless/cc-debian12`
    (glibc, no shell), `nonroot` tag. Resolve each to a digest on the day
    (`docker buildx imagetools inspect <image>:<tag>`) and write `FROM <image>:<tag>@sha256:<digest>`
-   with a comment naming the tag and date. Renovate (T17) keeps them current.
+   with a comment naming the tag and date. Renovate (T17) keeps them current. The build
+   stage's comment also says its tag moves with `rust-toolchain.toml` and `rust-version`
+   in one Renovate group (T17), because step 3's toolchain check fails the required
+   `image` job whenever they differ.
 3. **The Dockerfile.** Build stage copies `rust-toolchain.toml`, both manifests,
    `Cargo.lock` and `crates/`, and runs `cargo build --release --locked -p pachinko`.
    The rust image carries rustup, which reads `rust-toolchain.toml`; a build-time check
@@ -85,7 +89,7 @@ how-to and decision 0015 say what the image is and is not.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
    whether each digest is its named tag's on the day; whether the run stage really runs
-   as `nonroot`; whether the toolchain check fails when the pin and the image's rust
+   as `nonroot`; whether `architecture.md` still calls the image future work; whether the toolchain check fails when the pin and the image's rust
    differ; whether `image` is in `check`'s `needs`.
 
 ## Acceptance criteria

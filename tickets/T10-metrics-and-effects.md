@@ -134,7 +134,8 @@ setting is chosen. Both gates are green in `just check`.
 - Every banned crate name, the transitive one included, appears exactly once in the
   `cargo tree` output the probe reads for the fixture; the hand-back notes quote it.
 - A banned API in `crates/pachinko` does not fail `just effects`.
-- `just effects` passes with the network blocked.
+- `just effects` passes under `CONVENTIONS.md` §11's network denial, with both
+  negative-control probes failing.
 - `just check` is green.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
@@ -144,7 +145,11 @@ setting is chosen. Both gates are green in `just check`.
 ```sh
 just effects
 just metrics
-HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just effects
+# macOS; on Linux, unshare -rn in place of sandbox-exec (CONVENTIONS.md §11)
+deny='(version 1)(allow default)(deny network*)'
+sandbox-exec -p "$deny" curl -fsS --max-time 10 https://static.rust-lang.org; echo "exit $?"
+sandbox-exec -p "$deny" curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1; echo "exit $?"
+sandbox-exec -p "$deny" just effects; echo "exit $?"
 just check
 ```
 

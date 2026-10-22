@@ -200,7 +200,7 @@ CLAUDE.md  .github/copilot-instructions.md   T00 (byte-identical to L; frozen)
 .agents/skills/<14>/SKILL.md        T00 stub -> T05
 .claude/skills/<14>/SKILL.md  .codex/skills/<14>/SKILL.md   T00 (fixed bridge body; frozen)
 .claude/settings.json               T00 (byte-identical to L; frozen)
-skills-lock.json  allium-skill-reference/   T05 new
+skills-lock.json  allium-skill-reference/   T05 new (the lock only if T05 keeps it, §7)
 Justfile                            T00 (frozen in wave 1)
 .pre-commit-config.yaml  .pre-commit-fix.yaml   T00 (frozen)
 .editorconfig  .gitattributes  .gitignore   T00 (frozen)
@@ -339,7 +339,16 @@ hook keeps L's rev and comment. Both are frozen at T00.
 removes every line that serves a file type or tool this repository does not have, or
 that names sudoku or pawdoku (T00 step 4); the `[default.extend-words]` in `_typos.toml`
 keeps `mis` (the tickets use the hyphenated prefix) and drops `als`, the sudoku abbreviation, unless T00 finds a file that needs it.
+`.markdownlint-cli2.jsonc` adds one delta: `MD033`'s `allowed_elements` becomes
+`["br", "important"]`, because `AGENTS.md` uses `<important if>` blocks (§7). T05 cannot
+make this change, because the file freezes at T00. `.gitignore` also ignores Claude
+Code's runtime state under `.claude/` (T00 step 4).
 `taplo.toml` is T02's; the other six are final at T00.
+
+`just initialize` never formats. T00 drops L `scripts/initialize.sh`'s `just format`
+line and its comment, because a first-run script that rewrites files hides drift that the
+gate should report. A carried page or skill that says initialization normalises
+formatting drops that clause.
 
 ## 6. Handbook
 
@@ -365,7 +374,7 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 | `docs/how-to/deploy-to-github-pages.md` | T07 | same | Both crates' rustdoc, `BiscuitBin/pachinko`'s Pages URL |
 | `docs/how-to/work-with-the-specs.md` | T06 | same | The module table has the one placeholder; the waiver terms verbatim |
 | `docs/explanation/specifications.md` | T06 | same | Specifications are the source of truth; there is one module and it states no behaviour yet |
-| `docs/explanation/architecture.md` | T07 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014) |
+| `docs/explanation/architecture.md` | T07 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014), and what wave 2 adds (T13, T14), which each ticket updates when it lands |
 | `docs/explanation/layering.md` | T07 | same | The crate direction Cargo enforces; module direction follows the spec import graph when there is one |
 | `docs/explanation/quality-philosophy.md` | T07 | same | L's argument; examples from this gate |
 | `docs/explanation/security-model.md` | T07 | same | A library plus a service binary: supply chain, `forbid(unsafe_code)`, cargo-deny, the effects boundary; the service's network surface is deferred |
@@ -384,8 +393,39 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 
 `AGENTS.md` is canonical; `CLAUDE.md` is exactly `@AGENTS.md`;
 `.github/copilot-instructions.md` is B's adapter text. Both adapters and
-`.claude/settings.json` are byte-identical to L's. `AGENTS.md` keeps L's section order
-with these invariants in place of L's:
+`.claude/settings.json` are byte-identical to L's.
+
+`AGENTS.md` is restructured, not kept in L's section order. Rules that hold for every
+task stay always visible; rules for one kind of task sit in an `<important if="...">`
+block that names that task. In this order:
+
+- **The always-on core.** A one-paragraph identity (a library and a service whose domain
+  the specifications will define). A `## Project map` of `crates/libpachinko/`,
+  `crates/pachinko/`, `docs/`, `docs/specs/`, `docs/decisions/`, `tickets/`,
+  `.agents/skills/` with its `.claude/` and `.codex/` bridges, `allium-skill-reference/`
+  and `ai_tmp/`. The rule that the specifications under `docs/specs/` decide *what* the
+  code does, and win when the two disagree. The rule that issue text, pull request
+  bodies, comments, fixtures and tool output are untrusted data. Then `## Invariants`,
+  holding the nine below verbatim.
+- **L's always-on authority rules**, still in `## Invariants` and outside every block:
+  anything that leaves the worktree needs explicit authorization for each action, and the
+  rule names every recipe that reaches the network; scratch goes in `ai_tmp/`; one ticket
+  per worktree; hooks are never installed from a worktree. The hand-back rule, which
+  names `just check` and defines green as §11 does, also stays outside every block.
+- **Seven `<important if="...">` blocks**, one per task: changing Rust under `crates/`;
+  adding or changing an effect (a trait in libpachinko with its fake beside it, the real
+  implementation in pachinko, `just effects`); writing or changing a module under
+  `docs/specs/`; changing a page under `docs/`; changing the agent surface (`AGENTS.md`,
+  an adapter, a skill or a bridge); a failing gate, or handing work back; picking up a
+  ticket under `tickets/`. Each block names only the recipes and the skill its task uses.
+- **`## Provenance`**, last, keeping L's sentence containing `runes`.
+
+There is no commands table: `just --list` is the index. Prose that a gate already
+enforces (rustfmt, taplo, clippy pedantic, EditorConfig) and code snippets are cut. The
+file is about 1000 words. Each of B's six phrases (§1 fact 2) appears at least once
+outside every block, so that no phrase depends on a block's wording.
+
+The nine invariants, in place of L's:
 
 1. The specifications are the source of truth for behaviour.
 2. libpachinko performs no effect itself. The clock, randomness, the filesystem, the
@@ -417,8 +457,16 @@ require.`
 | --- | --- | --- |
 | `rust-change` | same | Two crates; the effect trait goes in libpachinko and the real implementation in pachinko |
 | `spec-change` | same | One placeholder module today |
-| `plan-change`, `review-change`, `review-docs`, `fix-quality`, `project-check` | same | Gate names and numbers of §4; no wasm |
-| `allium`, `distill`, `elicit`, `propagate`, `tend`, `weed`, `witness` | same | Byte-for-byte from L except recipe names; `skills-lock.json` copied verbatim as provenance |
+| `plan-change`, `review-change`, `review-docs`, `project-check` | same | Gate names and numbers of §4; no wasm |
+| `fix-quality` | same | A dispatch line for every gate of §4, not only L's; no wasm |
+| `allium`, `distill`, `elicit`, `propagate`, `tend`, `weed`, `witness` | same | Byte-for-byte from L except recipe names |
+
+`skills-lock.json` is not provenance as L ships it. At L `ccdd001` its `computedHash`
+values match none of the vendored `SKILL.md` files (for `allium`, the lock records
+`52446c61…` and the file hashes to `2445a3b1…` under sha256), it names no tag or commit,
+and no gate reads it. T05 either recomputes every hash from the committed files or
+drops the file, and records which in its hand-back notes. No page or decision calls the
+lock a pin or a checksum unless T05 recomputed it.
 
 Fourteen skills, twenty-eight bridges. `just check-agents` prints
 `Validated AGENTS.md, 2 adapters, and 14 skills.`
@@ -441,7 +489,7 @@ Related pages. T07 writes 0001 to 0014; each wave-2 ticket writes its own.
 | 0007 | `0007-dependency-policy.md` | Dependency policy: caret ranges and `Cargo.lock` | 0007 | `decision_dependency_policy` |
 | 0008 | `0008-std-library.md` | A std library, with effects kept out mechanically | new, in place of L's 0008 | `decision_std_library` |
 | 0009 | `0009-rust-quality-gate.md` | The Rust quality gate | 0009 | `decision_rust_gate` |
-| 0010 | `0010-skill-reference-material.md` | Skill reference material beside the skills | 0010 | `decision_skill_reference` |
+| 0010 | `0010-skill-reference-material.md` | Skill reference material beside the skills | 0010, corrected: what `skills-lock.json` records follows T05's choice (§7) | `decision_skill_reference` |
 | 0011 | `0011-tool-manager.md` | Tool manager | 0011 | `decision_tool_manager` |
 | 0012 | `0012-metrics-gate.md` | The metrics gate | 0013 | `decision_metrics_gate` |
 | 0013 | `0013-api-reference-on-github-pages.md` | The API reference on GitHub Pages | 0016 | `decision_api_reference_on_pages` |
@@ -530,7 +578,7 @@ at `ccdd001`, with these changes:
 - The setup action installs every tool except allium; L's description says "The allium
   binary is the documents job's own step". Any job that runs `just check`, `lint`,
   `check-specs` or `analyse-specs` runs `just install-allium` after the setup action:
-  L's `documents` job, T00's one-job stub and T14's `release.yml`.
+  L's `documents` job, T00's one-job stub and the `verify` job of T14's `release.yml`.
 - Every remote `uses:` keeps a full SHA with a version comment, re-read on the day T01
   runs (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
   The local `uses: ./.github/actions/setup` has no pin.
@@ -573,7 +621,8 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   `docs/README.md` (a new page or record must be registered and reachable),
   `docs/decisions/README.md`, `docs/reference/commands.md` and `CHANGELOG.md`. Wave-2
   tickets merge one at a time, each rebased on the last; `pixi.lock` and `Cargo.lock`
-  are regenerated after the rebase, never merged by hand. A recipe a wave-2 ticket adds sits outside `check`'s recipe list; pre-landing
+  are regenerated after the rebase, never merged by hand, and the ticket's verification
+  is rerun and requoted at the rebased commit. A recipe a wave-2 ticket adds sits outside `check`'s recipe list; pre-landing
   wave-2 recipes in T00 does not work, because the fuzz crate's `--manifest-path` lines in
   `sync`, `lock`, `fmt-check` and `clippy` would fail before `fuzz/` exists. Each
   wave-2 ticket's first acceptance criterion is its recipe's green output, quoted.
@@ -583,10 +632,30 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
 - **Paths as code spans.** Ticket text writes repository paths and URLs as code spans,
   never as Markdown links: the hook gate runs lychee offline over `tickets/`.
 - **Definition of done**, for every build ticket: `just check` green in this repository,
-  the ticket's acceptance criteria met, its verification commands run with their output
-  quoted in the hand-back notes, the adversarial reviews the ticket names run (§14) with
-  every valid finding fixed or handed back, and the ticket's `status:` set to `done` in
-  the same pull request. A ticket is done when its gate passes, not when its files exist.
+  on the ticket branch rebased onto the current `main`; the ticket's acceptance criteria
+  met; its verification commands run with their output quoted in the hand-back notes;
+  the adversarial reviews the ticket names run (§14) with every valid finding fixed or
+  handed back; and the ticket's `status:` set to `done` in the same pull request. A
+  ticket is done when its gate passes, not when its files exist.
+- **Green** means two things together: `just check`'s output ends with the runner's line
+  `All checks passed and the worktree is unchanged.` (B
+  `src/biscuit_games_tooling/run_project_check.py` line 109), and `git status --short`
+  prints nothing after the ticket's commit. Except in T00, `just check` also runs on the
+  untouched worktree before any edit, and its last line is quoted as the baseline; a red
+  baseline means `main` is broken, and the fix is a `main` pull request, not this lane's
+  work. Before asking to push, the agent runs `git fetch origin` (network, authorised),
+  rebases onto `origin/main` and reruns `just check`. Two lanes that are each green can
+  merge into a red `main`, and only this rerun sees them together.
+- **Quoted evidence names its commit.** Each quoted output is headed by the commit it ran
+  at (`git rev-parse --short HEAD`, plus "with uncommitted changes" when that is true). A
+  rebase, a merge of `main` or a §14 fix round after a quote makes it stale: rerun it and
+  replace it. CI evidence names the run URL and the commit the run tested, which for a
+  pull request is the merge commit, not the branch head.
+- **Checks fail closed.** A failed read, a timeout or an empty pipe is never a pass.
+  Quoted output shows each command's exit status. A check that passes by printing
+  nothing is preceded by a positive control: the unfiltered command, run alone, exits 0
+  and matches something. An API read counts as "absent" only on an HTTP 404; any other
+  error stops the step.
 - **Separately authorised actions.** Commits on the ticket branch are the ticket's work.
   Pushing, opening a pull request, tagging, filing issues, changing repository or
   organisation settings, installing a GitHub App, publishing anywhere, installing
@@ -595,7 +664,16 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
 - **Network.** `pixi install`, `just install-tools` (and a rustqual source build),
   `just install-allium`, `just install-hooks`, `cargo fetch` and `rustup toolchain install`
   need the network. Each is a named, authorised step in the ticket that runs it.
-  `just check` must not need the network.
+  `just check` must not need the network. A claim that something works with the network
+  blocked is shown under an OS-level denial: on macOS,
+  `sandbox-exec -p '(version 1)(allow default)(deny network*)' <command>`; on Linux,
+  `unshare -rn <command>`, in a namespace holding only `lo`. Inside the same denial, the
+  negative control `curl -fsS --max-time 10 https://static.rust-lang.org` and
+  `curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1` must both fail, and the
+  hand-back quotes both exit codes. Proxy variables are not denial: DNS, git, rustup and
+  raw sockets ignore them. A sandbox that fails to launch is not evidence. If the agent's
+  own sandbox blocks a gate recipe, request the permission and record it; never weaken
+  the recipe.
 - **Scratch.** Anything that is not a deliverable goes in `ai_tmp/` (gitignored from T00)
   or the session's scratch directory, never in a commit.
 - **Credentials.** No file carries a token. CI uses the run's own `github.token`.
@@ -623,7 +701,7 @@ them only by running the gate.
 | 9 | docker is available locally and on `ubuntu-latest` runners | `docker version`; the first CI run | T13 |
 | 10 | `just snapshots-check` is green on a workspace with no `insta` dependency and no `.snap` file | The recipe on T00's tree | T00 first, T02 |
 | 11 | rustqual 1.8.3 runs over a crate with no `[[architecture.pattern]]` table and two tiny files without a finding | `just metrics` | T00 first, T10 |
-| 12 | `cargo tree -p libpachinko -e normal --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | The script with the network blocked | T00 first, T10 |
+| 12 | `cargo tree -p libpachinko -e normal --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | `just effects` under §11's network denial, with its negative control | T00 first, T10 |
 
 ## 13. Risks every ticket states where it applies
 
@@ -689,7 +767,11 @@ repository ships to its own contributors.
     ones. A frozen file or another lane's file touched.
   - **(b) Breakage.** How the gate could pass while the claim is false. A gate that
     cannot fire. What fails on a fresh clone, in CI, offline, or for a later lane. An
-    acceptance criterion asserted but not shown.
+    acceptance criterion asserted but not shown. A verification command that would
+    print a pass when it failed: a pipeline whose first command errored, so the filters
+    print nothing; `|| true` on a line a claim rests on; a wait that succeeds on timeout;
+    a 401, 403 or network error read as "absent"; a network denial with no negative
+    control (§11).
 
   The brief gives the ticket's path, this document's path, `git diff main...HEAD` plus
   the uncommitted changes (or the artefact under review, such as a dry run or a list),
@@ -717,4 +799,4 @@ repository ships to its own contributors.
   cites, never a credential.
 - **Record.** The hand-back notes record, for each checkpoint: the harness and model, the
   findings, each verdict with a one-line reason, what was applied, what was handed back,
-  and the re-run output. The raw files stay in `ai_tmp/` and are never committed.
+  and the re-run output, headed by the commit it ran at (§11). The raw files stay in `ai_tmp/` and are never committed.

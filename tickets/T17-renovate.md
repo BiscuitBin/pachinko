@@ -68,23 +68,48 @@ proposes and what stays manual; and decision 0018 records it.
    wave 2. Validate with `npx --yes --package renovate -- renovate-config-validator`
    (network, authorised) or the equivalent the draft names.
 
+   The toolchain moves in one pull request, in three places: `rust-toolchain.toml`'s
+   `channel`, `[workspace.package] rust-version`, and the `Dockerfile`'s build-stage
+   `FROM rust:<x.y.z>-slim-bookworm@sha256:…`. T13's toolchain check fails the required
+   `image` job whenever the channel moves to a release whose image is not on Docker Hub
+   yet, so grouping alone is not enough: take all three versions from the `rust` image's
+   tags (a regex manager reading `rust-toolchain.toml` with `datasourceTemplate: docker`
+   and `depNameTemplate: rust`, with the native `rust-toolchain` reading switched off),
+   or hold the group with a `minimumReleaseAge` long enough for the image to publish.
+   Say which in the rule's `description`.
+
+   setup-pixi's `pixi-version` input: the draft keeps Renovate's native reading and
+   falls back to a regex manager only if the input is unread (L
+   `tickets/S01-dependency-updates.md` lines 592-598). Native reading has been seen to
+   list the input under `prefix-dev/pixi` and propose nothing while a newer pixi was out.
+   Read the input with a regex manager from the start, under the same depName and
+   datasource as the `requires-pixi` floor, in the one pixi group, and switch the native
+   reading off with a `packageRules` entry.
+
    **Adversarial review** (`CONVENTIONS.md` §14): the pin inventory, `renovate.json` and
    the validator output, before step 4 asks. The review goes into the authorisation
    request. Ask: which pin on `main` is missing from the inventory; whether each
    manager's pattern matches the pins it claims, and only those; whether the validator
-   output is clean.
+   output is clean; whether a single Renovate pull request can move the toolchain
+   channel without the `Dockerfile`'s `rust` tag, or the reverse.
 4. **Authorisation required: install the Mend app on `BiscuitBin/pachinko` only.** This
    is an organisation-level action; an organisation owner may have to perform it. Before
    asking, write the permissions the installation screen lists into
    `docs/explanation/security-model.md`, so the trust boundary is on record before the
-   app has access (the draft's step 1).
+   app has access (the draft's step 1). That entry does not repeat the draft's claim (L
+   `tickets/S01-dependency-updates.md` line 748) that with every update held the app
+   produces only the dashboard issue: Renovate's vulnerability-fix pull requests skip
+   dashboard approval by default, so once Renovate receives vulnerability alerts, a
+   security-fix pull request can open unasked. It still never merges itself.
 5. **Land `renovate.json`** through a pull request (separately authorised), then read the
    onboarding pull request or dependency dashboard Renovate opens. Each regex manager is
    proved by the dashboard listing its dependency, or by a real update pull request; quote
    the evidence per manager, as the draft requires.
 6. **The docs.** The draft's changes to the how-to and the maintenance page, with this
    repository's pins; decision 0018: Renovate over Dependabot (the draft's evidence), the
-   app's access, what stays manual, what would reopen it.
+   app's access, what stays manual, what would reopen it. The how-to, decision 0018 and
+   every `description` in `renovate.json` that says updates wait for approval name the
+   vulnerability-fix exception.
 7. **The last claims.** Carry the outcomes of `CONVENTIONS.md` §12 claims 7, 8 and 9 from
    the hand-back notes of T14, T16 and T13 into §12's table through a `main` pull request
    (separately authorised), in the shape T11 used for the others. This does not depend on
@@ -95,7 +120,8 @@ proposes and what stays manual; and decision 0018 records it.
    **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: whether the
    how-to and decision 0018 match what was installed and proved; whether the outcomes
    carried for `CONVENTIONS.md` §12 claims 7 to 9 match the hand-back notes of T14, T16
-   and T13.
+   and T13; whether any text claims every update waits for approval without naming the
+   vulnerability-fix exception.
 
 ## Acceptance criteria
 
@@ -128,5 +154,5 @@ L's draft.
 
 ## Open points
 
-- Whether toolchain bumps are grouped with `rust-version` (the draft's minor-only rule)
-  or proposed separately. Follow the draft unless the maintainer says otherwise.
+None. Step 3 groups the toolchain with `rust-version` and the `Dockerfile`'s `rust`
+image.

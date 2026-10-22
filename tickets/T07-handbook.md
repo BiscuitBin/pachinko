@@ -76,7 +76,7 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
 | `docs/how-to/maintain-dependencies.md` | final | L's; nothing updates the pins until T17 |
 | `docs/how-to/test-and-debug.md` | final | L's, per crate, the binary test |
 | `docs/how-to/deploy-to-github-pages.md` | final | both crates' rustdoc on this repository's Pages |
-| `docs/explanation/architecture.md` | final | the split, the boundary, what is deferred |
+| `docs/explanation/architecture.md` | final | the split, the boundary, what is deferred, what wave 2 adds |
 | `docs/explanation/layering.md` | final | crate direction; module direction later |
 | `docs/explanation/quality-philosophy.md` | final | L's argument, this gate's examples |
 | `docs/explanation/security-model.md` | final | supply chain, unsafe, cargo-deny, the boundary |
@@ -99,7 +99,7 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
 | `docs/decisions/0007-dependency-policy.md` | final | L 0007 |
 | `docs/decisions/0008-std-library.md` | final | new: why std, and gate 8 in place of `no_std` |
 | `docs/decisions/0009-rust-quality-gate.md` | final | L 0009, without the wasm and no_std parts |
-| `docs/decisions/0010-skill-reference-material.md` | final | L 0010 |
+| `docs/decisions/0010-skill-reference-material.md` | final | L 0010, with what `skills-lock.json` records as T05's hand-back states (`CONVENTIONS.md` §7) |
 | `docs/decisions/0011-tool-manager.md` | final | L 0011 |
 | `docs/decisions/0012-metrics-gate.md` | final | L 0013, thresholds kept, layering rules waiting for modules |
 | `docs/decisions/0013-api-reference-on-github-pages.md` | final | L 0016, two crates |
@@ -139,8 +139,11 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
    fakes beside them for tests (decision 0003). pachinko implements those traits and is
    the only place effects happen. Gate 8 enforces it (decision 0008); name the bans as
    `CONVENTIONS.md` §9 lists them, and the mechanism as "T10's", to be named by T11. What
-   is deferred: the runtime, transport and HTTP stack (decision 0014), the container,
-   release and bindings.
+   is deferred: the runtime, transport and HTTP stack, until a specification names a
+   surface the service exposes (decision 0014). What wave 2 adds, one sentence each,
+   naming the ticket and not described as existing: the container image (T13) and the
+   release process (T14). Neither is deferred (`CONVENTIONS.md` §1 decision 8); each
+   ticket makes its sentence present tense when it lands.
 7. **`layering.md`.** Cargo enforces `pachinko -> libpachinko` and never the reverse.
    Inside libpachinko, module direction will mirror the specification import graph, and
    rustqual's pattern rules (decision 0012) will hold it once there are modules.
@@ -160,7 +163,8 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
     **Adversarial review** (`CONVENTIONS.md` §14): part 2's diff, since part 1's commit.
     Ask: which fact contradicts `CONVENTIONS.md` or the `Justfile`; whether
     `quality-gates.md` lists the gates in `CONVENTIONS.md` §4's order; which sentence
-    waits on T10's mechanism and is not yet listed for T11.
+    waits on T10's mechanism and is not yet listed for T11; which sentence calls one of
+    `CONVENTIONS.md` §1 decision 8's extras deferred, or describes one as existing.
 
 11. **Part 3, the carried records.** For each, read L's record at `ccdd001` (L
     `docs/decisions/0002-specs-are-the-source-of-truth.md` and its siblings; the numbers

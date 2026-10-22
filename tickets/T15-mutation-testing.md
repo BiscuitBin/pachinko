@@ -92,7 +92,7 @@ quality-philosophy page says why.
 ```sh
 just mutants
 git status --short
-gh api repos/BiscuitBin/pachinko/branches/main/protection --jq '.required_status_checks.contexts'
+gh api repos/BiscuitBin/pachinko/branches/main/protection/required_status_checks --jq '[.checks[] | {context, app_id}]'
 just check
 ```
 

@@ -82,8 +82,9 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
    §13). Hand the failure back as a T00 follow-up.
 2. Read the current state, read-only, and quote it: `gh repo view BiscuitBin/pachinko
    --json visibility,defaultBranchRef,deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`,
-   `gh api repos/BiscuitBin/pachinko/branches/main/protection` (a 404 means none),
-   `gh api repos/BiscuitBin/pachinko/pages` (a 404 means none), and
+   `gh api repos/BiscuitBin/pachinko/branches/main/protection` (only an HTTP 404 means
+   none; any other error stops the step), `gh api repos/BiscuitBin/pachinko/pages` (the
+   same), and
    `gh api orgs/BiscuitBin --jq '{plan: .plan.name, members_can_create_pages}'`.
 3. Copy T `scripts/bootstrap_repo.sh` at `2283589c` into `ai_tmp/` (never run it from the
    clone) and dry-run it: `sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check
@@ -103,7 +104,17 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
    `gh api -X POST repos/BiscuitBin/pachinko/pages -f build_type=workflow`, or `-X PUT`
    if Pages already exists. Read it back with `gh api repos/BiscuitBin/pachinko/pages`
    (`CONVENTIONS.md` §12 claim 6, second half).
-6. Read every setting back (step 2's commands) and quote the output.
+6. Read every setting back (step 2's commands) and quote the output. Save step 2's
+   protection response and this one as `ai_tmp/protection-before.json` and
+   `ai_tmp/protection-after.json`, diff them, and list every field that changed; each
+   change must be one the dry run announced. T's apply is a full PUT, so a field it
+   leaves out returns to GitHub's default (a true `lock_branch` blocks every merge). If
+   step 2 returned a 404, say so and rely on the read-back alone. Read the required check
+   from `.checks`, not the deprecated `.contexts` (T `scripts/bootstrap_repo.sh` calls it
+   deprecated), and record the `app_id` that ran step 1's `check`:
+   `gh api repos/BiscuitBin/pachinko/commits/main/check-runs --jq '.check_runs[] | select(.name=="check") | .app.id'`.
+   If the required `check` has a null `app_id` or another app's, hand that back; do not
+   patch T's script.
 7. Copy L `.github/actions/setup/action.yml`, L `.github/workflows/ci.yml`, L
    `.github/workflows/audit.yml` and L `.github/workflows/pages.yml`. Apply
    `CONVENTIONS.md` §10: delete the `wasm` job and its entry in `check`'s `needs`; add
@@ -129,8 +140,10 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
 
 ## Acceptance criteria
 
-- `gh api repos/BiscuitBin/pachinko/branches/main/protection --jq '.required_status_checks.contexts'`
-  prints `["check"]`.
+- `gh api repos/BiscuitBin/pachinko/branches/main/protection/required_status_checks --jq '[.checks[] | {context, app_id}]'`
+  prints exactly one entry, `check`, whose `app_id` is GitHub Actions', as step 6
+  recorded it.
+- The protection diff of step 6 lists only changes the dry run announced.
 - The hygiene settings the script applies read back as applied, and a second dry run
   reports no change.
 - `gh api repos/BiscuitBin/pachinko/pages --jq .build_type` prints `workflow`.
@@ -147,6 +160,8 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
 
 ```sh
 gh api repos/BiscuitBin/pachinko/branches/main/protection
+gh api repos/BiscuitBin/pachinko/branches/main/protection/required_status_checks --jq '[.checks[] | {context, app_id}]'
+diff ai_tmp/protection-before.json ai_tmp/protection-after.json
 gh api repos/BiscuitBin/pachinko/pages
 gh repo view BiscuitBin/pachinko --json deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed
 sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check --hygiene
@@ -154,16 +169,17 @@ just lint
 gh pr checks <number> --repo BiscuitBin/pachinko
 gh run list --repo BiscuitBin/pachinko --workflow pages.yml --limit 1
 gh api repos/BiscuitBin/pachinko/pages --jq .html_url
-rg -n 'uses: ' .github | rg -v 'uses: \./' | rg -v '@[0-9a-f]{40} # '
+rg -n 'uses: ' .github > ai_tmp/uses.txt; echo "exit $?"; wc -l < ai_tmp/uses.txt
+rg -v 'uses: \./' ai_tmp/uses.txt | rg -v '@[0-9a-f]{40} # '
 just check
 ```
 
-The `rg` pipeline must print nothing.
+The first `rg` line must exit 0 with a count above zero; the second must print nothing.
 
 ## Hand-back notes
 
 To be written by the executing agent: the state before, the dry run, each authorisation,
-the state after; the stub run's evidence and the full run's for `CONVENTIONS.md` §12
+the state after and the protection diff; the required check's `app_id`; the stub run's evidence and the full run's for `CONVENTIONS.md` §12
 claim 5; the outcome of claim 6, including any setting the organisation blocked and who
 can change it; the action pins and the day they were read, the run URLs and the Pages
 URL; and the review record for each checkpoint (`CONVENTIONS.md` §14).
