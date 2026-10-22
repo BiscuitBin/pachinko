@@ -97,7 +97,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `.claude/skills/<14>/SKILL.md` | final | B's bridge body, as L's; frontmatter per `CONVENTIONS.md` §7 |
 | `.codex/skills/<14>/SKILL.md` | final | B's bridge body, as L's; frontmatter per `CONVENTIONS.md` §7 |
 | `Justfile` | final in wave 1 | `CONVENTIONS.md` §4 |
-| `.pre-commit-config.yaml` | final | L `.pre-commit-config.yaml` |
+| `.pre-commit-config.yaml` | final | L `.pre-commit-config.yaml`, `CONVENTIONS.md` §5 |
 | `.pre-commit-fix.yaml` | final | L `.pre-commit-fix.yaml` |
 | `.editorconfig` | final | L `.editorconfig`, with only this repository's file types |
 | `.gitattributes` | final | L `.gitattributes`'s lines for `Cargo.lock`, `pixi.lock`, `allium-skill-reference/**` |
@@ -350,6 +350,9 @@ changes only this file.
   fails without it, and one does: `typos` rewrites `als` to `also` in
   `tickets/CONVENTIONS.md:341` and `tickets/T00-foundation.md:146`. The first `just lint`
   run did exactly that; I restored both files with `git checkout --` and kept the entry.
+  The rewrite came from the `typos` hook inheriting upstream's `--write-changes`; the
+  hook now passes `args: [--force-exclude]` (`CONVENTIONS.md` §5), so typos only
+  reports. The entry stays, because typos still reports `als` without it.
 - `AGENTS.md` Provenance points to `tickets/CONVENTIONS.md` instead of naming the
   upstream library, so the acceptance grep stays clean.
 - New decision records 0001, 0008 and 0014 carry audiences chosen here: 0001
@@ -463,6 +466,10 @@ rest were not applied, for these reasons:
   prescribes.
 - The `check-toolchain` path comparison and the ripsecrets hook are byte-for-byte L's,
   and both files freeze at T00.
+
+Copilot's review of PR #2 found that the `typos` hook inherited upstream's
+`--write-changes`, so the read-only gate could rewrite files. Fixed: the hook now passes
+`args: [--force-exclude]`, named as a delta in `CONVENTIONS.md` §5.
 
 ### Verification
 

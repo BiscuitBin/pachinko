@@ -132,6 +132,9 @@ repos:
     rev: 512fc24f32f44ab01972217aaaf3dc86ec234d53 # v1.50.2
     hooks:
       - id: typos
+        # Upstream's hook passes --write-changes, so a misspelling found here would
+        # be rewritten in place. This config is the read-only gate: report only.
+        args: [--force-exclude]
 
   - repo: https://github.com/lycheeverse/lychee
     rev: 2bba271688c1abb1503097a064e6c3bc1d1b6a9b # lychee-v0.24.2
