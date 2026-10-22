@@ -1,7 +1,7 @@
 ---
 id: T00
 title: "Foundation: a shape-complete skeleton that passes `just check` on its first commit"
-status: open
+status: done
 depends_on: []
 parallel_with: []
 branch: ticket/t00-foundation
@@ -301,13 +301,219 @@ Quote each command's output in the hand-back notes, and the fresh clone's offlin
 
 ## Hand-back notes
 
-To be written by the executing agent: the toolchain pin and the date it was read; any
-lint the new stable forced, and the change made; the outcome of each `CONVENTIONS.md` §12
-claim this ticket checked (1, 3, 4, 10, 11, 12); every deviation from L's files beyond
-the stated deltas, and why; each line removed from L's dotfiles and why; the review
-record for each checkpoint (`CONVENTIONS.md` §14); that the hook shim is not installed
-and the primary checkout installs it after merge (step 5); and anything handed back to a
-lane.
+Evidence below ran at `09401de` (the skeleton commit). The commit that adds these notes
+changes only this file.
+
+### Toolchain
+
+- Pin: `channel = "1.99.1"`, the stable rustup reported on 2026-10-21 local time
+  (2026-10-22 UTC): `info: latest update on 2026-10-15 for version 1.99.1 (58cf8f9c3
+  2026-10-13)`. `rust-version = "1.99"` matches its minor. `rustup show
+  active-toolchain` prints `1.99.1-aarch64-apple-darwin (overridden by
+  '…/rust-toolchain.toml')`, exit 0.
+- Installing the pin also self-updated rustup from 1.29.1 to 1.29.2. That happened
+  outside the worktree and changes nothing in it.
+- Lints the new stable forced: one. `clippy::assert_is_empty` is new in 1.99 and fired
+  on `assert!(output.stderr.is_empty())` in `crates/pachinko/tests/binary.rs`. I changed
+  the assertion to `assert_eq!(output.stderr, b"")`; the lint table is unchanged. L's
+  tree has `assert!(… .is_empty())` sites the lint may flag (for example
+  `crates/pawdoku/tests/solver.rs:202` at `ccdd001`); I did not run clippy over L, so
+  that is for T02 to check (claim 3).
+
+### §12 claims this ticket checked
+
+| # | Outcome | Evidence |
+| --- | --- | --- |
+| 1 | Holds. No fallback declaration needed. | `just check-specs` and `just analyse-specs` each print one block with `"diagnostics": []` and `"findings": []`, exit 0. |
+| 3 | Holds on T00's tree after the one assertion change above. L's full tree on 1.99.1 is unchecked (T02). | `just clippy` inside `just check`, exit 0. |
+| 4 | Holds. `main.rs` counts as covered; no `--ignore-filename-regex` needed. | `cargo llvm-cov report --show-missing-lines`: `TOTAL … 17 0 100.00%` lines, no missing lines, exit 0. |
+| 10 | Holds. | `just snapshots-check`: `info: no unreferenced snapshots found`, `info: no snapshots to review`, exit 0. |
+| 11 | Holds. | `just metrics`: `Quality score: 100.0% (2 functions analyzed)` and `(4 functions analyzed)`, exit 0. |
+| 12 | Holds. `just effects` and `just lint` run with the network denied. The review found a gap in the prescribed command (below). | See Verification and Review records. |
+
+### Deviations from L beyond the stated deltas
+
+- `tools-source.txt:6` and `Justfile:44` (the `install-tools` comment) say "decision
+  0012" where L says "decision 0013". L's 0013 is the metrics gate, which §8 renumbers to
+  0012, and pachinko's 0013 is the API reference on Pages. A verbatim copy would cite the
+  wrong record. §2 says "verbatim" and §4 "exactly these changes"; a `main` edit to
+  CONVENTIONS could name renumbered cross-references as an implied delta.
+- `deny.toml`: `taplo fmt` folded `targets` and `deny` onto one line each once the
+  removals shortened them; `just toml-check` fails otherwise.
+- `scripts/initialize.sh`: beyond dropping `just format` and its comment, the first
+  comment loses "format" and "taplo" from its list of what needs the environment and is
+  rewrapped, and the closing message reads "Nothing has been formatted, staged,
+  committed, tagged, or pushed." so a first run says it rewrote nothing.
+- `.gitignore`: the new `.claude/*` comment ends with a sentence that explains the
+  `.codex/settings.local.json` line it keeps.
+- `_typos.toml` keeps `als = "als"` under a new comment. Step 4 drops it unless a check
+  fails without it, and one does: `typos` rewrites `als` to `also` in
+  `tickets/CONVENTIONS.md:341` and `tickets/T00-foundation.md:146`. The first `just lint`
+  run did exactly that; I restored both files with `git checkout --` and kept the entry.
+- `AGENTS.md` Provenance points to `tickets/CONVENTIONS.md` instead of naming the
+  upstream library, so the acceptance grep stays clean.
+- New decision records 0001, 0008 and 0014 carry audiences chosen here: 0001
+  `[maintainer, agent]`; 0008 and 0014 `[contributor, maintainer, agent]`.
+- Each carried record's "Carried from libpawdoku's decision NNNN at `ccdd001`." line is
+  italic. These are the 11 lines the acceptance grep prints.
+
+### Lines removed from L's dotfiles
+
+- `.editorconfig`: the `[*.py]` and `[Makefile]` sections. This repository has no Python
+  source and no Makefile.
+- `.gitignore`: `__pycache__/`, `*.py[cod]` and `.ruff_cache/`, for the same reason.
+  L's `.claude/settings.local.json` line and its comment are replaced by `.claude/*`,
+  `!.claude/settings.json` and `!.claude/skills/`. Claude Code writes other runtime
+  files there mid-session, such as `scheduled_tasks.lock`, and `bg-validate-agents`
+  reports any untracked, unignored file under `.claude/` as unexpected. The cargo-mutants
+  comment names T15 where L named S03.
+- `deny.toml`: the `getrandom` and `rand` bans (§1 fact 3: the effects gate is the only
+  crate guard) and the `wasm32-unknown-unknown` target. The comment that cited proptest
+  is reworded.
+- `rustqual.toml`: L's `[[architecture.pattern]]` tables, which named L's modules, and
+  "(step 6)", a step in L's ticket. The header names both crates.
+
+Added, not removed: `.markdownlint-cli2.jsonc` allows `important` as well as `br`, with a
+comment, for the `<important if>` blocks T05's `AGENTS.md` uses.
+
+Step 4's `rg` over the dotfiles, `scripts/initialize.sh` and `pyproject.toml` prints
+nothing, exit 1; the same command with `|als` added matches `_typos.toml:21-23`, exit 0,
+as a positive control.
+
+### Review records (§14)
+
+Reviewers: Codex CLI 0.163.0, `codex exec -m gpt-6-astra -s read-only`, one run per
+lens. Triage: five fresh-context Claude Opus 5.5 subagents, one per merged finding.
+Neither the reviewers nor the triagers wrote the change. The first launch hung because
+`codex exec` read stdin from the background shell. It ran again with `</dev/null`,
+with the same briefs.
+
+Checkpoint 1 (step 6, the frozen files and the effects script), at `09401de`:
+
+- F1, medium (BR-01, C2, C3). Valid. `scripts/check-effects.sh` runs the exact §9 line,
+  `cargo tree -p libpachinko -e normal --prefix none --locked --offline`. That resolves
+  default features on the host target only, so an optional banned dependency, or one
+  under `cfg(windows)`, passes gate 8. A triager reproduced this offline with path stubs:
+  the prescribed line lists only libpachinko, exit 0, and adding `--all-features --target
+  all` lists `rand` and `socket2`, exit 0. Nothing is exposed today because libpachinko
+  has no dependencies. **Handed back**, not applied. §9 prescribes the line and gives the
+  mechanism to T10. CONVENTIONS §9 (the crate line and the fixture-probe line) and §12
+  claim 12 should read `cargo tree -p libpachinko -e normal --all-features --target all
+  --prefix none --locked --offline`, through a `main` pull request. T10 then applies it
+  to the script and adds an optional banned stub and a `cfg(windows)` banned stub to
+  `tests/fixtures/effects-violation/`.
+- F2, low (C1). Valid as a record. The 0013→0012 change stays, recorded under
+  Deviations.
+- Later-lane recipes: no findings from either lens.
+
+Checkpoint 2 (step 11, the whole tree), at `09401de`:
+
+- F3, medium (B01, C2-01). Valid: these notes were still the placeholder. Fixed by this
+  section.
+- F4, low (C2-02). Valid. The saved grep evidence added `--exclude-dir=ai_tmp`, so it was
+  not the acceptance command. Fixed: the acceptance grep below runs exactly as written in
+  the fresh clone, which has no `ai_tmp/`.
+- F5, low (B02). Valid. Two scratch evidence lines piped into `tail` or `grep -c` and
+  recorded the filter's exit status. Fixed: every command quoted here ran unpiped, with
+  its own exit code.
+- Adapters, bridges, `.claude/settings.json`, stub word counts, removed dotfile lines,
+  the Files-touched inventory and §3 conformance: no findings from either lens.
+
+No finding was high, so no second round ran. Raw files:
+`ai_tmp/review/T00-{1,2}/findings-*.md` and `verdicts.md`, uncommitted.
+
+### Hooks
+
+The hook shim is not installed: this is a secondary worktree, and step 5 forbids
+`just install-hooks` here. The primary checkout installs it once after merge.
+
+### Handed back
+
+- To T01: `.github/actions/setup/action.yml:80` still says "PREK_HOME is the variable
+  T03 confirms", where T03 is L's ticket id.
+- The `install-toolchain` comment in the Justfile and the comment in
+  `scripts/initialize.sh` still say "components and targets", though
+  `rust-toolchain.toml` lists no targets. Both files are frozen. A later owner may drop
+  "and targets".
+- To T05: `AGENTS.md` says the network recipes "include" its list; T05 makes it exact.
+- To T05: invariant 4 reads "`#![forbid(unsafe_code)]` in every crate", as L's does.
+  Like L, the crates get it from the workspace lint table (`unsafe_code = "forbid"`) and
+  carry no crate attribute. T05 either words the invariant that way or the crate roots
+  gain the attribute.
+- To CONVENTIONS and T10: F1 above.
+- To T10: the `effects` recipe comment (§4's text, verbatim) describes T10's script:
+  source checks and the `tests/fixtures/effects-violation` probe. T00's script checks
+  crate names only, and says so when it runs.
+- To T01: `.github/actions/setup/action.yml` (L's comment) says no step reaches the
+  network after `just install-hooks`, but the stub `ci.yml` runs `just install-allium`
+  next. The stub's `concurrency` also cancels in-progress runs on `main`. T01 replaces
+  `ci.yml`.
+
+### Code review
+
+The implement skill's `/code-review` at medium effort over `main...HEAD` and these notes
+returned nine findings. Two are the hand-backs above, the `effects` comment and the
+forbid wording, and a third is F1 again. The CI findings are handed to T01 above. The
+rest were not applied, for these reasons:
+
+- The tests assert the literal `0.1.0` on purpose. An expected value taken from
+  `env!("CARGO_PKG_VERSION")` would be tautological, and a version bump that breaks four
+  tests is the intended signal.
+- `main.rs` turning a write error into a bare `ExitCode::FAILURE` is the shape §3
+  prescribes.
+- The `check-toolchain` path comparison and the ripsecrets hook are byte-for-byte L's,
+  and both files freeze at T00.
+
+### Verification
+
+All at `09401de`. Scratch logs: `ai_tmp/evidence/verify-block-09401de.txt` (this worktree)
+and `ai_tmp/evidence/step12-09401de.txt` (fresh clone). Each command ran unpiped and its
+exit code was recorded right after it.
+
+This worktree, the Verification block in order:
+
+| Command | Exit | Output |
+| --- | --- | --- |
+| `rustup show active-toolchain` | 0 | `1.99.1-aarch64-apple-darwin (overridden by '…/rust-toolchain.toml')` |
+| `just check` | 0 | 19 gates and check-clean; last line `All checks passed and the worktree is unchanged.` |
+| `cargo nextest run --workspace --locked` | 0 | `3 tests run: 3 passed, 0 skipped` |
+| `cargo test --doc --workspace --locked` | 0 | `test result: ok. 1 passed; 0 failed` (libpachinko) |
+| `cargo llvm-cov report --show-missing-lines` | 0 | `TOTAL … 17 0 100.00%` lines; no missing lines |
+| `just check-specs`, `just analyse-specs` | 0, 0 | one block each, `"diagnostics": []`, `"findings": []` |
+| `just check-agents` | 0 | `Validated AGENTS.md, 2 adapters, and 14 skills.` |
+| the same with `.claude/scheduled_tasks.lock` present | 0 | the same line |
+| `sandbox-exec -p "$deny" curl … https://static.rust-lang.org` | 6 | `curl: (6) Could not resolve host: static.rust-lang.org` |
+| `sandbox-exec -p "$deny" curl --noproxy '*' … https://1.1.1.1` | 7 | `curl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server` |
+| `sandbox-exec -p "$deny" just effects` | 0 | `effects: libpachinko's normal dependency tree names no banned crate.` |
+| `sandbox-exec -p "$deny" just lint` | 0 | 23 hooks `Passed`, none `Failed` |
+| `rg -n -w 'format' scripts/initialize.sh` | 1 | nothing |
+| step 4's `rg` | 1 | nothing (positive control above) |
+| `git status --short` | 0 | nothing |
+
+Fresh clone of `ticket/t00-foundation` at `09401de` into a scratch directory:
+
+- `just initialize`: exit 0, ends `Ready. Next: just check.` It installed the hook in
+  the clone, which is that clone's primary checkout. Two earlier attempts exited 2
+  because the recording shell put a global pixi `cargo` ahead of rustup's proxy;
+  `check-toolchain` refused it, as it should. A clean shell fixed it.
+- Network denied: the two curl probes exited 6 and 7 with the messages above; the same
+  `1.1.1.1` probe without the sandbox exited 0. `sandbox-exec -p "$deny" just lint` exited
+  0 with all 23 hooks `Passed`, lychee included. `sandbox-exec -p "$deny" just effects`
+  exited 0.
+- `just check`: exit 0, last line `All checks passed and the worktree is unchanged.`
+  `git status --short` printed nothing; a touched probe file showed as `??` and
+  disappeared on removal.
+- `cargo llvm-cov report --show-missing-lines`: exit 0, `TOTAL … 17 0 100.00%`.
+- The acceptance grep, copied verbatim from the criteria and run from the clone's root,
+  exited 0 and printed exactly 11 lines, each line 11 of a record under `docs/decisions/`
+  reading "Carried from libpawdoku's decision NNNN at ccdd001", in italics, for records
+  0002 to 0007 and 0009 to 0013.
+  These are the carried-record openings the criterion allows. Nothing else matched.
+- Secondary worktree (`git worktree add ../fresh-2` from the clone): `just initialize`
+  exited 0 and printed `Secondary worktree: skipping install-hooks.`; `just lint` exited
+  0 with every hook `Passed`. The clone's hook file had the same checksum and mtime
+  before and after, so no second install happened.
+- Both scratch checkouts were then removed; `git worktree list` no longer shows them.
 
 ## Open points
 
