@@ -165,8 +165,11 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 
 10. **The root documents and CI stub.** `README.md`, `CHANGELOG.md`, `SECURITY.md`, both
     crate READMEs as stubs; `LICENSE`. `.github/workflows/ci.yml`: one job, `name: check`,
-    using L's setup action and running `just check`, so that the check name branch
-    protection requires exists from the first push (`CONVENTIONS.md` §10).
+    using L's setup action (`cache-key: check`), then `just install-allium`, then
+    `just check`, so that the check name branch protection requires exists from the first
+    push (`CONVENTIONS.md` §10). The setup action does not install allium (L
+    `.github/actions/setup/action.yml`, its description), and `check-specs`,
+    `analyse-specs` and the hook gate in `lint` need it.
 
 11. **The gate.** `just check`. Then the claims T00 owns first: `CONVENTIONS.md` §12
     claims 4, 10, 11 and 12. For claim 4, run `cargo llvm-cov report --show-missing-lines`

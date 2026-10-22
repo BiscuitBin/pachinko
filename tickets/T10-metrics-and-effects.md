@@ -53,7 +53,7 @@ setting is chosen. Both gates are green in `just check`.
 | Path | Class | Content |
 | --- | --- | --- |
 | `scripts/check-effects.sh` | final | the three checks of `CONVENTIONS.md` §9 |
-| `tests/fixtures/effects-violation/` | new | a minimal crate source tree breaking each ban once |
+| `tests/fixtures/effects-violation/` | new | a crate, its path-dependency stubs and its `Cargo.lock`, breaking each ban once (step 4) |
 | `crates/libpachinko/clippy.toml` | new | only if step 3 chooses clippy |
 | `rustqual-effects.toml` | new | only if step 3 chooses rustqual |
 | `rustqual.toml` | final | L's thresholds, the comments rewritten for two crates |
@@ -78,13 +78,29 @@ setting is chosen. Both gates are green in `just check`.
    std APIs, choose the mechanism that catches every form step 2 tried, with the fewest
    files. Record the evidence and the choice in the hand-back notes; T11 carries it into
    `architecture.md` and decision 0008.
-4. **The fixture.** `tests/fixtures/effects-violation/` holds a `Cargo.toml` that names
-   one banned crate in `[dependencies]` (it is never built, so nothing is fetched) and a
-   `src/` that breaks each std ban exactly once, in the form the chosen tool resolves,
-   plus one aliased form (`use std::fs as f;`) where the tool could miss it. It is not a
-   workspace member (`members = ["crates/*"]` already excludes it). If the `cargo tree`
-   check cannot read an unbuilt manifest offline, the crate half of the probe checks the
-   fixture's `Cargo.toml` text against the ban list instead, and says so.
+4. **The fixture.** `tests/fixtures/effects-violation/` is a crate the production
+   `cargo tree` line can walk offline, so the probe exercises the same traversal and
+   matching that guard libpachinko:
+   - Its `Cargo.toml` carries an empty `[workspace]` table, so cargo treats it as its own
+     workspace root and not a stray member of this one (`members = ["crates/*"]` already
+     leaves it out of the build).
+   - Each banned crate is a path-dependency stub under `deps/<name>/`: a `Cargo.toml`
+     naming the package and an empty `src/lib.rs` (cargo refuses a manifest with no
+     target). Path dependencies need no registry, so nothing is fetched.
+   - Every banned name but one is a direct dependency of the fixture. The last arrives
+     transitively, through a non-banned stub, `deps/wrapper/`, that depends on it: the
+     case `CONVENTIONS.md` §1 fact 3 says `deny.toml` alone cannot be trusted with.
+   - Its `Cargo.lock` is generated once with
+     `cargo generate-lockfile --offline --manifest-path tests/fixtures/effects-violation/Cargo.toml`
+     and committed, so `--locked` holds and `check-clean` sees no new file.
+   - Its `src/` breaks each std ban exactly once, in the form the chosen tool resolves,
+     plus one aliased form (`use std::fs as f;`) where the tool could miss it.
+
+   The script runs the identical `cargo tree -e normal --prefix none --locked --offline`
+   line over the fixture with `--manifest-path`, through the same matching code it uses
+   for libpachinko. There is no manifest-text fallback: if `cargo tree` cannot walk the
+   fixture offline, stop and hand back. `just toml-check` and the hooks see the new
+   `Cargo.toml` files, so format them with taplo.
 5. **The script.** Final `scripts/check-effects.sh`: POSIX `sh`, `set -eu`; the ban list
    in one place at the top, one name per line with a reason; the three checks of
    `CONVENTIONS.md` §9 in order; on failure, print the finding and what was expected, in
@@ -103,6 +119,8 @@ setting is chosen. Both gates are green in `just check`.
 - `just effects` and `just metrics` are green.
 - The hand-back notes quote, for every ban, `just effects` failing when libpachinko
   breaks it, and the probe failing when the fixture stops breaking it.
+- Every banned crate name, the transitive one included, appears exactly once in the
+  `cargo tree` output the probe reads for the fixture; the hand-back notes quote it.
 - A banned API in `crates/pachinko` does not fail `just effects`.
 - `just effects` passes with the network blocked.
 - `just check` is green.

@@ -494,7 +494,11 @@ Whatever the mechanism, `scripts/check-effects.sh`:
 1. Checks libpachinko and exits non-zero on any finding.
 2. Checks `tests/fixtures/effects-violation/`, which breaks every ban exactly once, in the
    form the tool resolves (a `use std::fs; fs::read(..)` as well as a full path where a
-   prefix rule would miss one), and fails unless every named ban fires there.
+   prefix rule would miss one), and fails unless every named ban fires there. The crate
+   bans are probed by the same `cargo tree` line, run over the fixture with
+   `--manifest-path`: the fixture is its own workspace with a committed `Cargo.lock`, and
+   each banned crate is an offline path-dependency stub, one of them reached only
+   transitively (T10 step 4).
 3. Checks that no ban fires on `crates/pachinko`, which is allowed every effect.
 
 T00's version of the script does step 1 for crates only (the `cargo tree` line over an
@@ -509,6 +513,10 @@ at `ccdd001`, with these changes:
 - The `wasm` job is deleted, and leaves `check`'s `needs`. The `rust` job, which already
   runs `metrics` and `snapshots-check`, gains `just effects` after `just metrics`.
 - `pages.yml` publishes `just site`, which now links both crates.
+- The setup action installs every tool except allium; L's description says "The allium
+  binary is the documents job's own step". Any job that runs `just check`, `lint`,
+  `check-specs` or `analyse-specs` runs `just install-allium` after the setup action:
+  L's `documents` job, T00's one-job stub and T14's `release.yml`.
 - Every `uses:` keeps a full SHA with a version comment, re-read on the day T04 runs
   (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
 
@@ -576,9 +584,11 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
 
 Each claim was reasoned from source or documentation but not executed here. The named
 ticket runs the check and records the outcome in its hand-back notes; a claim that fails
-is a design change that comes back through this document. L's own §12 claims about pixi,
-prek, binstall and the hooks were settled in L; a ticket re-checks them only by running
-the gate.
+is a design change that comes back through this document. T11 carries the outcomes of
+the claims wave 0 and wave 1 own (1 to 6, 10 to 12) into this table; T17, the only
+ticket after T13, T14 and T16, carries claims 7 to 9 from their hand-back notes. L's own
+§12 claims about pixi, prek, binstall and the hooks were settled in L; a ticket re-checks
+them only by running the gate.
 
 | # | Claim | Check | Owner |
 | --- | --- | --- | --- |

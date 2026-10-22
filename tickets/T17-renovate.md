@@ -49,6 +49,7 @@ proposes and what stays manual; and decision 0018 records it.
 | `docs/README.md` | shared, own lines | one link |
 | `docs/decisions/README.md` | shared, own lines | one row |
 | `CHANGELOG.md` | shared, own lines | one `[Unreleased]` line |
+| `tickets/CONVENTIONS.md` | correction | §12 claims 7 to 9 outcomes, through a `main` pull request |
 | `tickets/T17-renovate.md` | ticket | `status:` and hand-back notes |
 
 ## Steps
@@ -78,7 +79,11 @@ proposes and what stays manual; and decision 0018 records it.
 6. **The docs.** The draft's changes to the how-to and the maintenance page, with this
    repository's pins; decision 0018: Renovate over Dependabot (the draft's evidence), the
    app's access, what stays manual, what would reopen it.
-7. `just check`, then commit.
+7. **The last claims.** Carry the outcomes of `CONVENTIONS.md` §12 claims 7, 8 and 9 from
+   the hand-back notes of T14, T16 and T13 into §12's table through a `main` pull request
+   (separately authorised), in the shape T11 used for the others. This does not depend on
+   the app: if step 4 stops, do this step before handing back.
+8. `just check`, then commit.
 
 ## Acceptance criteria
 
@@ -87,6 +92,8 @@ proposes and what stays manual; and decision 0018 records it.
 - The app is installed on this repository only, and its permissions are in the security
   model.
 - `renovate.json` validates.
+- `CONVENTIONS.md` §12 claims 7, 8 and 9 have outcomes, each citing the ticket whose
+  hand-back notes hold the evidence.
 - `just check` is green.
 
 ## Verification

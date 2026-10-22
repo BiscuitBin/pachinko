@@ -83,7 +83,8 @@ maintenance page say how a release is cut.
    new paths this ticket does not list.
 5. **`release.yml`.** `on: push: tags: ['libpachinko-v*', 'pachinko-v*']`;
    `permissions: contents: write` on the one job and nothing else; the composite setup
-   action; `just check`; then `gh release create "$GITHUB_REF_NAME" --notes-file <the
+   action; `just install-allium` (the setup action leaves it out, `CONVENTIONS.md` §10);
+   `just check`; then `gh release create "$GITHUB_REF_NAME" --notes-file <the
    crate's section>` with the run's `GITHUB_TOKEN`. Never in `check`'s `needs`.
 6. **`semver`.** `cargo semver-checks -p libpachinko --baseline-rev <rev>`: before the
    first release the baseline is `main`'s merge base, so the recipe is a statement about

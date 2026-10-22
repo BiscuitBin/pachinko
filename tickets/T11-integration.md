@@ -27,7 +27,9 @@ repository's names.
 `main` on `BiscuitBin/pachinko`, cloned fresh from GitHub, passes `just initialize` then
 `just check`; CI on `main` and on a pull request is green; branch protection requires
 `check` and refuses to merge a pull request whose `check` is red; every
-`CONVENTIONS.md` §12 claim has a recorded outcome; and the handbook says what landed.
+`CONVENTIONS.md` §12 claim owned by T00 to T10 (claims 1 to 6 and 10 to 12) has a
+recorded outcome; and the handbook says what landed. Claims 7, 8 and 9 belong to T14,
+T16 and T13, which start after this ticket; T17 records them.
 
 ## Non-goals
 
@@ -60,9 +62,10 @@ repository's names.
    pull request.** A throwaway branch that breaks one gate (an unformatted line); confirm
    `check` goes red and `gh pr merge` refuses without an administrator bypass; then close
    the pull request and delete the branch (each separately authorised).
-6. **The claims table.** One row per `CONVENTIONS.md` §12 claim with its outcome, the
-   ticket that checked it and where the evidence is quoted. Carry it into
-   `CONVENTIONS.md` §12 through a `main` pull request.
+6. **The claims table.** One row per `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 with
+   its outcome, the ticket that checked it and where the evidence is quoted; claims 7 to
+   9 stay open, marked as T17's. Carry it into `CONVENTIONS.md` §12 through a `main` pull
+   request.
 7. **Cleanliness.** `rg -n -i 'stub|lands with T|arrive with T|TODO'` over `docs/`,
    `AGENTS.md`, `.agents/` and the crates prints only sentences that name a wave-2 ticket
    or the specifications; `rg -n -i 'pawdoku|sudoku|wasm'` outside `tickets/` and
@@ -73,7 +76,8 @@ repository's names.
 
 - The fresh-clone `just check` is green and quoted.
 - CI on `main` is green; the red pull request could not merge.
-- Every `CONVENTIONS.md` §12 claim has an outcome.
+- Every `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 has an outcome; claims 7 to 9
+  are marked open for T17.
 - Step 7's searches print only what the hand-back notes justify.
 
 ## Verification
