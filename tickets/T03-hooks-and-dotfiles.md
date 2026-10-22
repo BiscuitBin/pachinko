@@ -65,7 +65,12 @@ repository.
 6. **The secondary worktree.** From a second worktree whose primary has run
    `just initialize`, `just lint` works without a second `install-hooks`, as L's
    `scripts/initialize.sh` comment claims.
-7. `just check`, then commit.
+7. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: which removed
+   line something in this repository, a later lane or a wave-2 ticket still needs;
+   whether step 5's lint was offline, or passed only because a cache was warm.
 
 ## Acceptance criteria
 
@@ -73,6 +78,8 @@ repository.
 - The step-2 `rg` prints nothing over this lane's files, or only lines the hand-back
   notes justify.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -86,7 +93,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: each removed line and why, the offline lint output,
-and anything a frozen file needs (handed back to T00).
+the review record for each checkpoint (`CONVENTIONS.md` §14), and anything a frozen file
+needs (handed back to T00).
 
 ## Open points
 

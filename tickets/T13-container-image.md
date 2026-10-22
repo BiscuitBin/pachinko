@@ -77,8 +77,14 @@ how-to and decision 0015 say what the image is and is not.
    contains and why distroless. Decision 0015: why an image now, why distroless, why no
    push, what would reopen it (a registry, a runtime that needs a shell). Register both in
    the manifest and the map, and add the index row.
-7. `just check` (without docker), then **authorisation required: push and open a pull
-   request**; read the `image` job's run.
+7. `just check` (without docker), the final adversarial review, `just check` again if
+   fixes landed, then **authorisation required: push and open a pull request**; read the
+   `image` job's run.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
+   whether each digest is its named tag's on the day; whether the run stage really runs
+   as `nonroot`; whether the toolchain check fails when the pin and the image's rust
+   differ; whether `image` is in `check`'s `needs`.
 
 ## Acceptance criteria
 
@@ -87,6 +93,8 @@ how-to and decision 0015 say what the image is and is not.
 - The `image` job is green on the pull request and `check` lists it in `needs`.
 - Every `FROM` line carries a digest; every new `uses:` a SHA with a version comment.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -100,8 +108,9 @@ just check
 
 ## Hand-back notes
 
-To be written by the executing agent: the digests and the day, the image size, the
-build output, the CI run URL, and the outcome of `CONVENTIONS.md` §12 claim 9.
+To be written by the executing agent: the digests and the day, the image size, the build
+output, the CI run URL, the outcome of `CONVENTIONS.md` §12 claim 9, and the review
+record for each checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 

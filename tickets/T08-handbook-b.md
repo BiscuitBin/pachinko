@@ -82,7 +82,13 @@ boundary explained once (in `architecture.md`) and referred to everywhere else.
    proves a clause) with the note that `insta` arrives with the first snapshot.
 6. **The operations pages.** L's, with this repository's names; troubleshooting loses
    the wasm entries.
-7. `just check-docs`, `just check`, then commit.
+7. `just check-docs`, `just check`, the final adversarial review, `just check` again if
+   fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: which fact
+   contradicts `CONVENTIONS.md` or the `Justfile`; whether `quality-gates.md` lists the
+   gates in `CONVENTIONS.md` §4's order; which sentence waits on T10's mechanism and is
+   not yet listed for T11.
 
 ## Acceptance criteria
 
@@ -93,6 +99,8 @@ boundary explained once (in `architecture.md`) and referred to everywhere else.
   prints nothing outside the two pages T06 owns, or only a sentence naming L as the
   source.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -106,7 +114,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: every sentence written to the design that another
-lane's outcome could change (for T11), and anything handed back.
+lane's outcome could change (for T11), the review record for each checkpoint
+(`CONVENTIONS.md` §14), and anything handed back.
 
 ## Open points
 

@@ -67,6 +67,12 @@ proposes and what stays manual; and decision 0018 records it.
    `tools-source.txt` beside `tools.txt` in the regex manager; and every new tool pin from
    wave 2. Validate with `npx --yes --package renovate -- renovate-config-validator`
    (network, authorised) or the equivalent the draft names.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the pin inventory, `renovate.json` and
+   the validator output, before step 4 asks. The review goes into the authorisation
+   request. Ask: which pin on `main` is missing from the inventory; whether each
+   manager's pattern matches the pins it claims, and only those; whether the validator
+   output is clean.
 4. **Authorisation required: install the Mend app on `BiscuitBin/pachinko` only.** This
    is an organisation-level action; an organisation owner may have to perform it. Before
    asking, write the permissions the installation screen lists into
@@ -83,7 +89,13 @@ proposes and what stays manual; and decision 0018 records it.
    the hand-back notes of T14, T16 and T13 into §12's table through a `main` pull request
    (separately authorised), in the shape T11 used for the others. This does not depend on
    the app: if step 4 stops, do this step before handing back.
-8. `just check`, then commit.
+8. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: whether the
+   how-to and decision 0018 match what was installed and proved; whether the outcomes
+   carried for `CONVENTIONS.md` §12 claims 7 to 9 match the hand-back notes of T14, T16
+   and T13.
 
 ## Acceptance criteria
 
@@ -95,6 +107,8 @@ proposes and what stays manual; and decision 0018 records it.
 - `CONVENTIONS.md` §12 claims 7, 8 and 9 have outcomes, each citing the ticket whose
   hand-back notes hold the evidence.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -108,8 +122,9 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the inventory, the validator output, the
-authorisation and who performed the installation, the per-manager evidence, and where
-this ticket departed from L's draft.
+authorisation and who performed the installation, the per-manager evidence, the review
+record for each checkpoint (`CONVENTIONS.md` §14), and where this ticket departed from
+L's draft.
 
 ## Open points
 

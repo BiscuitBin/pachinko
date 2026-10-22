@@ -66,6 +66,13 @@ Actions, each change authorised before it was made and each read back afterwards
    clone) and dry-run it: `sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check
    --hygiene`. Pages is set separately in step 5, so decide from the script's usage
    whether to pass `--no-pages`; quote the whole output.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the dry run, before step 4 asks to
+   apply it. This ticket changes no repository file, so a valid finding changes the
+   request, not a file, and the review goes into the authorisation request. Ask: whether
+   the script will require `check` and nothing else; what in it would lock a lane out of
+   merging; which setting needs an organisation owner; whether passing `--no-pages` or
+   not is right, given step 5.
 4. **Authorisation required: apply.** Stop and ask, showing the dry run. On approval,
    rerun with `--apply`, then rerun the dry run and confirm it reports no change
    (`CONVENTIONS.md` §12 claim 6, first half).
@@ -83,6 +90,8 @@ Actions, each change authorised before it was made and each read back afterwards
   reports no change.
 - `gh api repos/BiscuitBin/pachinko/pages --jq .build_type` prints `workflow`.
 - Every apply was authorised before it ran; the hand-back notes say when.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -96,9 +105,9 @@ sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check --hygiene
 ## Hand-back notes
 
 To be written by the executing agent: the state before, the dry run, each authorisation,
-the state after, the stub run's first-half evidence for `CONVENTIONS.md` §12 claim 5,
-the outcome of claim 6, including any setting
-the organisation blocked and who can change it.
+the state after, the stub run's first-half evidence for `CONVENTIONS.md` §12 claim 5, the
+outcome of claim 6, including any setting the organisation blocked and who can change it;
+and the review record for each checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 

@@ -82,7 +82,13 @@ repository, and none restating another.
    writer.
 7. **The index.** L's format, fourteen rows, plus a line that 0015 to 0018 are written by
    T13 to T17.
-8. `just check-docs`, `just check`, then commit.
+8. `just check-docs`, `just check`, the final adversarial review, `just check` again if
+   fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: which carried
+   argument still leans on `no_std` or on sudoku; whether 0003 and 0008 divide the
+   argument as `CONVENTIONS.md` §8 says; whether every slug and title matches §8's table
+   and the manifest.
 
 ## Acceptance criteria
 
@@ -91,6 +97,8 @@ repository, and none restating another.
 - `rg -n -i 'sudoku|wasm|no_std' docs/decisions` prints only lines in 0008 that explain
   why `no_std` was not chosen.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -106,7 +114,8 @@ The second `rg` must print nothing: every carried record has the sentence.
 ## Hand-back notes
 
 To be written by the executing agent: for each carried record, what was removed and why;
-sentences that wait on T10's mechanism (for T11).
+sentences that wait on T10's mechanism (for T11); the review record for each checkpoint
+(`CONVENTIONS.md` §14).
 
 ## Open points
 

@@ -78,6 +78,11 @@ setting is chosen. Both gates are green in `just check`.
    std APIs, choose the mechanism that catches every form step 2 tried, with the fewest
    files. Record the evidence and the choice in the hand-back notes; T11 carries it into
    `architecture.md` and decision 0008.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): step 2's evidence for `CONVENTIONS.md`
+   §12 claim 2 and the choice made on it, before step 4 builds the fixture on that
+   choice. Ask: which form of a banned API step 2 did not try; whether a libpachinko
+   `clippy.toml` shadows the root file's keys, and what libpachinko loses if it does.
 4. **The fixture.** `tests/fixtures/effects-violation/` is a crate the production
    `cargo tree` line can walk offline, so the probe exercises the same traversal and
    matching that guard libpachinko:
@@ -112,7 +117,13 @@ setting is chosen. Both gates are green in `just check`.
    confirm `just effects` fails naming it; remove one break from the fixture and confirm
    the probe fails naming the silent ban; add a banned API to pachinko and confirm
    nothing fires. Quote each.
-8. `just check`, then commit.
+8. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff and step 7's red runs.
+   Ask: which ban could go silent without the probe noticing; whether `just effects` runs
+   offline on a machine with a cold cache; whether anything in it fires on, or changes,
+   the pachinko crate.
 
 ## Acceptance criteria
 
@@ -124,6 +135,8 @@ setting is chosen. Both gates are green in `just check`.
 - A banned API in `crates/pachinko` does not fail `just effects`.
 - `just effects` passes with the network blocked.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -137,7 +150,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the evidence for `CONVENTIONS.md` §12 claims 2, 11
-and 12; the mechanism chosen and why; each red run; the sentences T11 must carry into
+and 12; the mechanism chosen and why; each red run; the review record for each checkpoint
+(`CONVENTIONS.md` §14); the sentences T11 must carry into
 `docs/explanation/architecture.md`, `docs/reference/quality-gates.md`,
 `docs/reference/configuration.md` and decision 0008.
 

@@ -68,7 +68,12 @@ has. `just check-docs` is green.
 5. **`deploy-to-github-pages.md`.** The `pages.yml` T04 writes and the `site` recipe;
    the URL is the one `gh api repos/BiscuitBin/pachinko/pages --jq .html_url` prints after
    T04, written here as `https://biscuitbin.github.io/pachinko/` with a note to confirm it.
-6. `just check-docs`, `just check`, then commit.
+6. `just check-docs`, `just check`, the final adversarial review, `just check` again if
+   fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff and step 4's
+   transcript. Ask: which sentence kept from L is false in this repository; whether a
+   contributor on a later `main` can replay the tutorial exactly as written.
 
 ## Acceptance criteria
 
@@ -77,6 +82,8 @@ has. `just check-docs` is green.
   prints nothing, or only a sentence naming L as the source.
 - The tutorial was followed end to end, and the hand-back notes quote it.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -89,7 +96,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the tutorial transcript, each sentence kept from L
-that needed a fact checked and how it was checked, and anything handed back.
+that needed a fact checked and how it was checked, the review record for each checkpoint
+(`CONVENTIONS.md` §14), and anything handed back.
 
 ## Open points
 

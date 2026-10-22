@@ -565,8 +565,9 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   never as Markdown links: the hook gate runs lychee offline over `tickets/`.
 - **Definition of done**, for every build ticket: `just check` green in this repository,
   the ticket's acceptance criteria met, its verification commands run with their output
-  quoted in the hand-back notes, and the ticket's `status:` set to `done` in the same
-  pull request. A ticket is done when its gate passes, not when its files exist.
+  quoted in the hand-back notes, the adversarial reviews the ticket names run (§14) with
+  every valid finding fixed or handed back, and the ticket's `status:` set to `done` in
+  the same pull request. A ticket is done when its gate passes, not when its files exist.
 - **Separately authorised actions.** Commits on the ticket branch are the ticket's work.
   Pushing, opening a pull request, tagging, filing issues, changing repository or
   organisation settings, installing a GitHub App, publishing anywhere, installing
@@ -629,3 +630,71 @@ them only by running the gate.
   accumulated.
 - **lychee and typos over `tickets/`.** Ticket prose must pass typos and carry no
   relative links.
+
+## 14. Adversarial review
+
+A ticket marks each point where a mistake is expensive to undo with a bold
+**Adversarial review** paragraph at the end of a step. There the agent gets a second
+opinion from reviewers who did not write the change, and other subagents check each
+finding and fix the valid ones before the work goes on. This is a procedure for the
+agent running a ticket; it is unrelated to T05's `review-change` skill, which this
+repository ships to its own contributors.
+
+- **When.** At each checkpoint a ticket marks: before a file freezes, before each
+  "Authorisation required" stop, after a design choice later steps build on, and before
+  the ticket's final commit.
+- **Who reviews.** Codex with `-m gpt-6-astra`, or Claude Code with
+  `--model claude-opus-5-5`. Use the harness the executing agent is not, if it is on
+  `PATH`, so that the review does not share the author's blind spots; otherwise use the
+  same harness's preferred model. A weaker model is used only if neither is available,
+  and the hand-back notes say so. In the agent's own harness, a fresh-context subagent on
+  the preferred model is equivalent; this section does not prescribe any harness's
+  subagent API. The commands, which the agent confirms with `--help` on the day, run from
+  the worktree (`claude` takes no directory flag):
+
+  ```sh
+  codex exec -m gpt-6-astra -s read-only -C <worktree> \
+    -o ai_tmp/review/<id>-<n>/findings-<lens>.md "<brief>"
+  claude -p --model claude-opus-5-5 --permission-mode plan "<brief>" \
+    > ai_tmp/review/<id>-<n>/findings-<lens>.md
+  ```
+
+  `<id>` is the ticket id, `<n>` the checkpoint's place among the ticket's checkpoints,
+  counting from 1, and `<lens>` is `conformance` or `breakage`. A second round (below)
+  writes beside the first with a `-2` suffix.
+- **Phase 1, review.** Two reviewer subagents run in parallel, each with a fresh context
+  and one lens:
+  - **(a) Conformance.** The diff against the ticket's Goal, Files touched, acceptance
+    criteria and the sections of this document it cites. Deltas from L beyond the stated
+    ones. A frozen file or another lane's file touched.
+  - **(b) Breakage.** How the gate could pass while the claim is false. A gate that
+    cannot fire. What fails on a fresh clone, in CI, offline, or for a later lane. An
+    acceptance criterion asserted but not shown.
+
+  The brief gives the ticket's path, this document's path, `git diff main...HEAD` plus
+  the uncommitted changes (or the artefact under review, such as a dry run or a list),
+  and the checkpoint's questions. It does not give the author's reasoning or the
+  hand-back notes' conclusions. Reviewers are read-only. Each finding has an id, a
+  `file:line`, the claim, a concrete failure scenario, a severity (high, medium or low)
+  and its evidence.
+- **Phase 2, triage.** Separate subagents, neither the reviewers nor the executing agent,
+  check every finding against the code, by running a command or reading the pinned
+  source. Each finding is marked valid, with a fix written, or invalid, with the reason.
+  The verdicts go to `ai_tmp/review/<id>-<n>/verdicts.md`. Subagents pass file paths to
+  each other, not pasted text.
+- **Phase 3, apply.** The triage subagents apply the valid fixes one at a time, never two
+  writers at once. Then the executing agent re-runs the checkpoint's verification
+  commands, and `just check` at the final checkpoint.
+- **Scope guard.** A fix edits only files in the ticket's Files touched. A valid finding
+  whose fix lies outside that list, in a frozen file or in another lane's file, is handed
+  back under §11 and never applied. At an authorisation checkpoint the fixes change what
+  the agent will ask for, and the agent still stops and asks.
+- **Rounds.** If any high-severity finding was valid, one more review runs over the fix
+  diff. Two rounds at most; anything still open goes into the ticket's Open points.
+- **Network.** The review calls a model API. The ticket's checkpoint is the authorisation
+  (§11, "Network"). It runs outside `just check`, so `check` still needs no network. A
+  brief carries only this repository's content and the L, B and T files the ticket
+  cites, never a credential.
+- **Record.** The hand-back notes record, for each checkpoint: the harness and model, the
+  findings, each verdict with a one-line reason, what was applied, what was handed back,
+  and the re-run output. The raw files stay in `ai_tmp/` and are never committed.

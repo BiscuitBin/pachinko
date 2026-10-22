@@ -83,7 +83,13 @@ with a comment for each non-default setting.
 7. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, with `wrappers` naming
    `pachinko` and the `[graph] targets` list without the wasm target. Run `just deny`
    offline after `just sync`.
-8. `just check`, then commit.
+8. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: which lint-table
+   decision on the new pin is unjustified or has no comment; whether each recipe's quoted
+   failure came from its deliberate violation and from nothing else; whether the evidence
+   for `CONVENTIONS.md` §12 claims 3, 4 and 10 proves each claim.
 
 ## Acceptance criteria
 
@@ -91,6 +97,8 @@ with a comment for each non-default setting.
 - `cargo llvm-cov report --show-missing-lines` lists no missing line.
 - Every non-default setting in the files this lane owns has a comment saying why.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -104,9 +112,10 @@ just check
 
 ## Hand-back notes
 
-To be written by the executing agent: each lint the pin added and what was done about
-it; each recipe's quoted failure; the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10;
-any Justfile change handed back.
+To be written by the executing agent: each lint the pin added and what was done about it;
+each recipe's quoted failure; the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10; the
+review record for each checkpoint (`CONVENTIONS.md` §14); any Justfile change handed
+back.
 
 ## Open points
 

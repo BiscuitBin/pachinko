@@ -59,6 +59,13 @@ on the day.
    dereferencing annotated tags). Keep L's versions unless one is withdrawn; a newer
    version is Renovate's to propose (T17).
 4. `just lint` (actionlint runs over the workflows), then `just check`.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the workflows and the setup action,
+   before step 5 pushes them. Ask: which delta from L goes beyond `CONVENTIONS.md` §10;
+   whether every SHA is its tag's commit, with annotated tags dereferenced; whether
+   `check`'s `needs` lists every gate job and nothing optional; whether every job that
+   runs an allium recipe runs `just install-allium` first; whether any job's permissions
+   exceed L's.
 5. **Authorisation required: push and open a pull request.** Stop and ask. On approval,
    push the branch and open a pull request against `main`. Wait for the run.
 6. Read the result: every gate job and `check` green; `gh pr checks` lists `check`;
@@ -75,6 +82,8 @@ on the day.
 - `pages.yml` deployed on `main`, and the root index links to `libpachinko` and `pachinko`.
 - Every `uses:` names a 40-character SHA with a version comment.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -92,7 +101,8 @@ The `rg` pipeline must print nothing.
 ## Hand-back notes
 
 To be written by the executing agent: the pins and the day they were read, the run URLs,
-the outcome of `CONVENTIONS.md` §12 claim 5, the cache evidence, and the Pages URL.
+the outcome of `CONVENTIONS.md` §12 claim 5, the cache evidence, the Pages URL, and the
+review record for each checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 

@@ -67,9 +67,15 @@ quality-philosophy page says why.
    names as this repository's.
 4. `just mutants`; quote the summary. Every mutant must be caught or unviable; a missed
    one is a missing test, added in this ticket, in the crate it belongs to.
-5. `just check`, then **authorisation required: push and open a pull request**. After the
-   merge, a `workflow_dispatch` of `mutants.yml` (separately authorised); download and
-   read the artefact.
+5. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   **authorisation required: push and open a pull request**. After the merge, a
+   `workflow_dispatch` of `mutants.yml` (separately authorised); download and read the
+   artefact.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff and the mutant summary,
+   before the push. Ask: which missed mutant was explained away rather than tested;
+   whether the cargo-mutants pin is the conda-forge build step 2 verified, with no `rust`
+   dependency.
 
 ## Acceptance criteria
 
@@ -78,6 +84,8 @@ quality-philosophy page says why.
   alone.
 - The worktree after `just mutants` differs only by `mutants.out/`, which Git ignores.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -91,8 +99,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the pin and the day, the mutant summary, any test
-added for a missed mutant, the dispatch run URL, and where this ticket departed from L's
-draft.
+added for a missed mutant, the dispatch run URL, the review record for each checkpoint
+(`CONVENTIONS.md` §14), and where this ticket departed from L's draft.
 
 ## Open points
 

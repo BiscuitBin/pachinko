@@ -147,6 +147,14 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
    line names a crate `CONVENTIONS.md` §9 bans, and prints one line saying the std-API
    bans and the fixture probe arrive with T10. This is the whole of gate 8 until T10.
 
+   **Adversarial review** (`CONVENTIONS.md` §14): the files that freeze when this ticket
+   merges: `rust-toolchain.toml`, the `Justfile`, both prek configurations, `tools.txt`,
+   `tools-source.txt`, `crates/pachinko/src/main.rs` and the pins in `pyproject.toml`,
+   with `scripts/check-effects.sh`, which T10 builds on. Ask: which delta from L goes
+   beyond `CONVENTIONS.md` §2, §4 and §5; which recipe a lane will need changed after the
+   freeze; whether the effects script can pass while libpachinko depends on a banned
+   crate.
+
 7. **The specification.** Write `docs/specs/pachinko.allium` (`CONVENTIONS.md` §9). Run
    `just check-specs` and `just analyse-specs`; this is `CONVENTIONS.md` §12 claim 1. If
    allium rejects a module with no declarations, apply §9's fallback and record it.
@@ -178,6 +186,13 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     freezes. For claim 12, run `just effects` with
     `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9`.
 
+    **Adversarial review** (`CONVENTIONS.md` §14): the whole tree, before step 12 commits
+    it. Ask: which acceptance criterion is asserted but not shown; whether the evidence
+    for `CONVENTIONS.md` §12 claims 1, 3, 4, 10, 11 and 12 proves each claim; whether the
+    adapters, the bridges and `.claude/settings.json` are byte-identical to L's; which
+    stub has fewer than 40 real words; what the acceptance criteria's `pawdoku`, `sudoku`
+    and `wasm` grep prints.
+
 12. **A fresh clone.** Commit, clone the worktree into `ai_tmp/fresh`, and run
     `just initialize` then `just check` there, so that nothing green depends on a file
     outside Git. Delete `ai_tmp/fresh` afterwards.
@@ -196,6 +211,8 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
   prints nothing, or only lines the hand-back notes justify (a carried record's
   "Carried from libpawdoku" opening is one).
 - Every path in the Files-touched table exists; no path outside it was created.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -219,7 +236,8 @@ Quote each command's output in the hand-back notes, and the fresh-clone `just ch
 To be written by the executing agent: the toolchain pin and the date it was read; any
 lint the new stable forced, and the change made; the outcome of each `CONVENTIONS.md` §12
 claim this ticket checked (1, 3, 4, 10, 11, 12); every deviation from L's files beyond
-the stated deltas, and why; and anything handed back to a lane.
+the stated deltas, and why; the review record for each checkpoint (`CONVENTIONS.md` §14);
+and anything handed back to a lane.
 
 ## Open points
 

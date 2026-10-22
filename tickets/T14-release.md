@@ -81,6 +81,11 @@ maintenance page say how a release is cut.
    own subsection; prove it in step 7 and record it in decision 0016. If cargo-release
    cannot target one crate's subsection cleanly, stop and hand back: per-crate files are
    new paths this ticket does not list.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the CHANGELOG shape and each crate's
+   `pre-release-replacements`, before `release.yml` and step 7's proof depend on them.
+   Ask: whether a release of one crate can rewrite the other's subsection; whether the
+   shape survives a release of each crate in turn.
 5. **`release.yml`.** `on: push: tags: ['libpachinko-v*', 'pachinko-v*']`;
    `permissions: contents: write` on the one job and nothing else; the composite setup
    action; `just install-allium` (the setup action leaves it out, `CONVENTIONS.md` §10);
@@ -98,8 +103,15 @@ maintenance page say how a release is cut.
    steps are local and which CI does, and which are separately authorised (the tag push).
    Decision 0016: cargo-release over release-plz (the draft's evidence), per-crate tags,
    a GitHub Release instead of crates.io, and what would reopen it.
-9. `just check`, then **authorisation required: push and open a pull request**. A real
-   tag push to exercise `release.yml` is a further, separate authorisation.
+9. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   **authorisation required: push and open a pull request**. A real tag push to exercise
+   `release.yml` is a further, separate authorisation.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
+   whether `release.yml` grants anything beyond `contents: write` on its one job, and
+   whether its trigger can fire on anything but a crate tag; how the token is used, and
+   whether it can reach a log; whether the semver baseline before and after the first
+   release is the one step 6 states.
 
 ## Acceptance criteria
 
@@ -107,6 +119,8 @@ maintenance page say how a release is cut.
 - `just semver` is green and its output quoted, in both baseline forms.
 - `release.yml` passes actionlint and grants `contents: write` to its one job only.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -121,8 +135,9 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the pins and the day, the CHANGELOG shape chosen
-and why, the scratch-clone transcript, the outcome of `CONVENTIONS.md` §12 claim 7, and
-where this ticket departed from L's draft.
+and why, the scratch-clone transcript, the outcome of `CONVENTIONS.md` §12 claim 7, the
+review record for each checkpoint (`CONVENTIONS.md` §14), and where this ticket departed
+from L's draft.
 
 ## Open points
 

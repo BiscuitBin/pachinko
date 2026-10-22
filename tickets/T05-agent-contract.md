@@ -80,7 +80,13 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 5. **The vendoring.** Copy L `skills-lock.json` and L `allium-skill-reference/` verbatim.
    Confirm `.gitattributes`, `.markdownlint-cli2.jsonc`, `lychee.toml` and `_typos.toml`
    already exclude `allium-skill-reference/` (T00 copied L's); if not, hand it to T03.
-6. `just check-agents`, `just check-docs`, `just check`, then commit.
+6. `just check-agents`, `just check-docs`, `just check`, the final adversarial review,
+   `just check` again if fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: whether
+   `AGENTS.md` carries the nine invariants of `CONVENTIONS.md` §7 verbatim and the six
+   phrases of §1 fact 2; which recipe a file names that the `Justfile` does not define;
+   whether a vendored skill changed beyond the lines step 4 states.
 
 ## Acceptance criteria
 
@@ -88,6 +94,8 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 - `rg -n -i 'pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/` prints nothing.
 - `diff -r` against L's `allium-skill-reference/` and `skills-lock.json` is empty.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -102,8 +110,9 @@ just check
 
 ## Hand-back notes
 
-To be written by the executing agent: each adaptation to a vendored skill, with its
-line; the facts `docs/reference/agent-contract.md` (T08) needs; anything handed back.
+To be written by the executing agent: each adaptation to a vendored skill, with its line;
+the facts `docs/reference/agent-contract.md` (T08) needs; the review record for each
+checkpoint (`CONVENTIONS.md` §14); anything handed back.
 
 ## Open points
 

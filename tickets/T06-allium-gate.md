@@ -71,7 +71,13 @@ spec pages describe the workflow the first real module will follow.
 6. **`specifications.md`.** L's argument that the specifications decide behaviour; the
    state today (one module, no behaviour) and what changes when the first lands. Cite
    decision 0002.
-7. `just check-docs`, `just check`, then commit.
+7. `just check-docs`, `just check`, the final adversarial review, `just check` again if
+   fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff and step 4's quoted
+   failures. Ask: whether the empty-result green could still be a silent pass that step 4
+   does not rule out; whether the waiver terms in `work-with-the-specs.md` are L's,
+   verbatim.
 
 ## Acceptance criteria
 
@@ -80,6 +86,8 @@ spec pages describe the workflow the first real module will follow.
 - `just plan-spec pachinko` exits 0; its output is quoted.
 - Step 4's two failures are quoted.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -95,8 +103,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the binary version and checksum, each recipe's
-output, the two proofs that the gate fires, and the outcome of `CONVENTIONS.md` §12
-claim 1.
+output, the two proofs that the gate fires, the outcome of `CONVENTIONS.md` §12 claim 1,
+and the review record for each checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 

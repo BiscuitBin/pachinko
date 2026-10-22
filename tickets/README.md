@@ -95,22 +95,28 @@ The graph is acyclic: T00, then ten wave-1 lanes, then T11, then wave 2.
 3. Edit only the files the ticket lists, plus the `status:` line and hand-back notes of
    the ticket itself. A change needed elsewhere is handed back, not made.
 4. Run the ticket's verification commands and quote their output in the hand-back notes.
-5. Commit on the ticket branch. Pushing and opening the pull request are separately
+5. At each **Adversarial review** the ticket marks, follow `CONVENTIONS.md` §14 before
+   going on.
+6. Commit on the ticket branch. Pushing and opening the pull request are separately
    authorised: stop and ask.
 
 ## Definition of done
 
 `just check` is green in this repository, the ticket's acceptance criteria are met, its
-verification commands ran with the output quoted in the hand-back notes, every open point
-is answered or explicitly carried forward, and the ticket's `status:` is `done` in the
-same pull request. A ticket is done when its gate passes, not when its files exist.
+verification commands ran with the output quoted in the hand-back notes, the adversarial
+reviews the ticket names have run (`CONVENTIONS.md` §14) and every valid finding is fixed
+or handed back, every open point is answered or explicitly carried forward, and the
+ticket's `status:` is `done` in the same pull request. A ticket is done when its gate
+passes, not when its files exist.
 
 ## Ticket format
 
 Every ticket carries frontmatter (`id`, `title`, `status`, `depends_on`, `parallel_with`,
 `branch`, `estimated_size`) and these sections in this order: Context, Goal, Non-goals,
 Files touched, Steps, Acceptance criteria, Verification, Hand-back notes, Open points.
-Files touched is a table whose first cell is the path as a code span. Repository paths
-and URLs are written as code spans, never as links, because the hook gate runs lychee
-offline over this directory. A source file is cited as its letter and a code span,
-L `Justfile`, so that every citation can be checked against its pinned commit.
+Files touched is a table whose first cell is the path as a code span. Steps mark each
+review checkpoint with a bold **Adversarial review** paragraph that cites
+`CONVENTIONS.md` §14. Repository paths and URLs are written as code spans, never as
+links, because the hook gate runs lychee offline over this directory. A source file is
+cited as its letter and a code span, L `Justfile`, so that every citation can be checked
+against its pinned commit.

@@ -61,13 +61,19 @@ Keep a Changelog form with one `[Unreleased]` section describing the foundation;
    not, name the maintainer's contact the maintainer gives).
 5. **The crate READMEs.** Each says what the crate is for, that its API is one item
    today, and where its rustdoc is.
-6. `just check-docs`, `just check`, then commit.
+6. `just check-docs`, `just check`, the final adversarial review, `just check` again if
+   fixes landed, then commit.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the five files. Ask: which entry point
+   describes a recipe, page, badge, link or feature that does not exist on `main`.
 
 ## Acceptance criteria
 
 - Every link in the five files resolves (`just check-links-online`, network, authorised).
 - Nothing in them describes a feature that does not exist on `main`.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -79,7 +85,8 @@ just check
 
 ## Hand-back notes
 
-To be written by the executing agent: the link check output and anything handed back.
+To be written by the executing agent: the link check output, the review record for each
+checkpoint (`CONVENTIONS.md` §14), and anything handed back.
 
 ## Open points
 

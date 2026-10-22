@@ -91,8 +91,14 @@ and `just check` stays green.
 6. Confirm `just deps-unused`, `just deny`, `just features` and `just coverage` are still
    green with divan present (divan is dev-only, outside cargo-deny's graph per `deny.toml`'s
    `exclude-dev`).
-7. `just check`, then **authorisation required: push and open a pull request**. After the
-   merge, a `workflow_dispatch` of `fuzz.yml` (separately authorised).
+7. `just check`, the final adversarial review, `just check` again if fixes landed, then
+   **authorisation required: push and open a pull request**. After the merge, a
+   `workflow_dispatch` of `fuzz.yml` (separately authorised).
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
+   whether the fuzz crate stays outside the workspace; whether the evidence for
+   `CONVENTIONS.md` §12 claim 8 shows the pinned stable; whether step 6's gates are green
+   with divan present, and quoted.
 
 ## Acceptance criteria
 
@@ -101,6 +107,8 @@ and `just check` stays green.
   the pin.
 - `fuzz.yml` is not in `check`'s `needs`.
 - `just check` is green.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -115,8 +123,9 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: the pins and the day, divan's maintenance status,
-both outputs, the outcome of `CONVENTIONS.md` §12 claim 8, the dispatch run URL, and where
-this ticket departed from L's drafts.
+both outputs, the outcome of `CONVENTIONS.md` §12 claim 8, the dispatch run URL, the
+review record for each checkpoint (`CONVENTIONS.md` §14), and where this ticket departed
+from L's drafts.
 
 ## Open points
 

@@ -54,6 +54,11 @@ T16 and T13, which start after this ticket; T17 records them.
 1. Create the worktree after T01 to T10 have merged.
 2. **Reconcile.** Read every lane's hand-back notes. For each item handed back or written
    to the design, find it on `main` and make it true; list each with its resolution.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the reconciliation list, with every
+   lane's hand-back notes beside it in the brief instead of a diff. Ask: which item
+   handed back, or sentence written to the design, is missing from the list; which
+   resolution is claimed but not on `main`.
 3. **Fresh clone from the remote.** `git clone https://github.com/BiscuitBin/pachinko
    ai_tmp/fresh`, then `just initialize` (network, authorised) and `just check` there.
    Quote the whole `check` output.
@@ -66,6 +71,10 @@ T16 and T13, which start after this ticket; T17 records them.
    its outcome, the ticket that checked it and where the evidence is quoted; claims 7 to
    9 stay open, marked as T17's. Carry it into `CONVENTIONS.md` §12 through a `main` pull
    request.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the claims table, before its `main`
+   pull request is asked for. Ask: which outcome is not backed by evidence quoted in a
+   ticket's hand-back notes; which outcome claims more than its quoted evidence shows.
 7. **Cleanliness.** `rg -n -i 'stub|lands with T|arrive with T|TODO'` over `docs/`,
    `AGENTS.md`, `.agents/` and the crates prints only sentences that name a wave-2 ticket
    or the specifications; `rg -n -i 'pawdoku|sudoku|wasm'` outside `tickets/` and
@@ -79,6 +88,8 @@ T16 and T13, which start after this ticket; T17 records them.
 - Every `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 has an outcome; claims 7 to 9
   are marked open for T17.
 - Step 7's searches print only what the hand-back notes justify.
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+  fixed or handed back.
 
 ## Verification
 
@@ -92,7 +103,8 @@ rg -n -i 'stub|lands with T|arrive with T|TODO' docs AGENTS.md .agents crates
 ## Hand-back notes
 
 To be written by the executing agent: the reconciliation list, the fresh-clone output,
-the run URLs, the red pull request's number and refusal, and the claims table.
+the run URLs, the red pull request's number and refusal, the claims table, and the review
+record for each checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 
