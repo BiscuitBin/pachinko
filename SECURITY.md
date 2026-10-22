@@ -1,0 +1,3 @@
+# Security policy
+
+This policy is a stub that ticket T12 replaces. The finished policy will explain how to report a suspected vulnerability privately through GitHub's private vulnerability reporting rather than a public issue, which versions are supported (only `main` until a release exists), what is in scope and what is out of scope, and what the project already does to protect itself: `#![forbid(unsafe_code)]` in every crate, a library that performs no effect itself, a committed `Cargo.lock` with every gate run under `--locked`, `cargo deny`, pinned tools and actions, and secret scanning on every commit.

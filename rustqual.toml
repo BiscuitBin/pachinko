@@ -1,0 +1,82 @@
+# The `metrics` gate's configuration (decision 0012 records every number and why).
+# Globs resolve against the target directory, so `just metrics` runs rustqual from the
+# repository root once per crate, as `rustqual crates/libpachinko --config rustqual.toml`
+# and `rustqual crates/pachinko --config rustqual.toml`. IOSP has no `enabled` key and
+# always runs.
+#
+# The rule of this file: every key that can fail the gate is written here, with a
+# value that was chosen, and none is left to rustqual's default. Three keys are left
+# out because they cannot fail it: `fail_on_warnings`, which the `metrics` recipe
+# passes as a flag; `allow_expect`, inert while `detect_error_handling` is off; and
+# `[weights]`, which only shapes a score no recipe sets a floor for.
+
+# Recursion stays an IOSP finding: a search keeps an explicit stack (decision 0012).
+allow_recursion = false
+# Closures, iterator chains and `?` are idiomatic Rust, not logic for IOSP to count.
+strict_closures = false
+strict_iterator_chains = false
+strict_error_propagation = false
+max_suppression_ratio = 0.05
+
+# A `qual:allow(dim, target=N)` pin more than this far above the value it covers is a
+# finding, so a pin cannot quietly absorb later growth.
+[suppression]
+pin_headroom = 0.10
+
+[architecture]
+enabled = true
+
+[complexity]
+enabled = true
+max_cognitive = 15
+max_cyclomatic = 10
+max_nesting_depth = 4
+max_function_lines = 60
+# The nesting increment is what makes the measure SonarSource's cognitive complexity.
+include_nesting_penalty = true
+detect_magic_numbers = false
+# Owned elsewhere: `unsafe_code = "forbid"` in the workspace lint table.
+detect_unsafe = false
+# Owned elsewhere: clippy's unwrap_used, expect_used and panic, in the same table.
+detect_error_handling = false
+
+[srp]
+enabled = true
+max_parameters = 5
+lcom4_threshold = 2
+max_fields = 12
+max_methods = 20
+# Per struct, an input to the composite score; [coupling].max_fan_out is per module.
+max_fan_out = 10
+smell_threshold = 0.6
+weights = [0.4, 0.25, 0.15, 0.2]
+# Code lines before the first #[cfg(test)]; comments, docs and blanks are not counted.
+file_length = 500
+max_independent_clusters = 2
+min_cluster_statements = 5
+
+# Test code is held to looser limits: a table of cases or a grid literal is long
+# without being complex. Unset, each key would inherit the production value.
+[tests]
+max_function_lines = 100
+file_length = 1000
+
+[coupling]
+enabled = true
+# Applies to modules something imports; rustqual exempts the rest.
+max_instability = 0.8
+max_fan_in = 15
+max_fan_out = 12
+check_sdp = true
+
+[duplicates]
+enabled = false
+
+[boilerplate]
+enabled = false
+
+[test_quality]
+enabled = false
+
+[structural]
+enabled = false

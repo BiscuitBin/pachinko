@@ -1,0 +1,7 @@
+[toolchain]
+# An exact stable release, bumped deliberately. `channel = "stable"` would move the
+# clippy lint set every six weeks and break `-D warnings` with no diff. rust-version
+# in Cargo.toml follows this pin until a crate is first published.
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]

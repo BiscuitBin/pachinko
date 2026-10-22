@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "pages": [
+    {"path": "README.md", "title": "Documentation map", "kind": "project", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["documentation_navigation"], "requires": []},
+
+    {"path": "project/purpose-and-scope.md", "title": "Purpose and scope", "kind": "project", "audience": ["user", "contributor", "maintainer", "agent"], "canonical_for": ["project_purpose", "project_non_goals"], "requires": []},
+    {"path": "project/repository-map.md", "title": "Repository map", "kind": "project", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["repository_layout"], "requires": []},
+    {"path": "project/terminology.md", "title": "Terminology", "kind": "project", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["project_terminology"], "requires": []},
+
+    {"path": "tutorials/first-change.md", "title": "Make your first change", "kind": "tutorial", "audience": ["contributor", "agent"], "canonical_for": ["first_change_tutorial"], "requires": []},
+
+    {"path": "how-to/develop-locally.md", "title": "Develop locally", "kind": "how-to", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["local_development"], "requires": []},
+    {"path": "how-to/test-and-debug.md", "title": "Test and debug", "kind": "how-to", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["test_workflow"], "requires": []},
+    {"path": "how-to/work-with-the-specs.md", "title": "Work with the specifications", "kind": "how-to", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["specification_workflow"], "requires": []},
+    {"path": "how-to/maintain-dependencies.md", "title": "Maintain dependencies", "kind": "how-to", "audience": ["maintainer", "agent"], "canonical_for": ["dependency_maintenance"], "requires": []},
+    {"path": "how-to/deploy-to-github-pages.md", "title": "Deploy to GitHub Pages", "kind": "how-to", "audience": ["maintainer", "operator", "agent"], "canonical_for": ["deployment_procedure"], "requires": []},
+
+    {"path": "explanation/architecture.md", "title": "Architecture", "kind": "explanation", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["system_architecture"], "requires": []},
+    {"path": "explanation/layering.md", "title": "Layering and dependency direction", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["dependency_boundaries"], "requires": []},
+    {"path": "explanation/specifications.md", "title": "Specifications", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["specification_model"], "requires": []},
+    {"path": "explanation/security-model.md", "title": "Security model", "kind": "explanation", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["security_model"], "requires": []},
+    {"path": "explanation/quality-philosophy.md", "title": "Quality philosophy", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_philosophy"], "requires": []},
+
+    {"path": "reference/commands.md", "title": "Commands", "kind": "reference", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["command_reference"], "requires": []},
+    {"path": "reference/configuration.md", "title": "Configuration", "kind": "reference", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["configuration_reference"], "requires": []},
+    {"path": "reference/testing.md", "title": "Testing", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["testing_reference"], "requires": []},
+    {"path": "reference/quality-gates.md", "title": "Quality gates", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_gate_reference"], "requires": []},
+    {"path": "reference/documentation-contract.md", "title": "Documentation contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["documentation_contract"], "requires": []},
+    {"path": "reference/agent-contract.md", "title": "Agent contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["agent_contract"], "requires": []},
+    {"path": "reference/api.md", "title": "API reference", "kind": "reference", "audience": ["user", "contributor", "maintainer", "agent"], "canonical_for": ["api_reference"], "requires": []},
+
+    {"path": "operations/maintenance.md", "title": "Maintenance", "kind": "operations", "audience": ["maintainer", "operator", "agent"], "canonical_for": ["maintenance_routine"], "requires": []},
+    {"path": "operations/troubleshooting.md", "title": "Troubleshooting", "kind": "operations", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["troubleshooting"], "requires": []},
+
+    {"path": "decisions/README.md", "title": "Architecture decisions", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_index"], "requires": []},
+    {"path": "decisions/0001-library-and-service.md", "title": "Decision 0001: A library and a service in one workspace", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_library_and_service"], "requires": []},
+    {"path": "decisions/0002-specs-are-the-source-of-truth.md", "title": "Decision 0002: Specifications decide behaviour", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_spec_first"], "requires": []},
+    {"path": "decisions/0003-effects-behind-traits.md", "title": "Decision 0003: Effects behind traits", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_ports_and_fakes"], "requires": []},
+    {"path": "decisions/0004-hook-runner-and-checkers.md", "title": "Decision 0004: Hook runner and checkers", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_python_toolchain"], "requires": []},
+    {"path": "decisions/0005-project-managed-allium-cli.md", "title": "Decision 0005: A project-managed Allium binary", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_allium_cli"], "requires": []},
+    {"path": "decisions/0006-apache-2-0.md", "title": "Decision 0006: Apache-2.0", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_license"], "requires": []},
+    {"path": "decisions/0007-dependency-policy.md", "title": "Decision 0007: Dependency policy: caret ranges and `Cargo.lock`", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_dependency_policy"], "requires": []},
+    {"path": "decisions/0008-std-library.md", "title": "Decision 0008: A std library, with effects kept out mechanically", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_std_library"], "requires": []},
+    {"path": "decisions/0009-rust-quality-gate.md", "title": "Decision 0009: The Rust quality gate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_rust_gate"], "requires": []},
+    {"path": "decisions/0010-skill-reference-material.md", "title": "Decision 0010: Skill reference material beside the skills", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_skill_reference"], "requires": []},
+    {"path": "decisions/0011-tool-manager.md", "title": "Decision 0011: Tool manager", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_tool_manager"], "requires": []},
+    {"path": "decisions/0012-metrics-gate.md", "title": "Decision 0012: The metrics gate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_metrics_gate"], "requires": []},
+    {"path": "decisions/0013-api-reference-on-github-pages.md", "title": "Decision 0013: The API reference on GitHub Pages", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_api_reference_on_pages"], "requires": []},
+    {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: The service runtime waits for the specifications", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_service_runtime_deferred"], "requires": []}
+  ]
+}

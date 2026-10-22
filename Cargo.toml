@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/BiscuitBin/pachinko"
+homepage = "https://github.com/BiscuitBin/pachinko"
+authors = ["Steven Cutting"]
+publish = false
+
+# Every level here is `warn` so a local build never breaks mid-edit; `just clippy`
+# passes `-D warnings`, which is where a warning becomes a failure.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+non_ascii_idents = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+unnameable_types = "warn"
+unused_qualifications = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+missing_crate_level_docs = "warn"
+unescaped_backticks = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+missing_const_for_fn = "warn"
+use_self = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+tests_outside_test_module = "warn"
+mod_module_files = "warn"
+iter_over_hash_type = "warn"
+str_to_string = "warn"
+lossy_float_literal = "warn"
+float_cmp_const = "warn"
+same_name_method = "warn"
+# A restriction lint, so the pedantic group does not enable it; clippy.toml sets its threshold.
+cognitive_complexity = "warn"
+# A type named after its module reads better in a signature than its stem alone;
+# the lint would rename it.
+module_name_repetitions = "allow"
+# cargo-deny's bans.multiple-versions owns this check.
+multiple_crate_versions = "allow"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.test]
+opt-level = 1
