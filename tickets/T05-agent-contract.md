@@ -31,7 +31,8 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 ## Non-goals
 
 - No change to `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/settings.json` or
-  any bridge (frozen).
+  any bridge (frozen), and none to any skill's frontmatter, which the bridges repeat and
+  T00 wrote final (`CONVENTIONS.md` §7).
 - No new skill and no removed skill: the fourteen are fixed by T00's stubs.
 - No handbook page. `docs/reference/agent-contract.md` is T08's; this lane hands it the
   facts it needs in the hand-back notes.
@@ -43,7 +44,7 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 | Path | Class | Content |
 | --- | --- | --- |
 | `AGENTS.md` | final | L's, adapted per `CONVENTIONS.md` §7 |
-| `.agents/skills/rust-change/SKILL.md` | final | two crates, the effects boundary |
+| `.agents/skills/rust-change/SKILL.md` | final | body: two crates, the effects boundary |
 | `.agents/skills/spec-change/SKILL.md` | final | one placeholder module |
 | `.agents/skills/plan-change/SKILL.md` | final | L's |
 | `.agents/skills/review-change/SKILL.md` | final | invariants of `CONVENTIONS.md` §7 in the checklist |
@@ -91,7 +92,8 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 ## Acceptance criteria
 
 - `just check-agents` prints `Validated AGENTS.md, 2 adapters, and 14 skills.`
-- `rg -n -i 'pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/` prints nothing.
+- `rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/` prints nothing. The
+  pattern skips `libpawdoku`, which step 2's Provenance names as the source.
 - `diff -r` against L's `allium-skill-reference/` and `skills-lock.json` is empty.
 - `just check` is green.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
@@ -101,7 +103,7 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
 
 ```sh
 just check-agents
-rg -n -i 'pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/
+rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/
 mkdir -p ai_tmp/l
 git -C /Users/scutting/projects/libpawdoku archive ccdd001 allium-skill-reference skills-lock.json | tar -x -C ai_tmp/l
 diff -r ai_tmp/l/allium-skill-reference allium-skill-reference && diff ai_tmp/l/skills-lock.json skills-lock.json

@@ -92,9 +92,11 @@ Facts, each verified in source on 2026-10-21, that shape the mechanism:
 3. **cargo-deny's `wrappers` names direct parents only.** `wrappers = ["pachinko"]` lets
    `pachinko` name `tokio` itself, but a `tokio` that arrives through another crate
    `pachinko` depends on is still denied, and a banned crate that arrives in libpachinko
-   through an allowed one is caught only if the ban lists it. So `deny.toml` is a
-   convenience layer for the effect crates; the authoritative check walks libpachinko's
-   normal dependency tree (§9).
+   through an allowed one is caught only if the ban lists it. `wrappers` cannot say
+   "anything under `pachinko`", so a workspace-wide ban would reject the service's own
+   transitives (`pachinko -> axum -> tokio`). `deny.toml` therefore carries no
+   effect-crate bans; the only crate check walks libpachinko's normal dependency tree
+   (§9).
 4. **clippy's `disallowed-methods` and `disallowed-types` take item paths, not modules.**
    Banning `std::fs` through clippy means listing `std::fs::File`, `std::fs::read` and the
    rest; rustqual's `forbid_path_prefix` (L `rustqual.toml`, the `[[architecture.pattern]]`
@@ -369,7 +371,7 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 | `docs/reference/configuration.md` | T08 | same | Both manifests, the lint table, `deny.toml`, the floor, the pixi manifest, both tool lists, the effects script |
 | `docs/reference/testing.md` | T08 | same | nextest, doctests, the binary test, coverage scope, fakes through the trait, the insta rule waiting for its first snapshot |
 | `docs/reference/quality-gates.md` | T08 | same | The nineteen gates of §4 |
-| `docs/reference/documentation-contract.md` | T08 | same | Verbatim |
+| `docs/reference/documentation-contract.md` | T08 | same | L's rules verbatim; "Links that leave the repository" names only the outward pages that exist here: decision 0005, `api.md`, `deploy-to-github-pages.md` |
 | `docs/reference/agent-contract.md` | T08 | same | Fourteen skills |
 | `docs/reference/api.md` | T08 | same | rustdoc for both crates, `just doc`, `just site`, Pages |
 | `docs/operations/maintenance.md` | T08 | same | L's routine |
@@ -402,7 +404,12 @@ L's third invariant (errors are thiserror enums) waits for the first error type;
 fifth (wasm) is dropped. The Provenance section keeps L's sentence containing `runes`.
 
 Skills, canonical under `.agents/skills/<name>/SKILL.md`, each with a bridge under
-`.claude/skills/` and `.codex/skills/` whose body is B's `BRIDGE_BODY`:
+`.claude/skills/` and `.codex/skills/` whose body is B's `BRIDGE_BODY`. The bridges
+repeat the canonical frontmatter, which B's `_check_skills` compares, and they freeze at
+T00, so T00 writes the final frontmatter: L's for every skill except `rust-change`, whose
+description, in the canonical file and both bridges, is `Implement or review a change to
+either crate with the effects boundary, tests and documentation evidence the invariants
+require.`
 
 | Skill | From L | Change |
 | --- | --- | --- |
@@ -470,16 +477,18 @@ What is banned, in libpachinko only:
 - **Crates**, through its normal dependency tree: `rand`, `rand_core`, `getrandom`,
   `tokio`, `async-std`, `smol`, `mio` and `socket2`, and any crate T10 adds with a
   reason. Development dependencies are exempt, so a test may use a seeded generator.
-- **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`, everything under
-  `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn` and
-  `std::thread::Builder`.
+- **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`,
+  `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`, everything under
+  `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn`,
+  `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder`. Standard I/O
+  (`std::io::stdin` and the rest) is not banned: decision 3 does not name it.
 
 The mechanism is T10's choice among these, decided by evidence (§12 claim 2):
 
 - **Crates:** a `cargo tree -p libpachinko -e normal --prefix none --locked --offline`
   line in `scripts/check-effects.sh` that must match none of the banned names (covers
-  transitives, scoped to libpachinko by construction), with `deny.toml`'s `[bans]`
-  entries carrying `wrappers = ["pachinko"]` as the convenience layer T02 writes.
+  transitives, scoped to libpachinko by construction). It is the only crate guard;
+  `deny.toml` bans no effect crate (§1 fact 3).
 - **std APIs:** either clippy's `disallowed-methods` and `disallowed-types` in a
   `crates/libpachinko/clippy.toml`, if clippy reads that file for libpachinko alone
   (it then restates every key of the root `clippy.toml`, because clippy uses the first
@@ -494,7 +503,10 @@ Whatever the mechanism, `scripts/check-effects.sh`:
 1. Checks libpachinko and exits non-zero on any finding.
 2. Checks `tests/fixtures/effects-violation/`, which breaks every ban exactly once, in the
    form the tool resolves (a `use std::fs; fs::read(..)` as well as a full path where a
-   prefix rule would miss one), and fails unless every named ban fires there. The crate
+   prefix rule would miss one, and a method call such as `i.elapsed()`, which has no path
+   for a prefix rule to match), and fails unless every named ban fires there. `elapsed`
+   is broken as `fn f(i: Instant) { i.elapsed(); }`, so that the `now` ban does not fire a
+   second time. The crate
    bans are probed by the same `cargo tree` line, run over the fixture with
    `--manifest-path`: the fixture is its own workspace with a committed `Cargo.lock`, and
    each banned crate is an offline path-dependency stub, one of them reached only
@@ -517,8 +529,9 @@ at `ccdd001`, with these changes:
   binary is the documents job's own step". Any job that runs `just check`, `lint`,
   `check-specs` or `analyse-specs` runs `just install-allium` after the setup action:
   L's `documents` job, T00's one-job stub and T14's `release.yml`.
-- Every `uses:` keeps a full SHA with a version comment, re-read on the day T04 runs
-  (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
+- Every remote `uses:` keeps a full SHA with a version comment, re-read on the day T04
+  runs (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
+  The local `uses: ./.github/actions/setup` has no pin.
 
 The required check is `check`, the aggregate job, from T01 onward and never anything
 else. A new gate job joins `check`'s `needs` and nothing else moves. In wave 2, T13's
@@ -533,7 +546,10 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   (`ticket/<id>-<slug>`, lowercase) in its own worktree, created from `main` after every
   ticket it depends on has merged. From a Supacode terminal:
   `supacode repo worktree-new --branch <branch> --base main --name <id>`; otherwise
-  `git worktree add ../<id> -b <branch> main`.
+  `git worktree add ../<id> -b <branch> main`. The tools live in the worktree's own
+  gitignored `.pixi/` and `.tools/`, so every new worktree runs `just initialize` (network,
+  authorised); only the primary checkout's run installs the shared hook shim, once,
+  after T00 merges (`README.md`, "How to pick up a ticket").
 - **T00 ships a shape-complete skeleton.** `bg-validate-docs` and `bg-validate-agents`
   can only be green if every page, record and skill exists from the first commit, so T00
   ships a stub for each. Lanes **replace** stubs; they never add, rename or reclassify a
@@ -594,7 +610,7 @@ them only by running the gate.
 | # | Claim | Check | Owner |
 | --- | --- | --- | --- |
 | 1 | allium 3.6.1 reports empty `diagnostics` and `findings` for a module with no declarations | `just check-specs`, `just analyse-specs` on §9's module | T00 first, T06 |
-| 2 | Clippy reads `crates/libpachinko/clippy.toml` for libpachinko alone and shadows rather than merges the root file; rustqual pattern rules can be scoped to one crate by running it over that directory; cargo-deny `wrappers` admits direct parents only | A deliberate violation in a scratch copy, each mechanism in turn | T10 |
+| 2 | Clippy reads `crates/libpachinko/clippy.toml` for libpachinko alone and shadows rather than merges the root file; rustqual pattern rules can be scoped to one crate by running it over that directory | A deliberate violation in a scratch copy, each mechanism in turn | T10 |
 | 3 | L's lint table is green on the new stable | `just clippy` on T00's pin | T00, T02 |
 | 4 | An integration test running `CARGO_BIN_EXE_pachinko` makes `main.rs` count as covered under `cargo llvm-cov nextest`, so the one-line-main shape reaches 90% | `just coverage`, then `cargo llvm-cov report --show-missing-lines` | T00 first, T02 |
 | 5 | B's pixi git dependency installs in `BiscuitBin` CI with no credential | T00's stub run on `main`, read by T01; then T04's full run | T01 first, T04 |

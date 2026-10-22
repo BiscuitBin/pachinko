@@ -50,7 +50,7 @@ boundary explained once (in `architecture.md`) and referred to everywhere else.
 | `docs/reference/configuration.md` | final | every configuration file |
 | `docs/reference/testing.md` | final | nextest, doctests, the binary test, coverage, fakes, snapshots |
 | `docs/reference/quality-gates.md` | final | the nineteen gates |
-| `docs/reference/documentation-contract.md` | final | L's, verbatim |
+| `docs/reference/documentation-contract.md` | final | L's rules verbatim; "Links that leave the repository" names only the outward pages that exist here: decision 0005, `api.md`, `deploy-to-github-pages.md` |
 | `docs/reference/agent-contract.md` | final | fourteen skills |
 | `docs/reference/api.md` | final | rustdoc for both crates |
 | `docs/operations/maintenance.md` | final | L's routine |

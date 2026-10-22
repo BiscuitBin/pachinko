@@ -78,7 +78,8 @@ T16 and T13, which start after this ticket; T17 records them.
 7. **Cleanliness.** `rg -n -i 'stub|lands with T|arrive with T|TODO'` over `docs/`,
    `AGENTS.md`, `.agents/` and the crates prints only sentences that name a wave-2 ticket
    or the specifications; `rg -n -i 'pawdoku|sudoku|wasm'` outside `tickets/` and
-   `allium-skill-reference/` prints only carried-from sentences.
+   `allium-skill-reference/` prints only carried-from sentences and `AGENTS.md`'s
+   Provenance sentence naming libpawdoku as the source.
 8. Delete `ai_tmp/fresh`, set `status: done`, commit.
 
 ## Acceptance criteria

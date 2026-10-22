@@ -61,8 +61,8 @@ The graph is acyclic: T00, then ten wave-1 lanes, then T11, then wave 2.
 - **Wave 1, T01 to T10.** Parallel lanes that share no path (CONVENTIONS.md §3, §11), with
   the frozen files frozen. T04 waits for T01 because its proof run needs the protected
   remote and the Pages source T01 sets; its files can be drafted beside T01. T10 waits
-  for T02 because the clippy configuration and `deny.toml` it builds the bans on are
-  T02's; a libpachinko `clippy.toml`, if T10 chooses one, restates T02's root keys.
+  for T02 because the clippy configuration it builds the bans on is T02's; a libpachinko
+  `clippy.toml`, if T10 chooses one, restates T02's root keys.
 - **T11** reconciles the follow-ups wave 1 handed back to `main` and proves the whole gate
   from a fresh clone and in CI.
 - **T12** writes the entry points last, so they describe what exists.
@@ -88,6 +88,14 @@ The graph is acyclic: T00, then ten wave-1 lanes, then T11, then wave 2.
    ```sh
    git worktree add ../<id> -b <branch> main
    ```
+
+   Then run `just initialize` in the new worktree (network, authorised), except in T00,
+   which creates the `Justfile`. The `Justfile` puts the worktree's own gitignored
+   `.pixi/` and `.tools/` on `PATH`, so a new worktree has no tools until it runs.
+   L `scripts/initialize.sh` skips `install-hooks` in a secondary worktree, so once,
+   after T00 merges and before the first wave-1 worktree, run `just initialize` in the
+   primary checkout on an up-to-date `main`. Only that run installs the shared hook shim
+   and prepares the hook environments.
 
 2. Read `CONVENTIONS.md`, then the ticket. Read the L, B and T files the ticket names at
    the commits `CONVENTIONS.md` §0 pins, with `git -C <clone> show <commit>:<path>`.

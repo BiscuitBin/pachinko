@@ -29,8 +29,8 @@ enough on their own. §12 claims 2, 11 and 12 are this lane's to settle. L
 fixture that breaks each rule once, and a recipe that fails unless every rule fires);
 L `Justfile`'s `metrics` recipe is the probe's shell.
 
-T10 waits for T02 because the clippy configuration and `deny.toml` are T02's: a
-libpachinko `clippy.toml`, if this lane chooses one, must restate T02's final root keys.
+T10 waits for T02 because the clippy configuration is T02's: a libpachinko
+`clippy.toml`, if this lane chooses one, must restate T02's final root keys.
 
 ## Goal
 
@@ -73,7 +73,8 @@ setting is chosen. Both gates are green in `just check`.
    - rustqual: an `[[architecture.pattern]]` with `forbid_path_prefix = ["std::fs"]`, run
      with `rustqual crates/libpachinko --config rustqual-effects.toml`; does it catch `use std::fs;
      fs::read(..)` as well as `std::fs::read(..)`, and a glob import?
-   - cargo-deny: confirm `wrappers` admits direct parents only (`CONVENTIONS.md` §1 fact 3).
+   - both: does each catch `i.elapsed()` on an `Instant` passed in as a parameter, a
+     method call with no path for a prefix rule to match (`CONVENTIONS.md` §9)?
 3. **Choose.** The crate bans are the `cargo tree` check (it is already T00's). For the
    std APIs, choose the mechanism that catches every form step 2 tried, with the fewest
    files. Record the evidence and the choice in the hand-back notes; T11 carries it into
@@ -93,8 +94,8 @@ setting is chosen. Both gates are green in `just check`.
      naming the package and an empty `src/lib.rs` (cargo refuses a manifest with no
      target). Path dependencies need no registry, so nothing is fetched.
    - Every banned name but one is a direct dependency of the fixture. The last arrives
-     transitively, through a non-banned stub, `deps/wrapper/`, that depends on it: the
-     case `CONVENTIONS.md` §1 fact 3 says `deny.toml` alone cannot be trusted with.
+     transitively, through a non-banned stub, `deps/wrapper/`, that depends on it, so the
+     probe shows the `cargo tree` line sees past a direct parent.
    - Its `Cargo.lock` is generated once with
      `cargo generate-lockfile --offline --manifest-path tests/fixtures/effects-violation/Cargo.toml`
      and committed, so `--locked` holds and `check-clean` sees no new file.

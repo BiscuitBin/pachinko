@@ -33,8 +33,8 @@ with a comment for each non-default setting.
 
 - No dependency, so `Cargo.lock` changes only if a manifest field does
   (`CONVENTIONS.md` §11).
-- No effect bans in clippy or rustqual (T10). The crate bans in `deny.toml` stay the
-  convenience layer `CONVENTIONS.md` §1 fact 3 describes.
+- No effect bans in clippy or rustqual (T10), and no effect-crate bans in `deny.toml`:
+  `wrappers` cannot scope a ban to libpachinko (`CONVENTIONS.md` §1 fact 3).
 - No edit to the `Justfile`. A recipe flag found wrong is handed back as a T00 follow-up.
 - No new item in either crate beyond what a proof needs and then removes.
 
@@ -47,7 +47,7 @@ with a comment for each non-default setting.
 | `rustfmt.toml` | final | L's, verified on the pin |
 | `clippy.toml` | final | L's keys, verified on the pin |
 | `taplo.toml` | final | L's excludes |
-| `deny.toml` | final | licences, bans with `wrappers = ["pachinko"]`, sources |
+| `deny.toml` | final | licences, L's `openssl-sys` ban and no effect-crate ban, sources |
 | `.config/nextest.toml` | final | L's profiles |
 | `crates/libpachinko/Cargo.toml` | final | package metadata the `cargo` lint group needs |
 | `crates/libpachinko/src/lib.rs` | final | crate docs, `version()`, tests |
@@ -80,9 +80,10 @@ with a comment for each non-default setting.
    snapshots-check` green on the tree; then add a stray `.snap` file in a scratch commit
    and confirm `--unreferenced reject` fails on it. Record that the first ticket to take
    a snapshot adds `insta` with the decision-0007 note.
-7. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, with `wrappers` naming
-   `pachinko` and the `[graph] targets` list without the wasm target. Run `just deny`
-   offline after `just sync`.
+7. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, without the `getrandom`
+   and `rand` bans (`CONVENTIONS.md` §1 fact 3) and with L's `openssl-sys` ban kept; the
+   `exclude-dev` comment, which cites the dropped ban, reworded; the `[graph] targets`
+   list without the wasm target. Run `just deny` offline after `just sync`.
 8. `just check`, the final adversarial review, `just check` again if fixes landed, then
    commit.
 

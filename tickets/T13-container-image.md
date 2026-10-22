@@ -71,8 +71,10 @@ how-to and decision 0015 say what the image is and is not.
    outside `check`. Then `docker run --rm pachinko:dev` and quote the line it prints.
 5. **The CI job.** `image`, on `ubuntu-latest`, timeout 20: checkout
    (`persist-credentials: false`), `docker/setup-buildx-action`, `docker/build-push-action`
-   with `push: false` and the GitHub Actions cache, each pinned to a SHA read on the day;
-   then `docker run --rm` on the built image. Add `image` to `check`'s `needs`.
+   with `push: false`, `load: true`, `tags: pachinko:dev` and the GitHub Actions cache,
+   each pinned to a SHA read on the day; then `docker run --rm pachinko:dev`. Without
+   `load: true` the `docker-container` driver leaves the image in the BuildKit cache,
+   where `docker run` cannot find it. Add `image` to `check`'s `needs`.
 6. **The docs.** The how-to: prerequisites, `just image`, `docker run`, what the image
    contains and why distroless. Decision 0015: why an image now, why distroless, why no
    push, what would reopen it (a registry, a runtime that needs a shell). Register both in
@@ -91,7 +93,7 @@ how-to and decision 0015 say what the image is and is not.
 - `just image` output is quoted, and `docker run --rm pachinko:dev` prints
   `pachinko <version>` and exits 0.
 - The `image` job is green on the pull request and `check` lists it in `needs`.
-- Every `FROM` line carries a digest; every new `uses:` a SHA with a version comment.
+- Every `FROM` line carries a digest; every new remote `uses:` a SHA with a version comment.
 - `just check` is green.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.

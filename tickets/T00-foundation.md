@@ -68,7 +68,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `rustfmt.toml` | working -> T02 | L `rustfmt.toml` |
 | `clippy.toml` | working -> T02 | L `clippy.toml` |
 | `taplo.toml` | working -> T02 | L `taplo.toml` |
-| `deny.toml` | working -> T02 | L `deny.toml`; `wrappers` name `pachinko`; no wasm target in `[graph]` |
+| `deny.toml` | working -> T02 | L `deny.toml` minus the `getrandom` and `rand` bans; no wasm target in `[graph]` |
 | `.config/nextest.toml` | working -> T02 | L `.config/nextest.toml` |
 | `rustqual.toml` | working -> T10 | L `rustqual.toml` minus every `[[architecture.pattern]]` table and the comments about them |
 | `tools.txt` | final in wave 1 | L `tools.txt`, verbatim |
@@ -91,9 +91,9 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `CLAUDE.md` | final | byte-identical to L `CLAUDE.md` |
 | `.github/copilot-instructions.md` | final | byte-identical to L `.github/copilot-instructions.md` |
 | `.claude/settings.json` | final | byte-identical to L `.claude/settings.json` |
-| `.agents/skills/<14>/SKILL.md` | stub -> T05 | L's frontmatter, stub body |
-| `.claude/skills/<14>/SKILL.md` | final | B's bridge body, as L's |
-| `.codex/skills/<14>/SKILL.md` | final | B's bridge body, as L's |
+| `.agents/skills/<14>/SKILL.md` | stub -> T05 | final frontmatter (`CONVENTIONS.md` §7), stub body |
+| `.claude/skills/<14>/SKILL.md` | final | B's bridge body, as L's; frontmatter per `CONVENTIONS.md` §7 |
+| `.codex/skills/<14>/SKILL.md` | final | B's bridge body, as L's; frontmatter per `CONVENTIONS.md` §7 |
 | `Justfile` | final in wave 1 | `CONVENTIONS.md` §4 |
 | `.pre-commit-config.yaml` | final | L `.pre-commit-config.yaml` |
 | `.pre-commit-fix.yaml` | final | L `.pre-commit-fix.yaml` |
@@ -135,12 +135,24 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 4. **Tool configuration.** Copy the root configuration files the table names from L,
    applying only the stated deltas. Write `tools.txt`, `tools-source.txt` and
    `pyproject.toml` (`CONVENTIONS.md` §2), then `pixi lock` and `pixi install --frozen`
-   (network, authorised). Then `just install-tools` (network; rustqual may compile from
-   source, which L's decision 0013 accepts) and `just install-allium` (network).
+   (network, authorised).
 
 5. **The Justfile and hooks.** Write the `Justfile` as `CONVENTIONS.md` §4 states it: L's
-   text with the listed changes and no others. Copy both prek configurations verbatim.
-   `just install-hooks` (network, authorised).
+   text with the listed changes and no others. Then `just install-tools` (network;
+   rustqual may compile from source, which L's decision 0013 accepts) and
+   `just install-allium` (network). Copy both prek configurations verbatim. Do not run
+   `just install-hooks`: its `prek install` writes the hook shim into the Git directory
+   every worktree shares, which L `scripts/initialize.sh` refuses to do from a secondary
+   worktree. Run the recipe's other lines instead (network, authorised):
+
+   ```sh
+   .pixi/envs/default/bin/prek prepare-hooks
+   .pixi/envs/default/bin/prek prepare-hooks --config .pre-commit-fix.yaml
+   RUSTUP_AUTO_INSTALL=0 .pixi/envs/default/bin/prek run lychee --files README.md || true
+   ```
+
+   The last line ends in `|| true` as the recipe's `-` prefix does. The primary checkout
+   installs the shim after this ticket merges (`README.md`, "How to pick up a ticket").
 
 6. **`scripts/check-effects.sh`.** POSIX `sh`, `set -eu`. It runs
    `cargo tree -p libpachinko -e normal --prefix none --locked --offline`, fails if any
@@ -167,9 +179,12 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 
 9. **The agent contract.** `AGENTS.md` stub: L `AGENTS.md`'s section headings, the six
    phrases of `CONVENTIONS.md` §1 fact 2 each in a real sentence, the runes sentence in
-   Provenance, 300 or more words. Fourteen skill stubs with L's frontmatter (the
-   description states a trigger) and a body that cites `AGENTS.md` and one `just` recipe.
-   Twenty-eight bridges copied from L. The three adapter files copied byte-for-byte.
+   Provenance, 300 or more words. Fourteen skill stubs with the final frontmatter of
+   `CONVENTIONS.md` §7 (L's, except `rust-change`'s description; each description states
+   a trigger) and a body that cites `AGENTS.md` and one `just` recipe. Twenty-eight
+   bridges copied from L, with `rust-change`'s two carrying the new description, because
+   the bridges freeze here and repeat the canonical frontmatter. The three adapter files
+   copied byte-for-byte.
 
 10. **The root documents and CI stub.** `README.md`, `CHANGELOG.md`, `SECURITY.md`, both
     crate READMEs as stubs; `LICENSE`. `.github/workflows/ci.yml`: one job, `name: check`,
@@ -189,7 +204,8 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     **Adversarial review** (`CONVENTIONS.md` §14): the whole tree, before step 12 commits
     it. Ask: which acceptance criterion is asserted but not shown; whether the evidence
     for `CONVENTIONS.md` §12 claims 1, 3, 4, 10, 11 and 12 proves each claim; whether the
-    adapters, the bridges and `.claude/settings.json` are byte-identical to L's; which
+    adapters, the bridges and `.claude/settings.json` are byte-identical to L's, except
+    the `rust-change` bridges' description line (`CONVENTIONS.md` §7); which
     stub has fewer than 40 real words; what the acceptance criteria's `pawdoku`, `sudoku`
     and `wasm` grep prints.
 
@@ -237,7 +253,8 @@ To be written by the executing agent: the toolchain pin and the date it was read
 lint the new stable forced, and the change made; the outcome of each `CONVENTIONS.md` §12
 claim this ticket checked (1, 3, 4, 10, 11, 12); every deviation from L's files beyond
 the stated deltas, and why; the review record for each checkpoint (`CONVENTIONS.md` §14);
-and anything handed back to a lane.
+that the hook shim is not installed and the primary checkout installs it after merge
+(step 5); and anything handed back to a lane.
 
 ## Open points
 

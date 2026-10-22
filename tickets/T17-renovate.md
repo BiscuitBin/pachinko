@@ -58,8 +58,8 @@ proposes and what stays manual; and decision 0018 records it.
 2. **Inventory every pin** on `main`, by file: `Cargo.toml` and both crate manifests,
    `Cargo.lock`, `fuzz/Cargo.toml` and `fuzz/Cargo.lock`, `rust-toolchain.toml` and
    `rust-version`, `pyproject.toml` (pixi pins and the B tag), `pixi.lock`, `tools.txt`,
-   `tools-source.txt`, both prek configurations' revs, every `uses:` in
-   `.github/workflows/` and `.github/actions/`, `setup-pixi`'s `pixi-version`, the
+   `tools-source.txt`, both prek configurations' revs, every remote `uses:` in
+   `.github/workflows/` and `.github/actions/` (the local setup action has no pin), `setup-pixi`'s `pixi-version`, the
    `Dockerfile`'s `FROM` digests, and the allium pin inside B. Mark each: native manager,
    regex manager, or manual with a reason.
 3. **`renovate.json`.** The draft's, with: the `Dockerfile` (Renovate's native

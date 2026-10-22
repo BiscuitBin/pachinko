@@ -28,7 +28,7 @@ and Pages on the free organisation plan.
 
 A pull request on `BiscuitBin/pachinko` runs the gate jobs and the aggregate `check`,
 all green; `audit.yml` runs and is not required; a push to `main` deploys both crates'
-rustdoc to Pages; and every `uses:` is pinned to a full SHA with a version comment read
+rustdoc to Pages; and every remote `uses:` is pinned to a full SHA with a version comment read
 on the day.
 
 ## Non-goals
@@ -80,7 +80,8 @@ on the day.
 
 - The pull request's checks are green and `check` is the required one.
 - `pages.yml` deployed on `main`, and the root index links to `libpachinko` and `pachinko`.
-- Every `uses:` names a 40-character SHA with a version comment.
+- Every remote `uses:` names a 40-character SHA with a version comment; the local
+  `uses: ./.github/actions/setup` has none.
 - `just check` is green.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
@@ -92,7 +93,7 @@ just lint
 gh pr checks <number> --repo BiscuitBin/pachinko
 gh run list --repo BiscuitBin/pachinko --workflow pages.yml --limit 1
 gh api repos/BiscuitBin/pachinko/pages --jq .html_url
-rg -n 'uses: ' .github | rg -v '@[0-9a-f]{40} # '
+rg -n 'uses: ' .github | rg -v 'uses: \./' | rg -v '@[0-9a-f]{40} # '
 just check
 ```
 
