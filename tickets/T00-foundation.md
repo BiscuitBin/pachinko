@@ -17,7 +17,7 @@ plus `tickets/`) becomes the two-crate workspace `CONVENTIONS.md` §0 describes.
 `CONVENTIONS.md` in full first, then `README.md` in this directory.
 
 This is the tracer bullet: one commit that passes through every layer the foundation
-has, in a valid shape, so that ten lanes can then replace stubs in parallel. It has to
+has, in a valid shape, so that six lanes can then replace stubs in parallel. It has to
 be one ticket because B's `bg-validate-docs` and `bg-validate-agents` walk every
 registered page and every skill, and `bg-project-check` snapshots the worktree between
 recipes: `just check` is green only if every path exists from the first commit.
@@ -35,8 +35,9 @@ missing, stop and report it.
 ## Goal
 
 A first commit on `ticket/t00-foundation` after which, in a fresh clone, `just initialize`
-then `just check` are green, with every T00 path in `CONVENTIONS.md` §3 present: final
-content for the frozen files, the licence, the manifest, the map, the adapters and the
+then `just check` are green, and `just lint` passes there with the network blocked, with
+every T00 path in `CONVENTIONS.md` §3 present: final content for the frozen files, the
+dotfiles, the first-run script, the licence, the manifest, the map, the adapters and the
 bridges; a placeholder specification module; and a stub for every page, record, skill,
 root document and working configuration a lane will replace. `cargo nextest run` runs at
 least three tests (libpachinko's unit test, pachinko's unit test, the binary test),
@@ -52,9 +53,9 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 - No final prose. Pages, records, skills, `AGENTS.md`, `README.md`, `CHANGELOG.md`,
   `SECURITY.md` and both crate READMEs are stubs of 40 or more real words that say what
   the file will contain and name the lane that writes it.
-- No effect bans beyond `scripts/check-effects.sh`'s crate line (T10), no final tool
-  configuration beyond what the gate needs (T02, T03), no CI beyond the one-job stub
-  (T04), no repository settings (T01).
+- No effect bans beyond `scripts/check-effects.sh`'s crate line (T10), no final Rust tool
+  configuration beyond what the gate needs (T02), no CI beyond the one-job stub (T01),
+  no repository settings (T01).
 - No wave-2 recipe, file or pin (`CONVENTIONS.md` §11, "Wave 2 shares files by rebasing").
 - No `skills-lock.json` and no `allium-skill-reference/` (T05).
 
@@ -82,7 +83,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `crates/pachinko/tests/binary.rs` | skeleton -> T02 | runs the built binary |
 | `crates/pachinko/README.md` | stub -> T12 | 40 words |
 | `scripts/check-effects.sh` | working -> T10 | step 6 |
-| `scripts/initialize.sh` | working -> T03 | L `scripts/initialize.sh`, renamed references only |
+| `scripts/initialize.sh` | final | L `scripts/initialize.sh`, with this repository's names |
 | `LICENSE` | final | the Apache-2.0 text from `https://www.apache.org/licenses/LICENSE-2.0.txt`, as L `LICENSE` |
 | `README.md` | stub -> T12 | replaces the one-line stub |
 | `CHANGELOG.md` | stub -> T12 | L `CHANGELOG.md`'s shape, one `[Unreleased]` section |
@@ -97,20 +98,20 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 | `Justfile` | final in wave 1 | `CONVENTIONS.md` §4 |
 | `.pre-commit-config.yaml` | final | L `.pre-commit-config.yaml` |
 | `.pre-commit-fix.yaml` | final | L `.pre-commit-fix.yaml` |
-| `.editorconfig` | working -> T03 | L `.editorconfig` |
-| `.gitattributes` | working -> T03 | L `.gitattributes` |
-| `.gitignore` | working -> T03 | L `.gitignore` |
-| `.markdownlint-cli2.jsonc` | working -> T03 | L `.markdownlint-cli2.jsonc` |
-| `lychee.toml` | working -> T03 | L `lychee.toml` |
-| `_typos.toml` | working -> T03 | L `_typos.toml`, `CONVENTIONS.md` §5 |
-| `pyproject.toml` | final pins -> T03 comments | `CONVENTIONS.md` §2 |
+| `.editorconfig` | final | L `.editorconfig`, with only this repository's file types |
+| `.gitattributes` | final | L `.gitattributes`'s lines for `Cargo.lock`, `pixi.lock`, `allium-skill-reference/**` |
+| `.gitignore` | final | L `.gitignore`, with the `mutants.out*/` comment reworded for T15 |
+| `.markdownlint-cli2.jsonc` | final | L `.markdownlint-cli2.jsonc` |
+| `lychee.toml` | final | L `lychee.toml` |
+| `_typos.toml` | final | L `_typos.toml`, `CONVENTIONS.md` §5 |
+| `pyproject.toml` | final | `CONVENTIONS.md` §2, with comments that describe this repository |
 | `pixi.lock` | generated | `pixi lock` |
-| `.github/actions/setup/action.yml` | stub -> T04 | L `.github/actions/setup/action.yml`, as it stands |
-| `.github/workflows/ci.yml` | stub -> T04 | one job named `check` running `just check` |
+| `.github/actions/setup/action.yml` | stub -> T01 | L `.github/actions/setup/action.yml`, as it stands |
+| `.github/workflows/ci.yml` | stub -> T01 | one job named `check` running `just check` |
 | `docs/manifest.yml` | final in wave 1 | `CONVENTIONS.md` §6, §8 |
 | `docs/README.md` | final in wave 1 | `CONVENTIONS.md` §6 |
-| `docs/project/*.md`, `docs/tutorials/*.md`, `docs/how-to/*.md`, `docs/explanation/*.md`, `docs/reference/*.md`, `docs/operations/*.md` | stub -> T06, T07, T08 | one per manifest entry |
-| `docs/decisions/README.md`, `docs/decisions/0001-*.md` to `0014-*.md` | stub -> T09 | `CONVENTIONS.md` §8 file names and titles |
+| `docs/project/*.md`, `docs/tutorials/*.md`, `docs/how-to/*.md`, `docs/explanation/*.md`, `docs/reference/*.md`, `docs/operations/*.md` | stub -> T06, T07 | one per manifest entry |
+| `docs/decisions/README.md`, `docs/decisions/0001-*.md` to `0014-*.md` | stub -> T07 | `CONVENTIONS.md` §8 file names and titles |
 | `docs/specs/pachinko.allium` | placeholder -> T06 | `CONVENTIONS.md` §9 |
 | `tickets/T00-foundation.md` | ticket | `status:` and hand-back notes |
 
@@ -135,7 +136,16 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 4. **Tool configuration.** Copy the root configuration files the table names from L,
    applying only the stated deltas. Write `tools.txt`, `tools-source.txt` and
    `pyproject.toml` (`CONVENTIONS.md` §2), then `pixi lock` and `pixi install --frozen`
-   (network, authorised).
+   (network, authorised). The dotfiles, `scripts/initialize.sh` and the `pyproject.toml`
+   comments are final here, because they freeze when this ticket merges:
+   - Remove every line that serves a file type or tool this repository does not have;
+     keep every comment that explains a setting this repository still uses, reworded
+     where it names L. `rg -n -i 'pawdoku|sudoku|svelte|node|wasm|\.py\b'` over these
+     files lists the candidates.
+   - `_typos.toml`: keep `mis`; drop `als` unless `just check-docs` then fails on a file
+     that needs it.
+   - `.gitignore`: L's `mutants.out*/` comment says "if S03 adopts it"; reword it to name
+     T15. Add nothing a wave-2 ticket will add itself (the fuzz artefacts are T16's).
 
 5. **The Justfile and hooks.** Write the `Justfile` as `CONVENTIONS.md` §4 states it: L's
    text with the listed changes and no others. Then `just install-tools` (network;
@@ -161,11 +171,11 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 
    **Adversarial review** (`CONVENTIONS.md` §14): the files that freeze when this ticket
    merges: `rust-toolchain.toml`, the `Justfile`, both prek configurations, `tools.txt`,
-   `tools-source.txt`, `crates/pachinko/src/main.rs` and the pins in `pyproject.toml`,
-   with `scripts/check-effects.sh`, which T10 builds on. Ask: which delta from L goes
-   beyond `CONVENTIONS.md` §2, §4 and §5; which recipe a lane will need changed after the
-   freeze; whether the effects script can pass while libpachinko depends on a banned
-   crate.
+   `tools-source.txt`, `crates/pachinko/src/main.rs`, `pyproject.toml`, the six dotfiles
+   of step 4 and `scripts/initialize.sh`, with `scripts/check-effects.sh`, which T10
+   builds on. Ask: which delta from L goes beyond `CONVENTIONS.md` §2, §4 and §5; which
+   recipe a lane will need changed after the freeze; whether the effects script can pass
+   while libpachinko depends on a banned crate.
 
 7. **The specification.** Write `docs/specs/pachinko.allium` (`CONVENTIONS.md` §9). Run
    `just check-specs` and `just analyse-specs`; this is `CONVENTIONS.md` §12 claim 1. If
@@ -199,7 +209,8 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     and confirm `crates/pachinko/src/main.rs` reports no missing line; if it does, apply
     `CONVENTIONS.md` §4's `--ignore-filename-regex` fallback now, before the Justfile
     freezes. For claim 12, run `just effects` with
-    `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9`.
+    `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9`; run `just lint` with
+    the same two variables, which step 12 repeats in the fresh clone.
 
     **Adversarial review** (`CONVENTIONS.md` §14): the whole tree, before step 12 commits
     it. Ask: which acceptance criterion is asserted but not shown; whether the evidence
@@ -207,16 +218,25 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
     adapters, the bridges and `.claude/settings.json` are byte-identical to L's, except
     the `rust-change` bridges' description line (`CONVENTIONS.md` §7); which
     stub has fewer than 40 real words; what the acceptance criteria's `pawdoku`, `sudoku`
-    and `wasm` grep prints.
+    and `wasm` grep prints; which line step 4 removed from the dotfiles that something in
+    this repository, a later lane or a wave-2 ticket still needs; whether the offline
+    `just lint` was offline, or passed only because a cache was warm.
 
-12. **A fresh clone.** Commit, clone the worktree into `ai_tmp/fresh`, and run
-    `just initialize` then `just check` there, so that nothing green depends on a file
-    outside Git. Delete `ai_tmp/fresh` afterwards.
+12. **A fresh clone, offline.** Commit, clone the worktree into `ai_tmp/fresh`, and run
+    `just initialize`, then `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9
+    just lint`, which must not fetch, then `just check` there, so that nothing green
+    depends on a file outside Git. Then the secondary worktree, with the fresh clone as
+    its primary: `git -C ai_tmp/fresh worktree add ../fresh-2`, then `just initialize` in
+    `ai_tmp/fresh-2`, which skips `install-hooks` there, and `just lint` works without a
+    second `install-hooks`, as L `scripts/initialize.sh`'s comment claims. Delete
+    `ai_tmp/fresh` and `ai_tmp/fresh-2` afterwards.
 
 ## Acceptance criteria
 
 - `just check` prints all nineteen gates of `CONVENTIONS.md` §4 and `check-clean`, green,
   in the worktree and in the fresh clone.
+- `just lint` passes offline in the fresh clone after `just initialize`, and in the
+  secondary worktree without a second `install-hooks`.
 - `rustup show active-toolchain` prints the pin; `rust-version` matches its minor.
 - `cargo nextest run --workspace --locked` runs three or more tests; `cargo test --doc
   --workspace --locked` runs one or more doctests; `just coverage` reports 90% or more.
@@ -226,6 +246,8 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 - `grep -rn -i 'pawdoku\|sudoku\|wasm' --exclude-dir=.git --exclude-dir=tickets --exclude-dir=allium-skill-reference --exclude-dir=.pixi --exclude-dir=target --exclude-dir=.tools .`
   prints nothing, or only lines the hand-back notes justify (a carried record's
   "Carried from libpawdoku" opening is one).
+- Step 4's `rg` prints nothing over the dotfiles, `scripts/initialize.sh` and
+  `pyproject.toml`, or only lines the hand-back notes justify.
 - Every path in the Files-touched table exists; no path outside it was created.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
@@ -242,19 +264,23 @@ just check-specs
 just analyse-specs
 just check-agents
 HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just effects
+HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just lint
+rg -n -i 'pawdoku|sudoku|svelte|wasm' .editorconfig .gitattributes .gitignore .markdownlint-cli2.jsonc lychee.toml _typos.toml scripts/initialize.sh pyproject.toml
 git status --short
 ```
 
-Quote each command's output in the hand-back notes, and the fresh-clone `just check`.
+Quote each command's output in the hand-back notes, and the fresh clone's offline
+`just lint` and `just check`, and the secondary worktree's `just lint`.
 
 ## Hand-back notes
 
 To be written by the executing agent: the toolchain pin and the date it was read; any
 lint the new stable forced, and the change made; the outcome of each `CONVENTIONS.md` §12
 claim this ticket checked (1, 3, 4, 10, 11, 12); every deviation from L's files beyond
-the stated deltas, and why; the review record for each checkpoint (`CONVENTIONS.md` §14);
-that the hook shim is not installed and the primary checkout installs it after merge
-(step 5); and anything handed back to a lane.
+the stated deltas, and why; each line removed from L's dotfiles and why; the review
+record for each checkpoint (`CONVENTIONS.md` §14); that the hook shim is not installed
+and the primary checkout installs it after merge (step 5); and anything handed back to a
+lane.
 
 ## Open points
 

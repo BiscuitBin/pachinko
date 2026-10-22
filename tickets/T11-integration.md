@@ -1,32 +1,31 @@
 ---
 id: T11
-title: "Integration: the first green `just check` from a fresh clone and in CI, branch protection verified"
+title: "Integration: the first green `just check` from a fresh clone and in CI, branch protection read back"
 status: open
-depends_on: [T01, T02, T03, T04, T05, T06, T07, T08, T09, T10]
+depends_on: [T01, T02, T05, T06, T07, T10]
 parallel_with: []
 branch: ticket/t11-integration
 estimated_size: M
 ---
 
-# T11: Integration: the first green `just check` from a fresh clone and in CI, branch protection verified
+# T11: Integration: the first green `just check` from a fresh clone and in CI, branch protection read back
 
 ## Context
 
-Ten lanes have merged, each green on its own branch, each writing some sentences to the
-design while another lane settled the fact (T08 and T09 waited on T10's mechanism; T05
-handed facts to T08). Several will have handed back follow-ups to frozen files. This
+Six lanes have merged, each green on its own branch, each writing some sentences to the
+design while another lane settled the fact (T07 waited on T10's mechanism; T05 handed
+facts to T07). Several will have handed back follow-ups to frozen files. This
 ticket is where the pieces are proved to fit: the follow-ups reconciled, every sentence
 written to the design checked against what landed, and the whole gate run from a fresh
-clone of the remote and in CI, with branch protection shown to block a red pull request.
+clone of the remote and in CI, with branch protection read back.
 
-L `tickets/T11-integration.md` is the procedure; its eight steps carry over with this
+L `tickets/T11-integration.md` is the procedure; its steps carry over with this
 repository's names.
 
 ## Goal
 
 `main` on `BiscuitBin/pachinko`, cloned fresh from GitHub, passes `just initialize` then
-`just check`; CI on `main` and on a pull request is green; branch protection requires
-`check` and refuses to merge a pull request whose `check` is red; every
+`just check`; CI on `main` is green; branch protection requires `check`; every
 `CONVENTIONS.md` §12 claim owned by T00 to T10 (claims 1 to 6 and 10 to 12) has a
 recorded outcome; and the handbook says what landed. Claims 7, 8 and 9 belong to T14,
 T16 and T13, which start after this ticket; T17 records them.
@@ -51,7 +50,7 @@ T16 and T13, which start after this ticket; T17 records them.
 
 ## Steps
 
-1. Create the worktree after T01 to T10 have merged.
+1. Create the worktree after T01, T02, T05, T06, T07 and T10 have merged.
 2. **Reconcile.** Read every lane's hand-back notes. For each item handed back or written
    to the design, find it on `main` and make it true; list each with its resolution.
 
@@ -62,12 +61,11 @@ T16 and T13, which start after this ticket; T17 records them.
 3. **Fresh clone from the remote.** `git clone https://github.com/BiscuitBin/pachinko
    ai_tmp/fresh`, then `just initialize` (network, authorised) and `just check` there.
    Quote the whole `check` output.
-4. **CI on `main`.** Dispatch `ci.yml` and `audit.yml` on `main` and read both runs.
-5. **Branch protection, proved.** **Authorisation required: push a branch and open a
-   pull request.** A throwaway branch that breaks one gate (an unformatted line); confirm
-   `check` goes red and `gh pr merge` refuses without an administrator bypass; then close
-   the pull request and delete the branch (each separately authorised).
-6. **The claims table.** One row per `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 with
+4. **CI on `main`, and branch protection.** Dispatch `ci.yml` and `audit.yml` on `main`
+   and read both runs. Read branch protection back with
+   `gh api repos/BiscuitBin/pachinko/branches/main/protection --jq '.required_status_checks.contexts'`
+   and confirm it prints `["check"]`, the context the `ci.yml` run reports.
+5. **The claims table.** One row per `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 with
    its outcome, the ticket that checked it and where the evidence is quoted; claims 7 to
    9 stay open, marked as T17's. Carry it into `CONVENTIONS.md` §12 through a `main` pull
    request.
@@ -75,20 +73,20 @@ T16 and T13, which start after this ticket; T17 records them.
    **Adversarial review** (`CONVENTIONS.md` §14): the claims table, before its `main`
    pull request is asked for. Ask: which outcome is not backed by evidence quoted in a
    ticket's hand-back notes; which outcome claims more than its quoted evidence shows.
-7. **Cleanliness.** `rg -n -i 'stub|lands with T|arrive with T|TODO'` over `docs/`,
+6. **Cleanliness.** `rg -n -i 'stub|lands with T|arrive with T|TODO'` over `docs/`,
    `AGENTS.md`, `.agents/` and the crates prints only sentences that name a wave-2 ticket
    or the specifications; `rg -n -i 'pawdoku|sudoku|wasm'` outside `tickets/` and
    `allium-skill-reference/` prints only carried-from sentences and `AGENTS.md`'s
    Provenance sentence naming libpawdoku as the source.
-8. Delete `ai_tmp/fresh`, set `status: done`, commit.
+7. Delete `ai_tmp/fresh`, set `status: done`, commit.
 
 ## Acceptance criteria
 
 - The fresh-clone `just check` is green and quoted.
-- CI on `main` is green; the red pull request could not merge.
+- CI on `main` is green, and branch protection requires `check`.
 - Every `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 has an outcome; claims 7 to 9
   are marked open for T17.
-- Step 7's searches print only what the hand-back notes justify.
+- Step 6's searches print only what the hand-back notes justify.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
@@ -104,8 +102,8 @@ rg -n -i 'stub|lands with T|arrive with T|TODO' docs AGENTS.md .agents crates
 ## Hand-back notes
 
 To be written by the executing agent: the reconciliation list, the fresh-clone output,
-the run URLs, the red pull request's number and refusal, the claims table, and the review
-record for each checkpoint (`CONVENTIONS.md` §14).
+the run URLs, the protection read-back, the claims table, and the review record for each
+checkpoint (`CONVENTIONS.md` §14).
 
 ## Open points
 

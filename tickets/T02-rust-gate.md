@@ -3,7 +3,7 @@ id: T02
 title: "Rust quality gate: final tool configs, the std lint table, every Rust recipe green on real code"
 status: open
 depends_on: [T00]
-parallel_with: [T01, T03, T04, T05, T06, T07, T08, T09]
+parallel_with: [T01, T05, T06, T07]
 branch: ticket/t02-rust-gate
 estimated_size: M
 ---
@@ -14,20 +14,23 @@ estimated_size: M
 
 T00 landed both crates and working copies of L's Rust tool configuration, with the deltas
 `CONVENTIONS.md` §3 names, green on the day's stable. This lane makes that configuration
-final and proves each Rust recipe does what its comment says, on this workspace rather
-than on L's: a std library, a binary, no dependencies, one item each.
+final and green on this workspace: a std library, a binary, no dependencies, one item
+each.
 
-Read L `tickets/T02-rust-gate.md` for the method (each recipe proved red as well as
-green) and L `docs/decisions/0009-rust-quality-gate.md` for why each setting is what it
-is. L `tickets/T29-snapshot-harness.md` is the snapshot harness: its recipes are already
-in the `Justfile`, and this lane proves them on a workspace that has no snapshot yet.
+L's T02 already proved these recipes fire on the configuration this repository copies
+(L `tickets/T02-rust-gate.md`, its step 10 and hand-back notes), so this lane does not
+repeat those proofs. It proves only what differs here: the lint table on the new pin
+(step 2), coverage on the binary (step 4) and the snapshot harness with no `insta` and
+a stray `.snap` (step 5). L `docs/decisions/0009-rust-quality-gate.md` says why each
+setting is what it is. L `tickets/T29-snapshot-harness.md` is the snapshot harness: its
+recipes are already in the `Justfile`, and this lane proves them on a workspace that has
+no snapshot yet.
 
 ## Goal
 
 `fmt-check`, `toml-check`, `clippy`, `features`, `test`, `coverage`, `doc`, `deny`,
-`deps-unused` and `snapshots-check` are each green on real code, each has been seen to
-fail on a deliberate violation, and every configuration file this lane owns is final
-with a comment for each non-default setting.
+`deps-unused` and `snapshots-check` are each green on real code, and every
+configuration file this lane owns is final with a comment for each non-default setting.
 
 ## Non-goals
 
@@ -69,32 +72,27 @@ with a comment for each non-default setting.
    `no_std`. `print_stdout` and `print_stderr` stay: `run()` takes a writer, and only
    `main.rs` touches `stdout`, which it does through `std::io::stdout()` rather than a
    print macro.
-4. **Each recipe red, then green.** For each recipe in the Goal, make one deliberate
-   violation in a scratch commit, run the recipe, quote the failure, and revert. For
-   `coverage`, add an untested branch to `run()`; for `deny`, add a dependency with a
-   disallowed licence in a scratch copy only; for `deps-unused`, a dependency nothing uses.
-5. **Coverage on the binary** (`CONVENTIONS.md` §12 claim 4). `cargo llvm-cov report
+4. **Coverage on the binary** (`CONVENTIONS.md` §12 claim 4). `cargo llvm-cov report
    --show-missing-lines` reports nothing missing in either crate, `main.rs` included, or
    T00's fallback is in place and explained.
-6. **The snapshot harness without insta** (`CONVENTIONS.md` §12 claim 10). `just
+5. **The snapshot harness without insta** (`CONVENTIONS.md` §12 claim 10). `just
    snapshots-check` green on the tree; then add a stray `.snap` file in a scratch commit
    and confirm `--unreferenced reject` fails on it. Record that the first ticket to take
    a snapshot adds `insta` with the decision-0007 note.
-7. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, without the `getrandom`
+6. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, without the `getrandom`
    and `rand` bans (`CONVENTIONS.md` §1 fact 3) and with L's `openssl-sys` ban kept; the
    `exclude-dev` comment, which cites the dropped ban, reworded; the `[graph] targets`
    list without the wasm target. Run `just deny` offline after `just sync`.
-8. `just check`, the final adversarial review, `just check` again if fixes landed, then
+7. `just check`, the final adversarial review, `just check` again if fixes landed, then
    commit.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff. Ask: which lint-table
-   decision on the new pin is unjustified or has no comment; whether each recipe's quoted
-   failure came from its deliberate violation and from nothing else; whether the evidence
-   for `CONVENTIONS.md` §12 claims 3, 4 and 10 proves each claim.
+   decision on the new pin is unjustified or has no comment; whether the evidence for
+   `CONVENTIONS.md` §12 claims 3, 4 and 10 proves each claim.
 
 ## Acceptance criteria
 
-- The ten recipes in the Goal are green, and the hand-back notes quote one failure of each.
+- The ten recipes in the Goal are green.
 - `cargo llvm-cov report --show-missing-lines` lists no missing line.
 - Every non-default setting in the files this lane owns has a comment saying why.
 - `just check` is green.
@@ -114,9 +112,8 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: each lint the pin added and what was done about it;
-each recipe's quoted failure; the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10; the
-review record for each checkpoint (`CONVENTIONS.md` §14); any Justfile change handed
-back.
+the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10; the review record for each
+checkpoint (`CONVENTIONS.md` §14); any Justfile change handed back.
 
 ## Open points
 

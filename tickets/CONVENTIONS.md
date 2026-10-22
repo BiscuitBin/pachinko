@@ -136,12 +136,13 @@ Because L's lint table was tuned against 1.98.1, T00 runs `just clippy` on the n
 before freezing anything, and T02 owns any lint the new stable added or renamed (§12
 claim 3).
 
-### `pyproject.toml` (the pixi manifest; T00 writes it, T03 finalises its comments)
+### `pyproject.toml` (the pixi manifest; T00 writes it with its final comments; frozen)
 
 L `pyproject.toml` with these changes and no others:
 
 - `[project] name = "pachinko-tooling"`, and the description names pachinko.
 - The `recipes` list in `[tool.biscuit-games-tooling]` is §4's gate order.
+- The comments describe this repository, not L.
 - Every pin stays as L has it (`just ==1.58.0`, `prek ==0.5.3`, `cargo-binstall ==1.23.0`,
   `cargo-nextest ==0.9.146`, `cargo-llvm-cov ==0.9.1`, `cargo-deny ==0.20.2`,
   `cargo-insta ==1.48.0`, `cargo-shear ==1.13.4`, `taplo ==0.10.0`, Python `3.14.*`, B at
@@ -202,23 +203,23 @@ CLAUDE.md  .github/copilot-instructions.md   T00 (byte-identical to L; frozen)
 skills-lock.json  allium-skill-reference/   T05 new
 Justfile                            T00 (frozen in wave 1)
 .pre-commit-config.yaml  .pre-commit-fix.yaml   T00 (frozen)
-.editorconfig  .gitattributes  .gitignore   T00 working -> T03
-.markdownlint-cli2.jsonc  lychee.toml  _typos.toml   T00 working -> T03
-pyproject.toml                      T00 -> T03 (comments only; pins and recipes frozen)
+.editorconfig  .gitattributes  .gitignore   T00 (frozen)
+.markdownlint-cli2.jsonc  lychee.toml  _typos.toml   T00 (frozen)
+pyproject.toml                      T00 (frozen)
 pixi.lock                           T00 (generated; frozen in wave 1)
-scripts/initialize.sh               T00 working -> T03
-.github/actions/setup/action.yml    T00 stub -> T04
-.github/workflows/ci.yml            T00 one-job stub -> T04
-.github/workflows/audit.yml  .github/workflows/pages.yml   T04 new
+scripts/initialize.sh               T00 (frozen)
+.github/actions/setup/action.yml    T00 stub -> T01
+.github/workflows/ci.yml            T00 one-job stub -> T01
+.github/workflows/audit.yml  .github/workflows/pages.yml   T01 new
 docs/manifest.yml  docs/README.md   T00 (frozen in wave 1)
 docs/project/*.md                   T00 stub -> T07
 docs/tutorials/first-change.md      T00 stub -> T07
 docs/how-to/{develop-locally,test-and-debug,maintain-dependencies,deploy-to-github-pages}.md   T00 stub -> T07
 docs/how-to/work-with-the-specs.md  T00 stub -> T06
 docs/explanation/specifications.md  T00 stub -> T06
-docs/explanation/{architecture,layering,quality-philosophy,security-model}.md   T00 stub -> T08
-docs/reference/*.md  docs/operations/*.md   T00 stub -> T08
-docs/decisions/README.md  docs/decisions/0001..0014-*.md   T00 stub -> T09
+docs/explanation/{architecture,layering,quality-philosophy,security-model}.md   T00 stub -> T07
+docs/reference/*.md  docs/operations/*.md   T00 stub -> T07
+docs/decisions/README.md  docs/decisions/0001..0014-*.md   T00 stub -> T07
 docs/specs/pachinko.allium          T00 placeholder -> T06
 tickets/                            this directory
 ai_tmp/  .tools/  .pixi/  target/   gitignored; never committed
@@ -334,10 +335,11 @@ to the `coverage` recipe's `report` lines before the Justfile freezes, and recor
 hook keeps L's rev and comment. Both are frozen at T00.
 
 `.editorconfig`, `.gitattributes`, `.gitignore`, `.markdownlint-cli2.jsonc`,
-`lychee.toml`, `_typos.toml` and `taplo.toml` are L's at `ccdd001`. T00 copies them as they
-are, then removes only what names sudoku or pawdoku; the `[default.extend-words]` in
-`_typos.toml` keeps `mis` (the tickets use the hyphenated prefix) and drop `als`, the
-sudoku abbreviation, unless T03 finds a file that needs it. `taplo.toml` is T02's; the other six are T03's.
+`lychee.toml`, `_typos.toml` and `taplo.toml` are L's at `ccdd001`. T00 copies them, then
+removes every line that serves a file type or tool this repository does not have, or
+that names sudoku or pawdoku (T00 step 4); the `[default.extend-words]` in `_typos.toml`
+keeps `mis` (the tickets use the hyphenated prefix) and drops `als`, the sudoku abbreviation, unless T00 finds a file that needs it.
+`taplo.toml` is T02's; the other six are final at T00.
 
 ## 6. Handbook
 
@@ -363,20 +365,20 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 | `docs/how-to/deploy-to-github-pages.md` | T07 | same | Both crates' rustdoc, `BiscuitBin/pachinko`'s Pages URL |
 | `docs/how-to/work-with-the-specs.md` | T06 | same | The module table has the one placeholder; the waiver terms verbatim |
 | `docs/explanation/specifications.md` | T06 | same | Specifications are the source of truth; there is one module and it states no behaviour yet |
-| `docs/explanation/architecture.md` | T08 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014) |
-| `docs/explanation/layering.md` | T08 | same | The crate direction Cargo enforces; module direction follows the spec import graph when there is one |
-| `docs/explanation/quality-philosophy.md` | T08 | same | L's argument; examples from this gate |
-| `docs/explanation/security-model.md` | T08 | same | A library plus a service binary: supply chain, `forbid(unsafe_code)`, cargo-deny, the effects boundary; the service's network surface is deferred |
-| `docs/reference/commands.md` | T08 | same | The recipe table of §4 |
-| `docs/reference/configuration.md` | T08 | same | Both manifests, the lint table, `deny.toml`, the floor, the pixi manifest, both tool lists, the effects script |
-| `docs/reference/testing.md` | T08 | same | nextest, doctests, the binary test, coverage scope, fakes through the trait, the insta rule waiting for its first snapshot |
-| `docs/reference/quality-gates.md` | T08 | same | The nineteen gates of §4 |
-| `docs/reference/documentation-contract.md` | T08 | same | L's rules verbatim; "Links that leave the repository" names only the outward pages that exist here: decision 0005, `api.md`, `deploy-to-github-pages.md` |
-| `docs/reference/agent-contract.md` | T08 | same | Fourteen skills |
-| `docs/reference/api.md` | T08 | same | rustdoc for both crates, `just doc`, `just site`, Pages |
-| `docs/operations/maintenance.md` | T08 | same | L's routine |
-| `docs/operations/troubleshooting.md` | T08 | same | L's, minus wasm |
-| `docs/decisions/README.md` and fourteen records | T09 | §8 | |
+| `docs/explanation/architecture.md` | T07 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014) |
+| `docs/explanation/layering.md` | T07 | same | The crate direction Cargo enforces; module direction follows the spec import graph when there is one |
+| `docs/explanation/quality-philosophy.md` | T07 | same | L's argument; examples from this gate |
+| `docs/explanation/security-model.md` | T07 | same | A library plus a service binary: supply chain, `forbid(unsafe_code)`, cargo-deny, the effects boundary; the service's network surface is deferred |
+| `docs/reference/commands.md` | T07 | same | The recipe table of §4 |
+| `docs/reference/configuration.md` | T07 | same | Both manifests, the lint table, `deny.toml`, the floor, the pixi manifest, both tool lists, the effects script |
+| `docs/reference/testing.md` | T07 | same | nextest, doctests, the binary test, coverage scope, fakes through the trait, the insta rule waiting for its first snapshot |
+| `docs/reference/quality-gates.md` | T07 | same | The nineteen gates of §4 |
+| `docs/reference/documentation-contract.md` | T07 | same | L's rules verbatim; "Links that leave the repository" names only the outward pages that exist here: decision 0005, `api.md`, `deploy-to-github-pages.md` |
+| `docs/reference/agent-contract.md` | T07 | same | Fourteen skills |
+| `docs/reference/api.md` | T07 | same | rustdoc for both crates, `just doc`, `just site`, Pages |
+| `docs/operations/maintenance.md` | T07 | same | L's routine |
+| `docs/operations/troubleshooting.md` | T07 | same | L's, minus wasm |
+| `docs/decisions/README.md` and fourteen records | T07 | §8 | |
 
 ## 7. Agent contract
 
@@ -426,7 +428,7 @@ Fourteen skills, twenty-eight bridges. `just check-agents` prints
 A fresh series. A carried record opens "Carried from libpawdoku's decision NNNN at
 `ccdd001`" and keeps L's `canonical_for` slug. Format as L's: frontmatter,
 `# Decision NNNN: title`, Context, Decision, Consequences, What would reopen this,
-Related pages. T09 writes 0001 to 0014; each wave-2 ticket writes its own.
+Related pages. T07 writes 0001 to 0014; each wave-2 ticket writes its own.
 
 | Number | File | Title | From L | Slug |
 | --- | --- | --- | --- | --- |
@@ -529,7 +531,7 @@ at `ccdd001`, with these changes:
   binary is the documents job's own step". Any job that runs `just check`, `lint`,
   `check-specs` or `analyse-specs` runs `just install-allium` after the setup action:
   L's `documents` job, T00's one-job stub and T14's `release.yml`.
-- Every remote `uses:` keeps a full SHA with a version comment, re-read on the day T04
+- Every remote `uses:` keeps a full SHA with a version comment, re-read on the day T01
   runs (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
   The local `uses: ./.github/actions/setup` has no pin.
 
@@ -556,8 +558,9 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   registered page, record or skill. A lane may create only the paths §3 marks `new` for it.
 - **Files no wave-1 lane touches:** `Justfile`, `.pre-commit-config.yaml`,
   `.pre-commit-fix.yaml`, `rust-toolchain.toml`, `tools.txt`, `tools-source.txt`,
-  `pixi.lock`, the pins and recipe list in `pyproject.toml`, `docs/manifest.yml`,
-  `docs/README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`,
+  `pixi.lock`, `pyproject.toml`, `.editorconfig`, `.gitattributes`, `.gitignore`,
+  `.markdownlint-cli2.jsonc`, `lychee.toml`, `_typos.toml`, `scripts/initialize.sh`,
+  `docs/manifest.yml`, `docs/README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`,
   `.claude/settings.json`, `crates/pachinko/src/main.rs` and every bridge. A lane that
   needs a change there stops and hands it back as a T00 follow-up pull request on `main`.
 - **No dependency is added in wave 1.** Nothing uses one yet (§1 fact 6).
@@ -613,7 +616,7 @@ them only by running the gate.
 | 2 | Clippy reads `crates/libpachinko/clippy.toml` for libpachinko alone and shadows rather than merges the root file; rustqual pattern rules can be scoped to one crate by running it over that directory | A deliberate violation in a scratch copy, each mechanism in turn | T10 |
 | 3 | L's lint table is green on the new stable | `just clippy` on T00's pin | T00, T02 |
 | 4 | An integration test running `CARGO_BIN_EXE_pachinko` makes `main.rs` count as covered under `cargo llvm-cov nextest`, so the one-line-main shape reaches 90% | `just coverage`, then `cargo llvm-cov report --show-missing-lines` | T00 first, T02 |
-| 5 | B's pixi git dependency installs in `BiscuitBin` CI with no credential | T00's stub run on `main`, read by T01; then T04's full run | T01 first, T04 |
+| 5 | B's pixi git dependency installs in `BiscuitBin` CI with no credential | T00's stub run on `main`, then T01's full run | T01 |
 | 6 | T `scripts/bootstrap_repo.sh` works on an organisation-owned repository; Pages works on the free organisation plan for a public repository | The script without `--apply`, then with it | T01 |
 | 7 | cargo-semver-checks has a usable baseline before the first release (`--baseline-rev`) | A scratch run against `main` | T14 |
 | 8 | cargo-fuzz still works on the pinned stable with `--sanitizer none` | `just fuzz` on the smoke target | T16 |
@@ -637,7 +640,8 @@ them only by running the gate.
   probe is what makes decision 3 mechanical. A lane that weakens the probe hands it back.
 - **A red stub run on `main`.** T00's merge is the first time the setup action runs on a
   `BiscuitBin` runner (§12 claim 5). If that run is red and T01 then requires `check`,
-  every other lane is blocked until T04 lands. T01 stops instead of requiring a red check.
+  every other lane is blocked until T01's workflows land. T01 stops instead of requiring
+  a red check.
 - **Organisation settings.** `BiscuitBin` is an organisation, not a user; branch
   protection, Pages and GitHub App installation may need an organisation owner. T01 and
   T17 say so before acting.

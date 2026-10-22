@@ -3,7 +3,7 @@ id: T06
 title: "Allium gate: the placeholder module, the spec recipes, the two spec pages"
 status: open
 depends_on: [T00]
-parallel_with: [T01, T02, T03, T04, T05, T07, T08, T09, T10]
+parallel_with: [T01, T02, T05, T07, T10]
 branch: ticket/t06-allium-gate
 estimated_size: S
 ---

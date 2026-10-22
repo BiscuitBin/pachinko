@@ -3,7 +3,7 @@ id: T05
 title: "Agent contract: AGENTS.md, fourteen skills, the Allium vendoring"
 status: open
 depends_on: [T00]
-parallel_with: [T01, T02, T03, T04, T06, T07, T08, T09, T10]
+parallel_with: [T01, T02, T06, T07, T10]
 branch: ticket/t05-agent-contract
 estimated_size: M
 ---
@@ -34,7 +34,7 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
   any bridge (frozen), and none to any skill's frontmatter, which the bridges repeat and
   T00 wrote final (`CONVENTIONS.md` §7).
 - No new skill and no removed skill: the fourteen are fixed by T00's stubs.
-- No handbook page. `docs/reference/agent-contract.md` is T08's; this lane hands it the
+- No handbook page. `docs/reference/agent-contract.md` is T07's; this lane hands it the
   facts it needs in the hand-back notes.
 - No domain guidance. Where L's skills name sudoku modules, the adaptation names the
   placeholder module or the general case.
@@ -80,7 +80,7 @@ Allium skills, `skills-lock.json` and `allium-skill-reference/` are vendored fro
    stays comparable to upstream.
 5. **The vendoring.** Copy L `skills-lock.json` and L `allium-skill-reference/` verbatim.
    Confirm `.gitattributes`, `.markdownlint-cli2.jsonc`, `lychee.toml` and `_typos.toml`
-   already exclude `allium-skill-reference/` (T00 copied L's); if not, hand it to T03.
+   already exclude `allium-skill-reference/` (T00 copied L's); if not, hand it back as a T00 follow-up.
 6. `just check-agents`, `just check-docs`, `just check`, the final adversarial review,
    `just check` again if fixes landed, then commit.
 
@@ -113,7 +113,7 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: each adaptation to a vendored skill, with its line;
-the facts `docs/reference/agent-contract.md` (T08) needs; the review record for each
+the facts `docs/reference/agent-contract.md` (T07) needs; the review record for each
 checkpoint (`CONVENTIONS.md` §14); anything handed back.
 
 ## Open points

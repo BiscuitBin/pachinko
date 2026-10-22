@@ -3,7 +3,7 @@ id: T10
 title: "Metrics and the effects boundary: rustqual over both crates, the libpachinko bans, the probe"
 status: open
 depends_on: [T00, T02]
-parallel_with: [T01, T03, T04, T05, T06, T07, T08, T09]
+parallel_with: [T01, T05, T06, T07]
 branch: ticket/t10-metrics-and-effects
 estimated_size: L
 ---
