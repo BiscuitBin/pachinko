@@ -82,7 +82,9 @@ configuration file this lane owns is final with a comment for each non-default s
 6. **`deny.toml`.** L's `[licenses]`, `[sources]` and `[bans]`, without the `getrandom`
    and `rand` bans (`CONVENTIONS.md` §1 fact 3) and with L's `openssl-sys` ban kept; the
    `exclude-dev` comment, which cites the dropped ban, reworded; the `[graph] targets`
-   list without the wasm target. Run `just deny` offline after `just sync`.
+   list without the wasm target. After `just sync`, run `just deny` under
+   `CONVENTIONS.md` §11's network denial, and quote it with both negative-control exit
+   codes.
 7. `just check`, the final adversarial review, `just check` again if fixes landed, then
    commit.
 
@@ -112,7 +114,7 @@ just check
 ## Hand-back notes
 
 To be written by the executing agent: each lint the pin added and what was done about it;
-the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10; the review record for each
+the outcome of `CONVENTIONS.md` §12 claims 3, 4 and 10; the offline `just deny` run; the review record for each
 checkpoint (`CONVENTIONS.md` §14); any Justfile change handed back.
 
 ## Open points

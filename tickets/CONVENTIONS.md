@@ -200,7 +200,7 @@ CLAUDE.md  .github/copilot-instructions.md   T00 (byte-identical to L; frozen)
 .agents/skills/<14>/SKILL.md        T00 stub -> T05
 .claude/skills/<14>/SKILL.md  .codex/skills/<14>/SKILL.md   T00 (fixed bridge body; frozen)
 .claude/settings.json               T00 (byte-identical to L; frozen)
-skills-lock.json  allium-skill-reference/   T05 new (the lock only if T05 keeps it, §7)
+allium-skill-reference/             T05 new (no `skills-lock.json`, §7)
 Justfile                            T00 (frozen in wave 1)
 .pre-commit-config.yaml  .pre-commit-fix.yaml   T00 (frozen)
 .editorconfig  .gitattributes  .gitignore   T00 (frozen)
@@ -395,7 +395,7 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 `.github/copilot-instructions.md` is B's adapter text. Both adapters and
 `.claude/settings.json` are byte-identical to L's.
 
-`AGENTS.md` is restructured, not kept in L's section order. Rules that hold for every
+`AGENTS.md` is restructured rather than following L's layout. Rules that hold for every
 task stay always visible; rules for one kind of task sit in an `<important if="...">`
 block that names that task. In this order:
 
@@ -461,12 +461,12 @@ require.`
 | `fix-quality` | same | A dispatch line for every gate of §4, not only L's; no wasm |
 | `allium`, `distill`, `elicit`, `propagate`, `tend`, `weed`, `witness` | same | Byte-for-byte from L except recipe names |
 
-`skills-lock.json` is not provenance as L ships it. At L `ccdd001` its `computedHash`
-values match none of the vendored `SKILL.md` files (for `allium`, the lock records
-`52446c61…` and the file hashes to `2445a3b1…` under sha256), it names no tag or commit,
-and no gate reads it. T05 either recomputes every hash from the committed files or
-drops the file, and records which in its hand-back notes. No page or decision calls the
-lock a pin or a checksum unless T05 recomputed it.
+`skills-lock.json` is not carried. Its `computedHash` is the skills CLI's hash of the
+whole upstream skill folder, so it cannot be checked against the vendored files: for
+`allium`, the lock records `52446c61…` and L's `SKILL.md` hashes to `2445a3b1…` under
+sha256. A local recomputation would put a different meaning into a field the CLI reads.
+The lock names no tag or commit, and no gate reads it. T05 does not create it, and no
+page or decision describes it as a pin or a checksum.
 
 Fourteen skills, twenty-eight bridges. `just check-agents` prints
 `Validated AGENTS.md, 2 adapters, and 14 skills.`
@@ -489,7 +489,7 @@ Related pages. T07 writes 0001 to 0014; each wave-2 ticket writes its own.
 | 0007 | `0007-dependency-policy.md` | Dependency policy: caret ranges and `Cargo.lock` | 0007 | `decision_dependency_policy` |
 | 0008 | `0008-std-library.md` | A std library, with effects kept out mechanically | new, in place of L's 0008 | `decision_std_library` |
 | 0009 | `0009-rust-quality-gate.md` | The Rust quality gate | 0009 | `decision_rust_gate` |
-| 0010 | `0010-skill-reference-material.md` | Skill reference material beside the skills | 0010, corrected: what `skills-lock.json` records follows T05's choice (§7) | `decision_skill_reference` |
+| 0010 | `0010-skill-reference-material.md` | Skill reference material beside the skills | 0010, corrected: no `skills-lock.json` (§7) | `decision_skill_reference` |
 | 0011 | `0011-tool-manager.md` | Tool manager | 0011 | `decision_tool_manager` |
 | 0012 | `0012-metrics-gate.md` | The metrics gate | 0013 | `decision_metrics_gate` |
 | 0013 | `0013-api-reference-on-github-pages.md` | The API reference on GitHub Pages | 0016 | `decision_api_reference_on_pages` |
@@ -622,7 +622,8 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   `docs/decisions/README.md`, `docs/reference/commands.md` and `CHANGELOG.md`. Wave-2
   tickets merge one at a time, each rebased on the last; `pixi.lock` and `Cargo.lock`
   are regenerated after the rebase, never merged by hand, and the ticket's verification
-  is rerun and requoted at the rebased commit. A recipe a wave-2 ticket adds sits outside `check`'s recipe list; pre-landing
+  is rerun and requoted at the rebased commit. A recipe a wave-2 ticket adds sits
+  outside `check`'s recipe list; pre-landing
   wave-2 recipes in T00 does not work, because the fuzz crate's `--manifest-path` lines in
   `sync`, `lock`, `fmt-check` and `clippy` would fail before `fuzz/` exists. Each
   wave-2 ticket's first acceptance criterion is its recipe's green output, quoted.
@@ -644,7 +645,8 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   untouched worktree before any edit, and its last line is quoted as the baseline; a red
   baseline means `main` is broken, and the fix is a `main` pull request, not this lane's
   work. Before asking to push, the agent runs `git fetch origin` (network, authorised),
-  rebases onto `origin/main` and reruns `just check`. Two lanes that are each green can
+  rebases onto `origin/main`, reruns `just check`, and reruns and requotes the ticket's
+  verification. Two lanes that are each green can
   merge into a red `main`, and only this rerun sees them together.
 - **Quoted evidence names its commit.** Each quoted output is headed by the commit it ran
   at (`git rev-parse --short HEAD`, plus "with uncommitted changes" when that is true). A
@@ -654,8 +656,9 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
 - **Checks fail closed.** A failed read, a timeout or an empty pipe is never a pass.
   Quoted output shows each command's exit status. A check that passes by printing
   nothing is preceded by a positive control: the unfiltered command, run alone, exits 0
-  and matches something. An API read counts as "absent" only on an HTTP 404; any other
-  error stops the step.
+  and matches something. An API read counts as "absent" only on an HTTP 404 whose
+  message names absence; GitHub also answers 404 to a token that may not read the
+  resource, so that, and any other error, stops the step.
 - **Separately authorised actions.** Commits on the ticket branch are the ticket's work.
   Pushing, opening a pull request, tagging, filing issues, changing repository or
   organisation settings, installing a GitHub App, publishing anywhere, installing
@@ -799,4 +802,5 @@ repository ships to its own contributors.
   cites, never a credential.
 - **Record.** The hand-back notes record, for each checkpoint: the harness and model, the
   findings, each verdict with a one-line reason, what was applied, what was handed back,
-  and the re-run output, headed by the commit it ran at (§11). The raw files stay in `ai_tmp/` and are never committed.
+  and the re-run output, headed by the commit it ran at (§11). The raw files stay in
+  `ai_tmp/` and are never committed.

@@ -3,7 +3,7 @@ id: T12
 title: "Maintainer docs: README, CHANGELOG, SECURITY, the crate READMEs"
 status: open
 depends_on: [T11]
-parallel_with: [T13, T14, T15, T16, T17]
+parallel_with: [T13, T15, T16, T17]
 branch: ticket/t12-maintainer-docs
 estimated_size: S
 ---
@@ -20,7 +20,9 @@ shapes.
 
 Wave 2 runs beside this ticket and also writes `CHANGELOG.md` lines
 (`CONVENTIONS.md` §11, "Wave 2 shares files by rebasing"). This ticket owns the file's
-structure; a wave-2 ticket adds its own entry under `[Unreleased]` and rebases.
+structure; a wave-2 ticket adds its own entry under `[Unreleased]` and rebases. T14
+waits for this ticket, then splits `[Unreleased]` per crate and rewrites `SECURITY.md`'s
+"Supported versions".
 
 ## Goal
 

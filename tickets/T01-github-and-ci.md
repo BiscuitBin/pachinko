@@ -80,11 +80,15 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
    (`CONVENTIONS.md` §12 claim 5); quote its setup step's log. If `check` did not
    conclude `success`, stop: requiring a red check blocks every lane (`CONVENTIONS.md`
    §13). Hand the failure back as a T00 follow-up.
-2. Read the current state, read-only, and quote it: `gh repo view BiscuitBin/pachinko
+2. Read the current state, read-only, and quote it. First confirm
+   `gh api repos/BiscuitBin/pachinko --jq .permissions.admin` prints `true`; if not, stop,
+   because GitHub answers 404 to a token that may not read protection. Then
+   `gh repo view BiscuitBin/pachinko
    --json visibility,defaultBranchRef,deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed`,
-   `gh api repos/BiscuitBin/pachinko/branches/main/protection` (only an HTTP 404 means
-   none; any other error stops the step), `gh api repos/BiscuitBin/pachinko/pages` (the
-   same), and
+   `gh api repos/BiscuitBin/pachinko/branches/main/protection | jq -S . > ai_tmp/protection-before.json`
+   (only an HTTP 404 with the message `Branch not protected` means none; any other error
+   stops the step), `gh api repos/BiscuitBin/pachinko/pages` (only a 404 means none,
+   after the admin check), and
    `gh api orgs/BiscuitBin --jq '{plan: .plan.name, members_can_create_pages}'`.
 3. Copy T `scripts/bootstrap_repo.sh` at `2283589c` into `ai_tmp/` (never run it from the
    clone) and dry-run it: `sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check
@@ -104,9 +108,9 @@ not required; a push to `main` deploys both crates' rustdoc to Pages; and every 
    `gh api -X POST repos/BiscuitBin/pachinko/pages -f build_type=workflow`, or `-X PUT`
    if Pages already exists. Read it back with `gh api repos/BiscuitBin/pachinko/pages`
    (`CONVENTIONS.md` §12 claim 6, second half).
-6. Read every setting back (step 2's commands) and quote the output. Save step 2's
-   protection response and this one as `ai_tmp/protection-before.json` and
-   `ai_tmp/protection-after.json`, diff them, and list every field that changed; each
+6. Read every setting back (step 2's commands) and quote the output. Save this
+   protection response the way step 2 saved its own, as `ai_tmp/protection-after.json`,
+   diff it against `ai_tmp/protection-before.json`, and list every field that changed; each
    change must be one the dry run announced. T's apply is a full PUT, so a field it
    leaves out returns to GitHub's default (a true `lock_branch` blocks every merge). If
    step 2 returned a 404, say so and rely on the read-back alone. Read the required check

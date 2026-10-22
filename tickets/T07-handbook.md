@@ -85,7 +85,7 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
 | `docs/reference/testing.md` | final | nextest, doctests, the binary test, coverage, fakes, snapshots |
 | `docs/reference/quality-gates.md` | final | the nineteen gates |
 | `docs/reference/documentation-contract.md` | final | L's rules verbatim; "Links that leave the repository" names only the outward pages that exist here: decision 0005, `api.md`, `deploy-to-github-pages.md` |
-| `docs/reference/agent-contract.md` | final | fourteen skills |
+| `docs/reference/agent-contract.md` | final | fourteen skills; no `skills-lock.json` (`CONVENTIONS.md` §7) |
 | `docs/reference/api.md` | final | rustdoc for both crates |
 | `docs/operations/maintenance.md` | final | L's routine |
 | `docs/operations/troubleshooting.md` | final | L's, minus wasm |
@@ -99,7 +99,7 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
 | `docs/decisions/0007-dependency-policy.md` | final | L 0007 |
 | `docs/decisions/0008-std-library.md` | final | new: why std, and gate 8 in place of `no_std` |
 | `docs/decisions/0009-rust-quality-gate.md` | final | L 0009, without the wasm and no_std parts |
-| `docs/decisions/0010-skill-reference-material.md` | final | L 0010, with what `skills-lock.json` records as T05's hand-back states (`CONVENTIONS.md` §7) |
+| `docs/decisions/0010-skill-reference-material.md` | final | L 0010, corrected: no `skills-lock.json`, and the vendored files are the only record of upstream (`CONVENTIONS.md` §7) |
 | `docs/decisions/0011-tool-manager.md` | final | L 0011 |
 | `docs/decisions/0012-metrics-gate.md` | final | L 0013, thresholds kept, layering rules waiting for modules |
 | `docs/decisions/0013-api-reference-on-github-pages.md` | final | L 0016, two crates |
@@ -112,7 +112,9 @@ pages), is true of this repository, and restates no other. `just check-docs` is 
 2. **Part 1: project, tutorial and how-to pages.** For each part-1 page, read L's page of the same path at `ccdd001` and
    `CONVENTIONS.md` §6's adaptation note. Keep L's structure and every sentence that is
    still true; rewrite what names sudoku, pawdoku, wasm, `no_std`, L's modules or L's
-   URLs. Parts 2 and 3 apply the same rule to their pages and records.
+   URLs. Where L says `just initialize` normalises formatting (`develop-locally.md`,
+   `commands.md`, `first-change.md`), drop that clause (`CONVENTIONS.md` §5). Parts 2
+   and 3 apply the same rule to their pages and records.
 3. **`terminology.md`.** One entry each for: the repository, the library
    (`libpachinko`), the service (`pachinko`), an effect, an effect trait, a fake, a
    specification, a module, a gate, a recipe. Each entry says which word to use and
@@ -227,7 +229,9 @@ rg --files-without-match 'Carried from libpawdoku' docs/decisions/000[2-79]-*.md
 just check
 ```
 
-The last `rg` must print nothing: every carried record has the sentence.
+The last `rg` must print nothing and exit 1, after the same globs passed to `ls` list
+every carried record (the positive control of `CONVENTIONS.md` §11): every carried
+record has the sentence.
 
 ## Hand-back notes
 

@@ -2,8 +2,8 @@
 id: T14
 title: "Release process: cargo-release, per-crate tags, a GitHub Release, semver checks"
 status: open
-depends_on: [T11]
-parallel_with: [T12, T13, T15, T16]
+depends_on: [T11, T12]
+parallel_with: [T13, T15, T16]
 branch: ticket/t14-release
 estimated_size: M
 ---
@@ -62,6 +62,7 @@ maintenance page say how a release is cut.
 | `docs/operations/maintenance.md` | shared, own lines | "Cut a release" |
 | `docs/explanation/architecture.md` | shared, own lines | T14's wave-2 sentence (T07 step 6) made present tense, citing decision 0016 |
 | `SECURITY.md` | shared, own lines | "Supported versions", once a release process exists |
+| `README.md` | shared, own lines | only a sentence the first tag makes false, if step 9's review finds one |
 | `docs/decisions/0016-release-process.md` | new | `CONVENTIONS.md` §8 |
 | `docs/manifest.yml` | shared, own lines | one entry |
 | `docs/README.md` | shared, own lines | one link |
@@ -71,7 +72,8 @@ maintenance page say how a release is cut.
 
 ## Steps
 
-1. Create the worktree after T11 has merged; rebase on any wave-2 ticket merged since.
+1. Create the worktree after T11 and T12 have merged, so that `CHANGELOG.md` and
+   `SECURITY.md` hold T12's final text; rebase on any wave-2 ticket merged since.
 2. **Re-verify the draft's pins on the day.** cargo-release (`1.1.6` in the draft) and
    cargo-semver-checks: the newest release, its binstall support and its conda-forge
    package. The pin goes in `pyproject.toml` if conda-forge carries it, else
@@ -84,13 +86,14 @@ maintenance page say how a release is cut.
    `pre-release-replacements` entry, because `{{tag_name}}` is not rendered under
    `--no-tag` (L `tickets/S02-release-and-publishing.md` lines 536-540).
    `publish.workspace = true` stays on both crates.
-4. **`CHANGELOG.md` discipline.** One `CHANGELOG.md` at the root (T12 owns its shape),
-   with an `[Unreleased]` subsection per crate and a dated release heading per crate tag
+4. **`CHANGELOG.md` discipline.** One `CHANGELOG.md` at the root, in T12's shape,
+   whose single `[Unreleased]` section this ticket splits into an `[Unreleased]`
+   subsection per crate, with a dated release heading per crate tag
    (`## libpachinko 0.1.1 - YYYY-MM-DD`, or a shape settled here and recorded in decision
    0016). The date is the UTC day the tag is pushed, not the day the release pull
    request was prepared; if the merge lands on a later UTC day, a one-line pull request
-   re-dates the heading before tagging. Each crate's `pre-release-replacements` rewrites only its
-   own subsection; prove it in step 7 and record it in decision 0016. If cargo-release
+   re-dates the heading before tagging. Each crate's `pre-release-replacements` rewrites
+   only its own subsection; prove it in step 7 and record it in decision 0016. If cargo-release
    cannot target one crate's subsection cleanly, stop and hand back: per-crate files are
    new paths this ticket does not list.
 
@@ -104,13 +107,16 @@ maintenance page say how a release is cut.
    Two jobs:
    - `verify` (`contents: read`; checkout with `fetch-depth: 0` and
      `persist-credentials: false`): the composite setup action, `just install-allium`
-     (`CONVENTIONS.md` §10) and `just check`, then the draft's guards (L
+     (`CONVENTIONS.md` §10) and `just check`, then four guards, the middle two
+     from the draft (L
      `tickets/S02-release-and-publishing.md` lines 717-725), each failing with
      `::error::`: `HEAD` is the tag's commit; the tag equals the crate's prefix plus that
      crate's version from `cargo metadata --locked --no-deps`; after
      `git fetch --no-tags origin main`, `git merge-base --is-ancestor <commit> FETCH_HEAD`
      succeeds; and `CHANGELOG.md` has exactly one line equal to the crate's release
-     heading, dated, with a non-empty section under it. It outputs the commit.
+     heading with a `YYYY-MM-DD` date and a non-empty section under it. The guard checks
+     the date's shape, not that it is the run's day, so a rerun on a later day passes;
+     step 8's local check keeps the date current. It outputs the commit.
    - `publish` (`needs: verify`, `environment: release`, `permissions: contents: write`
      and nothing else). It runs no setup action, pixi or `just`. It checks out with
      `persist-credentials: false`, fetches the tag again and stops unless the tag still
@@ -120,8 +126,8 @@ maintenance page say how a release is cut.
 
    The `release` environment, with the maintainer as required reviewer, must exist
    before this file merges, or GitHub creates it unprotected on the first run. Creating
-   it is a repository setting, separately authorised (`CONVENTIONS.md` §11). Never in
-   `check`'s `needs`.
+   it is a repository setting, separately authorised at step 9 (`CONVENTIONS.md` §11).
+   Never in `check`'s `needs`.
 6. **`semver`.** `cargo semver-checks -p libpachinko --baseline-rev <rev>`: before the
    first release the baseline is `main`'s merge base, so the recipe is a statement about
    this branch; after it, the last `libpachinko-v*` tag. Settle `CONVENTIONS.md` §12
@@ -145,8 +151,13 @@ maintenance page say how a release is cut.
    Decision 0016: cargo-release over release-plz (the draft's evidence), per-crate tags,
    a GitHub Release instead of crates.io, and what would reopen it.
 9. `just check`, the final adversarial review, `just check` again if fixes landed, then
-   **authorisation required: push and open a pull request**. A real tag push to exercise
-   `release.yml` is a further, separate authorisation.
+   **authorisation required: push and open a pull request**. Then **authorisation
+   required: the `release` environment.** Stop and ask. On approval, create it with the
+   maintainer as its one required reviewer
+   (`gh api -X PUT repos/BiscuitBin/pachinko/environments/release`), read it back with
+   `gh api repos/BiscuitBin/pachinko/environments/release` and quote its
+   `protection_rules`. The pull request does not merge until that read-back is quoted. A
+   real tag push to exercise `release.yml` is a further, separate authorisation.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
    whether any step that runs the setup action, pixi or `just check` can see a write

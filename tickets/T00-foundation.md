@@ -58,7 +58,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
   configuration beyond what the gate needs (T02), no CI beyond the one-job stub (T01),
   no repository settings (T01).
 - No wave-2 recipe, file or pin (`CONVENTIONS.md` §11, "Wave 2 shares files by rebasing").
-- No `skills-lock.json` and no `allium-skill-reference/` (T05).
+- No `allium-skill-reference/` (T05), and no `skills-lock.json` (`CONVENTIONS.md` §7).
 
 ## Files touched
 
@@ -158,8 +158,9 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
    - `.markdownlint-cli2.jsonc`: `MD033`'s `allowed_elements` becomes
      `["br", "important"]`, with a comment saying `AGENTS.md` uses `<important if>`
      blocks (`CONVENTIONS.md` §7).
-   - `scripts/initialize.sh`: drop L's `just format` line and the comment above it
-     (`CONVENTIONS.md` §5). Keep the closing message's statement that nothing was staged,
+   - `scripts/initialize.sh`: drop L's `just format` line and the comment above it, and
+     `format` from the first comment's list of recipes (`CONVENTIONS.md` §5). Keep the
+     closing message's statement that nothing was staged,
      committed, tagged or pushed, and add that nothing was formatted.
 
 5. **The Justfile and hooks.** Write the `Justfile` as `CONVENTIONS.md` §4 states it: L's
@@ -255,7 +256,7 @@ least three tests (libpachinko's unit test, pachinko's unit test, the binary tes
 - `just lint` passes in the fresh clone after `just initialize`, under
   `CONVENTIONS.md` §11's network denial with both negative-control probes failing, and
   in the secondary worktree without a second `install-hooks`.
-- `scripts/initialize.sh` contains no `just format`, and `just check-agents` stays green
+- `scripts/initialize.sh` does not contain the word `format`, and `just check-agents` stays green
   with an untracked `.claude/scheduled_tasks.lock` present.
 - `rustup show active-toolchain` prints the pin; `rust-version` matches its minor.
 - `cargo nextest run --workspace --locked` runs three or more tests; `cargo test --doc
@@ -283,14 +284,15 @@ cargo llvm-cov report --show-missing-lines
 just check-specs
 just analyse-specs
 just check-agents
+touch .claude/scheduled_tasks.lock && just check-agents; echo "exit $?"; rm .claude/scheduled_tasks.lock
 # macOS; on Linux, unshare -rn in place of sandbox-exec (CONVENTIONS.md §11)
 deny='(version 1)(allow default)(deny network*)'
 sandbox-exec -p "$deny" curl -fsS --max-time 10 https://static.rust-lang.org; echo "exit $?"
 sandbox-exec -p "$deny" curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1; echo "exit $?"
 sandbox-exec -p "$deny" just effects; echo "exit $?"
 sandbox-exec -p "$deny" just lint; echo "exit $?"
-rg -n 'just format' scripts/initialize.sh; echo "exit $?"   # must be 1
-rg -n -i 'pawdoku|sudoku|svelte|wasm' .editorconfig .gitattributes .gitignore .markdownlint-cli2.jsonc lychee.toml _typos.toml scripts/initialize.sh pyproject.toml
+rg -n -w 'format' scripts/initialize.sh; echo "exit $?"   # must be 1
+rg -n -i 'pawdoku|sudoku|svelte|node|wasm|\.py\b' .editorconfig .gitattributes .gitignore .markdownlint-cli2.jsonc lychee.toml _typos.toml scripts/initialize.sh pyproject.toml
 git status --short
 ```
 

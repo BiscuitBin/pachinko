@@ -30,9 +30,9 @@ snapshot.
 | T07 | Handbook: every page, and decision records 0001 to 0014 | `T07-handbook.md` | T00 | T01, T02, T05, T06, T10 | open |
 | T10 | Metrics and the effects boundary: rustqual over both crates, the libpachinko bans, the probe | `T10-metrics-and-effects.md` | T00, T02 | T01, T05, T06, T07 | open |
 | T11 | Integration: the first green `just check` from a fresh clone and in CI, branch protection read back | `T11-integration.md` | T01, T02, T05, T06, T07, T10 | none | open |
-| T12 | Maintainer docs: README, CHANGELOG, SECURITY, the crate READMEs | `T12-maintainer-docs.md` | T11 | T13 to T17 | open |
+| T12 | Maintainer docs: README, CHANGELOG, SECURITY, the crate READMEs | `T12-maintainer-docs.md` | T11 | T13, T15 to T17 | open |
 | T13 | Container image: a multi-stage Dockerfile, `just image`, a CI build | `T13-container-image.md` | T11 | T12, T14 to T16 | open |
-| T14 | Release process: cargo-release, per-crate tags, a GitHub Release, semver checks | `T14-release.md` | T11 | T12, T13, T15, T16 | open |
+| T14 | Release process: cargo-release, per-crate tags, a GitHub Release, semver checks | `T14-release.md` | T11, T12 | T13, T15, T16 | open |
 | T15 | Mutation testing: cargo-mutants as a weekly report | `T15-mutation-testing.md` | T11 | T12 to T14, T16 | open |
 | T16 | Benchmarks and fuzzing: a divan bench, a fuzz crate on stable, a weekly fuzz job | `T16-bench-and-fuzz.md` | T11 | T12 to T15 | open |
 | T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | open |
@@ -45,11 +45,10 @@ into T01, and T08 and T09 into T07.
 ```text
 T00 ─┬─ T01 ────────────┐
      ├─ T02 ── T10 ─────┤
-     └─ T05, T06, T07 ──┴─ T11 ─┬─ T12
-                                ├─ T13 ─┐
-                                ├─ T14 ─┤
-                                ├─ T15 ─┼─ T17
-                                └─ T16 ─┘
+     └─ T05, T06, T07 ──┴─ T11 ─┬─ T12 ── T14 ─┐
+                                ├─ T13 ────────┤
+                                ├─ T15 ────────┼─ T17
+                                └─ T16 ────────┘
 ```
 
 The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
@@ -63,7 +62,8 @@ The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
   T10 chooses one, restates T02's root keys.
 - **T11** reconciles the follow-ups wave 1 handed back to `main` and proves the whole gate
   from a fresh clone and in CI.
-- **T12** writes the entry points last, so they describe what exists.
+- **T12** writes the entry points last, so they describe what exists. T14 waits for it,
+  because it reshapes `CHANGELOG.md` and `SECURITY.md`, which T12 writes.
 - **Wave 2, T13 to T16.** The four extras (CONVENTIONS.md §1, decision 8). The frozen list
   lifts after T11; each wave-2 ticket edits only its own lines in the shared files and
   merges one at a time, rebased on the last (CONVENTIONS.md §11). Each adapts a design L's
@@ -105,12 +105,16 @@ The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
 3. Edit only the files the ticket lists, plus the `status:` line and hand-back notes of
    the ticket itself. A change needed elsewhere is handed back, not made.
 4. Run the ticket's verification commands and quote their output in the hand-back notes,
-   each headed by the commit it ran at (`CONVENTIONS.md` §11).
+   each headed by the commit it ran at and showing its exit status. A check that passes by
+   printing nothing is preceded by its positive control, whether or not the ticket writes
+   one out (`CONVENTIONS.md` §11).
 5. At each **Adversarial review** the ticket marks, follow `CONVENTIONS.md` §14 before
    going on.
 6. Commit on the ticket branch. Before asking to push, `git fetch origin` (network,
-   authorised), rebase onto `origin/main` and rerun `just check`. If it goes red only
-   after the rebase, hand the conflict back instead of editing another lane's files.
+   authorised), rebase onto `origin/main`, rerun `just check`, and rerun the ticket's
+   verification commands, replacing each quote with one headed by the rebased commit
+   (`CONVENTIONS.md` §11). If it goes red only after the rebase, hand the conflict back
+   instead of editing another lane's files.
 7. Pushing and opening the pull request are separately authorised: stop and ask.
 
 ## Definition of done

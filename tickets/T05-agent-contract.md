@@ -26,8 +26,7 @@ required phrases (lines 47-54), the skill frontmatter, the bridge body and the a
 `AGENTS.md` states this repository's invariants (`CONVENTIONS.md` §7) and nothing L-only;
 `AGENTS.md` has the shape `CONVENTIONS.md` §7 states; the seven house skills are adapted
 to two crates and the effects boundary; the seven Allium skills and
-`allium-skill-reference/` are vendored from L; `skills-lock.json` either matches the
-committed files or is gone; and
+`allium-skill-reference/` are vendored from L; there is no `skills-lock.json`; and
 `just check-agents` prints `Validated AGENTS.md, 2 adapters, and 14 skills.`
 
 ## Non-goals
@@ -60,7 +59,6 @@ committed files or is gone; and
 | `.agents/skills/tend/SKILL.md` | final | L's |
 | `.agents/skills/weed/SKILL.md` | final | L's |
 | `.agents/skills/witness/SKILL.md` | final | L's |
-| `skills-lock.json` | new, or not created | L `skills-lock.json` with every hash recomputed, or dropped (step 5) |
 | `allium-skill-reference/` | new | L `allium-skill-reference/`, verbatim |
 | `tickets/T05-agent-contract.md` | ticket | `status:` and hand-back notes |
 
@@ -92,14 +90,10 @@ committed files or is gone; and
    exist here unchanged; `propagate/SKILL.md` line 12 names `crates/pawdoku/tests/`, which
    becomes the test directories of both crates. Change nothing else, so the vendored text
    stays comparable to upstream.
-5. **The vendoring.** Copy L `allium-skill-reference/` verbatim. For
-   `skills-lock.json`, first quote
-   `shasum -a 256 .agents/skills/{allium,distill,elicit,propagate,tend,weed,witness}/SKILL.md`
-   beside the lock's `computedHash` values: at L `ccdd001` none match
-   (`CONVENTIONS.md` §7). Then either write the lock with each `computedHash` set to the
-   sha256 of the committed file, or do not create it. Record which, and why, in the
-   hand-back notes, with the fact T07 needs for decision 0010 and
-   `docs/reference/agent-contract.md`: what the lock records, and that no gate reads it.
+5. **The vendoring.** Copy L `allium-skill-reference/` verbatim. Do not create
+   `skills-lock.json` (`CONVENTIONS.md` §7). Record in the hand-back notes, for T07's
+   decision 0010 and `docs/reference/agent-contract.md`, the upstream source the lock
+   named (`juxt/allium`).
    Confirm `.gitattributes`, `.markdownlint-cli2.jsonc`, `lychee.toml` and `_typos.toml`
    already exclude `allium-skill-reference/` (T00 copied L's); if not, hand it back as a T00 follow-up.
 6. `just check-agents`, `just check-docs`, `just check`, the final adversarial review,
@@ -117,13 +111,12 @@ committed files or is gone; and
 - `just check-agents` prints `Validated AGENTS.md, 2 adapters, and 14 skills.`
 - `rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/` prints nothing. The
   pattern skips `libpawdoku`, which step 2's Provenance names as the source.
-- `rg -c '<important if=' AGENTS.md` prints `7`, and each of B's six phrases appears
-  outside every block.
+- `rg -c '^<important if="' AGENTS.md` prints `7`, and each of B's six phrases appears
+  outside every block (the phrase loop in Verification prints nothing).
 - Every gate of `CONVENTIONS.md` §4 appears as a code span in
   `.agents/skills/fix-quality/SKILL.md` (the loop in Verification prints nothing).
 - `diff -r` against L's `allium-skill-reference/` is empty.
-- `skills-lock.json` is absent, or each of its `computedHash` values equals the sha256 of
-  the committed `SKILL.md` it names; the hand-back notes say which.
+- `skills-lock.json` does not exist.
 - `just check` is green.
 - The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
@@ -134,11 +127,14 @@ committed files or is gone; and
 just check-agents
 rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/
 mkdir -p ai_tmp/l
-git -C /Users/scutting/projects/libpawdoku archive ccdd001 allium-skill-reference skills-lock.json | tar -x -C ai_tmp/l
+git -C /Users/scutting/projects/libpawdoku archive ccdd001 allium-skill-reference | tar -x -C ai_tmp/l
 diff -r ai_tmp/l/allium-skill-reference allium-skill-reference; echo "exit $?"
-shasum -a 256 .agents/skills/{allium,distill,elicit,propagate,tend,weed,witness}/SKILL.md
-test -f skills-lock.json && jq -r '.skills | to_entries[] | "\(.value.computedHash)  \(.key)"' skills-lock.json
-rg -c '<important if=' AGENTS.md
+test ! -e skills-lock.json; echo "exit $?"
+rg -c '^<important if="' AGENTS.md
+awk '/^<important if=/{b=1} !b{print} /^<\/important>/{b=0}' AGENTS.md > ai_tmp/agents-core.md
+for p in untrusted 'just check' 'explicit authorization' ai_tmp/ docs/specs/ runes; do
+  rg -qiF "$p" ai_tmp/agents-core.md || echo "only in a block: $p"
+done
 for g in check-toolchain lock-check lint fmt-check toml-check clippy metrics effects features test-doc coverage doc deny deps-unused check-docs check-agents check-specs analyse-specs snapshots-check; do
   rg -qF "\`$g\`" .agents/skills/fix-quality/SKILL.md || echo "missing $g"
 done
@@ -149,7 +145,7 @@ git status --short
 ## Hand-back notes
 
 To be written by the executing agent: each adaptation to a vendored skill, with its line;
-whether `skills-lock.json` was recomputed or dropped, with the hash comparison;
+the upstream source the dropped `skills-lock.json` named;
 the facts `docs/reference/agent-contract.md` (T07) needs; the review record for each
 checkpoint (`CONVENTIONS.md` §14); anything handed back.
 

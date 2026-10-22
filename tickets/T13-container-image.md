@@ -67,9 +67,11 @@ how-to and decision 0015 say what the image is and is not.
    `image` job whenever they differ.
 3. **The Dockerfile.** Build stage copies `rust-toolchain.toml`, both manifests,
    `Cargo.lock` and `crates/`, and runs `cargo build --release --locked -p pachinko`.
-   The rust image carries rustup, which reads `rust-toolchain.toml`; a build-time check
-   (`rustc --version` against the pin) makes a mismatch fail loudly rather than download
-   silently. Run stage copies the binary only, runs as `nonroot`, entrypoint the binary.
+   The rust image carries rustup, which reads `rust-toolchain.toml` and installs a
+   missing pinned toolchain on first use, so `rustc --version` run beside that file
+   always reports the pin. The build-time check therefore runs `rustc --version` from a
+   directory with no `rust-toolchain.toml` and compares it with the pin's `channel`, so a
+   mismatch fails loudly rather than downloading silently. Run stage copies the binary only, runs as `nonroot`, entrypoint the binary.
 4. **The recipe.** In the `Justfile`'s develop section:
    `image: docker build --tag pachinko:dev .`, with a comment saying it needs docker and is
    outside `check`. Then `docker run --rm pachinko:dev` and quote the line it prints.
@@ -82,7 +84,8 @@ how-to and decision 0015 say what the image is and is not.
 6. **The docs.** The how-to: prerequisites, `just image`, `docker run`, what the image
    contains and why distroless. Decision 0015: why an image now, why distroless, why no
    push, what would reopen it (a registry, a runtime that needs a shell). Register both in
-   the manifest and the map, and add the index row.
+   the manifest and the map, and add the index row. Make T13's sentence in
+   `docs/explanation/architecture.md` (T07 step 6) present tense, citing decision 0015.
 7. `just check` (without docker), the final adversarial review, `just check` again if
    fixes landed, then **authorisation required: push and open a pull request**; read the
    `image` job's run.
@@ -90,7 +93,7 @@ how-to and decision 0015 say what the image is and is not.
    **Adversarial review** (`CONVENTIONS.md` §14): the lane's diff, before the push. Ask:
    whether each digest is its named tag's on the day; whether the run stage really runs
    as `nonroot`; whether `architecture.md` still calls the image future work; whether the toolchain check fails when the pin and the image's rust
-   differ; whether `image` is in `check`'s `needs`.
+   differ (try it by building with a bumped `channel`); whether `image` is in `check`'s `needs`.
 
 ## Acceptance criteria
 

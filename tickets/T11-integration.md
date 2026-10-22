@@ -75,7 +75,8 @@ T16 and T13, which start after this ticket; T17 records them.
    `gh api repos/BiscuitBin/pachinko/branches/main/protection/required_status_checks --jq '[.checks[] | {context, app_id}]'`
    and confirm it prints one entry, `check`, with the GitHub Actions `app_id` T01
    recorded. `.contexts` is deprecated and is not the evidence. Diff the whole protection
-   response against the one T01 quoted after its apply; any field that changed since is
+   response, normalised with `jq -S .` as T01 saved it, against the one T01 quoted after
+   its apply; any field that changed since is
    a finding.
 5. **The claims table.** One row per `CONVENTIONS.md` §12 claim 1 to 6 and 10 to 12 with
    its outcome, the ticket that checked it and where the evidence is quoted; claims 7 to
@@ -91,7 +92,8 @@ T16 and T13, which start after this ticket; T17 records them.
    item per row stating exactly what evidence closes it, and recording it as open rather
    than inferring success from an unrelated green gate. It depends on T11 and is off
    the critical path. Carry the claims table into `CONVENTIONS.md` §12, and add T18 to
-   the README index and graph, through one `main` pull request.
+   the README index and graph, through one `main` pull request, after the review below:
+   **authorisation required: push and open a pull request**.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the claims table, before its `main`
    pull request is asked for. Ask: which outcome is not backed by evidence quoted in a
