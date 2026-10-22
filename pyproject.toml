@@ -1,0 +1,61 @@
+[project]
+name = "pachinko-tooling"
+version = "0.1.0"
+description = "Repository tooling for pachinko. Not the crates; see Cargo.toml for those."
+requires-python = ">=3.14"
+dependencies = []
+
+# pixi owns every tool binary and the Python environment (.pixi/envs/default,
+# gitignored; pixi.lock is the pin). rustup owns the compiler: rust is deliberately
+# absent here, so the cargo first on a recipe's PATH is still rustup's proxy and
+# rust-toolchain.toml is honoured (check-toolchain proves it).
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+# CI is linux-64; the maintainer is osx-arm64. osx-64 joins when a claim verifies it;
+# win-64 never: bg-install-allium and the Justfile are POSIX-only.
+platforms = ["linux-64", "osx-arm64"]
+requires-pixi = ">=0.81.0"
+
+[tool.pixi.dependencies]
+# Exact pins. An unqualified "3.14" would let the linux-64 solve pick 3.15.0rc2.
+python = "3.14.*"
+just = "==1.58.0"
+prek = "==0.5.3"
+# For tools.txt and tools-source.txt only: cargo-hack and rustqual are not on conda-forge.
+cargo-binstall = "==1.23.0"
+cargo-nextest = "==0.9.146"
+cargo-llvm-cov = "==0.9.1"
+cargo-deny = "==0.20.2"
+cargo-insta = "==1.48.0"
+# conda-forge's newest on 2026-09-24; the pin follows conda-forge, not crates.io.
+cargo-shear = "==1.13.4"
+taplo = "==0.10.0"
+
+[tool.pixi.pypi-dependencies]
+biscuit-games-tooling = { git = "https://github.com/steven-cutting/biscuit_games_tooling", tag = "v0.3.0" }
+
+# typos is configured in _typos.toml; a [tool.typos] here would be ignored.
+
+[tool.biscuit-games-tooling]
+recipes = [
+  "check-toolchain",
+  "lock-check",
+  "lint",
+  "fmt-check",
+  "toml-check",
+  "clippy",
+  "metrics",
+  "effects",
+  "features",
+  "test-doc",
+  "coverage",
+  "doc",
+  "deny",
+  "deps-unused",
+  "check-docs",
+  "check-agents",
+  "check-specs",
+  "analyse-specs",
+  "snapshots-check",
+]
+predicates = {}

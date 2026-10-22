@@ -1,0 +1,21 @@
+-- allium: 3
+--
+-- Pachinko — the root module
+--
+-- Scope
+--   The domain of this repository is not yet defined. This module is where
+--   it will be: the first specification change that names a behaviour
+--   states it here, or in a module this one imports, before any code in
+--   crates/libpachinko or crates/pachinko implements it.
+--
+-- Includes
+--   Nothing yet. The module declares no entity, rule, surface or invariant.
+--
+-- Excludes
+--   - Every behaviour, until a specification change defines one.
+--
+-- Dependencies
+--   None. No other module exists for this one to import.
+--
+-- Vocabulary
+--   None yet. The words of the domain are fixed here when the domain is.

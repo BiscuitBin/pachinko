@@ -1,0 +1,49 @@
+# Mutating counterpart to .pre-commit-config.yaml. Never installed as a hook;
+# run it explicitly with `just fix`.
+# pixi.lock is YAML, so without this line the builtin check-yaml would parse
+# the whole lockfile on every commit.
+exclude: >-
+  (?x)^(
+    \.git/|
+    \.pixi/|
+    ai_tmp/|
+    target/|
+    \.tools/|
+    allium-skill-reference/|
+    Cargo\.lock$|
+    pixi\.lock$
+  )
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: rustfmt
+        entry: cargo fmt --all
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+      # `just fix` is the only caller, so .pixi/envs/default/bin is already on PATH here.
+      - id: taplo-fmt
+        name: taplo format
+        entry: taplo fmt
+        language: system
+        types: [toml]
+
+      - id: cargo-shear-fix
+        name: Remove unused dependencies
+        entry: cargo shear --fix
+        language: system
+        pass_filenames: false
+
+  - repo: builtin
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: b82a6c8896e491b9cb377a99ff3412131920681b # v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+        name: markdownlint fix
+        args: [--fix]

@@ -1,0 +1,10 @@
+---
+name: elicit
+description: "Run a structured discovery session to build an Allium specification through conversation. Use when the user wants to create a new spec from scratch, elicit or gather requirements, capture domain behaviour, specify a feature or system, define what a system should do, or is describing functionality and needs help shaping it into a specification."
+---
+
+This skill is a stub that ticket T05 replaces. Until then, follow `AGENTS.md`, which is canonical and wins wherever the two disagree.
+
+When T05 writes it, this file will hold the upstream Allium `elicit` skill, as the frontmatter above describes it. Once written, it will match the copy the upstream library carries byte for byte, except where a recipe name differs; its reference material will live under `allium-skill-reference/` at the repository root, which also arrives with T05.
+
+The recipes it will name include `just check-specs` and `just analyse-specs`. Run the narrowest of them while working, then `just check` before handing the work back.

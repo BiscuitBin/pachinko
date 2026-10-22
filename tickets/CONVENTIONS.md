@@ -332,7 +332,9 @@ to the `coverage` recipe's `report` lines before the Justfile freezes, and recor
 
 `.pre-commit-config.yaml` and `.pre-commit-fix.yaml` are L's at `ccdd001`, byte for byte
 (neither names a crate; their `files:` patterns already read `crates/.*`). Every remote
-hook keeps L's rev and comment. Both are frozen at T00.
+hook keeps L's rev and comment. One delta: the `typos` hook gains
+`args: [--force-exclude]`, so the read-only gate never rewrites a file (upstream's
+default adds `--write-changes`). Both are frozen at T00.
 
 `.editorconfig`, `.gitattributes`, `.gitignore`, `.markdownlint-cli2.jsonc`,
 `lychee.toml`, `_typos.toml` and `taplo.toml` are L's at `ccdd001`. T00 copies them, then

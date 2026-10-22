@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    # Quoted because a branch named `true`, `false`, `null`, `on`, or `1.0` is
+    # valid to Git but is not a string to a YAML 1.1 parser.
+    branches: ['main']
+  workflow_dispatch:
+
+# Read-only: nothing here publishes, comments or writes a check of its own.
+# The token each step is minted with can do no more than clone this
+# repository, which is what a gate needs and all it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental artefacts are large and never reused on a fresh runner.
+  CARGO_INCREMENTAL: '0'
+  CARGO_NET_RETRY: '10'
+  RUST_BACKTRACE: '1'
+
+# The one-job stub T01 replaces with gate jobs behind a `check` aggregate. The
+# name `check` is the required check from the first push (CONVENTIONS §10).
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: check
+      - run: just install-allium
+      - run: just check

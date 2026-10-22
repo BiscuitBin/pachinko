@@ -1,0 +1,56 @@
+.DS_Store
+.cache/
+.env
+.env.*
+!.env.example
+
+# lychee's link cache: `cache = true` in lychee.toml, so the offline hook
+# writes it beside the config and reads it on the next run.
+.lycheecache
+
+# Scratch for agents and maintainers alike: anything that is not a
+# deliverable goes here, never in a commit.
+ai_tmp/
+
+# Claude Code writes runtime state into .claude/ mid-session
+# (settings.local.json, scheduled-task locks, checkpoints, nested worktrees).
+# bg-validate-agents lists files with `git ls-files --cached --others
+# --exclude-from=.gitignore` and reports any other file under .claude/ as an
+# unexpected managed file, so everything there is ignored except the tracked
+# settings and skills. Codex writes its local settings on first use.
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+.codex/settings.local.json
+
+# Everything cargo builds, and the coverage report the coverage recipe writes
+# under it. `just check` snapshots the worktree between recipes, so a build
+# product Git can see would abort the run before any recipe's exit code is
+# read.
+target/
+
+# The pixi environment `just initialize` installs from pixi.lock: every tool
+# binary, Python, prek and the tooling package's scripts. Ignored for the same
+# reason as target/: `just check` snapshots the worktree between recipes, and
+# an environment Git can see aborts the snapshot.
+.pixi/
+
+# The pinned allium binary, installed by `just install-allium`, and the
+# tools tools.txt and tools-source.txt pin because conda-forge lacks them,
+# installed by `just install-tools`. Ignored for the same reason as target/: a
+# binary Git can see aborts the snapshot.
+.tools/
+
+# Raw profiles cargo-llvm-cov leaves behind when a run is interrupted before
+# it merges them, and an lcov report written anywhere but target/llvm-cov/.
+*.profraw
+lcov.info
+
+# What cargo-mutants writes, if T15 adopts it; ignored now so a first run can
+# never trip the snapshot.
+mutants.out*/
+
+# A test run outside the recipes may leave pending snapshots. A file Git can
+# see would abort the gate's worktree check; reviewed .snap files are committed.
+*.snap.new
+*.pending-snap

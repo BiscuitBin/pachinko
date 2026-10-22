@@ -1,0 +1,8 @@
+# Binaries pixi cannot own, installed by `just install-tools` into the gitignored
+# .tools/bin through cargo-binstall (itself a pixi dependency in pyproject.toml), one
+# name@version per line, verified 2026-09-24. Everything conda-forge carries is pinned
+# in pyproject.toml and locked in pixi.lock; this file is the escape hatch for what it
+# lacks, and empties the day cargo-hack is packaged there. Tools a prek hook pins
+# (typos, ripsecrets, lychee, shellcheck, actionlint, editorconfig-checker,
+# markdownlint-cli2) are not listed: one owner per pin.
+cargo-hack@0.6.45
