@@ -1,0 +1,131 @@
+---
+id: T10
+title: "Metrics and the effects boundary: rustqual over both crates, the libpachinko bans, the probe"
+status: open
+depends_on: [T00, T02]
+parallel_with: [T01, T03, T04, T05, T06, T07, T08, T09]
+branch: ticket/t10-metrics-and-effects
+estimated_size: L
+---
+
+# T10: Metrics and the effects boundary: rustqual over both crates, the libpachinko bans, the probe
+
+## Context
+
+Decision 3 (`CONVENTIONS.md` §1) is that libpachinko never touches the clock, randomness,
+the filesystem, the network, the environment or threads, and that this is enforced
+mechanically. L got that guarantee for free from `#![no_std]`; this repository is std, so
+the effects have to be named and banned, in libpachinko only, by a gate that has been
+shown to fire. That is gate 8, `just effects`, which runs `scripts/check-effects.sh`.
+T00's script checks only libpachinko's dependency tree; this lane makes it complete.
+
+Gate 7, `just metrics`, already runs rustqual over both crates with L's thresholds
+(`CONVENTIONS.md` §4). This lane makes `rustqual.toml` final for this repository.
+
+`CONVENTIONS.md` §9 is the design: the bans, the candidate mechanisms, and the three
+things the script must do. §1 facts 3 and 4 are why the obvious mechanisms are not
+enough on their own. §12 claims 2, 11 and 12 are this lane's to settle. L
+`tickets/T22-metrics-gate.md` is the procedure for rustqual and for the probe shape (a
+fixture that breaks each rule once, and a recipe that fails unless every rule fires);
+L `Justfile`'s `metrics` recipe is the probe's shell.
+
+T10 waits for T02 because the clippy configuration and `deny.toml` are T02's: a
+libpachinko `clippy.toml`, if this lane chooses one, must restate T02's final root keys.
+
+## Goal
+
+`just effects` fails on any banned crate in libpachinko's normal dependency tree and on
+any banned std API in libpachinko's source; its probe over
+`tests/fixtures/effects-violation/` sees every ban fire exactly once; it reports nothing
+on `crates/pachinko`; and `just metrics` is green with a `rustqual.toml` whose every
+setting is chosen. Both gates are green in `just check`.
+
+## Non-goals
+
+- No effect trait in libpachinko. The traits arrive with the specifications.
+- No `Justfile` change: `effects` runs the script and the script is this lane's.
+- No rustqual module-boundary rules: there are no modules to bound (decision 0012).
+- No change to `deny.toml` or the root `clippy.toml`; a change needed there is handed
+  to T02 or, after T02 has merged, made in a `main` follow-up.
+
+## Files touched
+
+| Path | Class | Content |
+| --- | --- | --- |
+| `scripts/check-effects.sh` | final | the three checks of `CONVENTIONS.md` §9 |
+| `tests/fixtures/effects-violation/` | new | a minimal crate source tree breaking each ban once |
+| `crates/libpachinko/clippy.toml` | new | only if step 3 chooses clippy |
+| `rustqual-effects.toml` | new | only if step 3 chooses rustqual |
+| `rustqual.toml` | final | L's thresholds, the comments rewritten for two crates |
+| `tickets/T10-metrics-and-effects.md` | ticket | `status:` and hand-back notes |
+
+## Steps
+
+1. Create the worktree after T00 and T02 have merged.
+2. **Settle `CONVENTIONS.md` §12 claim 2,** in a scratch copy of the repository under
+   `ai_tmp/`, for each mechanism in turn:
+   - clippy: put `disallowed-methods = [{ path = "std::time::SystemTime::now" }]` in
+     `crates/libpachinko/clippy.toml` and a call in libpachinko; does `just clippy` fail
+     on libpachinko, pass on the same call in pachinko, and still apply the root file's
+     keys (`too-many-lines-threshold`) to libpachinko? Clippy is documented to use the
+     first `clippy.toml` it finds walking up from the crate's manifest directory; confirm
+     whether it merges or shadows.
+   - rustqual: an `[[architecture.pattern]]` with `forbid_path_prefix = ["std::fs"]`, run
+     with `rustqual crates/libpachinko --config rustqual-effects.toml`; does it catch `use std::fs;
+     fs::read(..)` as well as `std::fs::read(..)`, and a glob import?
+   - cargo-deny: confirm `wrappers` admits direct parents only (`CONVENTIONS.md` §1 fact 3).
+3. **Choose.** The crate bans are the `cargo tree` check (it is already T00's). For the
+   std APIs, choose the mechanism that catches every form step 2 tried, with the fewest
+   files. Record the evidence and the choice in the hand-back notes; T11 carries it into
+   `architecture.md` and decision 0008.
+4. **The fixture.** `tests/fixtures/effects-violation/` holds a `Cargo.toml` that names
+   one banned crate in `[dependencies]` (it is never built, so nothing is fetched) and a
+   `src/` that breaks each std ban exactly once, in the form the chosen tool resolves,
+   plus one aliased form (`use std::fs as f;`) where the tool could miss it. It is not a
+   workspace member (`members = ["crates/*"]` already excludes it). If the `cargo tree`
+   check cannot read an unbuilt manifest offline, the crate half of the probe checks the
+   fixture's `Cargo.toml` text against the ban list instead, and says so.
+5. **The script.** Final `scripts/check-effects.sh`: POSIX `sh`, `set -eu`; the ban list
+   in one place at the top, one name per line with a reason; the three checks of
+   `CONVENTIONS.md` §9 in order; on failure, print the finding and what was expected, in
+   the shape of L's `metrics` probe output. Offline (`CONVENTIONS.md` §12 claim 12).
+6. **`rustqual.toml`.** L's thresholds and every comment that still holds; comments that
+   name L's modules rewritten. Confirm `just metrics` is green on both crates
+   (`CONVENTIONS.md` §12 claim 11).
+7. **Red, then green.** In scratch commits, add each banned API to libpachinko in turn and
+   confirm `just effects` fails naming it; remove one break from the fixture and confirm
+   the probe fails naming the silent ban; add a banned API to pachinko and confirm
+   nothing fires. Quote each.
+8. `just check`, then commit.
+
+## Acceptance criteria
+
+- `just effects` and `just metrics` are green.
+- The hand-back notes quote, for every ban, `just effects` failing when libpachinko
+  breaks it, and the probe failing when the fixture stops breaking it.
+- A banned API in `crates/pachinko` does not fail `just effects`.
+- `just effects` passes with the network blocked.
+- `just check` is green.
+
+## Verification
+
+```sh
+just effects
+just metrics
+HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 just effects
+just check
+```
+
+## Hand-back notes
+
+To be written by the executing agent: the evidence for `CONVENTIONS.md` §12 claims 2, 11
+and 12; the mechanism chosen and why; each red run; the sentences T11 must carry into
+`docs/explanation/architecture.md`, `docs/reference/quality-gates.md`,
+`docs/reference/configuration.md` and decision 0008.
+
+## Open points
+
+- `std::process` is banned with the rest: a library has no business spawning. If a
+  specification ever needs it, it becomes an effect trait like the others.
+- Whether `std::sync` primitives other than thread spawning (`Mutex`, atomics) are
+  allowed. They are not effects and stay allowed unless the maintainer says otherwise.

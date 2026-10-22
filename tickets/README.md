@@ -1,0 +1,116 @@
+# Tickets for bootstrapping `pachinko`
+
+This directory is the work breakdown for the foundation of `BiscuitBin/pachinko`, a Rust
+workspace of a library, `libpachinko`, and a service built around it, `pachinko`. The
+domain is not defined yet: Allium specifications come next, then the implementation.
+These tickets carry libpawdoku's toolchain, gates, handbook, agent contract, CI and
+Allium tooling across, so that the specifications and the code land in a repository that
+is already green.
+
+Each ticket is written for an AI agent with no other context, working in its own git
+worktree. `CONVENTIONS.md` is the shared design every ticket obeys and cites by section;
+read it first, then the ticket.
+
+Pushing, opening pull requests, tagging, filing these as GitHub issues, changing
+repository or organisation settings, installing a GitHub App and editing any other
+repository are separately authorised actions. Nothing here has been filed.
+
+## Index
+
+The `status:` field in each ticket's frontmatter is authoritative; this table is a
+snapshot.
+
+| Id | Title | File | Depends on | Parallel with | Status |
+| --- | --- | --- | --- | --- | --- |
+| T00 | Foundation: a shape-complete skeleton that passes `just check` on its first commit | `T00-foundation.md` | none | none | open |
+| T01 | GitHub repository: settings, branch protection, Pages source | `T01-github-repository.md` | T00 | T02, T03, T05 to T10 | open |
+| T02 | Rust quality gate: final tool configs, the std lint table, every Rust recipe green on real code | `T02-rust-gate.md` | T00 | T01, T03 to T09 | open |
+| T03 | Hooks and dotfiles: final configs, the first-run script, a fresh clone that works | `T03-hooks-and-dotfiles.md` | T00 | T01, T02, T04 to T10 | open |
+| T04 | CI workflows: the setup action, the gate jobs, `check`, audit and Pages | `T04-ci.md` | T00, T01 | T02, T03, T05 to T10 | open |
+| T05 | Agent contract: AGENTS.md, fourteen skills, the Allium vendoring | `T05-agent-contract.md` | T00 | T01 to T04, T06 to T10 | open |
+| T06 | Allium gate: the placeholder module, the spec recipes, the two spec pages | `T06-allium-gate.md` | T00 | T01 to T05, T07 to T10 | open |
+| T07 | Handbook A: project, tutorial and how-to pages | `T07-handbook-a.md` | T00 | T01 to T06, T08 to T10 | open |
+| T08 | Handbook B: explanation, reference and operations pages | `T08-handbook-b.md` | T00 | T01 to T07, T09, T10 | open |
+| T09 | Decision records 0001 to 0014 | `T09-decisions.md` | T00 | T01 to T08, T10 | open |
+| T10 | Metrics and the effects boundary: rustqual over both crates, the libpachinko bans, the probe | `T10-metrics-and-effects.md` | T00, T02 | T01, T03 to T09 | open |
+| T11 | Integration: the first green `just check` from a fresh clone and in CI, branch protection verified | `T11-integration.md` | T01 to T10 | none | open |
+| T12 | Maintainer docs: README, CHANGELOG, SECURITY, the crate READMEs | `T12-maintainer-docs.md` | T11 | T13 to T17 | open |
+| T13 | Container image: a multi-stage Dockerfile, `just image`, a CI build | `T13-container-image.md` | T11 | T12, T14 to T16 | open |
+| T14 | Release process: cargo-release, per-crate tags, a GitHub Release, semver checks | `T14-release.md` | T11 | T12, T13, T15, T16 | open |
+| T15 | Mutation testing: cargo-mutants as a weekly report | `T15-mutation-testing.md` | T11 | T12 to T14, T16 | open |
+| T16 | Benchmarks and fuzzing: a divan bench, a fuzz crate on stable, a weekly fuzz job | `T16-bench-and-fuzz.md` | T11 | T12 to T15 | open |
+| T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | open |
+
+## Dependency graph
+
+```text
+T00 ─┬─ T01 ── T04 ───────────┐
+     ├─ T02 ── T10 ───────────┤
+     ├─ T03, T05–T09 ─────────┴─ T11 ─┬─ T12
+                                      ├─ T13 ─┐
+                                      ├─ T14 ─┤
+                                      ├─ T15 ─┼─ T17
+                                      └─ T16 ─┘
+```
+
+The graph is acyclic: T00, then ten wave-1 lanes, then T11, then wave 2.
+
+- **Wave 0, T00.** The tracer bullet through every layer. Nothing else can start until it
+  has merged, because every lane replaces stubs it creates and every lane's definition of
+  done is `just check` green, which only T00 can make true first.
+- **Wave 1, T01 to T10.** Parallel lanes that share no path (CONVENTIONS.md §3, §11), with
+  the frozen files frozen. T04 waits for T01 because its proof run needs the protected
+  remote and the Pages source T01 sets; its files can be drafted beside T01. T10 waits
+  for T02 because the clippy configuration and `deny.toml` it builds the bans on are
+  T02's; a libpachinko `clippy.toml`, if T10 chooses one, restates T02's root keys.
+- **T11** reconciles the follow-ups wave 1 handed back to `main` and proves the whole gate
+  from a fresh clone and in CI.
+- **T12** writes the entry points last, so they describe what exists.
+- **Wave 2, T13 to T16.** The four extras (CONVENTIONS.md §1, decision 8). The frozen list
+  lifts after T11; each wave-2 ticket edits only its own lines in the shared files and
+  merges one at a time, rebased on the last (CONVENTIONS.md §11). Each adapts a design L's
+  spikes already drafted (CONVENTIONS.md §0).
+- **T17** comes last because Renovate has to know every pin, and T13 to T16 add pins: the
+  Docker digests, the release and mutation tools, the fuzz crate.
+
+## How to pick up a ticket
+
+1. Create a worktree on the branch the ticket's `branch:` field names, from `main`,
+   after every ticket it depends on has merged. `<branch>` is that field
+   (`ticket/t03-hooks-and-dotfiles`) and `<id>` the ticket id (`T03`):
+
+   ```sh
+   supacode repo worktree-new --branch <branch> --base main --name <id>
+   ```
+
+   Outside a Supacode terminal:
+
+   ```sh
+   git worktree add ../<id> -b <branch> main
+   ```
+
+2. Read `CONVENTIONS.md`, then the ticket. Read the L, B and T files the ticket names at
+   the commits `CONVENTIONS.md` §0 pins, with `git -C <clone> show <commit>:<path>`.
+   Never modify a clone.
+3. Edit only the files the ticket lists, plus the `status:` line and hand-back notes of
+   the ticket itself. A change needed elsewhere is handed back, not made.
+4. Run the ticket's verification commands and quote their output in the hand-back notes.
+5. Commit on the ticket branch. Pushing and opening the pull request are separately
+   authorised: stop and ask.
+
+## Definition of done
+
+`just check` is green in this repository, the ticket's acceptance criteria are met, its
+verification commands ran with the output quoted in the hand-back notes, every open point
+is answered or explicitly carried forward, and the ticket's `status:` is `done` in the
+same pull request. A ticket is done when its gate passes, not when its files exist.
+
+## Ticket format
+
+Every ticket carries frontmatter (`id`, `title`, `status`, `depends_on`, `parallel_with`,
+`branch`, `estimated_size`) and these sections in this order: Context, Goal, Non-goals,
+Files touched, Steps, Acceptance criteria, Verification, Hand-back notes, Open points.
+Files touched is a table whose first cell is the path as a code span. Repository paths
+and URLs are written as code spans, never as links, because the hook gate runs lychee
+offline over this directory. A source file is cited as its letter and a code span,
+L `Justfile`, so that every citation can be checked against its pinned commit.
