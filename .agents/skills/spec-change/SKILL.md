@@ -3,8 +3,15 @@ name: spec-change
 description: Change an Allium specification and carry the change through the tests and the implementation.
 ---
 
-This skill is a stub that ticket T05 replaces. Until then, follow `AGENTS.md`, which is canonical and wins wherever the two disagree.
+# Change a specification
 
-When T05 writes it, this file will hold the procedure for changing an Allium specification under `docs/specs/` and carrying the change through the tests and the implementation. Today there is one placeholder module, `docs/specs/pachinko.allium`, and the skill will say how the first real module replaces it.
+The specifications under `docs/specs/` decide behaviour. Code that disagrees with one is wrong until the specification is changed to say otherwise, so the specification moves first and the implementation follows.
 
-The recipes it will name include `just check-specs` and `just analyse-specs`. Run the narrowest of them while working, then `just check` before handing the work back.
+1. Read `AGENTS.md` and `docs/explanation/specifications.md`. Identify which module under `docs/specs/` owns the behaviour; each module's header states its Scope, Includes and Excludes. Today there is one, the placeholder `docs/specs/pachinko.allium`, which declares no behaviour; the first real module extends or replaces it.
+2. Read the whole module before editing, including its `Scope`, `Excludes` and `open question` blocks. A change that belongs in another module's scope goes there instead.
+3. Read the `allium` skill for the language, then edit the specification: state the rule as a trigger, its guards and its outcomes. Record what you could not decide as a new `open question` rather than guessing at a product decision.
+4. Check that dependent modules still hold. A module others import is depended on by each of them, so a change to a trigger or an entity ripples.
+5. Derive the tests from the changed clauses before writing implementation, and confirm they fail first. A test that is already green proves nothing about the new behaviour.
+6. Implement until the tests pass. Never weaken a test to make it pass — fix the specification and re-derive instead.
+7. Run `just check-specs`. It asserts that every module reports an empty `diagnostics` array — it reads the JSON rather than the exit code, so an `info` diagnostic fails it too — and an untouched checkout is clean, so anything it reports is a regression your change introduced. Fix it at the root; only a construct the pinned checker is verifiably wrong about may be waived, as a whole-line `-- allium-ignore <code>` comment directly above the diagnosed line with its reason on the comment line above it — the terms are in `docs/how-to/work-with-the-specs.md`. Then run `just analyse-specs`, which asserts the `findings` array is empty as well; a finding cannot be waived, so any finding is a regression to fix at the root. Both are gates now: they run as pre-commit hooks and inside `just check`, and both need `just install-allium` in a fresh worktree.
+8. Run `just test`, then `just check` before handoff.

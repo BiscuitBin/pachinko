@@ -3,8 +3,13 @@ name: plan-change
 description: Plan a change when the scope, affected specifications, risks, or validation need evidence before any code is written.
 ---
 
-This skill is a stub that ticket T05 replaces. Until then, follow `AGENTS.md`, which is canonical and wins wherever the two disagree.
+# Plan a change
 
-When T05 writes it, this file will hold the procedure for planning a change before any code is written: the scope, the affected specifications, the risks and the validation, named against this repository's gate names and its nineteen numbered gates.
-
-The recipes it will name include `just check` and `just plan-spec`. Run the narrowest of them while working, then `just check` before handing the work back.
+1. Read `AGENTS.md` and the specification modules the change touches. Separate what you read from what you are guessing.
+2. Inspect the worktree before proposing anything, and preserve work you did not author.
+3. Write down the observable outcome, and the explicit non-goals. A plan that does not say what it will not do cannot be reviewed for scope.
+4. Identify whether behaviour changes. If it does, the specification changes first — hand off to the `spec-change` skill rather than planning code against an unchanged spec. `just plan-spec <module>` lists the test obligations a module implies.
+5. Identify the boundaries crossed: a new effect needs a trait in libpachinko with a fake beside it, its real implementation in pachinko, and almost certainly a decision first; a new surface needs its `@guarantee` clauses honoured; a new topic needs an owning documentation page.
+6. Name the risks and the evidence that would settle them, and say which actions need authorization the agent does not already have.
+7. Split into steps that can each be verified on their own, each pairing behaviour with its test and its documentation.
+8. Present the plan with open questions marked as open. Confirm the plan runs green with `just check` before treating it as done.
