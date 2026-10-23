@@ -390,8 +390,19 @@ came from the cache here, so B was not fetched again in this run. The stub run a
 which had a `Cache miss`, is the run where B's git dependency was fetched and installed
 with no credential. Claim 5 holds.
 
-Step 12, the `pages.yml` deploy on `main` and the root index linking both crates, runs
-after the maintainer merges. It is recorded in a follow-up pull request.
+### Pages after the merge (step 12)
+
+The maintainer merged PR #3 as `49890ae`. Checked at 2026-10-23T02:44Z:
+
+- The `pages.yml` run on `main` was
+  `https://github.com/BiscuitBin/pachinko/actions/runs/39891100019` (push, `49890ae`). Its
+  `build` and `deploy` jobs both concluded `success`, and the `github-pages` deployment
+  is at `49890ae`, created 02:43:52Z. CI on `49890ae` also passed.
+- Pages URL: `https://biscuitbin.github.io/pachinko/` (`build_type: workflow`). The root
+  index returns 200 and holds exactly the `just site` index, linking
+  `libpachinko/index.html` and `pachinko/index.html`. Both return 200, with titles
+  `libpachinko - Rust` and `pachinko - Rust`.
+- The required check is still `[{"app_id":15368,"context":"check"}]`.
 
 ### Review records (CONVENTIONS.md §14)
 
