@@ -10,7 +10,8 @@
 # passes as a flag; `allow_expect`, inert while `detect_error_handling` is off; and
 # `[weights]`, which only shapes a score no recipe sets a floor for.
 
-# Recursion stays an IOSP finding: a search keeps an explicit stack (decision 0012).
+# Recursion stays an IOSP finding: a traversal keeps an explicit stack instead
+# (decision 0012).
 allow_recursion = false
 # Closures, iterator chains and `?` are idiomatic Rust, not logic for IOSP to count.
 strict_closures = false
@@ -23,6 +24,10 @@ max_suppression_ratio = 0.05
 [suppression]
 pin_headroom = 0.10
 
+# On with no `[[architecture.pattern]]` table: there are no modules to bound yet
+# (decision 0012), and the first boundary rule needs only its table. The effect bans
+# are not rules here, because this file also governs crates/pachinko, which may use
+# every effect; they are gate 8's, in crates/libpachinko/clippy.toml.
 [architecture]
 enabled = true
 
