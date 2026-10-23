@@ -1,0 +1,10 @@
+# Not banned: it carries socket2 in, so the probe shows the cargo tree line sees past
+# a direct parent.
+[package]
+name = "wrapper"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+socket2 = { path = "../socket2" }

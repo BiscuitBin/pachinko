@@ -1,0 +1,7 @@
+# A stub named after a crate scripts/check-effects.sh bans: no code, only the name
+# cargo tree reports.
+[package]
+name = "async-std"
+version = "0.1.0"
+edition = "2024"
+publish = false

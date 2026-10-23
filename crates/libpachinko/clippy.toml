@@ -1,0 +1,170 @@
+# libpachinko's clippy configuration. Clippy reads the first clippy.toml it finds
+# walking up from a crate's manifest directory and merges nothing, so this file
+# shadows the root one for libpachinko: it restates every line of the root
+# clippy.toml verbatim, and scripts/check-effects.sh fails if the two differ by more
+# than the effect entries. Change the root file first, then mirror it here.
+#
+# The effect entries are gate 8's std-API bans (decision 0008, CONVENTIONS.md §9):
+# every reason begins `effect:`, which is how the script finds them, and the fixture
+# under tests/fixtures/effects-violation breaks each exactly once. A path in these
+# lists that does not resolve is only a warning, so the fixture is what proves each
+# entry is live. A type entry also bans the type's associated functions and
+# constants (`File::open`, `ExitCode::SUCCESS`). Only unix paths are listed:
+# another platform's path does not resolve here.
+#
+# The `-in-tests` keys lift unwrap_used, expect_used, panic, dbg_macro, print_stdout,
+# print_stderr and indexing_slicing in `#[test]` functions and `#[cfg(test)]` code: a
+# failing test should panic loudly, and a test may index and print freely. The
+# workspace table does not enable indexing_slicing, so its key is ready for a crate
+# that does. Clippy has no such key for unreachable, todo or unimplemented.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-dbg-in-tests = true
+allow-print-in-tests = true
+# Iteration over these is in an unspecified order, so anything built from it can
+# differ between runs; use the ordered collections instead.
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "iteration order is not deterministic; use BTreeMap" },
+  { path = "std::collections::HashSet", reason = "iteration order is not deterministic; use BTreeSet" },
+  { path = "std::fs::DirBuilder", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::DirEntry", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::File", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::FileTimes", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::FileType", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::Metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::OpenOptions", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::Permissions", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::ReadDir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::TryLockError", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::Args", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::ArgsOs", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::JoinPathsError", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::SplitPaths", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::VarError", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::Vars", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::VarsOs", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::AddrParseError", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::Incoming", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::IpAddr", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::Ipv4Addr", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::Ipv6Addr", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::Shutdown", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::SocketAddr", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::SocketAddrV4", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::SocketAddrV6", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::TcpListener", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::TcpStream", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::ToSocketAddrs", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::UdpSocket", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::net::Incoming", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::net::UnixDatagram", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::net::UnixListener", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::net::UnixStream", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::process::Child", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::ChildStderr", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::ChildStdin", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::ChildStdout", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::Command", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::CommandArgs", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::CommandEnvs", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::ExitCode", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::ExitStatus", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::Output", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::Stdio", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::Termination", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::thread::Builder", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::hash::RandomState", reason = "effect: randomness is reached through a trait libpachinko defines (decision 0008)" },
+]
+# Tighter than clippy's defaults (25, 100 and 7; excessive_nesting does nothing until
+# a threshold is set): a function past one of them is split, not excused.
+# cognitive_complexity is a restriction lint, enabled in Cargo.toml.
+cognitive-complexity-threshold = 15
+excessive-nesting-threshold = 4
+too-many-lines-threshold = 60
+too-many-arguments-threshold = 5
+
+# Every stable function of std::fs, std::env and std::process; the clock and thread
+# calls CONVENTIONS.md §9 names, with sleep_ms beside sleep, spawn on a Scope passed
+# in beside scope, and the timed waits, park_timeout and the Condvar and channel
+# timeouts, each a sleep by another name; and the paths outside those modules that
+# reach the same effects: the filesystem queries on Path (PathBuf reaches them
+# through Deref), std::path::absolute, which reads the current directory,
+# std::os::unix::fs, DNS through ToSocketAddrs, the core count through
+# available_parallelism, and the parent process through std::os::unix::process::parent_id.
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::time::SystemTime::elapsed", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::time::Instant::now", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::time::Instant::elapsed", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::spawn", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::scope", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::Scope::spawn", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::sleep", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::sleep_ms", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::park_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::park_timeout_ms", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout_ms", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout_while", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::mpsc::Receiver::recv_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::available_parallelism", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::canonicalize", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::copy", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::create_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::create_dir_all", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::exists", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::hard_link", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::read", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::read_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::read_link", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::read_to_string", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::remove_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::remove_dir_all", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::remove_file", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::rename", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::set_permissions", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::set_times", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::set_times_nofollow", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::soft_link", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::symlink_metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::write", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::canonicalize", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::exists", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::is_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::is_file", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::is_symlink", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::read_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::read_link", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::symlink_metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::Path::try_exists", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::path::absolute", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::fs::chown", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::fs::chroot", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::fs::fchown", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::fs::lchown", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::fs::symlink", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::args", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::args_os", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::current_dir", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::current_exe", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::home_dir", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::join_paths", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::remove_var", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::set_current_dir", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::set_var", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::split_paths", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::temp_dir", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::var", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::var_os", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::vars", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::env::vars_os", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::net::ToSocketAddrs::to_socket_addrs", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::process::abort", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::exit", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::process::id", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::os::unix::process::parent_id", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+]
