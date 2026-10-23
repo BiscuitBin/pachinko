@@ -230,7 +230,7 @@ change)`.
 | --- | --- | --- |
 | Step 4: `--apply` with the dry run's flags | 2026-10-23T01:11:43Z | `changed: 3`, exit 0 |
 | Step 5: `POST repos/BiscuitBin/pachinko/pages -f build_type=workflow` | 2026-10-23T01:18:55Z | returned the Pages object, exit 0 |
-| Step 10: push and open the pull request | see the PR section | |
+| Step 10: push, open the pull request, one follow-up push | see the PR section | PR #3 |
 
 Admin access and the `Branch not protected` message were rechecked at 00:18:58Z, just
 before asking.
@@ -350,6 +350,48 @@ All checks passed and the worktree is unchanged.                      exit 0
 
 `git status --short` printed nothing after `just check`. `git fetch origin` showed
 `origin/main` = `8b01c0c`, the branch's base, so no rebase was needed.
+
+### Pull request (steps 10 and 11)
+
+Push and PR authorised at 2026-10-23T01:27:58Z, covering the push, `gh pr create` and one
+follow-up evidence commit to this branch. PR: `https://github.com/BiscuitBin/pachinko/pull/3`,
+head `bd624d0`. GitHub tested the merge commit `ea27892` (`HEAD is now at ea27892 Merge
+bd624d0... into 8b01c0c...` in each job's checkout).
+
+```text
+$ gh pr checks 3 --repo BiscuitBin/pachinko
+audit      pass  30s  .../actions/runs/39884148258/job/120188268856
+check      pass   3s  .../actions/runs/39884148193/job/120188461816
+coverage   pass  34s  .../actions/runs/39884148193/job/120188268921
+deny       pass  33s  .../actions/runs/39884148193/job/120188269241
+documents  pass  37s  .../actions/runs/39884148193/job/120188269280
+rust       pass  29s  .../actions/runs/39884148193/job/120188269392
+exit 0
+$ gh pr checks 3 --repo BiscuitBin/pachinko --required
+check      pass   3s  .../actions/runs/39884148193/job/120188461816
+exit 0
+```
+
+- CI run `https://github.com/BiscuitBin/pachinko/actions/runs/39884148193`; Audit run
+  `https://github.com/BiscuitBin/pachinko/actions/runs/39884148258`, which ran and is not
+  required.
+- The `rust` job's log shows every step: `check-toolchain`, `lock-check`, `fmt-check`,
+  `toml-check`, `clippy`, `metrics`, `effects`, `features`, `test`, `snapshots-check`,
+  `doc`, `deps-unused`. `documents` runs `install-allium` before `lint`, `check-docs`,
+  `check-agents`, `check-specs` and `analyse-specs`. `coverage` printed `TOTAL ... 100.00%`
+  lines under `--fail-under-lines 90`.
+- The jobs are short, about 30s each, because they restore the caches `main`'s stub run
+  wrote: `Cache hit for: pixi-linux-64-d9e27b6b...`, plus the tools and prek keys.
+
+Claim 5, the full run (job `rust`): `Removing credentials config
+'/home/runner/work/_temp/git-credentials-a3429715-...config'` (01:28:08.59Z), then
+`✔ The default environment has been installed.` (01:28:11.59Z). The pixi environment
+came from the cache here, so B was not fetched again in this run. The stub run above,
+which had a `Cache miss`, is the run where B's git dependency was fetched and installed
+with no credential. Claim 5 holds.
+
+Step 12, the `pages.yml` deploy on `main` and the root index linking both crates, runs
+after the maintainer merges. It is recorded in a follow-up pull request.
 
 ### Review records (CONVENTIONS.md §14)
 
