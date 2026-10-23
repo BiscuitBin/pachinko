@@ -25,19 +25,118 @@ env:
   CARGO_NET_RETRY: '10'
   RUST_BACKTRACE: '1'
 
-# The one-job stub T01 replaces with gate jobs behind a `check` aggregate. The
-# name `check` is the required check from the first push (CONVENTIONS §10).
+# Ubuntu only: the crates are pure computation with eol=lf forced by
+# .gitattributes and rustfmt, so a second operating system would prove
+# nothing the first does not. `check`, last, is the one required check; the
+# four gate jobs are its `needs`, so no name carries a slash or a space.
 jobs:
-  check:
-    name: check
+  rust:
+    name: rust
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          cache-key: check
+          cache-key: rust
+      # One recipe per step, in the gate's order, so a failure names itself
+      # in the step list. `check-toolchain` first: it proves the runner's
+      # cargo is rustup's proxy on the pinned release before anything builds.
+      - run: just check-toolchain
+      - run: just lock-check
+      - run: just fmt-check
+      - run: just toml-check
+      - run: just clippy
+      - run: just metrics
+      - run: just effects
+      - run: just features
+      - run: just test
+      - run: just snapshots-check
+      - run: just doc
+      - run: just deps-unused
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: coverage
+      - run: just coverage
+      # Only after the floor passed: the recipe writes lcov.info in its last
+      # line, so an upload on failure would fail a second time for the
+      # missing file. Seven days is long enough to read a number into a
+      # review; nothing downstream consumes it yet.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lcov
+          path: target/llvm-cov/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+
+  deny:
+    name: deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: deny
+      # Licences, bans and sources are answerable from the registry index
+      # `just sync` fetched. Advisories are audit.yml's, because they need the
+      # RustSec database over the network.
+      - run: just deny
+
+  documents:
+    name: documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: documents
+      # Over the network, into the gitignored .tools/bin. The checker is
+      # pinned by the tooling package, not by pixi.lock, so `just sync`
+      # deliberately does not install it and this does. Before `lint`,
+      # because the hook gate runs the specification checks. It lands in the
+      # .tools cache as a side effect; bg-install-allium version-checks and
+      # downloads only when the binary is missing or stale.
       - run: just install-allium
-      - run: just check
+      - run: just lint
+      - run: just check-docs
+      - run: just check-agents
+      # Already run by the hook gate above; repeated here so a specification
+      # regression names itself in the step list rather than inside `lint`.
+      # The same duplication as check-docs and check-agents, for the same
+      # reason.
+      - run: just check-specs
+      - run: just analyse-specs
+
+  # The one required check (CONVENTIONS.md §10). It needs every gate job and
+  # fails if any of them failed, was cancelled or was skipped, so protection
+  # names `check` alone and never changes when a job is added, renamed or
+  # moved into a reusable workflow: a new gate job joins `needs` here.
+  # `if: always()` is what makes it report on a failure instead of being
+  # skipped, which is why the step reads `needs.*.result` itself. No checkout,
+  # no setup action, and no `${{ }}` inside a shell line.
+  check:
+    name: check
+    needs: [rust, coverage, deny, documents]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+        run: exit 1

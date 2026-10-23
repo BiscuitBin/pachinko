@@ -1,0 +1,77 @@
+name: Deploy to GitHub Pages
+
+# Publishing needs write scopes that no other workflow here has, so the
+# deploy lives in its own file rather than as a job on the end of CI.
+
+on:
+  push:
+    # Quoted for the reason ci.yml gives.
+    branches: ['main']
+  workflow_dispatch:
+
+# Read-only unless a job says otherwise. A job-level block replaces this
+# one, so the job that checks out and builds never holds a publishing scope.
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancel one that is already running: a
+# half-published site is worse than a slightly stale one. The ref is in the
+# group because a group keeps one run waiting and a newer one takes its
+# place: a run started by hand from another branch deploys nothing, and must
+# not displace a waiting deployment of main. Group names are compared without
+# regard to case, so a branch named `Main` would share main's group; nothing
+# here can tell the two apart.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  CARGO_NET_RETRY: '10'
+  RUST_BACKTRACE: '1'
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: pages
+      - run: just check-toolchain
+      - run: just site
+      # Dotfiles are left out of the artefact, so cargo's target/doc/.lock
+      # is not published.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: target/doc
+
+  deploy:
+    name: deploy
+    needs: build
+    # A run started by hand from another branch builds and stops here. Not
+    # optional: the environment's own branch rule is a setting, and a
+    # setting can be changed where no reviewer sees it. The comparison
+    # ignores case, as every comparison in an expression does, so a branch
+    # named `Main` passes it, and the environment's rule is then the one
+    # guard left.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The two publishing scopes, on the one job that has no checkout and
+    # runs no code from the repository.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
