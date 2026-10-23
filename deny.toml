@@ -2,10 +2,13 @@
 # Every feature is on, so a dependency behind a feature is checked too.
 all-features = true
 # Dev-dependencies are outside the graph: they serve the tests only, and the
-# licences and bans below are about what ships, not the test harness.
+# licences and bans below are about what ships, not the test harness. Every check
+# reads this one graph, so dev-dependencies also skip [sources] and `just audit`; a
+# dev-dependency from an unlisted source passes, so review it when it is added.
 exclude-dev = true
-# The three hosts the workspace is built on; a target-specific dependency for any
-# other platform is out of scope.
+# The platforms a dependency is resolved for: Linux (CI), Apple silicon (the
+# maintainer) and, kept from L, Windows, so a dependency that appears only there is
+# still checked. Other targets' platform-specific dependencies are out of scope.
 targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
 
 # Network: the RustSec database is fetched, so this section runs from `just audit`,
@@ -36,7 +39,8 @@ allow = [
   "Unlicense",
   "CC0-1.0",
 ]
-# A licence text detected with less confidence than this is reported, not guessed.
+# Stricter than the default 0.8: a licence text matched with less confidence than
+# this is reported for a person to read rather than accepted as a near match.
 confidence-threshold = 0.9
 # The workspace's own crates are `publish = false`, so the check skips them; it is
 # about dependencies.
@@ -56,6 +60,7 @@ highlight = "all"
 deny = [{ crate = "openssl-sys", reason = "no native TLS anywhere in this workspace" }]
 
 # Crates come from crates.io and nowhere else; a git source is added deliberately.
+# This covers the graph above, so not dev-dependencies.
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

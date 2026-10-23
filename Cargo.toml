@@ -16,7 +16,8 @@ publish = false
 
 # Every level here is `warn` so a local build never breaks mid-edit; `just clippy`
 # passes `-D warnings`, which is where a warning becomes a failure. The `forbid` and
-# `deny` entries are the exceptions, each saying why it cannot wait for the gate.
+# `deny` entries are the exceptions, each saying why it cannot wait for the gate, and
+# the one `allow` at the end turns a lint off.
 [workspace.lints.rust]
 # Invariant 4: no unsafe code in any crate. `forbid`, so no attribute can lower it.
 unsafe_code = "forbid"
@@ -33,15 +34,16 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 # no `pub` item that cannot be reached, no reachable type that cannot be named.
 unreachable_pub = "warn"
 unnameable_types = "warn"
-# Noise a reader has to see through: a path longer than it needs to be, a cast to the
-# type the value already has.
+# Noise a reader has to see through: a path longer than it needs to be, a cast where
+# a coercion would do, a numeric cast to the type the value already has.
 unused_qualifications = "warn"
 trivial_casts = "warn"
 trivial_numeric_casts = "warn"
 
 [workspace.lints.rustdoc]
 # A link that does not resolve, or resolves to a private item, is a broken page in
-# the API reference, so these fail even a local build.
+# the API reference. Rustdoc lints run only under `cargo doc`; `deny` makes a plain
+# `cargo doc` fail, not only `just doc` with its `-D warnings`.
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "deny"
 # Each crate's front page says what the crate is for.
@@ -52,14 +54,15 @@ unescaped_backticks = "warn"
 [workspace.lints.clippy]
 # Groups take `priority = -1` so the single lints below override their members.
 pedantic = { level = "warn", priority = -1 }
-# The manifest metadata the cargo group asks for lives in each crate's Cargo.toml.
+# The cargo group checks the package manifests; each crate's Cargo.toml says which of
+# its fields serve it.
 cargo = { level = "warn", priority = -1 }
 # Nursery lints, enabled one by one because the nursery group is not stable enough
 # to take whole: a function that can be `const` is, and a type names itself `Self`.
 missing_const_for_fn = "warn"
 use_self = "warn"
-# Restriction lints from here down; that group is never enabled whole, so each is
-# named. The panicking shortcuts: library and service code returns errors instead.
+# Restriction lints from here to cognitive_complexity; that group is never enabled
+# whole, so each is named. The panicking shortcuts: library and service code returns errors instead.
 # clippy.toml lifts unwrap_used, expect_used and panic in test code; unreachable,
 # todo and unimplemented have no test exemption and stay in force there.
 unwrap_used = "warn"
@@ -103,8 +106,8 @@ float_cmp_const = "warn"
 same_name_method = "warn"
 # A function too tangled to review; clippy.toml sets the threshold.
 cognitive_complexity = "warn"
-# cargo-deny's bans.multiple-versions owns this check; this cargo-group lint would
-# duplicate it with no way to see which crate brought the second version.
+# A cargo-group lint turned off: cargo-deny's bans.multiple-versions owns this check
+# and shows which crates pull in each version, so the lint would only repeat it.
 multiple_crate_versions = "allow"
 
 # For the service binary: fat LTO and one codegen unit trade build time for a smaller,
@@ -113,6 +116,8 @@ multiple_crate_versions = "allow"
 lto = "fat"
 codegen-units = 1
 
-# Light optimisation keeps future property tests fast without losing debug info.
+# Kept from L: tests build with light optimisation and full debug info, so a suite
+# that loops (a property test, once the specifications bring one) stays fast. At this
+# size the build cost is negligible.
 [profile.test]
 opt-level = 1
