@@ -160,8 +160,9 @@ name, not on `ticket/t10-metrics-and-effects`; rename the branch before the pull
 request if the name matters. Nothing was pushed, and `git fetch` and the rebase onto
 `origin/main` that §11 asks for before a push have not run: pushing was not
 authorised. `just initialize` was not needed; `.pixi/` and `.tools/` were present.
-The commits are `51303ae` (the gate) and `1169dca` (the final review's fixes), then
-the commit that adds these notes.
+The commits are `51303ae` (the gate), `1169dca` (the final §14 review's fixes),
+`9f2c8d4` (these notes, first written) and `a2f88a1` (the code review's fixes), then
+the commit that brings these notes up to date.
 
 ### Baseline: `b4e452a`
 
@@ -273,7 +274,7 @@ that catches every form step 2 tried, because it resolves names instead of match
 text. It needs one file, as rustqual would. rustqual is not used for the bans, and
 there is no `rustqual-effects.toml`.
 
-The file restates the root `clippy.toml` verbatim and adds 108 entries, each with a
+The file restates the root `clippy.toml` verbatim and adds 113 entries, each with a
 reason beginning `effect:`:
 
 - every stable function of `std::fs`, `std::env` and `std::process` in
@@ -290,7 +291,11 @@ reason beginning `effect:`:
   `std::path::absolute` (it reads the current directory),
   `std::os::unix::fs::{symlink,chown,fchown,lchown,chroot}`,
   `std::os::unix::net::{UnixStream,UnixListener,UnixDatagram}` and
-  `std::net::ToSocketAddrs::to_socket_addrs` (DNS).
+  `std::net::ToSocketAddrs::to_socket_addrs` (DNS);
+- additions from the code review (below): `std::hash::RandomState`, which seeds
+  from the operating system; `std::thread::{park_timeout,park_timeout_ms}`, a sleep
+  by another name; `std::thread::available_parallelism` (it reads the machine) and
+  `std::os::unix::process::parent_id`.
 
 The inventory came from the `#[stable]` items in the 1.98.1 `library/std/src`
 (`fs.rs`, `env.rs`, `process.rs`, `net/mod.rs`, `thread/mod.rs`,
@@ -328,7 +333,7 @@ Claude Opus 5.5 subagents, one per finding, each checking by experiment under
 No high finding stayed open after the fixes (B1's fix is entry additions, each
 proven by the fixture), so no second round ran.
 
-### The fixture's tree, read by the probe: `1169dca`
+### The fixture's tree, read by the probe: `a2f88a1`
 
 Every banned crate appears exactly once. `socket2` appears only through `wrapper`,
 and `getrandom` only under `[target.'cfg(windows)'.dependencies]`, which shows the
@@ -349,12 +354,12 @@ socket2 v0.1.0 (tests/fixtures/effects-violation/deps/socket2)
 Exit status: 0
 ```
 
-### Step 7: red runs, `1169dca`
+### Step 7: red runs, `a2f88a1`
 
 The harness is `ai_tmp/t10/red.py` (not committed); its log and results are
 `ai_tmp/t10/red.log` and `ai_tmp/t10/red/results.json`. Each case resets a scratch
 copy of `git archive HEAD`, applies one change and runs `just effects` there. Of
-341 cases, 341 behaved as expected. An `OK` requires the exit status and the exact
+361 cases, 361 behaved as expected. An `OK` requires the exit status and the exact
 named set: the fixture tags for API cases, the one crate for crate cases.
 
 An earlier run of the harness reset files with `rsync -a`, which restores old
@@ -372,7 +377,7 @@ want none
 error: recipe `effects` failed on line 187 with exit code 1
 
 # use std::fs as f; f::read("a") in libpachinko
-effects: clippy --all-features over libpachinko exited 0, want 0
+effects: clippy --all-features over libpachinko exited 101, want 0
 banned APIs used:
 std::fs::read
 want none
@@ -416,13 +421,12 @@ tokio
 error: recipe `effects` failed on line 187 with exit code 1
 
 # pachinko: SystemTime::now, env::var_os, thread::spawn, fs::read and a tokio stub dependency
-sh scripts/check-effects.sh
-effects: libpachinko names none of 8 banned crates and uses none of 108 banned std APIs;
+effects: libpachinko names none of 8 banned crates and uses none of 113 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
 exit 0
 
 # a banned call under #[cfg(not(feature = "injected-clock"))] in libpachinko
-effects: clippy --no-default-features over libpachinko exited 0, want 0
+effects: clippy --no-default-features over libpachinko exited 101, want 0
 banned APIs used:
 std::time::SystemTime::now
 want none
@@ -465,22 +469,58 @@ error: recipe `effects` failed on line 187 with exit code 1
 
 # the root clippy.toml's too-many-lines-threshold 60 -> 50, libpachinko's left at 60
 effects: crates/libpachinko/clippy.toml differs from clippy.toml beyond its effect entries.
-14c14
+13c13
 < too-many-lines-threshold = 50
 ---
 > too-many-lines-threshold = 60
 clippy reads only the crate's file for libpachinko; restate the root file there.
 error: recipe `effects` failed on line 187 with exit code 1
+
+# #[expect(clippy::disallowed_methods, reason = "probe")] on a SystemTime::now call in libpachinko
+effects: clippy --all-features over libpachinko exited 101, want 0
+banned APIs used:
+want none
+error: recipe `effects` failed on line 187 with exit code 1
+
+# disallowed_methods = "allow" in the workspace lint table, and the same call
+effects: clippy --all-features over libpachinko exited 101, want 0
+banned APIs used:
+std::time::SystemTime::now
+want none
+error: recipe `effects` failed on line 187 with exit code 1
+
+# an effect: entry copied into the root clippy.toml
+effects: clippy.toml holds an effect: entry; the bans belong in crates/libpachinko/clippy.toml
+error: recipe `effects` failed on line 187 with exit code 1
+
+# libpachinko's HashMap entry moved from disallowed-types into disallowed-methods
+effects: crates/libpachinko/clippy.toml differs from clippy.toml beyond its effect entries.
+8d7
+<   { path = "std::collections::HashMap", reason = "iteration order is not deterministic; use BTreeMap" },
+14a14,16
+> disallowed-methods = [
+>   { path = "std::collections::HashMap", reason = "iteration order is not deterministic; use BTreeMap" },
+> ]
+clippy reads only the crate's file for libpachinko; restate the root file there.
+error: recipe `effects` failed on line 187 with exit code 1
+
+# libpachinko's std::process::id entry written reason-first
+effects: an effect: entry in crates/libpachinko/clippy.toml is not one line of the form
+  { path = "...", reason = "effect: ..." },
+error: recipe `effects` failed on line 187 with exit code 1
 ```
+
+The `#[expect]` case fails to compile, with `error[E0453]: expect(clippy::disallowed_methods)
+incompatible with previous forbid`, before clippy reports the call.
 
 A `SystemTime::now` behind a positive `#[cfg(feature = "clock")]` also fails, through
 the `--all-features` pass.
 
 Every ban, both ways. Breaking a ban in libpachinko fails `just effects` naming it;
 silencing the fixture's break fails the probe naming it as silent; deleting the
-break with its tag fails the inventory check naming it. `set_var` and `remove_var`
-moved into libpachinko also fail compilation under `forbid(unsafe_code)` (clippy exit
-101); the ban is named all the same.
+break with its tag fails the inventory check naming it. Because the two lints are
+forbidden on libpachinko's runs, each libpachinko finding is a compile error, so
+clippy exits 101 there and the script names the ban.
 
 | Crate | Added to libpachinko | `just effects` | Removed from the fixture | `just effects` |
 | --- | --- | --- | --- | --- |
@@ -504,6 +544,10 @@ moved into libpachinko also fail compilation under `forbid(unsafe_code)` (clippy
 | `std::thread::sleep` | `thread_sleep` names `std::thread::sleep` | exit 1 | silent: `std::thread::sleep` | exit 1 | not tagged: `std::thread::sleep` | exit 1 |
 | `std::thread::sleep_ms` | `thread_sleep_ms` names `std::thread::sleep_ms` | exit 1 | silent: `std::thread::sleep_ms` | exit 1 | not tagged: `std::thread::sleep_ms` | exit 1 |
 | `std::thread::Builder` | `thread_builder` names `std::thread::Builder` | exit 1 | silent: `std::thread::Builder` | exit 1 | not tagged: `std::thread::Builder` | exit 1 |
+| `std::thread::park_timeout` | `thread_park_timeout` names `std::thread::park_timeout` | exit 1 | silent: `std::thread::park_timeout` | exit 1 | not tagged: `std::thread::park_timeout` | exit 1 |
+| `std::thread::park_timeout_ms` | `thread_park_timeout_ms` names `std::thread::park_timeout_ms` | exit 1 | silent: `std::thread::park_timeout_ms` | exit 1 | not tagged: `std::thread::park_timeout_ms` | exit 1 |
+| `std::thread::available_parallelism` | `thread_available_parallelism` names `std::thread::available_parallelism` | exit 1 | silent: `std::thread::available_parallelism` | exit 1 | not tagged: `std::thread::available_parallelism` | exit 1 |
+| `std::hash::RandomState` | `hash_random_state` names `std::hash::RandomState` | exit 1 | silent: `std::hash::RandomState` | exit 1 | not tagged: `std::hash::RandomState` | exit 1 |
 | `std::fs::canonicalize` | `fs_canonicalize` names `std::fs::canonicalize` | exit 1 | silent: `std::fs::canonicalize` | exit 1 | not tagged: `std::fs::canonicalize` | exit 1 |
 | `std::fs::copy` | `fs_copy` names `std::fs::copy` | exit 1 | silent: `std::fs::copy` | exit 1 | not tagged: `std::fs::copy` | exit 1 |
 | `std::fs::create_dir` | `fs_create_dir` names `std::fs::create_dir` | exit 1 | silent: `std::fs::create_dir` | exit 1 | not tagged: `std::fs::create_dir` | exit 1 |
@@ -589,6 +633,7 @@ moved into libpachinko also fail compilation under `forbid(unsafe_code)` (clippy
 | `std::process::abort` | `process_abort` names `std::process::abort` | exit 1 | silent: `std::process::abort` | exit 1 | not tagged: `std::process::abort` | exit 1 |
 | `std::process::exit` | `process_exit` names `std::process::exit` | exit 1 | silent: `std::process::exit` | exit 1 | not tagged: `std::process::exit` | exit 1 |
 | `std::process::id` | `process_id` names `std::process::id` | exit 1 | silent: `std::process::id` | exit 1 | not tagged: `std::process::id` | exit 1 |
+| `std::os::unix::process::parent_id` | `unix_parent_id` names `std::os::unix::process::parent_id` | exit 1 | silent: `std::os::unix::process::parent_id` | exit 1 | not tagged: `std::os::unix::process::parent_id` | exit 1 |
 | `std::process::Child` | `process_child` names `std::process::Child` | exit 1 | silent: `std::process::Child` | exit 1 | not tagged: `std::process::Child` | exit 1 |
 | `std::process::ChildStderr` | `process_child_stderr` names `std::process::ChildStderr` | exit 1 | silent: `std::process::ChildStderr` | exit 1 | not tagged: `std::process::ChildStderr` | exit 1 |
 | `std::process::ChildStdin` | `process_child_stdin` names `std::process::ChildStdin` | exit 1 | silent: `std::process::ChildStdin` | exit 1 | not tagged: `std::process::ChildStdin` | exit 1 |
@@ -602,12 +647,12 @@ moved into libpachinko also fail compilation under `forbid(unsafe_code)` (clippy
 | `std::process::Stdio` | `process_stdio` names `std::process::Stdio` | exit 1 | silent: `std::process::Stdio` | exit 1 | not tagged: `std::process::Stdio` | exit 1 |
 | `std::process::Termination` | `process_termination` names `std::process::Termination` | exit 1 | silent: `std::process::Termination` | exit 1 | not tagged: `std::process::Termination` | exit 1 |
 
-### Verification: `1169dca`
+### Verification: `a2f88a1`
 
 ```text
 $ just effects
 sh scripts/check-effects.sh
-effects: libpachinko names none of 8 banned crates and uses none of 108 banned std APIs;
+effects: libpachinko names none of 8 banned crates and uses none of 113 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
 Exit status: 0
 
@@ -626,7 +671,7 @@ curl: (7) Failed to connect to 1.1.1.1 port 443 after 1 ms: Couldn't connect to 
 Exit status: 7
 $ sandbox-exec -p "$deny" just effects
 sh scripts/check-effects.sh
-effects: libpachinko names none of 8 banned crates and uses none of 108 banned std APIs;
+effects: libpachinko names none of 8 banned crates and uses none of 113 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
 Exit status: 0
 
@@ -667,9 +712,28 @@ Same reviewers and triage as checkpoint 1. The brief held the ticket, CONVENTION
 | B4 (medium) | Network-denial evidence absent | invalid: re-run cold under `sandbox-exec`, green, both controls failing | quoted above |
 
 No high finding was valid as high, so no second round ran. The fixes landed in
-`1169dca`, and step 7 and the verification were re-run there (quoted above).
+`1169dca`. After the code review below, step 7 and the verification were re-run at
+`a2f88a1` (quoted above).
 
-### Final gate: `1169dca` with uncommitted changes (these notes)
+### Code review (`/code-review`, medium) of `main...HEAD` at `9f2c8d4`
+
+Run by a forked Claude Opus 5.5 subagent after both §14 checkpoints, as the
+`/implement` workflow asks. Its fixes landed in `a2f88a1`, and the red runs and the
+verification above were re-run there.
+
+| # | Finding | Verdict | Applied |
+| --- | --- | --- | --- |
+| 1 | `#[allow]`, `#[expect]` or a `[lints]` entry silences a ban, and check 1 still passes | valid, the most severe: invariant 6 makes `#[expect]` look legitimate | `-F clippy::disallowed_methods -F clippy::disallowed_types` on libpachinko's runs; red runs L and M |
+| 2 | `std::hash::RandomState` is OS randomness | valid | banned |
+| 3 | `park_timeout`, `available_parallelism`, unix `parent_id` and timed `std::sync` waits are open | valid for the first three | banned; timed `std::sync` waits stay allowed, under this ticket's own open point on `std::sync` |
+| 4 | Check 0 compares sorted sets of lines, so an entry moved between arrays passes | valid | compared line for line, in order; red run O |
+| 5 | An effect entry copied into the root file passes check 0 and check 3 | valid | check 0 refuses one; red run N |
+| 6 | An effect entry in another shape is enforced but never probed | valid | the count of `reason = "effect:` lines must equal the entries read; red run P |
+| 7 | The bans also apply to libpachinko's tests | by design: the crate file covers every target, so gate 6 applies them too | none; Open points |
+| 8 | Extra clippy passes cost build time | declined: about a second on this tree | none |
+| 9 | The bans could live in a gate-8-only directory, so the root keys need no restating | declined: the crate file lets gate 6 and editors flag an effect where it is written | none; Open points |
+
+### Final gate: `a2f88a1` with uncommitted changes (these notes)
 
 ```text
 $ just check
@@ -694,7 +758,7 @@ $ just check
 ==> just snapshots-check
 ==> just check-clean
 ...
-effects: libpachinko names none of 8 banned crates and uses none of 108 banned std APIs;
+effects: libpachinko names none of 8 banned crates and uses none of 113 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
 ...
 The worktree matches the check baseline.
@@ -727,7 +791,7 @@ Exit status: 0
 - Decision 0008: rustqual's `forbid_path_prefix` was rejected for the std-API bans.
   It matches text: it missed `use std as s`, `use std::*`, a macro body and a
   renamed import, and it could ban `elapsed` only by name, on every type. Clippy
-  needs the bans as item paths, so the file lists 108 of them, built from the
+  needs the bans as item paths, so the file lists 113 of them, built from the
   `#[stable]` items of std. A new std item in a banned module is not banned until
   it is listed.
 
@@ -754,3 +818,12 @@ Exit status: 0
   `cfg(feature)` and a `cfg(not(feature))`, not a mix of mutually exclusive features.
 - **Mtimes.** A revert that restores an older mtime (`rsync -a`, `cp -p`) can let
   cargo replay stale clippy warnings, in gate 8 and in gate 6 alike.
+- **The bans apply to libpachinko's tests too.** Clippy reads the crate file for every
+  target of the crate, so a unit or integration test under `crates/libpachinko/` that
+  reads a golden file with `std::fs` fails gates 6 and 8. Tests reach effects through
+  the fakes, like the library. If a test ever needs a real effect, the place for it is
+  `crates/pachinko/tests/`, or a decision on exempting test targets.
+- **Restating the root file.** Keeping the bans in `crates/libpachinko/clippy.toml`
+  makes every change to the root `clippy.toml` a two-file change, which check 0
+  enforces. The alternative, a directory only gate 8 reads through `CLIPPY_CONF_DIR`,
+  would lose the bans in gate 6 and in editors.
