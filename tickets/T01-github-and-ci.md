@@ -1,7 +1,7 @@
 ---
 id: T01
 title: "GitHub repository and CI: settings, branch protection, Pages, workflows"
-status: open
+status: done
 depends_on: [T00]
 parallel_with: [T02, T05, T06, T07, T10]
 branch: ticket/t01-github-and-ci
@@ -182,11 +182,244 @@ The first `rg` line must exit 0 with a count above zero; the second must print n
 
 ## Hand-back notes
 
-To be written by the executing agent: the state before, the dry run, each authorisation,
-the state after and the protection diff; the required check's `app_id`; the stub run's evidence and the full run's for `CONVENTIONS.md` §12
-claim 5; the outcome of claim 6, including any setting the organisation blocked and who
-can change it; the action pins and the day they were read, the run URLs and the Pages
-URL; and the review record for each checkpoint (`CONVENTIONS.md` §14).
+Times are UTC. The settings evidence ran against the live repository between
+2026-10-23T00:03Z and 01:22Z. The workflow evidence ran at `abb9588`, the commit that
+lands the workflows. The commit that adds these notes changes only this file.
+
+### State before (step 2, 2026-10-23T00:03:59Z)
+
+- `check` on `main` (`8b01c0c`): `["check","success",15368,...]`, run
+  `https://github.com/BiscuitBin/pachinko/actions/runs/39874411413`.
+- `.permissions.admin`: `true`.
+- `gh repo view`: public, default branch `main`, `deleteBranchOnMerge: false`, merge,
+  squash and rebase merges all allowed, `hasWikiEnabled: true`,
+  `hasProjectsEnabled: true`.
+- Protection: HTTP 404, `"message":"Branch not protected"`. There is no
+  `protection-before.json`, so step 6 relies on the read-back alone.
+- Pages: HTTP 404 `Not Found`, read after the admin check.
+- Organisation: `{"members_can_create_pages":true,"plan":"free"}`.
+- Private vulnerability reporting: `{"enabled":false}` (HTTP 200).
+- The baseline `just check` on the untouched worktree was not run locally before the
+  edits. The stub run above ran `just check` green on `8b01c0c`, the same commit.
+
+### Dry run (step 3)
+
+Command: `sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check --hygiene
+--no-pages`, using T's script at `2283589c` copied into `ai_tmp/`. `--no-pages` was
+passed so that step 5 could be authorised on its own; the script's usage says the flag
+omits step 1 without renumbering the rest. It announced three changes and exited 0:
+
+- Step 2: a protection PUT with `strict: false`, `checks: [{context: check}]`,
+  `enforce_admins: false`, no reviews, no restrictions, and `allow_force_pushes` and
+  `allow_deletions` both false.
+- Step 4: `PUT private-vulnerability-reporting`. This settles the open point; the script
+  enables it.
+- Step 6: `gh repo edit --delete-branch-on-merge --enable-wiki=false
+  --enable-projects=false`. Merge methods are left alone.
+
+Step 3 (the Chromatic secret) was skipped because no token was given. Step 5 (package
+access) only prints instructions. The summary line was `changed: 0 (dry run; 3 would
+change)`.
+
+`enforce_admins: false` follows L's T01 ("administrators not bound", L
+`tickets/T01-github-repository.md` line 112).
+
+### Authorisations
+
+| Action | Authorised | Ran |
+| --- | --- | --- |
+| Step 4: `--apply` with the dry run's flags | 2026-10-23T01:11:43Z | `changed: 3`, exit 0 |
+| Step 5: `POST repos/BiscuitBin/pachinko/pages -f build_type=workflow` | 2026-10-23T01:18:55Z | returned the Pages object, exit 0 |
+| Step 10: push, open the pull request, one follow-up push | see the PR section | PR #3 |
+
+Admin access and the `Branch not protected` message were rechecked at 00:18:58Z, just
+before asking.
+
+### State after (step 6) and claim 6
+
+The second dry run (same flags) reported `already` for steps 2, 4 and 6 and
+`changed: 0 (dry run; 0 would change)`, exit 0. Run at `abb9588` without `--no-pages`, it
+also reports `1. Pages source / state: workflow / already`.
+
+Read back at 01:11:57Z, from `ai_tmp/protection-after.json`:
+
+```text
+{"checks":[{"app_id":15368,"context":"check"}],"strict":false,"contexts":["check"],
+ "enforce_admins":false,"lock_branch":false,"fp":false,"del":false,"linear":false,
+ "sigs":false,"conv":false,"fork_sync":false,"reviews":null,"restr":null}
+```
+
+`block_creations` also reads `false`. Every field the PUT left out is at GitHub's
+default; none blocks a merge.
+
+- Private vulnerability reporting: `{"enabled":true}`.
+- `gh repo view`: `deleteBranchOnMerge: true`, `hasWikiEnabled: false`,
+  `hasProjectsEnabled: false`. Merge, squash and rebase are still allowed and issues are
+  still on.
+- There is no protection diff, because the before state was a 404. Every changed field
+  is one the dry run announced: the protection object was created, vulnerability
+  reporting went from false to true, and hygiene went from `false true true` to
+  `true false false`.
+- The required check's `app_id` is `15368`, GitHub Actions. That is the app the step 1
+  `check` reported (`.app.id` = `15368`). T's PUT names no `app_id`, and GitHub bound
+  the app that had last reported `check`.
+- Pages read back: `build_type: workflow`, `html_url:
+  https://biscuitbin.github.io/pachinko/`, `public: true`, `https_enforced: true`. The
+  `github-pages` environment's deployment branch policy is custom, allowing `main` only.
+
+Claim 6 holds. T's script works on an organisation-owned repository with repository
+admin rights, and Pages works on the free organisation plan for a public repository.
+The organisation blocked nothing, and no organisation-owner action was needed.
+
+### Claim 5: B's git dependency with no credential
+
+Stub run `39874411413` (`8b01c0c`), job `check`, from `ai_tmp/stub-run.log`:
+
+- The checkout ran with `persist-credentials: false`. Its last line before the setup
+  action is `Removing credentials config
+  '/home/runner/work/_temp/git-credentials-776068f5-...config'` (23:50:45.75Z).
+- The setup step that follows passes no token to setup-pixi; its only `env:` is the
+  four cargo variables. `pixi.lock` pins
+  `git+https://github.com/steven-cutting/biscuit_games_tooling?tag=v0.3.0#6c5c07f6bec86e86b3930dfa41392e4b440e8c85`,
+  with no credential in the URL.
+- `pixi install --locked` printed `✔ The default environment has been installed.`
+  (23:50:49.83Z). `pixi list --locked` then lists `biscuit_games_tooling 0.3.0 pypi`.
+  Its Source column reads `https://pypi.org/simple`; that is how pixi displays the
+  column, and the lock line above is authoritative.
+
+The full run's evidence is in the PR section.
+
+### Workflows (step 7)
+
+- `ci.yml`: L's, with three changes. The `wasm` job is deleted, and `check.needs` is
+  `[rust, coverage, deny, documents]`. `- run: just effects` follows `- run: just
+  metrics`. The comment above `jobs:` was rewritten so it stays true: "crate" became
+  "crates", "five gate jobs" became "four", and the sentences about windows-latest,
+  `crates/pawdoku-cli` and maturin's wheel matrix were dropped. The maintainer approved
+  the rewrite as part of the `wasm` delta. It goes beyond §10's literal list (review
+  finding C01).
+- `audit.yml` and `pages.yml`: L's, verbatim. `pages.yml` publishes `target/doc` from
+  `just site`, whose root index links `libpachinko/index.html` and
+  `pachinko/index.html`.
+- `.github/actions/setup/action.yml`: unchanged in this ticket. T00 left it equal to L's
+  except `name:`, which reads "Set up the pachinko toolchain" where L's reads
+  "libpawdoku".
+- Only the `documents` job runs an allium recipe (`lint`, `check-specs`,
+  `analyse-specs`), and it runs `just install-allium` first. Every job's permissions
+  equal L's: `contents: read` at the top level, and `pages: write` plus `id-token: write`
+  only on `pages.yml`'s `deploy` job.
+
+### Action pins (step 8), read 2026-10-23T00:16Z
+
+Each was read with `gh api repos/<o>/<r>/git/ref/tags/<tag>`, and the annotated tag was
+dereferenced through `git/tags/<sha>`. Every one equals L's pin, so none changed.
+
+| Action | Tag | Commit |
+| --- | --- | --- |
+| `actions/checkout` | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `actions/upload-artifact` | v7.0.1 | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
+| `actions/upload-pages-artifact` | v5.0.0 | `fc324d3547104276b827a68afc52ff2a11cc49c9` |
+| `actions/deploy-pages` | v5.0.1 | `368f82528645a54fb793d4d04e342629a3f51346` |
+| `prefix-dev/setup-pixi` | v0.10.2 | `d3f436a425481402e6a95a1d1fc10331c708cd9e` |
+| `Swatinem/rust-cache` | v2.9.2 (annotated `63fed3e2…`) | `6323deb102c322ba6fcbdcafc7e3dddab59af2b6` |
+| `actions/cache` | v6.1.0 | `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` |
+
+No pinned tag is withdrawn. Newer releases exist (upload-artifact v7.0.2, setup-pixi
+v0.11.2, rust-cache v2.9.3); proposing them is Renovate's job (T17).
+
+### Verification at `abb9588` (2026-10-23T01:21:59Z)
+
+```text
+$ gh api .../protection/required_status_checks --jq '[.checks[] | {context, app_id}]'
+[{"app_id":15368,"context":"check"}]                                  exit 0
+$ gh api repos/BiscuitBin/pachinko/pages --jq .build_type
+workflow                                                              exit 0
+$ gh repo view ... --json deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed
+{"deleteBranchOnMerge":true,"mergeCommitAllowed":true,"rebaseMergeAllowed":true,"squashMergeAllowed":true}
+$ sh ai_tmp/bootstrap_repo.sh BiscuitBin/pachinko --checks check --hygiene
+changed: 0 (dry run; 0 would change)                                  exit 0
+$ rg -n 'uses: ' .github > ai_tmp/uses.txt
+exit 0, 19 lines
+$ rg -v 'uses: \./' ai_tmp/uses.txt | rg -v '@[0-9a-f]{40} # '
+(nothing)                                                             exit 1
+$ just lint   (run standalone on the identical uncommitted tree; also inside just check)
+... Lint GitHub Actions workflow files....Passed                      exit 0
+$ just check
+All checks passed and the worktree is unchanged.                      exit 0
+```
+
+`git status --short` printed nothing after `just check`. `git fetch origin` showed
+`origin/main` = `8b01c0c`, the branch's base, so no rebase was needed.
+
+### Pull request (steps 10 and 11)
+
+Push and PR authorised at 2026-10-23T01:27:58Z, covering the push, `gh pr create` and one
+follow-up evidence commit to this branch. PR: `https://github.com/BiscuitBin/pachinko/pull/3`,
+head `bd624d0`. GitHub tested the merge commit `ea27892` (`HEAD is now at ea27892 Merge
+bd624d0... into 8b01c0c...` in each job's checkout).
+
+```text
+$ gh pr checks 3 --repo BiscuitBin/pachinko
+audit      pass  30s  .../actions/runs/39884148258/job/120188268856
+check      pass   3s  .../actions/runs/39884148193/job/120188461816
+coverage   pass  34s  .../actions/runs/39884148193/job/120188268921
+deny       pass  33s  .../actions/runs/39884148193/job/120188269241
+documents  pass  37s  .../actions/runs/39884148193/job/120188269280
+rust       pass  29s  .../actions/runs/39884148193/job/120188269392
+exit 0
+$ gh pr checks 3 --repo BiscuitBin/pachinko --required
+check      pass   3s  .../actions/runs/39884148193/job/120188461816
+exit 0
+```
+
+- CI run `https://github.com/BiscuitBin/pachinko/actions/runs/39884148193`; Audit run
+  `https://github.com/BiscuitBin/pachinko/actions/runs/39884148258`, which ran and is not
+  required.
+- The `rust` job's log shows every step: `check-toolchain`, `lock-check`, `fmt-check`,
+  `toml-check`, `clippy`, `metrics`, `effects`, `features`, `test`, `snapshots-check`,
+  `doc`, `deps-unused`. `documents` runs `install-allium` before `lint`, `check-docs`,
+  `check-agents`, `check-specs` and `analyse-specs`. `coverage` printed `TOTAL ... 100.00%`
+  lines under `--fail-under-lines 90`.
+- The jobs are short, about 30s each, because they restore the caches `main`'s stub run
+  wrote: `Cache hit for: pixi-linux-64-d9e27b6b...`, plus the tools and prek keys.
+
+Claim 5, the full run (job `rust`): `Removing credentials config
+'/home/runner/work/_temp/git-credentials-a3429715-...config'` (01:28:08.59Z), then
+`✔ The default environment has been installed.` (01:28:11.59Z). The pixi environment
+came from the cache here, so B was not fetched again in this run. The stub run above,
+which had a `Cache miss`, is the run where B's git dependency was fetched and installed
+with no credential. Claim 5 holds.
+
+Step 12, the `pages.yml` deploy on `main` and the root index linking both crates, runs
+after the maintainer merges. It is recorded in a follow-up pull request.
+
+### Review records (CONVENTIONS.md §14)
+
+The harness for both checkpoints was codex-cli 0.163.0, `codex exec -m gpt-6-astra -s
+read-only`: one conformance reviewer and one breakage reviewer, then a separate Claude
+Code subagent (Opus 5.5) for triage. Nothing was applied to a file at either checkpoint.
+
+**Checkpoint 1, the dry run, before step 4** (live state as of 00:18Z; no commit
+involved):
+
+| id | Verdict | Reason |
+| --- | --- | --- |
+| C1 = B01 | valid, medium | The PUT names no `app_id` and the "already" compare reads names only. Action: step 6 read `app_id` (`15368`). |
+| B02 (and C2's `lock_branch` half) | valid, low | The compare ignores `lock_branch` and the other fields outside the body. Protection was absent, so this apply was unaffected. Action: step 6 asserted each of them false. |
+| B03 | valid, low | Any 404 reads as absence. Action: rechecked admin and `Branch not protected` before apply; required vulnerability reporting `enabled: true` after. |
+| C2, C3, C4 = B04 | valid, low | The request quoted `--checks check ... --no-pages --apply` and the three changes, and said no organisation-owner action was needed. |
+| B05 | invalid | Both the stub and the new `ci.yml` produce `check`. The new jobs gate only this PR (steps 9 to 11). |
+
+**Checkpoint 2, the workflows, before step 10** (`abb9588` with the diff still
+uncommitted when reviewed; the committed diff is identical):
+
+| id | Verdict | Reason |
+| --- | --- | --- |
+| C01 | valid, low; no change | The rewrite of the comment above `jobs:` goes beyond §10's list. It was maintainer-approved and is recorded above. The triage also asked that the `action.yml` `name:` difference be named, and it is. |
+| B01 | valid, medium; handed back | No workflow runs `check-clean`, so the split jobs cannot catch a gate that mutates the worktree, which `just check` would. The gap is inherited from L. Fixing it is a delta beyond §10, so it is handed back (Open points). |
+
+No valid finding was high, so neither checkpoint needed a second round. After
+checkpoint 2, `just check` was rerun at `abb9588`, as above.
 
 ## Open points
 
@@ -196,3 +429,8 @@ URL; and the review record for each checkpoint (`CONVENTIONS.md` §14).
   the script does not; `SECURITY.md` (T12) points at it.
 - If the free organisation plan blocks Pages for this repository, `pages.yml` stays and
   is disabled with `if: false` and a comment, and the maintainer decides.
+- CI does not run `check-clean`, so a gate job that rewrites a tracked file passes
+  (review finding T01-2 B01). L's `ci.yml` has the same gap; T00's stub, which ran
+  `just check`, did not. The fix, for example a final `just check-clean` step in each
+  gate job, is a delta beyond `CONVENTIONS.md` §10, so it is the maintainer's to decide
+  as a follow-up.
