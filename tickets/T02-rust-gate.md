@@ -113,7 +113,7 @@ just check
 
 ## Hand-back notes
 
-Evidence below ran at `67468a4` (the config commits) unless a quote names another
+Evidence below ran at `052f9b9` (the last config commit) unless a quote names another
 commit. The commit that adds these notes changes only this file. Run on 2026-10-22
 on the maintainer's machine (Apple silicon), toolchain `1.99.1-aarch64-apple-darwin`.
 
@@ -132,7 +132,10 @@ All checks passed and the worktree is unchanged.
 Lint names and group members were diffed between `rustup run 1.98.1 clippy-driver -W
 help` and `rustup run 1.99.1 clippy-driver -W help`. 1.99 adds eight lints and removes
 or renames none. The `cargo` group's members did not change. Every lint the table
-names still exists on 1.99.1.
+names still exists on 1.99.1. One existing lint changed level:
+`nonstandard_macro_braces` moved from nursery (allow) to style (warn), so `-D warnings`
+now enforces it. It is kept and satisfied (no site), with no table entry; it is the
+only lint whose group or default level differs between the two dumps.
 
 | Lint | Group on 1.99.1 | Disposition |
 | --- | --- | --- |
@@ -166,14 +169,14 @@ Std adjustment (step 3): `std_instead_of_core`, `std_instead_of_alloc` and
 | --- | --- | --- |
 | 3 | Holds. | `just clippy`, exit 0. Every `clippy.toml` key is in the valid-key list clippy 1.99.1 prints. Positive control: with `allow-unwrap-in-tests` mistyped as `allow-unwrap-in-testz` and `crates/libpachinko/src/lib.rs` touched, `just clippy` exited 101 with `error: unknown field name` at `clippy.toml:6:1`; reverted, `just clippy` exited 0. |
 | 4 | Holds. No fallback needed. | `just coverage` exit 0; `cargo llvm-cov report --show-missing-lines` exit 0, `pachinko/src/main.rs` 3 lines 0 missed 100.00%, `TOTAL` 17 lines 0 missed 100.00%, no missing-lines section. |
-| 10 | Holds, and the gate fires. | `just snapshots-check` on the tree: exit 0, `info: no unreferenced snapshots found`. Scratch commit `e6d39f7` on `67468a4` added `crates/libpachinko/src/snapshots/stray.snap` (a well-formed snapshot): exit 1, `warning: encountered unreferenced snapshots:` naming the file, then `error: aborting because of unreferenced snapshots`. Reset to `67468a4`; `git status --short` empty. |
+| 10 | Holds, and the gate fires. | `just snapshots-check` on the tree: exit 0, `info: no unreferenced snapshots found`. Scratch commit `d1e6850` on `052f9b9` added `crates/libpachinko/src/snapshots/stray.snap` (a well-formed snapshot): exit 1, `warning: encountered unreferenced snapshots:` naming the file, then `error: aborting because of unreferenced snapshots`. Reset to `052f9b9`; `git status --short` empty. |
 
 The first ticket to take a snapshot adds `insta` as a dev-dependency with the
 decision-0007 note.
 
 ### The ten recipes (goal)
 
-Each run alone, at `67468a4`:
+Each run alone, at `052f9b9`:
 
 ```text
 just fmt-check exit=0
@@ -209,13 +212,15 @@ uses yet. That is expected on a tree with no dependencies, and the list is not t
 
 ### Findings recorded for later lanes
 
-- `cargo_common_metadata` (cargo group) did not fire with `description`, `keywords`,
-  `categories` and `readme` removed from `crates/libpachinko/Cargo.toml`. That is
-  expected under `publish = false`, which the lint skips. With `publish = true`, and
-  even with `-W clippy::cargo_common_metadata` on the command line, it still did not
-  fire, and I did not find out why. So the cargo group does not demonstrably need these
-  fields today. The manifest comment says they are kept for the docs and for whenever
-  publishing is decided. Whoever turns publishing on should check this again.
+- `cargo_common_metadata` (cargo group): in a scratch copy of the workspace with
+  `description`, `keywords` and `categories` removed from
+  `crates/libpachinko/Cargo.toml`, a clean `cargo clippy -- -D warnings` exits 0 under
+  `publish = false` and fails with three errors (`package libpachinko is missing
+  package.categories metadata` and its siblings) under `publish = true`. So the lint
+  skips unpublished packages, and the fields serve it only once publishing is turned on.
+  The crate manifests' comments say this. An earlier probe in this session reported
+  that the lint never fired; its BSD `sed` pattern used `\|`, which matched nothing, so
+  no field had been removed. The code review caught it.
 - cargo-deny's `wildcards = "deny"` rejects
   `libpachinko = { path = "../libpachinko" }` with no version (`bans FAILED`,
   `wildcard dependency`). The manifest comment gives that as the reason for the version.
@@ -230,7 +235,9 @@ Harness and model: Codex, `codex exec -m gpt-6-astra -s read-only` (flags confir
 `codex exec --help`), conformance and breakage lenses over `git diff main...HEAD` at
 `bfab7aa`. No model fallback. A fresh-context Claude subagent did the triage and wrote
 `ai_tmp/review/T02-1/verdicts.md`, confirming each finding with a probe crate on clippy
-1.99.1 that used this repository's `clippy.toml`.
+1.99.1 that used this repository's `clippy.toml`. Both the executing agent and the
+triage subagent were Claude Code on `claude-opus-5-5`; the triage subagent applied
+the fixes, as §14 Phase 3 asks.
 
 | Id | Severity | Verdict | Reason | Applied |
 | --- | --- | --- | --- | --- |
@@ -241,8 +248,46 @@ Harness and model: Codex, `codex exec -m gpt-6-astra -s read-only` (flags confir
 
 No high-severity finding was valid, so there was no second round. Both reviewers
 confirmed that the removal of `module_name_repetitions` is the only setting change and
-that no frozen or other-lane file was touched. Fixes were committed as `67468a4`, and
-every quote above was rerun at that commit.
+that no frozen or other-lane file was touched. Fixes were committed as `67468a4`.
+
+### Review record, the `code-review` skill (plan step 8)
+
+Claude Code's `code-review` skill, at `xhigh` effort and on `claude-opus-5-5`, over
+`main...HEAD` at `cee88bb`. It ran three scratch probes of its own and reported
+fifteen findings, all about comments or this record. I checked each against the tools
+and fixed the valid ones in `052f9b9`:
+
+| Finding | Verdict | Fix |
+| --- | --- | --- |
+| `exclude-dev` also hides dev-dependencies from `[sources]` and `just audit` | valid | `deny.toml` comments say so, and say to review a dev-dependency's source. |
+| `cargo_common_metadata` does fire under `publish = true` | valid | Reprobed (above); the notes are corrected. |
+| `.config/nextest.toml` says CI selects `--profile ci`, but nothing does | valid | The comment says it is for T01's workflows and that no recipe selects it yet. |
+| The `targets` comment called Windows a build host | valid | Reworded: Windows is kept from L so a Windows-only dependency is still checked. |
+| "Restriction lints from here down" ran over the cargo-group `allow`; the header left out the `allow` | valid | Both reworded. |
+| `just check` was not quoted at the final commit | valid | Quoted under Final gate. |
+| `nonstandard_macro_braces` changed level and was not recorded | valid | Recorded above. |
+| The rustdoc `deny` comment said a local build fails | valid | Rustdoc lints run only under `cargo doc`; the comment says so. |
+| The root comment on the cargo group contradicted the crate manifests | valid | It now points to each manifest's comment. |
+| `trivial_casts` was described as `trivial_numeric_casts` | valid | Reworded. |
+| Removing `module_name_repetitions` departs from `CONVENTIONS.md` §3, which describes the line as kept and reworded | valid as a record gap | Kept removed, because it is a no-op; handed back below. |
+| The triage model was not named | valid | Named above. |
+| `confidence-threshold` and the rustfmt shorthands said what, not why | valid | Reasons added. |
+| `[profile.test] opt-level = 1` was justified by tests that do not exist | partly | Kept, as L has it; the comment now says the build cost is negligible today. |
+| The taplo comment overstated the sort rule | valid | It now names the uncovered `target` tables and says "rarely conflict". |
+
+### Hand-backs to `CONVENTIONS.md` (for T11 to reconcile)
+
+- §3, the root `Cargo.toml`: "the `module_name_repetitions` comment reworded" describes
+  a line T02 removed, since the lint is restriction and the table never enables it.
+- §3, `crates/libpachinko/Cargo.toml`: "the `cargo` lint group requires one, plus
+  `keywords`, `categories` and `readme`" holds only once `publish` is turned on (see
+  Findings).
+
+### Final gate
+
+On `052f9b9` with these notes in place, after both review rounds, `just check` exited 0
+and ended `All checks passed and the worktree is unchanged.` It was rerun after the
+commit that adds these notes, and `git status --short` printed nothing.
 
 ### Justfile hand-backs
 
