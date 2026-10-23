@@ -37,9 +37,9 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0014](0014-service-runtime-deferred.md) | The service runtime waits for the specifications |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
-0004 it replaces and the ones that stand. Decision 0012 reopens the gate list decision
-0009 records, for one recipe, and decision 0008 adds gate 8, `just effects`, to that
-list.
+0004 it replaces and the ones that stand. Two recipes in the gate list decision 0009
+records have records of their own: decision 0012 holds gate 7, `just metrics`, and
+decision 0008 holds gate 8, `just effects`.
 
 ## The numbering
 
