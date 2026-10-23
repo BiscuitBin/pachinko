@@ -8,11 +8,13 @@ requires: []
 
 # Maintain dependencies
 
-The manifests write full `x.y.z` caret ranges, and `Cargo.lock` is the pin: committed,
-marked `linguist-generated`, and passed `--locked` by every gate, so no recipe that checks
-can rewrite it. This is [decision 0007](../decisions/0007-dependency-policy.md), a stated
-deviation from the games' exact-pin rule, because a library that writes `=1.2.3` poisons
-every downstream resolution: two crates pinning different patch releases of one
+The manifests write full `x.y.z` caret ranges, and `Cargo.lock` is the pin: committed and
+marked `linguist-generated`. Every recipe that builds, tests, lints or documents the
+workspace passes `--locked`, so it fails rather than rewrite the lockfile; `just
+deps-unused` does not pass the flag, and the snapshot recipes run `just lock-check` first
+and then run offline. This is [decision 0007](../decisions/0007-dependency-policy.md), a
+stated deviation from the games' exact-pin rule, because a library that writes `=1.2.3`
+poisons every downstream resolution: two crates pinning different patch releases of one
 dependency cannot be built together. The tools are the other way round: `pyproject.toml`
 pins each one exactly, and `pixi.lock`, committed beside it, records the resolution.
 Nothing updates either lockfile for you, and a maintainer moves every pin by hand.

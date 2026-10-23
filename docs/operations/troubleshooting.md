@@ -127,8 +127,9 @@ the same way and is cleared the same way.
 
 ## `cargo` reports that `Cargo.lock` needs to be updated but `--locked` was passed
 
-Every recipe passes `--locked`, so a manifest edit that the lockfile does not reflect
-fails every build until the lockfile is solved again. Run `just lock`, read the diff, and
+Every recipe that builds, tests, lints or documents the workspace passes `--locked`, so a
+manifest edit that the lockfile does not reflect fails each of them until the lockfile is
+solved again. Run `just lock`, read the diff, and
 commit `Cargo.lock` with the manifest. A new dependency is a decision before it is an
 edit: [Decision 0007](../decisions/0007-dependency-policy.md) says what one has to
 justify.
