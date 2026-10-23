@@ -21,3 +21,5 @@ mis = "mis"
 # The tickets name "als" as the word this file once listed and now does not
 # need; the checker's dictionary rewrites it to "also".
 als = "als"
+# T10 cites commit 097ede1, whose letters the checker reads as a misspelt "edge".
+ede = "ede"

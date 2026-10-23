@@ -155,14 +155,17 @@ just check
 
 ## Hand-back notes
 
-Executed in the Supacode worktree `T10-metrics-and-effects`, on its branch of the same
-name, not on `ticket/t10-metrics-and-effects`; rename the branch before the pull
-request if the name matters. Nothing was pushed, and `git fetch` and the rebase onto
-`origin/main` that §11 asks for before a push have not run: pushing was not
-authorised. `just initialize` was not needed; `.pixi/` and `.tools/` were present.
-The commits are `51303ae` (the gate), `1169dca` (the final §14 review's fixes),
-`9f2c8d4` (these notes, first written) and `a2f88a1` (the code review's fixes), then
-the commit that brings these notes up to date.
+Executed in the Supacode worktree `T10-metrics-and-effects`, on its local branch of
+the same name. The maintainer authorised the push: it went to
+`ticket/t10-metrics-and-effects`, the `branch:` above, and opened PR #9. §11's sync
+with main is a merge of `origin/main`, not a rebase, so the pushed branch needed no
+force-push; the maintainer chose it after PR #9's review (below). `just initialize`
+was not needed; `.pixi/` and `.tools/` were present. The commits are `51303ae` (the
+gate), `1169dca` (the final §14 review's fixes), `9f2c8d4` (these notes, first
+written), `a2f88a1` (the code review's fixes) and `aaea301` (these notes, brought up
+to date); then, from PR #9, `99b107c` (CI's colour fix), `6f54c20` (the merge of
+`origin/main`), `097ede1` and `2ebacac` (the review's fixes) and the commit that
+records them here.
 
 ### Baseline: `b4e452a`
 
@@ -274,8 +277,8 @@ that catches every form step 2 tried, because it resolves names instead of match
 text. It needs one file, as rustqual would. rustqual is not used for the bans, and
 there is no `rustqual-effects.toml`.
 
-The file restates the root `clippy.toml` verbatim and adds 113 entries, each with a
-reason beginning `effect:`:
+The file restates the root `clippy.toml` verbatim and adds 113 entries (121 after
+PR #9's review, below), each with a reason beginning `effect:`:
 
 - every stable function of `std::fs`, `std::env` and `std::process` in
   `disallowed-methods`;
@@ -295,13 +298,23 @@ reason beginning `effect:`:
 - additions from the code review (below): `std::hash::RandomState`, which seeds
   from the operating system; `std::thread::{park_timeout,park_timeout_ms}`, a sleep
   by another name; `std::thread::available_parallelism` (it reads the machine) and
-  `std::os::unix::process::parent_id`.
+  `std::os::unix::process::parent_id`;
+- additions from PR #9's review: `std::thread::Scope::spawn`, a thread spawned on a
+  scope passed in; the timed waits `std::sync::Condvar::{wait_timeout,
+  wait_timeout_ms,wait_timeout_while}` and `std::sync::mpsc::Receiver::recv_timeout`,
+  sleeps by another name like `park_timeout`; and `std::fs::{set_times,
+  set_times_nofollow}`, stable since 1.99 and so missing from the 1.98.1 inventory;
+  and `std::os::unix::net::Incoming`, which accepts on a listener passed in, as
+  `std::net::Incoming`, banned already, does.
 
 The inventory came from the `#[stable]` items in the 1.98.1 `library/std/src`
 (`fs.rs`, `env.rs`, `process.rs`, `net/mod.rs`, `thread/mod.rs`,
-`os/unix/{fs,net}`), and the fixture compiles every entry on 1.99.1. Unstable
-items (`Ipv6MulticastScope`, `IntoIncoming`, `hostname`) are left out, because
-stable code cannot name them. Only unix paths are listed: a path for another
+`os/unix/{fs,net}`), and the fixture compiles every entry on 1.99.1. PR #9's
+review checked the 1.99 delta offline: rustdoc over a crate re-exporting the banned
+modules, built on 1.98.1 and on 1.99.1, gives the same item pages, and only
+`std::fs::{set_times,set_times_nofollow}` changed from unstable to stable; both are
+banned now. Unstable items (`Ipv6MulticastScope`, `IntoIncoming`, `hostname`) are
+left out, because stable code cannot name them. Only unix paths are listed: a path for another
 platform does not resolve here and only warns.
 
 `set_var` and `remove_var` are banned too, although `forbid(unsafe_code)` already
@@ -767,6 +780,108 @@ All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
 
+### PR review (#9)
+
+**CI failed on the first push.** Run 39913332145, on `7d7df57` (the merge of
+`aaea301` into `main`), failed at `just effects`. CI sets `CARGO_TERM_COLOR=always`,
+so clippy's findings carried colour codes, the anchored `sed` read none of them, and
+the probe listed all 113 bans as silent. The probe did its job: checks 1 and 3 would
+have passed blind. `99b107c` passes `--color never` to every cargo run, and run
+40012364018, on `b9b3578` (the merge of `99b107c` into `main`), passed every job.
+
+**The review.** Copilot left three comments on `aaea301`, and a fan-out of six
+reviewers (script logic, environment and portability, ban coverage, the fixture's
+lock, the repository contract, CI), each finding checked by one or two skeptics, left
+thirteen more; a second round reviewed and red-ran the fixes. Raw results are under
+`ai_tmp/t10/`. The maintainer decided rows 8, 9, 10 and 15.
+
+| # | Finding | Verdict | Applied |
+| --- | --- | --- | --- |
+| 1 | Copilot: colour codes hide every finding in CI | valid, the CI failure | `99b107c` |
+| 2 | Copilot: `Scope::spawn` on a scope passed in starts a thread | valid | banned (`097ede1`) |
+| 3 | Copilot, and the lock review: the probe never runs `banned_in_tree` or `banned_in_clippy`, the matchers checks 1 and 3 decide with | valid: with either matcher broken to print nothing, the old script passed | check 2 runs both over the fixture and wants every ban (`097ede1`) |
+| 4 | Code under `cfg(not(debug_assertions))` is never linted, and ships in every release build | valid, medium: latent | a third pass, every feature in the release profile (`097ede1`) |
+| 5 | A forced progress bar, under a `RUSTFLAGS` lint cap, glues itself to a finding, and check 1 passes | valid, medium | `CARGO_TERM_PROGRESS_WHEN=never` (`097ede1`) |
+| 6 | `build.warnings = "allow"` or `"deny"` breaks the probe | valid, low: fails loudly | `CARGO_BUILD_WARNINGS=warn` and a hint naming a lint cap (`097ede1`) |
+| 7 | `std::fs::{set_times,set_times_nofollow}`, stable in 1.99, are missing | valid | banned (`097ede1`) |
+| 8 | Timed `std::sync` waits read the clock as `park_timeout` does | valid | the four banned (`097ede1`), the maintainer's choice |
+| 9 | `Backtrace::capture` reads the environment | valid, low | left allowed, the maintainer's choice; Open points |
+| 10 | The crate bans are a denylist, so an unlisted dependency brings effects in | valid, low: a convention change | recorded for T11, the maintainer's choice |
+| 11 | rustfmt would split the fixture's one-line breaks | valid, low | the fixture's `rustfmt.toml` turns formatting off (`097ede1`) |
+| 12 | `CARGO_PROFILE_*_DEBUG_ASSERTIONS` or a config profile turns the release pass into a debug one | valid, medium: found in the second round | pinned per profile (`2ebacac`) |
+| 13 | `std::os::unix::net::Incoming` accepts connections unbanned | valid: found in the second round | banned (`2ebacac`) |
+| 14 | The lint-cap hint shows when the fixture did not compile | valid, low | shown only after a clean compile; a failed one names an unstable ban (`2ebacac`) |
+| 15 | `status: done` without §11's sync with main | valid | `origin/main` merged (`6f54c20`), the maintainer's choice; re-checked below |
+| 16 | Stale notes: nothing pushed, no CI round, a rustqual comment and the PR body overstate | valid | these notes; the `rustqual.toml` comment (`2ebacac`); the PR body |
+| 17 | `just check`'s shellcheck, on `097ede1`'s release pass: an unquoted `$pass` split on purpose (SC2086), and backticks in a single-quoted hint (SC2016) | valid: `097ede1` was red-run, not run through `just check` | each pass sets its flags with `set --`, and the hint quotes `"fn "` (`2ebacac`) |
+| 18 | `just check`'s typos reads `ede` in `097ede1`, cited here, as a misspelt "edge" | valid | `ede` added to `_typos.toml`'s words, with its reason, in the notes commit |
+
+One finding was refuted: that the colour fix had not been pushed, which a later
+check showed it had.
+
+**Red runs at `097ede1`**, each one change in a scratch copy of HEAD:
+
+| Change | Result |
+| --- | --- |
+| libpachinko: `Scope::spawn`, `Condvar::{wait_timeout,wait_timeout_while}`, `recv_timeout`, `set_times` in turn | each failed, naming only its path |
+| libpachinko: `SystemTime::now` under `cfg(not(debug_assertions))` | the two debug passes passed; `clippy --all-features --release` failed |
+| the `set_times` entry deleted from clippy.toml; then its fixture break | both failed: tags and entries disagree |
+| `banned_in_tree` printing nothing; dropping `mio`; `banned_in_clippy` printing nothing | each failed at check 2; each passed under `99b107c`'s script |
+| `CARGO_TERM_COLOR=always`, clean and violated | passed; failed |
+| progress forced, by variable or config, with `RUSTFLAGS=--cap-lints=warn`, violated | failed, so no false pass |
+| `CARGO_BUILD_WARNINGS=allow` or `deny`, or a config `warnings = "allow"`, clean | passed |
+| `RUSTFLAGS=-Awarnings`, clean | failed, naming the lint cap |
+| dash and `/bin/sh`, clean and violated | passed; failed |
+| `cargo fmt` and `rustfmt` inside the fixture | no change; with its `rustfmt.toml` removed, rustfmt split 263 lines |
+
+**Red runs at `2ebacac`**, the same way, after the shellcheck fix (row 17):
+
+| Change | Result |
+| --- | --- |
+| `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`, with `process::exit` under `cfg(not(debug_assertions))` | `clippy --all-features --release` failed: `std::process::exit` |
+| `CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=false`, with `process::exit` under `cfg(debug_assertions)` | `clippy --all-features` failed: `std::process::exit` |
+| libpachinko accepting on an `Incoming` passed in | failed: `std::os::unix::net::Incoming` |
+| a type error in the fixture | failed: "the fixture did not compile" |
+| none | passed: 121 bans |
+
+### Verification: `2ebacac` with uncommitted changes (these notes and `_typos.toml`)
+
+```text
+$ just effects
+sh scripts/check-effects.sh
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+Exit status: 0
+
+$ just metrics
+::notice::Quality score: 100.0% (2 functions analyzed)
+::notice::Quality score: 100.0% (4 functions analyzed)
+Exit status: 0
+
+$ rm -rf target/effects   # a cold build cache for gate 8
+Exit status: 0
+$ sandbox-exec -p "$deny" curl -fsS --max-time 10 https://static.rust-lang.org
+curl: (6) Could not resolve host: static.rust-lang.org
+Exit status: 6
+$ sandbox-exec -p "$deny" curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1
+curl: (7) Failed to connect to 1.1.1.1 port 443 after 1 ms: Couldn't connect to server
+Exit status: 7
+$ sandbox-exec -p "$deny" just effects
+sh scripts/check-effects.sh
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+Exit status: 0
+
+$ just check
+==> just check-toolchain
+...
+==> just check-clean
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
 ### For T11
 
 - `docs/explanation/architecture.md`: libpachinko's effects are banned mechanically
@@ -779,9 +894,12 @@ Exit status: 0
 - `docs/reference/quality-gates.md`: gate 8 runs `scripts/check-effects.sh`, offline,
   in four checks. (0) `crates/libpachinko/clippy.toml` still restates the root
   `clippy.toml`. (1) libpachinko names no banned crate, and uses no banned std API
-  with every feature or with none. (2) `tests/fixtures/effects-violation/` trips
-  every ban exactly once, and its stubs and `// ban:` tags name exactly the ban lists.
-  (3) pachinko trips none.
+  with every feature, with none, or with every feature in the release profile.
+  (2) `tests/fixtures/effects-violation/` trips every ban exactly once, through the
+  same matchers checks 1 and 3 decide with, and its stubs and `// ban:` tags name
+  exactly the ban lists. (3) pachinko trips none. The script pins cargo's colour,
+  progress bar, warnings level and debug assertions, so the caller's settings cannot
+  hide a finding; a lint cap in the caller's compiler flags makes the probe fail.
 - `docs/reference/configuration.md`: `crates/libpachinko/clippy.toml` shadows the
   root `clippy.toml` instead of merging with it, so it restates every root line
   verbatim, and gate 8 fails when they drift. A root change is mirrored there. A ban
@@ -791,16 +909,32 @@ Exit status: 0
 - Decision 0008: rustqual's `forbid_path_prefix` was rejected for the std-API bans.
   It matches text: it missed `use std as s`, `use std::*`, a macro body and a
   renamed import, and it could ban `elapsed` only by name, on every type. Clippy
-  needs the bans as item paths, so the file lists 113 of them, built from the
+  needs the bans as item paths, so the file lists 121 of them, built from the
   `#[stable]` items of std. A new std item in a banned module is not banned until
   it is listed.
+- Decision 0008 or a new record, the maintainer's call after PR #9: the crate bans
+  are a denylist of eight names, so a dependency outside it (`fastrand`'s OS-seeded
+  generator, `rayon`'s thread pool, `chrono` with `clock`) brings its effects in and
+  gate 8 stays green. Invariant 9 gates every new dependency, but nothing in gate 8
+  asks whether it reaches an effect. The proposal: require libpachinko's normal tree
+  to equal a committed allowlist, today `libpachinko` alone, each entry with a reason,
+  and keep the eight names as the fixture's probe of the matcher. It changes the
+  mechanism `CONVENTIONS.md` §9 sets out, so it was recorded here, not applied.
 
 ## Open points
 
 - `std::process` is banned with the rest: a library has no business spawning. If a
   specification ever needs it, it becomes an effect trait like the others.
-- Whether `std::sync` primitives other than thread spawning (`Mutex`, atomics) are
-  allowed. They are not effects and stay allowed unless the maintainer says otherwise.
+- `std::sync` primitives other than thread spawning (`Mutex`, atomics, an untimed
+  `Condvar::wait` or `recv`) stay allowed: they are not effects. The timed waits read
+  the clock, so the maintainer had them banned after PR #9's review.
+- **`std::backtrace::Backtrace::capture`** reads `RUST_BACKTRACE` and
+  `RUST_LIB_BACKTRACE`, and stays allowed by the maintainer's choice after PR #9's
+  review. The read changes diagnostics, not results, unless code branches on
+  `status()`. Banning it would also stop libpachinko's errors from carrying a
+  `thiserror` backtrace field, because the derive writes the `capture()` call into
+  the crate. A capture on a hot path walks the stack when the variable is set, so
+  libpachinko should not capture where it is performance-critical.
 - **`std::env::consts`.** §9 bans "everything under `std::env`", but clippy cannot ban
   a constant, so `std::env::consts::{OS,ARCH,FAMILY,...}` stay reachable. They are
   compile-time values, like `cfg!(target_os)` and `env!`, not effects. The
@@ -816,6 +950,21 @@ Exit status: 0
   to re-run the inventory.
 - **Feature combinations.** Two passes, every feature and none, cover a
   `cfg(feature)` and a `cfg(not(feature))`, not a mix of mutually exclusive features.
+  A third, every feature in the release profile, covers `cfg(not(debug_assertions))`.
+- **`cfg(clippy)` and custom cfgs.** Clippy always sets `cfg(clippy)`, so code under
+  `cfg(not(clippy))` is never linted, and neither is code under a custom `--cfg` the
+  passes do not set. Neither has a use in libpachinko; both can only be written on
+  purpose, and review is what catches them.
+- **Inferred values of a banned type.** A type ban fires where the type is named, not
+  on a value whose type is inferred, so a banned type's methods go unflagged on a value
+  from an unbanned source. Each source PR #9's review found is banned: the types'
+  constructors, the module functions, and the iterators that yield one
+  (`std::net::Incoming`, `std::os::unix::net::Incoming`). A source it missed, or one
+  added in a later std, is the new-items case above.
+- **A lint cap in RUSTFLAGS.** `--cap-lints` or `-A warnings` in `RUSTFLAGS`,
+  `CARGO_ENCODED_RUSTFLAGS` or a cargo config's `rustflags` can hide the findings. The
+  script does not override the caller's compiler flags. The probe then sees nothing
+  fire, fails, and names that cause.
 - **Mtimes.** A revert that restores an older mtime (`rsync -a`, `cp -p`) can let
   cargo replay stale clippy warnings, in gate 8 and in gate 6 alike.
 - **The bans apply to libpachinko's tests too.** Clippy reads the crate file for every
