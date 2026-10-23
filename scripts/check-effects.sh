@@ -42,6 +42,9 @@ target=target/effects
 # A CLIPPY_CONF_DIR in the caller's environment would replace the file clippy
 # finds for each crate; every run below sets it, or leaves it unset, on purpose.
 unset CLIPPY_CONF_DIR
+# Every match below reads cargo's plain text. CI sets CARGO_TERM_COLOR=always,
+# and colour codes would hide every finding from the matchers, so each cargo
+# run passes --color never, which outranks that variable and any cargo config.
 
 crate_names=$(printf '%s\n' "$banned_crates" | awk 'NF { print $1 }' | sort)
 api_paths=$(sed -n 's/^ *{ path = "\([^"]*\)", reason = "effect:.*/\1/p' "$api_bans" | sort)
@@ -75,7 +78,7 @@ minus() {
 # Captured by the caller, so a cargo failure aborts under `set -e` instead of
 # passing as an empty tree.
 crate_tree() {
-    cargo tree "$@" -e normal --prefix none --all-features --target all --locked --offline
+    cargo tree --color never "$@" -e normal --prefix none --all-features --target all --locked --offline
 }
 
 # Prints the banned names in a tree, one per occurrence. Each line reads
@@ -117,10 +120,10 @@ run_clippy() {
     shift
     clippy_status=0
     if [ -n "$conf" ]; then
-        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy --locked --offline \
+        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy --color never --locked --offline \
             --target-dir "$target" "$@" 2>&1) || clippy_status=$?
     else
-        clippy_out=$(cargo clippy --locked --offline --target-dir "$target" "$@" 2>&1) ||
+        clippy_out=$(cargo clippy --color never --locked --offline --target-dir "$target" "$@" 2>&1) ||
             clippy_status=$?
     fi
 }
