@@ -1,17 +1,18 @@
 //! Breaks every std-API ban in `crates/libpachinko/clippy.toml` exactly once, so
 //! `scripts/check-effects.sh` can fail unless each entry fires once here. Nothing
-//! here runs: clippy only has to resolve it. Most breaks are full paths; a few use
-//! the forms a path-matching tool would miss (an alias, `use std as s`, a glob, a
-//! macro body, a function value, a method on a parameter), each still the only break
-//! of its entry. One function per break, so an `exit` cannot make the rest
-//! unreachable; `set_var` and `remove_var` are taken as values, so nothing here
-//! needs `unsafe`.
+//! here runs: clippy only has to resolve it. Most breaks are full paths; a few take
+//! indirect forms (an alias, `use std as s`, a glob, a macro body, a function value,
+//! a method on a parameter, an inferred argument), each still the only break of its
+//! entry, so the bans are shown to resolve names rather than match text. One
+//! function per break, so an `exit` cannot make the rest unreachable; `set_var` and
+//! `remove_var` are taken as values, so nothing here needs `unsafe`.
 //!
 //! Each break ends in a `// ban:` tag naming the entries it trips. The tags are the
 //! inventory the script holds the clippy.toml entries to, so deleting a ban there
 //! fails the gate until its break and tag are deleted here too. Only the lints that
 //! would bury the findings are allowed; the `disallowed_*` lints stay at their
-//! default, warn.
+//! default, warn. The script reads each break and its tag from one line that starts
+//! `fn `, so this crate's rustfmt.toml turns formatting off.
 #![forbid(unsafe_code)]
 #![allow(dead_code, unused_must_use, deprecated)]
 
@@ -24,14 +25,20 @@ fn system_time_elapsed(t: SystemTime) { t.elapsed(); } // ban: std::time::System
 fn instant_now() { let clock: fn() -> Instant = Instant::now; clock(); } // ban: std::time::Instant::now
 fn instant_elapsed(i: Instant) { i.elapsed(); } // ban: std::time::Instant::elapsed
 
-// Threads.
+// Threads. `spawn` is broken on a scope passed in, and the timed waits, which
+// read the clock, sit beside `park_timeout`.
 fn thread_spawn() { std::thread::spawn(|| ()); } // ban: std::thread::spawn
 fn thread_scope() { std::thread::scope(|_| ()); } // ban: std::thread::scope
+fn thread_scope_spawn<'s>(s: &'s std::thread::Scope<'s, '_>) { s.spawn(|| ()); } // ban: std::thread::Scope::spawn
 fn thread_sleep(d: std::time::Duration) { std::thread::sleep(d); } // ban: std::thread::sleep
 fn thread_sleep_ms() { std::thread::sleep_ms(1); } // ban: std::thread::sleep_ms
 fn thread_builder(_: std::thread::Builder) {} // ban: std::thread::Builder
 fn thread_park_timeout(d: std::time::Duration) { std::thread::park_timeout(d); } // ban: std::thread::park_timeout
 fn thread_park_timeout_ms() { std::thread::park_timeout_ms(1); } // ban: std::thread::park_timeout_ms
+fn condvar_wait_timeout(c: &std::sync::Condvar, g: std::sync::MutexGuard<'_, ()>, d: std::time::Duration) { c.wait_timeout(g, d); } // ban: std::sync::Condvar::wait_timeout
+fn condvar_wait_timeout_ms(c: &std::sync::Condvar, g: std::sync::MutexGuard<'_, ()>) { c.wait_timeout_ms(g, 1); } // ban: std::sync::Condvar::wait_timeout_ms
+fn condvar_wait_timeout_while(c: &std::sync::Condvar, g: std::sync::MutexGuard<'_, ()>, d: std::time::Duration) { c.wait_timeout_while(g, d, |()| false); } // ban: std::sync::Condvar::wait_timeout_while
+fn mpsc_recv_timeout(r: &std::sync::mpsc::Receiver<()>, d: std::time::Duration) { r.recv_timeout(d); } // ban: std::sync::mpsc::Receiver::recv_timeout
 fn thread_available_parallelism() { std::thread::available_parallelism(); } // ban: std::thread::available_parallelism
 
 // Randomness: std's own hasher seeds from the operating system.
@@ -54,6 +61,9 @@ fn fs_remove_dir_all() { std::fs::remove_dir_all("a"); } // ban: std::fs::remove
 fn fs_remove_file() { std::fs::remove_file("a"); } // ban: std::fs::remove_file
 fn fs_rename() { std::fs::rename("a", "b"); } // ban: std::fs::rename
 fn fs_set_permissions(p: &std::fs::Permissions) { std::fs::set_permissions("a", p.clone()); } // ban: std::fs::Permissions std::fs::set_permissions
+// `set_times` takes its `FileTimes` inferred, so that type's ban does not fire twice.
+fn fs_set_times() { std::fs::set_times("a", Default::default()); } // ban: std::fs::set_times
+fn fs_set_times_nofollow() { std::fs::set_times_nofollow("a", Default::default()); } // ban: std::fs::set_times_nofollow
 fn fs_soft_link() { std::fs::soft_link("a", "b"); } // ban: std::fs::soft_link
 fn fs_symlink_metadata() { std::fs::symlink_metadata("a"); } // ban: std::fs::symlink_metadata
 fn fs_write() { use std as s; s::fs::write("a", b""); } // ban: std::fs::write

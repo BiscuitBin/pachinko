@@ -1,0 +1,4 @@
+# The fixture is left unformatted. scripts/check-effects.sh reads each break and its
+# `// ban:` tag from one line that starts `fn `, and rustfmt, on save or by hand,
+# would split those lines and fail the gate with every ban untagged.
+disable_all_formatting = true

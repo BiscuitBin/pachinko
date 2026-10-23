@@ -85,12 +85,13 @@ too-many-lines-threshold = 60
 too-many-arguments-threshold = 5
 
 # Every stable function of std::fs, std::env and std::process; the clock and thread
-# calls CONVENTIONS.md §9 names, with sleep_ms beside sleep and park_timeout, a sleep
-# by another name; and the paths outside those modules that reach the same effects:
-# the filesystem queries on Path (PathBuf reaches them through Deref),
-# std::path::absolute, which reads the current directory, std::os::unix::fs, DNS
-# through ToSocketAddrs, the core count through available_parallelism, and the
-# parent process through std::os::unix::process::parent_id.
+# calls CONVENTIONS.md §9 names, with sleep_ms beside sleep, spawn on a Scope passed
+# in beside scope, and the timed waits, park_timeout and the Condvar and channel
+# timeouts, each a sleep by another name; and the paths outside those modules that
+# reach the same effects: the filesystem queries on Path (PathBuf reaches them
+# through Deref), std::path::absolute, which reads the current directory,
+# std::os::unix::fs, DNS through ToSocketAddrs, the core count through
+# available_parallelism, and the parent process through std::os::unix::process::parent_id.
 disallowed-methods = [
   { path = "std::time::SystemTime::now", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::time::SystemTime::elapsed", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
@@ -98,10 +99,15 @@ disallowed-methods = [
   { path = "std::time::Instant::elapsed", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::spawn", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::scope", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::Scope::spawn", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::sleep", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::sleep_ms", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::park_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::park_timeout_ms", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout_ms", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::Condvar::wait_timeout_while", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::sync::mpsc::Receiver::recv_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::available_parallelism", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::canonicalize", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::copy", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
@@ -119,6 +125,8 @@ disallowed-methods = [
   { path = "std::fs::remove_file", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::rename", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::set_permissions", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::set_times", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::fs::set_times_nofollow", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::soft_link", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::symlink_metadata", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::write", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
