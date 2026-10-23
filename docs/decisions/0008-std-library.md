@@ -54,7 +54,8 @@ the build.
     is not banned, because no named effect covers it.
 - The crate bans are one line in the script,
   `cargo tree -p libpachinko -e normal --prefix none --locked --offline`, which covers
-  transitive dependencies and is scoped to libpachinko by construction. It is the only
+  transitive dependencies on the host target (a target-specific dependency on another
+  platform is not seen) and is scoped to libpachinko by construction. It is the only
   crate guard. `deny.toml` cannot hold these bans: its bans apply to the whole workspace,
   and its `wrappers` exemption names a banned crate's direct parents only, so it cannot
   say "anything under `pachinko`". A runtime crate the service reaches through a

@@ -388,6 +388,30 @@ each have a row. `RUSTUP_TOOLCHAIN=1.98.1 just check-toolchain` was also re-run 
 it printed `1.98.1-aarch64-apple-darwin (overridden by environment variable
 RUSTUP_TOOLCHAIN)` and exited 0, which is the hand-back below.
 
+### Code review (`/code-review`, `main...HEAD` at `be0c36e`)
+
+Thirteen findings. Applied, one writer, after reading each cited source:
+
+- Gate 8 was described as proving the std-API bans (`quality-gates.md`,
+  `architecture.md`, `security-model.md`); today it proves the crate bans only, and the
+  std-API bans and probe arrive with T10. The gate 7 paragraph's "have their own probe"
+  is corrected the same way.
+- "Every gate passes `--locked`" narrowed in `security-model.md`, `repository-map.md`
+  and `quality-gates.md` to the recipes decision 0007 names; `deps-unused` does not.
+- The `cargo tree` crate check is qualified as covering the host target only
+  (`architecture.md`, 0008, `quality-gates.md`). For T10: `--target all` would close it.
+- `quality-gates.md`'s gate 8 section no longer restates the ban list; it links
+  Architecture.
+- The lock-check row now gives the `Justfile`'s exact flags; `configuration.md` names the
+  three lints `clippy.toml` relaxes in tests; 0012 names all six jobs that run the setup
+  action; `quality-gates.md` says T13's `image` job will join the `check` job's `needs`;
+  `testing.md` says `nextest-version` is a minimum, not the pin; `test-and-debug.md`
+  names the two workflows that set `RUST_BACKTRACE`.
+- The tutorial now restores only the two files it changed, with `git restore`.
+
+Not applied: the branch name (left as the worktree's, as recorded under Baseline), and
+the links to T06's pages, which are still T06's stubs (T06's lane).
+
 ### Handed back
 
 - **`check-toolchain` does not enforce the pin** (checkpoint 2, B1). The recipe proves
@@ -396,6 +420,9 @@ RUSTUP_TOOLCHAIN)` and exited 0, which is the hand-back below.
   frozen in wave 1, so this is a T00 follow-up on `main`: fail when
   `rustup show active-toolchain` does not start with `rust-toolchain.toml`'s `channel`
   or reports an override.
+- **`cargo tree` sees the host target only.** `scripts/check-effects.sh`'s crate line
+  omits a banned crate behind another platform's target-specific dependency. For T10:
+  pass `--target all`.
 - **Invariant 8's "every gate passes `--locked`"** is not literally true: `just
   deps-unused` runs `cargo shear` with no `--locked`. Decision 0007 names the recipes
   that do pass it rather than repeating the invariant. For T02 or T11: add the flag if

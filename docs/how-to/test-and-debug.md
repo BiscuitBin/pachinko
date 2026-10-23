@@ -67,8 +67,8 @@ status, or something written to standard error.
    global, and an effect reaches libpachinko only through a trait with a fake built per
    test (see [Architecture](../explanation/architecture.md)).
 2. Read the assertion's left and right and, for a panic, the backtrace
-   `RUST_BACKTRACE=1` prints. CI sets it for every job, so a failure in CI already
-   carries one.
+   `RUST_BACKTRACE=1` prints. `ci.yml` and `pages.yml` set it for every job of theirs,
+   so a test failure in CI already carries one.
 3. If the expectation is about a rule, work it through by hand against the module under
    `docs/specs/` that states it. The specification is the arbiter, not the current code.
 4. Do not weaken an assertion to make it pass. If the specification is wrong, change the

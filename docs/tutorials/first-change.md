@@ -17,8 +17,8 @@ The change is small on purpose; what matters is that it passes through every lay
 repository has today: an item, the tests that state what it does, and the gate.
 
 Start from a clean worktree: `git status --short` prints nothing. The last step puts the
-crates back with `git checkout`, which would also throw away any edit of yours under
-`crates/`.
+two files it changes back with `git restore`, which would also throw away any edit of
+yours already in `crates/pachinko/src/lib.rs` or `crates/pachinko/tests/binary.rs`.
 
 ## 1. Get the workspace running
 
@@ -171,11 +171,11 @@ common causes.
 
 ## 7. Put it back
 
-This was an exercise, so do not commit it. Restore the crates and confirm the worktree is
-clean again:
+This was an exercise, so do not commit it. Restore the two files it changed and confirm
+the worktree is clean again:
 
 ```console
-git checkout -- crates/
+git restore crates/pachinko/src/lib.rs crates/pachinko/tests/binary.rs
 git status --short
 ```
 

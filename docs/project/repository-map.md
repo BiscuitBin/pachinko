@@ -15,7 +15,7 @@ library and the library never on the service.
 ```text
 .
 ├── Cargo.toml              The workspace: members, shared package fields, lints, profiles
-├── Cargo.lock              The pin for every crate; every gate passes --locked
+├── Cargo.lock              The pin for every crate; the build gates pass --locked
 ├── rust-toolchain.toml     The exact toolchain and its components
 ├── tools.txt               Tools conda-forge lacks, from release binaries into .tools/bin
 ├── tools-source.txt        Tools conda-forge lacks with no release binary, built into .tools/bin

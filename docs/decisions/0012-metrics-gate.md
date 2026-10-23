@@ -118,8 +118,9 @@ takes a release asset from the crate's own repository, which rustqual would publ
 unsigned, so a release appearing upstream cannot bypass both the signature and the
 registry checksum. The pass also runs without a GitHub token, so no build script it
 compiles can read one. Compiling is acceptable for this one tool because it is paid once
-per worktree and, in CI, once per pin by each of the four `ci.yml` jobs that run the setup
-action, in parallel, on a cold cache; `.tools` is then cached on the hash of both lists. A line
+per worktree and, in CI, once per pin by each job that runs the setup action on a cold
+cache: the four `ci.yml` jobs in parallel, `audit.yml`'s `audit` job and `pages.yml`'s
+`build` job; `.tools` is then cached on the hash of both lists. A line
 joins this list only on a decision record that accepts the same cost.
 
 **The pin** is held at 1.8.3 and bumped by hand, one release at a time, with `just check`
@@ -144,7 +145,8 @@ The ones that hurt.
   count, and it charges `#[allow]` and `qual:allow` lines while `#[expect]` goes free.
 - **A source build at bootstrap.** `just initialize` runs `just install-tools`, which
   compiles a Rust program and so needs a toolchain and the network. On a cold CI cache
-  each of the four `ci.yml` jobs builds it in parallel.
+  every job that runs the setup action builds it: the four `ci.yml` jobs in parallel,
+  `audit.yml`'s `audit` job and `pages.yml`'s `build` job.
 - **A green run can hide a dead section.** With no boundary rules there is no probe, and
   nothing proves the complexity, SRP and coupling sections are running with the numbers
   written; a green gate would look the same if one had quietly stopped measuring.

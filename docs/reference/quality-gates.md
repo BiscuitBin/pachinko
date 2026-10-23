@@ -17,13 +17,13 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, so `rust-toolchain.toml` is honoured unless an override outranks it, and the run log names the active toolchain. It does not compare that toolchain with the pin: `RUSTUP_TOOLCHAIN`, `+toolchain` or a `rustup override` still passes. |
-| 2 | `lock-check` | `cargo update --locked --offline`, `pixi lock --check` | `Cargo.toml` agrees with `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 2 | `lock-check` | `cargo update --workspace --locked --offline`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
 | 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
 | 4 | `fmt-check` | `cargo fmt --all --check` | Every Rust file is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
 | 6 | `clippy` | `cargo clippy -- -D warnings` | Every lint in the workspace table is clean over every crate target and feature, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
-| 8 | `effects` | `scripts/check-effects.sh` | libpachinko performs no effect itself: nothing it depends on, and nothing it calls, is on the list of bans below. |
+| 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on the host target, names no banned crate. The std-API bans and their probe join it with T10; until then a direct std call in libpachinko is caught by review. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
 | 10 | `test-doc` | `cargo test --doc` | Every doc example compiles and passes. |
 | 11 | `coverage` | `cargo llvm-cov nextest` | Every unit and integration test passes, and line coverage over `crates/*/src/**` is at or above the floor of 90%. Doctests are gate 10's. |
@@ -37,9 +37,10 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | 19 | `snapshots-check` | `cargo insta test --check` | Every snapshot matches, and no `.snap` file is unreferenced. Runs `lock-check` first, then all tests through cargo-insta and nextest, offline, with every feature, without writing snapshots or pending files. |
 | 20 | `check-clean` | `bg-project-check clean` | The run changed nothing. |
 
-The table leaves out `--locked`, which every gate that builds passes (decision 0007);
-`snapshots-check` cannot pass it through cargo-insta, which is why it runs `lock-check`
-first.
+The table leaves out `--locked`, which the recipes
+[decision 0007](../decisions/0007-dependency-policy.md) names pass; `deps-unused` does
+not, and `snapshots-check` cannot pass it through cargo-insta, which is why it runs
+`lock-check` first.
 
 Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
 The duplication is deliberate: a regression names itself in the list of gates rather than
@@ -73,7 +74,8 @@ another on `PATH`. Then it runs rustqual twice against `rustqual.toml`, over
 `crates/libpachinko` and over `crates/pachinko`, each with warnings as failures. The
 module-boundary rules wait for there to be modules to order, as
 [Layering](../explanation/layering.md) records, so there is no rule to probe yet; the
-effect bans, which are boundary rules of a kind, are gate 8's and have their own probe.
+effect bans, which are boundary rules of a kind, are gate 8's, and their probe arrives
+with T10.
 Nothing proves the complexity, cohesion and coupling sections are running with the numbers
 written, and [Decision 0012](../decisions/0012-metrics-gate.md) records that as a risk it
 accepted. Like gates 17 and 18, gate 7 needs a per-worktree binary: `just install-tools`
@@ -81,32 +83,27 @@ builds `.tools/bin/rustqual` from source, and a worktree without it fails the ga
 
 ## Gate 8: the effects bans
 
-libpachinko performs no effect itself; [Architecture](../explanation/architecture.md)
-explains the boundary, and [Decision 0008](../decisions/0008-std-library.md) why a gate
-holds it rather than going without the standard library. `just effects` runs
-`scripts/check-effects.sh`, and the bans apply to libpachinko alone. `pachinko` is allowed
-every effect.
+libpachinko performs no effect itself;
+[Architecture](../explanation/architecture.md#gate-8-how-the-boundary-is-enforced) lists
+the bans and explains the boundary, and
+[Decision 0008](../decisions/0008-std-library.md) why a gate holds it. `just effects`
+runs `scripts/check-effects.sh`, which applies to libpachinko alone.
 
-- **Crates**, through libpachinko's normal dependency tree: `rand`, `rand_core`,
-  `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2`. Development
-  dependencies are exempt, so a test may use a seeded generator.
-- **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`,
-  `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`, everything under
-  `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn`,
-  `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder`. Standard I/O
-  (`std::io::stdin` and the rest) is not banned.
-
-The crate bans are checked today. The script reads
+Today the script checks the crate bans only. It reads
 `cargo tree -p libpachinko -e normal --prefix none --locked --offline`, which covers
-transitive dependencies, fails unless that tree names libpachinko itself (a tree that
-does not proves nothing), and fails on any line whose crate name is a banned one, matched
-as a whole name so that `rand` never matches `rand_core`. That line is the only crate
-guard: `deny.toml` bans no effect crate. The std-API bans, by the mechanism T10 chooses,
-arrive with T10, together with the probe: a fixture under
+transitive dependencies on the host target, so a target-specific dependency on another
+platform is not seen. It fails unless that tree names libpachinko itself, and fails on
+any line whose crate name is a banned one. It then prints that the std-API bans and the
+probe arrive with T10, so the gate is green and honest about what it covers; until then
+a direct std call in libpachinko is caught by review.
+
+T10 adds the std-API bans, by the mechanism it chooses, and a probe: a fixture under
 `tests/fixtures/effects-violation/` that breaks every ban exactly once, over which the
 script fails unless every ban fires, and a check that none fires on `crates/pachinko`.
-Until then the script prints that they arrive with T10, so the gate is green and honest
-about what it covers.
+
+A failure names the banned crate and the line of the tree that holds it. Move the effect
+behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake
+beside the trait; a banned crate a test needs belongs in the development dependencies.
 
 ## Outside the gate
 
@@ -119,7 +116,8 @@ suggestion list for tests, which nothing asserts on. `check-links-online` needs 
 network, and a check that can fail because a third party is down is not a gate. `audit`
 is missing for the same reason: it reads the RustSec advisory database, and runs in a
 workflow of its own. [Commands](commands.md) lists every recipe. Wave 2 (T13 to T17)
-adds recipes outside `check` only, and leaves the nineteen gates as they are.
+adds recipes outside `just check` only, and leaves the nineteen gates as they are; T13's
+`image` CI job will join the `needs` of the `check` aggregate job.
 
 ## When a gate fails
 

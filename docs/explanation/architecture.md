@@ -46,7 +46,8 @@ binary's one-line `main`, and `tests/binary.rs` runs the built binary as a user 
 test, and it means the clock, the filesystem, the environment, the network and threads
 are all nameable from inside it: nothing in the language stops a call to
 `std::time::Instant::now` or `std::fs::read`. So the effects are not unreachable; they
-are banned, and a gate proves the ban holds rather than a reviewer promising it.
+are banned. Today a gate proves the crate bans hold; the std-API bans join it with T10,
+and until then a direct std call is caught by review.
 [Decision 0008](../decisions/0008-std-library.md) records that choice and the
 alternative it rejected.
 
@@ -90,7 +91,8 @@ Development dependencies are exempt, so a test may use a seeded generator. Stand
 
 **What the script checks today.** It runs `cargo tree -p libpachinko -e normal --prefix
 none --locked --offline` and fails if any line names a banned crate, matched as a whole
-name so that `rand` never matches `rand_core`. That covers transitive dependencies and is
+name so that `rand` never matches `rand_core`. That covers transitive dependencies on
+the host target, so a target-specific dependency on another platform is not seen, and is
 scoped to `libpachinko` by construction. A positive control comes first: a tree that does
 not list `libpachinko` itself proves nothing, so the script fails on one. It then prints
 that the std-API bans and the probe arrive with T10. This is the only crate guard:

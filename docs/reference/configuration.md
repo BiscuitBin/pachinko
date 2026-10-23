@@ -84,7 +84,7 @@ everywhere.
 | `unreachable_pub`, `unnameable_types` | warn | What is `pub` is exported on purpose. |
 | `rustdoc::broken_intra_doc_links`, `rustdoc::private_intra_doc_links` | deny | A doc link that does not resolve, or resolves to something a reader cannot see, fails. |
 | `clippy::pedantic`, `clippy::cargo` | warn, priority -1 | The whole group, so a single lint can be set above it. |
-| `unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`, `unimplemented` | warn | The library does not panic; an error is returned. Relaxed in tests by `clippy.toml`. |
+| `unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`, `unimplemented` | warn | The library does not panic; an error is returned. `clippy.toml` relaxes `unwrap_used`, `expect_used` and `panic` in tests; the other three hold there too. |
 | `exhaustive_enums`, `exhaustive_structs` | warn | A public type is `#[non_exhaustive]`, so growing it breaks no consumer. |
 | `allow_attributes`, `allow_attributes_without_reason` | warn | A suppression is `#[expect(lint, reason = "...")]`, which reports itself when it stops being needed. |
 | `mod_module_files` | warn | No `mod.rs`: a module is the file named after it. |

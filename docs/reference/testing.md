@@ -12,7 +12,8 @@ requires: []
 
 cargo-nextest runs the unit and integration tests. It cannot run doctests, so `just test`
 runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests alone.
-`.config/nextest.toml` pins nextest's version and holds the profiles: the default one
+`.config/nextest.toml` names the minimum nextest version it needs (the pin itself is in
+`pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
 report, is there for a job that wants one; no recipe selects it today. Neither crate has
 a development dependency yet. A property-test crate and insta, the snapshot crate, each

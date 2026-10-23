@@ -38,10 +38,11 @@ for tests are never a source to use where unpredictability matters.
 
 ## What the build defends
 
-- **Supply chain.** `Cargo.lock` is the pin, and every gate passes `--locked`, so no
-  recipe can resolve a version the lockfile does not name; `just lock-check` fails on
-  drift between a manifest and its lockfile
-  ([decision 0007](../decisions/0007-dependency-policy.md)). `just deny` checks
+- **Supply chain.** `Cargo.lock` is the pin. The recipes
+  [decision 0007](../decisions/0007-dependency-policy.md) names pass `--locked`, so they
+  fail rather than resolve a version the lockfile does not name, and `just lock-check`
+  fails on drift between a manifest and its lockfile; only `just lock` and
+  `just lock-upgrade` resolve, by design. `just deny` checks
   licences, bans and sources offline on every run of `just check`, and `just audit`
   checks the RustSec advisories, which need the network, outside `just check`: weekly
   and on every pull request in its own workflow, which is never a required check.
@@ -69,7 +70,8 @@ for tests are never a source to use where unpredictability matters.
   in.
 - **No effects in the library.** libpachinko reaches the clock, randomness, the
   filesystem, the network, the environment and threads only through traits it defines,
-  and `just effects` proves it ([Architecture](architecture.md),
+  and `just effects` proves the crate bans today; the std-API bans join it with T10,
+  and until then a direct std call is caught by review ([Architecture](architecture.md),
   [decision 0003](../decisions/0003-effects-behind-traits.md)).
 - **Workflow permissions.** `ci.yml` and `audit.yml` hold `contents: read` and nothing
   else. `pages.yml` holds more, `pages: write` and `id-token: write`, on its deploy job
