@@ -3,8 +3,8 @@
 # each checked three ways (CONVENTIONS.md §9):
 #
 # - Crates: libpachinko's normal dependency tree, from `cargo tree`, names no
-#   banned crate. It covers transitives and leaves development dependencies
-#   exempt, so a test may use a seeded generator.
+#   banned crate. It covers transitives and every target, and leaves development
+#   dependencies exempt, so a test may use a seeded generator.
 # - std APIs: clippy's disallowed-methods and disallowed-types, from the entries
 #   in crates/libpachinko/clippy.toml whose reason begins `effect:`. Clippy
 #   resolves names, so an alias, a glob, a macro body or a method on a value
@@ -16,6 +16,10 @@
 # tests/fixtures/effects-violation trips every ban exactly once, through the same
 # commands and matching, so a ban that cannot fire fails the gate; (3) pachinko
 # trips no std-API ban. Offline throughout: the fixture's crates are path stubs.
+#
+# The fixture is also the inventory: its stubs under deps/ and the `// ban:` tags
+# on its breaks must name exactly the bans above and in clippy.toml, so deleting
+# a ban from one list without the other fails the gate.
 set -eu
 
 # The crate bans: one name per line, then why. Only the first field is read.
@@ -60,11 +64,12 @@ minus() {
     '
 }
 
-# Prints the normal dependency tree; the arguments say whose. Captured by the
-# caller, so a cargo failure aborts under `set -e` instead of passing as an
-# empty tree.
+# Prints the normal dependency tree; the arguments say whose. Every target, so a
+# `[target.'cfg(...)'.dependencies]` entry for another platform is seen too.
+# Captured by the caller, so a cargo failure aborts under `set -e` instead of
+# passing as an empty tree.
 crate_tree() {
-    cargo tree "$@" -e normal --prefix none --all-features --locked --offline
+    cargo tree "$@" -e normal --prefix none --all-features --target all --locked --offline
 }
 
 # Prints the banned names in a tree, one per occurrence. Each line reads
@@ -77,33 +82,38 @@ banned_in_tree() {
     ' | sort
 }
 
+# Prints every path clippy reported as disallowed, one per finding.
+disallowed_in_clippy() {
+    tick=$(printf '\140')
+    printf '%s\n' "$1" | sed -n "s/^[a-z]*: use of a disallowed [a-z]* $tick\([^$tick]*\)$tick\$/\1/p" | sort
+}
+
 # Prints the effect paths clippy reported, one per finding. Other lints, the
 # root file's HashMap ban included, are gate 6's business.
 banned_in_clippy() {
-    tick=$(printf '\140')
-    printf '%s\n' "$1" | sed -n "s/^[a-z]*: use of a disallowed [a-z]* $tick\([^$tick]*\)$tick\$/\1/p" |
+    disallowed_in_clippy "$1" |
         awk -v paths="$(words "$api_paths")" '
             BEGIN { n = split(paths, list, " "); for (i = 1; i <= n; i++) ban[list[i]] = 1 }
             $0 in ban { print }
         ' | sort
 }
 
-# Runs clippy with the given arguments and all features, reading clippy.toml from
-# the directory in $1, or from wherever clippy finds it when $1 is empty, and sets
-# `clippy_out` and `clippy_status`. The directory goes through `env`, not a
-# `VAR=value` prefix: POSIX leaves a prefix on a function call in force after it
-# returns in some shells, and it would then leak into the next run. Warnings stay warnings, so the status is
-# non-zero only when the code does not compile. Cargo replays a fresh crate's
-# cached warnings, so a second run reports what the first did.
+# Runs clippy with the remaining arguments, reading clippy.toml from the directory
+# in $1, or from wherever clippy finds it when $1 is empty, and sets `clippy_out`
+# and `clippy_status`. The directory goes through `env`, not a `VAR=value`
+# prefix: POSIX leaves a prefix on a function call in force after it returns in
+# some shells, and it would then leak into the next run. Warnings stay warnings,
+# so the status is non-zero only when the code does not compile. Cargo replays a
+# fresh crate's cached warnings, so a second run reports what the first did.
 run_clippy() {
     conf=$1
     shift
     clippy_status=0
     if [ -n "$conf" ]; then
-        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy "$@" --all-features --locked --offline \
+        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy "$@" --locked --offline \
             --target-dir "$target" 2>&1) || clippy_status=$?
     else
-        clippy_out=$(cargo clippy "$@" --all-features --locked --offline --target-dir "$target" 2>&1) ||
+        clippy_out=$(cargo clippy "$@" --locked --offline --target-dir "$target" 2>&1) ||
             clippy_status=$?
     fi
 }
@@ -142,41 +152,56 @@ if [ -n "$hits" ]; then
 fi
 
 # Check 1, std APIs. libpachinko's own clippy.toml is named outright, which is
-# the file clippy would find for it anyway.
-run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets
-hits=$(banned_in_clippy "$clippy_out")
-if [ -n "$hits" ] || [ "$clippy_status" -ne 0 ]; then
-    printf '%s\n' "$clippy_out" >&2
-    printf 'effects: clippy over libpachinko exited %s, want 0\nbanned APIs used:\n%s\nwant none\n' \
-        "$clippy_status" "$hits" >&2
-    exit 1
-fi
+# the file clippy would find for it anyway. Two passes, with every feature and
+# with none, so code behind either `cfg(feature)` or `cfg(not(feature))` is
+# compiled by one of them. Code behind a target the host is not stays unseen;
+# linting it would need that target's std installed.
+for features in --all-features --no-default-features; do
+    run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets "$features"
+    hits=$(banned_in_clippy "$clippy_out")
+    if [ -n "$hits" ] || [ "$clippy_status" -ne 0 ]; then
+        printf '%s\n' "$clippy_out" >&2
+        printf 'effects: clippy %s over libpachinko exited %s, want 0\nbanned APIs used:\n%s\nwant none\n' \
+            "$features" "$clippy_status" "$hits" >&2
+        exit 1
+    fi
+done
 
 # Check 2. The fixture is its own workspace, so the same commands reach it
 # through --manifest-path. Clippy would find the root clippy.toml for it, so the
 # libpachinko file is named outright.
 tree=$(crate_tree --manifest-path "$fixture/Cargo.toml")
-got=$(banned_in_tree "$tree")
+# Every package in the tree but the fixture and wrapper, unfiltered by the ban
+# list, so a name deleted from the list still shows here.
+got=$(printf '%s\n' "$tree" | awk 'NF && $1 != "effects-violation" && $1 != "wrapper" { print $1 }' | sort)
 if [ "$got" != "$crate_names" ]; then
     printf '%s\n' "$tree" >&2
     printf 'effects: the crate probe did not see each banned crate exactly once\ncrates banned:\n%s\ncrates seen:\n%s\n' \
         "$crate_names" "$got" >&2
     exit 1
 fi
-run_clippy "$PWD/crates/libpachinko" --manifest-path "$fixture/Cargo.toml"
-got=$(banned_in_clippy "$clippy_out")
-if [ "$clippy_status" -ne 0 ] || [ "$got" != "$api_paths" ]; then
+inventory=$(sed -n 's|^fn .* // ban: ||p' "$fixture/src/lib.rs" | tr ' ' '\n' | awk 'NF' | sort)
+if [ "$inventory" != "$api_paths" ]; then
+    printf 'effects: the fixture'"'"'s // ban: tags and the effect entries in %s disagree\n' "$api_bans" >&2
+    printf 'tagged, not in %s:\n%s\n' "$api_bans" "$(minus "$inventory" "$api_paths")" >&2
+    printf 'in %s, not tagged:\n%s\n' "$api_bans" "$(minus "$api_paths" "$inventory")" >&2
+    exit 1
+fi
+run_clippy "$PWD/crates/libpachinko" --manifest-path "$fixture/Cargo.toml" --all-features
+got=$(disallowed_in_clippy "$clippy_out")
+if [ "$clippy_status" -ne 0 ] || [ "$got" != "$inventory" ]; then
     printf '%s\n' "$clippy_out" >&2
     printf 'effects: the API probe exited %s, want 0, and must fire every ban exactly once\n' "$clippy_status" >&2
-    printf 'silent:\n%s\n' "$(minus "$api_paths" "$got")" >&2
+    printf 'silent:\n%s\n' "$(minus "$inventory" "$got")" >&2
     printf 'fired more than once:\n%s\n' "$(printf '%s\n' "$got" | uniq -d)" >&2
     exit 1
 fi
 
 # Check 3. pachinko is linted with the root clippy.toml, as gate 6 lints it, and
-# may use every effect. The crate bans need no such check: `-p libpachinko`
+# may use every effect. --no-deps keeps libpachinko, which check 1 covers, out of
+# this run's findings. The crate bans need no such check: `-p libpachinko`
 # scopes them by construction.
-run_clippy '' -p pachinko --all-targets
+run_clippy '' -p pachinko --all-targets --all-features --no-deps
 hits=$(banned_in_clippy "$clippy_out")
 if [ -n "$hits" ] || [ "$clippy_status" -ne 0 ]; then
     printf '%s\n' "$clippy_out" >&2

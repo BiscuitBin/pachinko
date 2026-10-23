@@ -11,13 +11,17 @@ publish = false
 [workspace]
 
 # Every banned crate but socket2 directly, and socket2 only through wrapper. Each is a
-# path-dependency stub under deps/, so nothing is fetched.
+# path-dependency stub under deps/, so nothing is fetched. getrandom sits under a
+# target no runner is, so the probe shows the tree covers every target, not only the
+# host's.
 [dependencies]
 async-std = { path = "deps/async-std" }
-getrandom = { path = "deps/getrandom" }
 mio = { path = "deps/mio" }
 rand = { path = "deps/rand" }
 rand_core = { path = "deps/rand_core" }
 smol = { path = "deps/smol" }
 tokio = { path = "deps/tokio" }
 wrapper = { path = "deps/wrapper" }
+
+[target.'cfg(windows)'.dependencies]
+getrandom = { path = "deps/getrandom" }
