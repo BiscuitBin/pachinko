@@ -8,11 +8,11 @@ description: Diagnose and repair a failing quality gate at its root instead of s
 1. Read `AGENTS.md`, then reproduce with the narrowest recipe rather than the whole gate. `just check` names the recipe that failed; run that one alone.
 2. Dispatch on which gate failed:
    - `check-toolchain` — cargo is not rustup's proxy, or rustup is missing. Put `~/.cargo/bin` first on `PATH`; the pin in `rust-toolchain.toml` is honoured only through that proxy.
-   - `lock-check` — run `just lock`, and read the lockfile diff before accepting it.
-   - `lint` — a pre-commit hook failed (Markdown, typos, links, shell, workflows, secrets, whitespace). Run `just fix` for what a fixer can repair, then fix the rest by hand; a secret found by `ripsecrets` is removed, never allowlisted.
+   - `lock-check` — run `just lock`, which reaches the network and so needs explicit authorization, and read the lockfile diff before accepting it.
+   - `lint` — a pre-commit hook failed. A hook named after a gate (`fmt-check`, `toml-check`, `deps-unused`, `validate-docs` for `check-docs`, `validate-agents` for `check-agents`, `check-specs`, `analyse-specs`) goes to that gate's line below. For the rest (Markdown, typos, links, shell, workflows, secrets, whitespace), run `just fix` for what a fixer can repair, then fix the remainder by hand; a secret found by `ripsecrets` is removed, never allowlisted.
    - `fmt-check` or `toml-check` — run `just fix`; never hand-format to match.
    - `clippy` — fix the code. A lint that is wrong for one item gets `#[expect(lint, reason = "...")]` on that item; a lint that is wrong for the crate is changed in the workspace lint table in `Cargo.toml` with a comment saying why, never disabled at the call site with `allow`.
-   - `metrics` — lower the complexity, cohesion or coupling rustqual reports. Never raise a threshold in `rustqual.toml`. A version mismatch means `just install-tools` has not run in this worktree.
+   - `metrics` — lower the complexity, cohesion or coupling rustqual reports. Never raise a threshold in `rustqual.toml`. A version mismatch means `just install-tools`, a network recipe that needs explicit authorization, has not run in this worktree.
    - `effects` — libpachinko reaches an effect directly. Put it behind a trait libpachinko defines, with a fake beside it, and its real implementation in pachinko. A probe failure on the fixture under `tests/fixtures/effects-violation` is a defect in `scripts/check-effects.sh`, never in the fixture.
    - `features` — a feature that does not compile alone or in combination. Fix the `cfg`; a feature combination is never dropped from the powerset.
    - `test-doc` — a doctest fails. Fix the example or the item it documents; doc examples are tests.
