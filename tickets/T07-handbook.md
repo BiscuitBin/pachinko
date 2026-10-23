@@ -284,6 +284,17 @@ $ git checkout -- crates/                 exit 0
 $ git status --short                      exit 0 (empty)
 ```
 
+The code review then narrowed step 7 to the two files the exercise changes. Re-run at
+`a0b44b0` after making the step 4 and 5 edits (`ai_tmp/T07/tutorial-step7.txt`):
+
+```text
+$ git status --short
+ M crates/pachinko/src/lib.rs
+ M crates/pachinko/tests/binary.rs
+$ git restore crates/pachinko/src/lib.rs crates/pachinko/tests/binary.rs   exit 0
+$ git status --short                      exit 0 (empty)
+```
+
 The ticket predicted two failures and that is what happened, but `.config/nextest.toml`
 sets `fail-fast = true`, so the second failure is reported only because both tests had
 already started; the page says so and gives the `--no-fail-fast` command. That command,
