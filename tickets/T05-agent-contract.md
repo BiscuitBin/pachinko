@@ -1,7 +1,7 @@
 ---
 id: T05
 title: "Agent contract: AGENTS.md, fourteen skills, the Allium vendoring"
-status: open
+status: done
 depends_on: [T00]
 parallel_with: [T01, T02, T06, T07, T10]
 branch: ticket/t05-agent-contract
@@ -144,10 +144,154 @@ git status --short
 
 ## Hand-back notes
 
-To be written by the executing agent: each adaptation to a vendored skill, with its line;
-the upstream source the dropped `skills-lock.json` named;
-the facts `docs/reference/agent-contract.md` (T07) needs; the review record for each
-checkpoint (`CONVENTIONS.md` §14); anything handed back.
+### Baseline
+
+At `8b01c0c` (untouched worktree), `just check` ended with
+`All checks passed and the worktree is unchanged.` (exit 0).
+
+### Adaptations to the vendored skills
+
+- `propagate/SKILL.md` line 12: `integration tests under \`crates/pawdoku/tests/\`` became
+  `integration tests under \`crates/libpachinko/tests/\` and \`crates/pachinko/tests/\``.
+- Nothing else changed: `allium`, `distill`, `elicit`, `tend`, `weed` and `witness` are
+  byte-identical to L at `ccdd001`, and each one's frontmatter equals T00's stub. Every
+  recipe they name (`check-specs`, `analyse-specs`, `test`, `check`, `plan-spec`)
+  already exists in the `Justfile`.
+- `allium-skill-reference/` is L's at `ccdd001`, 23 files, `diff -r` empty.
+
+### The dropped `skills-lock.json`
+
+L's lock named `source: juxt/allium`, `sourceType: github`, and a `skillPath` of
+`skills/<name>/SKILL.md` for each of the seven skills, with no tag and no commit. It is
+not carried (`CONVENTIONS.md` §7). For decision 0010 and T07: the upstream is the GitHub
+repository `juxt/allium`, and the version the vendored text came from is whatever L held
+at `ccdd001`.
+
+### Facts for T07 (`docs/reference/agent-contract.md`, decision 0010)
+
+- `AGENTS.md` order: identity paragraphs (single source of truth; library and service
+  with an undefined domain; specifications decide *what*; the untrusted-data rule),
+  `## Project map` (including where tests live), `## Invariants` (the nine of §7
+  verbatim; one sentence saying invariant 4 is enforced by the workspace lint table every
+  crate inherits; the authority rules; the change-workflow rules; the hand-back rule),
+  seven `<important if>` blocks, `## Provenance`. About 1300 words, 866 outside the
+  blocks.
+- The seven blocks, in order: Rust under `crates/` (`rust-change`, `review-change`);
+  an effect (`rust-change`, `just effects`); a module under `docs/specs/`
+  (`spec-change`, which hands the language to `allium`); a page under `docs/`
+  (`review-docs`); the agent surface; a failing gate or hand-back (`fix-quality`,
+  `project-check`); picking up a ticket (`plan-change`).
+- The network recipes `AGENTS.md` names, all ten in the `Justfile` that reach the
+  network: `initialize`, `install-toolchain`, `install-tools`, `install-allium`, `sync`,
+  `lock`, `lock-upgrade`, `install-hooks`, `audit`, `check-links-online`. The stub named
+  eight; `sync` and `lock` are added.
+- The authority rule covers destructive operations inside the worktree as well as
+  every action that leaves it.
+- No workflow publishes today (`ci.yml` is read-only); `AGENTS.md` says that once one
+  deploys from `main` (decision 0013), a push there is a deployment.
+- Skills: fourteen canonical under `.agents/skills/`, twenty-eight bridges, frontmatter
+  untouched since T00. Reference material sits at `allium-skill-reference/`, linked only
+  from the Allium skills. The dotfile exclusions T00 copied are in place:
+  `.gitattributes:5`, `.markdownlint-cli2.jsonc:17`, `lychee.toml:6`, `_typos.toml:14`.
+
+### Adversarial review, checkpoint 1 (`ai_tmp/review/T05-1/`)
+
+Reviewers: Codex CLI 0.163.0, `codex exec -m gpt-6-astra -s read-only`, one run per
+lens over `git diff main...HEAD` at `3156a65`. Triage: a fresh-context Claude Opus
+subagent, which applied the fixes in `c3b8ed0`.
+
+| Id | Severity | Verdict | Reason or fix |
+| --- | --- | --- | --- |
+| C01 / B1 | medium / high | valid | L's rule that destructive operations need authorization was dropped; restored in the authority paragraph |
+| C02 | medium | invalid | L's snapshot sentence is a stack convention, not an invariant, authority rule or deviation; passed to T07 below |
+| C03 / B2 | low / medium | valid | `AGENTS.md` said `spec-change` hands off to `allium`, but the skill did not; its step 3 now does |
+| B3 | medium | valid | `rust-change` blocked ticket-scoped scaffolding that no clause can govern yet; it may now cite the ticket, and domain behaviour still needs a clause |
+| B4 | medium | valid, handed back | The Verification block's archive pipeline can diff against a stale extraction; the fix is in this ticket's Verification block (below) |
+
+Round 2 ran because B1 was high: the same reviewers over `git diff HEAD~1 HEAD` at
+`c3b8ed0`. Both lenses reported no findings.
+
+### Code review (`/code-review`, medium, `main...HEAD` at `c3b8ed0`)
+
+Ten findings. Applied in `1657dff`:
+
+- `rust-change` and `review-change` overclaimed `just effects`; the gate bans crates
+  today, so both now say to read the diff for a direct `std` call as well.
+- `fix-quality`'s `lint` line now routes a hook named after a gate to that gate's line.
+- `fix-quality` marks `just lock` and `just install-tools` as needing authorization.
+- `AGENTS.md`: the snapshot sentence no longer calls the snapshot recipes "the one
+  exception to `--locked`"; the specs block says the recipes run the pinned checker and
+  a bare `allium` on `PATH` is not trusted; L's rules on adding a missing recipe to the
+  `Justfile`, reading only the skill the task needs, and linking the reference material
+  only from the Allium skills are restored.
+
+Not applied:
+
+- This ticket's `status:` and hand-back notes were still unwritten: done in this commit.
+- `fix-quality` names the fixture `tests/fixtures/effects-violation`, which T10 creates:
+  the ticket's step 3 requires that wording, and the `Justfile` comment names it too.
+- Handed back, below: `.allium-loop/`, `deps-unused` and `--locked`, the stub waiver
+  page, and the vendored skills' bare `allium` advice.
+
+### Verification, at `1657dff` (no uncommitted changes)
+
+The block above, run as written except that `just check`'s output goes to a file so its
+own exit status is quoted (the plain `| tail` form hides it). Each line's exit status is
+in brackets.
+
+```text
+$ just check-agents
+Validated AGENTS.md, 2 adapters, and 14 skills.                     [exit 0]
+$ rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/
+(nothing)                                                           [exit 1]
+$ mkdir -p ai_tmp/l                                                 [exit 0]
+$ git -C /Users/scutting/projects/libpawdoku archive ccdd001 allium-skill-reference | tar -x -C ai_tmp/l
+                                                                    [exit 0]
+$ diff -r ai_tmp/l/allium-skill-reference allium-skill-reference; echo "exit $?"
+exit 0
+$ test ! -e skills-lock.json; echo "exit $?"
+exit 0
+$ rg -c '^<important if="' AGENTS.md
+7
+$ awk ... AGENTS.md > ai_tmp/agents-core.md                         [exit 0]
+$ for p in untrusted ... runes; do ...; done
+(nothing)                                                           [exit 0]
+$ for g in check-toolchain ... snapshots-check; do ...; done
+(nothing)                                                           [exit 0]
+$ just check
+All checks passed and the worktree is unchanged.                    [exit 0]
+$ git status --short
+(nothing)                                                           [exit 0]
+```
+
+Positive controls: the Pawdoku `rg` over L's `AGENTS.md` and `.agents/` matches 22
+lines. ai_tmp/l was emptied before this run. The fail-closed form of the vendoring check
+(B4) at `c3b8ed0`: `git archive -o` exit 0, `tar -x -f` exit 0, 23 files, `diff -r` exit 0.
+
+### Handed back
+
+- **This ticket's Verification block (B4).** It should run
+  `rm -rf ai_tmp/l && mkdir -p ai_tmp/l`, then `git archive -o` and `tar -x -f` as two
+  commands, each with its exit status echoed, before the `diff -r`.
+- **T00 follow-up: `.allium-loop/` in `.gitignore`.** The vendored loop
+  (`allium-skill-reference/allium/driving-the-loop.md` line 92) writes its ledger under
+  `.allium-loop/` and tells the agent to add it to `.gitignore`. `.gitignore` is frozen,
+  so a `/allium` loop today leaves the worktree dirty.
+- **Invariant 8 against `deps-unused`.** Invariant 8 (§7, verbatim) says every gate
+  passes `--locked`, but `deps-unused` runs `cargo shear`, which takes no such flag. For
+  T07's quality-gates page, or a §7 wording change.
+- **T07: `docs/how-to/work-with-the-specs.md`.** `spec-change` step 7 (L's text) points
+  there for the `allium-ignore` waiver terms; the page is a stub until T07 writes it.
+- **T07: the snapshot rule.** L's sentence "Snapshots show a reviewer a value and detect
+  change; they never prove a clause." belongs on `docs/reference/testing.md`.
+- **Vendored skills and a bare `allium`.** `weed`, `tend`, `elicit`, `distill` and
+  `witness` say to run `allium` "if the CLI is available", and `weed` suggests installing
+  it. They stay verbatim, as step 4 requires; `AGENTS.md`'s specs block points agents to
+  the pinned checker instead.
+- **`AGENTS.md` length.** About 1300 words against §7's "about 1000": the authority list,
+  the network recipe list and the review fixes account for the excess.
+- **Not run:** `git fetch` and the rebase onto `origin/main` that §11 asks for before a
+  push, because no push was authorised. `main` is `8b01c0c`, which this branch is based on.
 
 ## Open points
 
