@@ -8,12 +8,14 @@ requires: []
 
 # Architecture decisions
 
-This index will be the record of what was chosen for this repository, what it cost, and
-what would have to change for each choice to be revisited. The series is this
-repository's own and starts at 0001; records carried from the repository it was adapted
-from say so under their heading and keep the topic slug they had. Lane T07 writes the
-full index and every record below; until then each record is a stub that names what it
-will say.
+A record of what was chosen, what it cost, and what would have to change for the choice
+to be revisited. Each entry is numbered and never renumbered; a decision that is
+superseded is marked rather than deleted, because the reasoning is what makes the
+successor legible.
+
+These are decisions about *how* this repository is built. Decisions about *what* it does
+belong in the specifications under `docs/specs/`, and unresolved ones are recorded there
+as `open question` blocks — see [Specifications](../explanation/specifications.md).
 
 ## The record
 
@@ -34,5 +36,34 @@ will say.
 | [0013](0013-api-reference-on-github-pages.md) | The API reference on GitHub Pages |
 | [0014](0014-service-runtime-deferred.md) | The service runtime waits for the specifications |
 
-Records from 0015 onwards are written by the wave-2 tickets that take those decisions,
-each adding its file, its manifest entry and its row here.
+Decision 0004 is superseded in part by decision 0011, which names the consequences of
+0004 it replaces and the ones that stand. Two recipes in the gate list decision 0009
+records have records of their own: decision 0012 holds gate 7, `just metrics`, and
+decision 0008 holds gate 8, `just effects`.
+
+## The numbering
+
+This series is the repository's own and starts at 0001. Eleven entries were carried from
+libpawdoku's decision records at `ccdd001` when this repository was adapted from it
+(0002 to 0007 and 0009 to 0013); each says so under its heading, with the number it had
+there, and keeps the topic slug it had, because the slug is what a cross-repository
+reference names. Three entries are new here: 0001, 0008 and 0014. Nothing here is
+rendered from a template, so no frozen inventory of numbers applies.
+
+Numbers 0015 to 0018 are reserved for the wave-2 tickets that take those decisions: 0015
+for the container image (T13), 0016 for the release process (T14), 0017 for mutation
+testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
+Renovate (T17). Each adds its file, its manifest entry and its row above. The next
+decision this repository takes outside those is 0019.
+
+## Writing a new one
+
+Copy the shape of an existing entry: context, the decision, the consequences including
+the ones that hurt, and what would reopen it. Add the file, add a manifest entry, add a
+row above. A decision nobody can find is not recorded.
+
+## Related pages
+
+- [Documentation map](../README.md)
+- [Architecture](../explanation/architecture.md)
+- [Specifications](../explanation/specifications.md)
