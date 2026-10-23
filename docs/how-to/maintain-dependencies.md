@@ -76,9 +76,9 @@ specifications define a domain that needs one.
    network, which is why it sits outside `just check`; the scheduled `audit.yml` workflow
    runs it too.
 
-A new crate, rather than a new version of one, is a decision-0007 note in the pull
-request: what it is for, and why the crate that takes it cannot do without it. No
-dependency is added without one.
+A new crate, rather than a new version of one, carries a decision-0007 note, written
+beside its range in the manifest and stated in the pull request: what it is for, and why
+the crate that takes it cannot do without it. No dependency is added without one.
 
 ## The tools in `pyproject.toml`
 
