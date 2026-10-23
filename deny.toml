@@ -11,6 +11,8 @@ targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-window
 # Network: the RustSec database is fetched, so this section runs from `just audit`,
 # never `just check`.
 [advisories]
+# Stricter than cargo-deny's default of `warn`: a yanked release is one its publisher
+# withdrew, so a lock that pins it is a defect to fix, not a warning to read past.
 yanked = "deny"
 # Unmaintained-crate advisories fail only for direct dependencies of the workspace,
 # which are the ones this repository can replace.

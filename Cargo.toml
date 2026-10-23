@@ -60,7 +60,8 @@ missing_const_for_fn = "warn"
 use_self = "warn"
 # Restriction lints from here down; that group is never enabled whole, so each is
 # named. The panicking shortcuts: library and service code returns errors instead.
-# clippy.toml lifts these inside tests.
+# clippy.toml lifts unwrap_used, expect_used and panic in test code; unreachable,
+# todo and unimplemented have no test exemption and stay in force there.
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
@@ -76,7 +77,10 @@ print_stderr = "warn"
 exhaustive_enums = "warn"
 exhaustive_structs = "warn"
 # Invariant 6: a lint is silenced only by `#[expect(lint, reason = "...")]`, which
-# fails once the lint stops firing, never by `#[allow]`.
+# fails once the lint stops firing, never by `allow`. The gate rejects an outer
+# `#[allow]` and any `allow` without a reason; an inner
+# `#![allow(..., reason = "...")]` passes both lints, so review enforces the
+# invariant for that form.
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
 # Layout: unit tests sit in a `#[cfg(test)]` module, and a module with children is

@@ -1,6 +1,8 @@
-# The `-in-tests` keys lift the panicking and printing restriction lints the
-# workspace table enables, inside `#[cfg(test)]` code only: a failing test should
-# panic loudly, and a test may index and print freely.
+# The `-in-tests` keys lift unwrap_used, expect_used, panic, dbg_macro, print_stdout,
+# print_stderr and indexing_slicing in `#[test]` functions and `#[cfg(test)]` code: a
+# failing test should panic loudly, and a test may index and print freely. The
+# workspace table does not enable indexing_slicing, so its key is ready for a crate
+# that does. Clippy has no such key for unreachable, todo or unimplemented.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
