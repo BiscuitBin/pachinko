@@ -1,6 +1,9 @@
 [package]
 name = "libpachinko"
 version = "0.1.0"
+# description, keywords, categories and readme are the metadata the clippy cargo
+# group's cargo_common_metadata names. It skips a `publish = false` package, so they
+# are kept for the docs and for the day publishing is decided.
 description = "The pachinko library: the domain its specifications define, with every effect behind a trait."
 keywords = ["pachinko", "library", "specification"]
 categories = ["development-tools"]
@@ -16,6 +19,8 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The same `--cfg docsrs` and features `just doc` builds with, so a docs.rs build
+# would match the gate.
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
