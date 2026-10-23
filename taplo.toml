@@ -1,13 +1,24 @@
+# Every TOML file in the repository, `.config/nextest.toml` included. The excludes are
+# load-bearing: the pixi environment's site-packages and the installed tools hold
+# TOML that is not this repository's to format.
 include = ["**/*.toml"]
 exclude = ["target/**", ".tools/**", ".pixi/**", "ai_tmp/**"]
 
 [formatting]
+# The same width rustfmt.toml gives Rust.
 column_width = 100
+# Stated so a reader need not know taplo's defaults: two-space indents, no column
+# alignment, and keys and arrays keep the author's order, so comments stay beside
+# what they explain.
 indent_string = "  "
 align_entries = false
 reorder_keys = false
 reorder_arrays = false
 
+# The one exception: the dependency tables named below are sorted, so a new
+# dependency has one place to go and two branches adding different ones rarely
+# conflict. A `[target.'cfg(...)'.dependencies]` table is not covered; add its key
+# here when one appears.
 [[rule]]
 include = ["Cargo.toml", "crates/*/Cargo.toml"]
 keys = ["dependencies", "dev-dependencies", "build-dependencies", "workspace.dependencies"]

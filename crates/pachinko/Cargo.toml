@@ -1,6 +1,9 @@
 [package]
 name = "pachinko"
 version = "0.1.0"
+# description, keywords, categories and readme are the metadata the clippy cargo
+# group's cargo_common_metadata names. It skips a `publish = false` package, so they
+# are kept for the docs and for the day publishing is decided.
 description = "The pachinko service: a minimal binary that supplies libpachinko's effects."
 keywords = ["pachinko", "service", "binary"]
 categories = ["command-line-utilities"]
@@ -17,8 +20,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# Invariant 5: the service depends on the library, never the reverse. Without the
+# version beside the path, deny.toml's `wildcards = "deny"` rejects the dependency.
 libpachinko = { path = "../libpachinko", version = "0.1.0" }
 
+# The same `--cfg docsrs` and features `just doc` builds with, so a docs.rs build
+# would match the gate.
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

@@ -1,8 +1,14 @@
+# Equal to the cargo-nextest pin in pyproject.toml, so an older nextest refuses to
+# run this configuration rather than misreading it.
 nextest-version = "0.9.146"
 
+# Locally, stop at the first failure.
 [profile.default]
 fail-fast = true
 
+# For CI to select with `--profile ci` (T01's workflows; no recipe selects it yet): run every test so one run reports every
+# failure, never retry a flaky test into a pass, and write JUnit
+# that CI can report.
 [profile.ci]
 fail-fast = false
 retries = 0

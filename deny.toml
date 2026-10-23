@@ -1,16 +1,30 @@
 [graph]
+# Every feature is on, so a dependency behind a feature is checked too.
 all-features = true
-# Dev-dependencies are outside the graph: they serve the tests only, and the bans
-# below are on what ships, not on the test harness.
+# Dev-dependencies are outside the graph: they serve the tests only, and the
+# licences and bans below are about what ships, not the test harness. Every check
+# reads this one graph, so dev-dependencies also skip [sources] and `just audit`; a
+# dev-dependency from an unlisted source passes, so review it when it is added.
 exclude-dev = true
+# The platforms a dependency is resolved for: Linux (CI), Apple silicon (the
+# maintainer) and, kept from L, Windows, so a dependency that appears only there is
+# still checked. Other targets' platform-specific dependencies are out of scope.
 targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
 
-# Network: `just audit`, never `just check`.
+# Network: the RustSec database is fetched, so this section runs from `just audit`,
+# never `just check`.
 [advisories]
+# Stricter than cargo-deny's default of `warn`: a yanked release is one its publisher
+# withdrew, so a lock that pins it is a defect to fix, not a warning to read past.
 yanked = "deny"
+# Unmaintained-crate advisories fail only for direct dependencies of the workspace,
+# which are the ones this repository can replace.
 unmaintained = "workspace"
 ignore = []
 
+# Permissive licences only, all compatible with Apache-2.0. A licence on this list
+# that no dependency uses yet is expected and only warned about; the list is not
+# trimmed to silence it.
 [licenses]
 allow = [
   "Apache-2.0",
@@ -25,15 +39,28 @@ allow = [
   "Unlicense",
   "CC0-1.0",
 ]
+# Stricter than the default 0.8: a licence text matched with less confidence than
+# this is reported for a person to read rather than accepted as a near match.
 confidence-threshold = 0.9
+# The workspace's own crates are `publish = false`, so the check skips them; it is
+# about dependencies.
 private = { ignore = true }
 
+# No effect-crate bans here: `wrappers` names direct parents only, so it cannot
+# scope a ban to libpachinko, and a workspace-wide ban would reject the service's
+# own transitives (CONVENTIONS.md §1 fact 3). `just effects` walks libpachinko's tree.
 [bans]
+# Duplicates are reported but tolerated: the ecosystem cannot always agree on one
+# version. This check replaces clippy's multiple_crate_versions.
 multiple-versions = "warn"
+# A `*` requirement makes the build depend on whatever is newest.
 wildcards = "deny"
+# A duplicate's graph shows both the path to the lowest version and the simplest path.
 highlight = "all"
 deny = [{ crate = "openssl-sys", reason = "no native TLS anywhere in this workspace" }]
 
+# Crates come from crates.io and nowhere else; a git source is added deliberately.
+# This covers the graph above, so not dev-dependencies.
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

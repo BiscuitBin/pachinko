@@ -1,5 +1,12 @@
+# Stable options only, so `cargo fmt --all --check` never needs a nightly toolchain.
+# The 2024 style edition, matching the crates' edition.
 style_edition = "2024"
+# The same width taplo.toml gives TOML.
 max_width = 100
+# Stated so a formatter on Windows cannot write CRLF.
 newline_style = "Unix"
+# The formatter writes the short forms, so review never has to ask for them:
+# `Point { x, y }` over `Point { x: x, y: y }`,
 use_field_init_shorthand = true
+# and `?` over the `try!` macro.
 use_try_shorthand = true

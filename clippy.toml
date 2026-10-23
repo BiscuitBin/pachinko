@@ -1,13 +1,23 @@
+# The `-in-tests` keys lift unwrap_used, expect_used, panic, dbg_macro, print_stdout,
+# print_stderr and indexing_slicing in `#[test]` functions and `#[cfg(test)]` code: a
+# failing test should panic loudly, and a test may index and print freely. The
+# workspace table does not enable indexing_slicing, so its key is ready for a crate
+# that does. Clippy has no such key for unreachable, todo or unimplemented.
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-dbg-in-tests = true
 allow-print-in-tests = true
+# Iteration over these is in an unspecified order, so anything built from it can
+# differ between runs; use the ordered collections instead.
 disallowed-types = [
   { path = "std::collections::HashMap", reason = "iteration order is not deterministic; use BTreeMap" },
   { path = "std::collections::HashSet", reason = "iteration order is not deterministic; use BTreeSet" },
 ]
+# Tighter than clippy's defaults (25, 100 and 7; excessive_nesting does nothing until
+# a threshold is set): a function past one of them is split, not excused.
+# cognitive_complexity is a restriction lint, enabled in Cargo.toml.
 cognitive-complexity-threshold = 15
 excessive-nesting-threshold = 4
 too-many-lines-threshold = 60
