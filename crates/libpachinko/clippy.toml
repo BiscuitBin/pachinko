@@ -74,6 +74,7 @@ disallowed-types = [
   { path = "std::process::Stdio", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
   { path = "std::process::Termination", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
   { path = "std::thread::Builder", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::hash::RandomState", reason = "effect: randomness is reached through a trait libpachinko defines (decision 0008)" },
 ]
 # Tighter than clippy's defaults (25, 100 and 7; excessive_nesting does nothing until
 # a threshold is set): a function past one of them is split, not excused.
@@ -84,10 +85,12 @@ too-many-lines-threshold = 60
 too-many-arguments-threshold = 5
 
 # Every stable function of std::fs, std::env and std::process; the clock and thread
-# calls CONVENTIONS.md §9 names, with sleep_ms beside sleep; and the paths outside
-# those modules that reach the same effects: the filesystem queries on Path (PathBuf
-# reaches them through Deref), std::path::absolute, which reads the current
-# directory, std::os::unix::fs, and DNS through ToSocketAddrs.
+# calls CONVENTIONS.md §9 names, with sleep_ms beside sleep and park_timeout, a sleep
+# by another name; and the paths outside those modules that reach the same effects:
+# the filesystem queries on Path (PathBuf reaches them through Deref),
+# std::path::absolute, which reads the current directory, std::os::unix::fs, DNS
+# through ToSocketAddrs, the core count through available_parallelism, and the
+# parent process through std::os::unix::process::parent_id.
 disallowed-methods = [
   { path = "std::time::SystemTime::now", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::time::SystemTime::elapsed", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
@@ -97,6 +100,9 @@ disallowed-methods = [
   { path = "std::thread::scope", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::sleep", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::thread::sleep_ms", reason = "effect: threads are reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::park_timeout", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::park_timeout_ms", reason = "effect: the clock is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::thread::available_parallelism", reason = "effect: the environment is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::canonicalize", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::copy", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::fs::create_dir", reason = "effect: the filesystem is reached through a trait libpachinko defines (decision 0008)" },
@@ -151,4 +157,5 @@ disallowed-methods = [
   { path = "std::process::abort", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
   { path = "std::process::exit", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
   { path = "std::process::id", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
+  { path = "std::os::unix::process::parent_id", reason = "effect: a library spawns and exits nothing; a process is an effect trait if a specification needs one" },
 ]

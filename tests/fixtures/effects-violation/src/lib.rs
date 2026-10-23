@@ -30,6 +30,12 @@ fn thread_scope() { std::thread::scope(|_| ()); } // ban: std::thread::scope
 fn thread_sleep(d: std::time::Duration) { std::thread::sleep(d); } // ban: std::thread::sleep
 fn thread_sleep_ms() { std::thread::sleep_ms(1); } // ban: std::thread::sleep_ms
 fn thread_builder(_: std::thread::Builder) {} // ban: std::thread::Builder
+fn thread_park_timeout(d: std::time::Duration) { std::thread::park_timeout(d); } // ban: std::thread::park_timeout
+fn thread_park_timeout_ms() { std::thread::park_timeout_ms(1); } // ban: std::thread::park_timeout_ms
+fn thread_available_parallelism() { std::thread::available_parallelism(); } // ban: std::thread::available_parallelism
+
+// Randomness: std's own hasher seeds from the operating system.
+fn hash_random_state(_: std::hash::RandomState) {} // ban: std::hash::RandomState
 
 // The filesystem: std::fs's functions, then its types.
 fn fs_canonicalize() { std::fs::canonicalize("a"); } // ban: std::fs::canonicalize
@@ -126,6 +132,7 @@ fn unix_stream() { std::os::unix::net::UnixStream::connect("a"); } // ban: std::
 fn process_abort() { std::process::abort(); } // ban: std::process::abort
 fn process_exit() { std::process::exit(0); } // ban: std::process::exit
 fn process_id() { std::process::id(); } // ban: std::process::id
+fn unix_parent_id() { std::os::unix::process::parent_id(); } // ban: std::os::unix::process::parent_id
 fn process_child(_: std::process::Child) {} // ban: std::process::Child
 fn process_child_stderr(_: std::process::ChildStderr) {} // ban: std::process::ChildStderr
 fn process_child_stdin(_: std::process::ChildStdin) {} // ban: std::process::ChildStdin

@@ -49,6 +49,12 @@ if [ -z "$crate_names" ] || [ -z "$api_paths" ]; then
     printf '%s\n' "effects: no crate bans or no std-API bans were read from this script and $api_bans" >&2
     exit 1
 fi
+# An effect entry in any other shape would be enforced but never probed.
+if [ "$(grep -c 'reason = "effect:' "$api_bans")" -ne "$(printf '%s\n' "$api_paths" | wc -l)" ]; then
+    printf '%s\n' "effects: an effect: entry in $api_bans is not one line of the form" \
+        '  { path = "...", reason = "effect: ..." },' >&2
+    exit 1
+fi
 
 # Joins lines with spaces, the form `awk -v` takes portably. No name or path
 # here holds a space.
@@ -98,31 +104,44 @@ banned_in_clippy() {
         ' | sort
 }
 
-# Runs clippy with the remaining arguments, reading clippy.toml from the directory
-# in $1, or from wherever clippy finds it when $1 is empty, and sets `clippy_out`
-# and `clippy_status`. The directory goes through `env`, not a `VAR=value`
-# prefix: POSIX leaves a prefix on a function call in force after it returns in
-# some shells, and it would then leak into the next run. Warnings stay warnings,
-# so the status is non-zero only when the code does not compile. Cargo replays a
-# fresh crate's cached warnings, so a second run reports what the first did.
+# Runs clippy with the remaining arguments, which may end in `-- <lint flags>`,
+# reading clippy.toml from the directory in $1, or from wherever clippy finds it
+# when $1 is empty, and sets `clippy_out` and `clippy_status`. The directory goes
+# through `env`, not a `VAR=value` prefix: POSIX leaves a prefix on a function
+# call in force after it returns in some shells, and it would then leak into the
+# next run. Unless the caller forbids a lint, warnings stay warnings, so the
+# status is non-zero only when the code does not compile. Cargo replays a fresh
+# crate's cached warnings, so a second run reports what the first did.
 run_clippy() {
     conf=$1
     shift
     clippy_status=0
     if [ -n "$conf" ]; then
-        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy "$@" --locked --offline \
-            --target-dir "$target" 2>&1) || clippy_status=$?
+        clippy_out=$(env CLIPPY_CONF_DIR="$conf" cargo clippy --locked --offline \
+            --target-dir "$target" "$@" 2>&1) || clippy_status=$?
     else
-        clippy_out=$(cargo clippy "$@" --locked --offline --target-dir "$target" 2>&1) ||
+        clippy_out=$(cargo clippy --locked --offline --target-dir "$target" "$@" 2>&1) ||
             clippy_status=$?
     fi
 }
 
-# Check 0. The comparison drops comments, blank lines and the effect entries,
-# which only the libpachinko file has, and its disallowed-methods line, a key
-# the root file does not set.
+# Check 0. The effect bans are libpachinko's alone, so the root file holds none.
+if grep -q 'reason = "effect:' clippy.toml; then
+    printf '%s\n' 'effects: clippy.toml holds an effect: entry; the bans belong in crates/libpachinko/clippy.toml' >&2
+    exit 1
+fi
+# Then the libpachinko file, less comments, blank lines and its effect entries,
+# must read line for line as the root file does, in order. Removing the effect
+# entries leaves its disallowed-methods array empty, and an empty array, which
+# the root file does not have, is dropped too.
 normalise() {
-    grep -v -e '^ *#' -e '^ *$' -e 'reason = "effect:' -e '^disallowed-methods = \[$' "$1" | sort -u
+    grep -v -e '^ *#' -e '^ *$' -e 'reason = "effect:' "$1" | awk '
+        held != "" && $0 == "]" { held = ""; next }
+        held != "" { print held; held = "" }
+        /^[a-z-]+ = \[$/ { held = $0; next }
+        { print }
+        END { if (held != "") print held }
+    '
 }
 root_lines=$(normalise clippy.toml)
 lib_lines=$(normalise "$api_bans")
@@ -155,9 +174,12 @@ fi
 # the file clippy would find for it anyway. Two passes, with every feature and
 # with none, so code behind either `cfg(feature)` or `cfg(not(feature))` is
 # compiled by one of them. Code behind a target the host is not stays unseen;
-# linting it would need that target's std installed.
+# linting it would need that target's std installed. The two lints are forbidden
+# outright, so an `#[allow]`, an `#[expect]` or a `[lints]` entry in libpachinko
+# cannot silence a ban: it fails to compile instead.
 for features in --all-features --no-default-features; do
-    run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets "$features"
+    run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets "$features" -- \
+        -F clippy::disallowed_methods -F clippy::disallowed_types
     hits=$(banned_in_clippy "$clippy_out")
     if [ -n "$hits" ] || [ "$clippy_status" -ne 0 ]; then
         printf '%s\n' "$clippy_out" >&2
