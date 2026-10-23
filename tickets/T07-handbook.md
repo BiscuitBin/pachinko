@@ -424,6 +424,22 @@ Thirteen findings. Applied, one writer, after reading each cited source:
 Not applied: the branch name (left as the worktree's, as recorded under Baseline), and
 the links to T06's pages, which are still T06's stubs (T06's lane).
 
+### PR review (#8)
+
+One finding, from Copilot (low, valid): two passages still said `--locked` is passed by
+every recipe, which `just deps-unused`, the snapshot recipes and `just lock` /
+`just lock-upgrade` contradict. Both now use decision 0007's wording, "every recipe that
+builds, tests, lints or documents the workspace": `maintain-dependencies.md`'s opening
+paragraph, which also names the two exceptions, and `troubleshooting.md`'s `--locked`
+entry.
+
+At `8334764` (`ai_tmp/T07/pr8-check.txt`):
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+```
+
 ### Handed back
 
 - **`check-toolchain` does not enforce the pin** (checkpoint 2, B1). The recipe proves
