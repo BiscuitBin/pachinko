@@ -8,7 +8,253 @@ requires: []
 
 # Quality gates
 
-This page will list the nineteen gates `just check` runs, in order, followed by the
-check that the worktree is clean. For each gate it will say what it checks, which tool
-does the checking, and what a failure looks like. Lane T07 writes it from the gate
-order the bootstrap conventions fix.
+`just check` runs the gates in the order below and snapshots the worktree between each
+one. A recipe that modifies a file Git does not ignore fails the run, because checks are
+read-only; an ignored path is outside the snapshot, which is why every build output below
+is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]` in
+`pyproject.toml`, and `check-clean` follows it.
+
+| Order | Gate | Runs | Proves |
+| --- | --- | --- | --- |
+| 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, so `rust-toolchain.toml` is honoured unless an override outranks it, and the run log names the active toolchain. It does not compare that toolchain with the pin: `RUSTUP_TOOLCHAIN`, `+toolchain` or a `rustup override` still passes. |
+| 2 | `lock-check` | `cargo update --locked --offline`, `pixi lock --check` | `Cargo.toml` agrees with `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
+| 4 | `fmt-check` | `cargo fmt --all --check` | Every Rust file is as rustfmt would write it. |
+| 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
+| 6 | `clippy` | `cargo clippy -- -D warnings` | Every lint in the workspace table is clean over every crate target and feature, for the host platform, with warnings as errors. |
+| 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
+| 8 | `effects` | `scripts/check-effects.sh` | libpachinko performs no effect itself: nothing it depends on, and nothing it calls, is on the list of bans below. |
+| 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
+| 10 | `test-doc` | `cargo test --doc` | Every doc example compiles and passes. |
+| 11 | `coverage` | `cargo llvm-cov nextest` | Every unit and integration test passes, and line coverage over `crates/*/src/**` is at or above the floor of 90%. Doctests are gate 10's. |
+| 12 | `doc` | `cargo doc` with `-D warnings --cfg docsrs` | rustdoc is warning-free under `--cfg docsrs`, intra-doc links and missing docs included. |
+| 13 | `deny` | `cargo deny check licenses bans sources` | Every dependency that ships has an allowed licence, no banned crate is in that graph, and every source is crates.io. Development dependencies are outside the graph. |
+| 14 | `deps-unused` | `cargo shear` | No crate declares a dependency it does not use. |
+| 15 | `check-docs` | markdownlint, typos, lychee, `bg-validate-docs` | The documentation contract holds. |
+| 16 | `check-agents` | `bg-validate-agents` | The agent contract holds. |
+| 17 | `check-specs` | `bg-run-allium check` | Every specification reports an empty `diagnostics` array. |
+| 18 | `analyse-specs` | `bg-run-allium analyse` | Every specification reports an empty `findings` array too. |
+| 19 | `snapshots-check` | `cargo insta test --check` | Every snapshot matches, and no `.snap` file is unreferenced. Runs `lock-check` first, then all tests through cargo-insta and nextest, offline, with every feature, without writing snapshots or pending files. |
+| 20 | `check-clean` | `bg-project-check clean` | The run changed nothing. |
+
+The table leaves out `--locked`, which every gate that builds passes (decision 0007);
+`snapshots-check` cannot pass it through cargo-insta, which is why it runs `lock-check`
+first.
+
+Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
+The duplication is deliberate: a regression names itself in the list of gates rather than
+being one line inside `lint`.
+
+Gates 17 and 18 cost the gate something real: the pinned `allium` binary lives in the
+gitignored `.tools/bin/`, which is a per-worktree install, so a worktree that has never
+run `just initialize` fails `just lint` and `just check` until `just install-allium`
+puts one there. The alternative was a gate that skipped itself whenever its tool was
+absent, which asserts nothing.
+[Decision 0005](../decisions/0005-project-managed-allium-cli.md) is the record.
+
+Neither gate trusts the tool's exit code, because neither exit code means what this
+project means by clean. `allium check` exits 0 on an `info` diagnostic —
+`allium.field.unused` is one — and `allium analyse` keys its status on findings alone and
+ignores diagnostics entirely, so a module that does not parse passes it with the `error`
+sitting in the JSON it has just printed. `bg-run-allium` runs the subcommand,
+prints its output whole, and asserts what the contract actually says: every module reports
+an empty `diagnostics` array and an empty `findings` array. A diagnostic may be waived
+only where the checker itself is wrong, on the terms in
+[Work with the specifications](../how-to/work-with-the-specs.md); a finding cannot be
+waived at all.
+
+Gate 7 does not trust a green run either. rustqual skips its architecture section without
+a word when the section is switched off or misconfigured, and exits 0 over a directory that
+does not exist; either way it reports every boundary as met. And its version decides what
+it reports, so
+`just metrics` first fails unless `rustqual --version` matches the pin in
+`tools-source.txt`, rather than let a missing `.tools/bin/rustqual` fall through to
+another on `PATH`. Then it runs rustqual twice against `rustqual.toml`, over
+`crates/libpachinko` and over `crates/pachinko`, each with warnings as failures. The
+module-boundary rules wait for there to be modules to order, as
+[Layering](../explanation/layering.md) records, so there is no rule to probe yet; the
+effect bans, which are boundary rules of a kind, are gate 8's and have their own probe.
+Nothing proves the complexity, cohesion and coupling sections are running with the numbers
+written, and [Decision 0012](../decisions/0012-metrics-gate.md) records that as a risk it
+accepted. Like gates 17 and 18, gate 7 needs a per-worktree binary: `just install-tools`
+builds `.tools/bin/rustqual` from source, and a worktree without it fails the gate.
+
+## Gate 8: the effects bans
+
+libpachinko performs no effect itself; [Architecture](../explanation/architecture.md)
+explains the boundary, and [Decision 0008](../decisions/0008-std-library.md) why a gate
+holds it rather than going without the standard library. `just effects` runs
+`scripts/check-effects.sh`, and the bans apply to libpachinko alone. `pachinko` is allowed
+every effect.
+
+- **Crates**, through libpachinko's normal dependency tree: `rand`, `rand_core`,
+  `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2`. Development
+  dependencies are exempt, so a test may use a seeded generator.
+- **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`,
+  `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`, everything under
+  `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn`,
+  `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder`. Standard I/O
+  (`std::io::stdin` and the rest) is not banned.
+
+The crate bans are checked today. The script reads
+`cargo tree -p libpachinko -e normal --prefix none --locked --offline`, which covers
+transitive dependencies, fails unless that tree names libpachinko itself (a tree that
+does not proves nothing), and fails on any line whose crate name is a banned one, matched
+as a whole name so that `rand` never matches `rand_core`. That line is the only crate
+guard: `deny.toml` bans no effect crate. The std-API bans, by the mechanism T10 chooses,
+arrive with T10, together with the probe: a fixture under
+`tests/fixtures/effects-violation/` that breaks every ban exactly once, over which the
+script fails unless every ban fires, and a check that none fires on `crates/pachinko`.
+Until then the script prints that they arrive with T10, so the gate is green and honest
+about what it covers.
+
+## Outside the gate
+
+`test`, `build`, `audit`, `site`, `plan-spec` and `check-links-online` are recipes that
+`just check` does not run. `test` runs nextest and the doctests in one go, which
+`coverage` and `test-doc` already cover between them; `build` compiles what `clippy` and
+`features` already compile; `site` builds the API reference that `doc` has proved, for
+[Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md); and `plan-spec` prints a
+suggestion list for tests, which nothing asserts on. `check-links-online` needs the
+network, and a check that can fail because a third party is down is not a gate. `audit`
+is missing for the same reason: it reads the RustSec advisory database, and runs in a
+workflow of its own. [Commands](commands.md) lists every recipe. Wave 2 (T13 to T17)
+adds recipes outside `check` only, and leaves the nineteen gates as they are.
+
+## When a gate fails
+
+`just check` stops at the first gate that fails, so the last recipe it ran is the one
+that failed. Rerun that one recipe on its own and read its first failure; fix the cause,
+not the finding. Never disable a gate or lower a threshold to make a run green: a
+suppression is one lint on one line, as
+`#[expect(lint, reason = "...")]`. The `fix-quality` skill is the agent's procedure, and
+[Troubleshooting](../operations/troubleshooting.md) has the messages that come up most.
+
+| Gate | First move |
+| --- | --- |
+| `check-toolchain` | Put rustup's cargo first on `PATH`; `just install-toolchain` installs the pinned toolchain. |
+| `lock-check` | A manifest changed without its lockfile: `just lock`, then commit both. A cold Cargo cache fails too: `just sync` fills it. |
+| `lint` | Read which hook failed. `just fix` repairs what the mutating configuration can. |
+| `fmt-check`, `toml-check` | `just fix`, or `just format` for these two alone. |
+| `clippy` | Fix the code. `just fix` applies clippy's own suggestions, then the rest is by hand. |
+| `metrics` | Split the function, type or module that crossed a threshold. A version mismatch: `just install-tools`. |
+| `effects` | Move the effect behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake beside the trait. |
+| `features` | Fix the combination the output names. |
+| `test-doc`, `coverage` | Fix the failing test or example; below the floor, test the uncovered lines or remove them. |
+| `doc` | Document the item, or repair the link rustdoc names. |
+| `deny` | Replace the dependency whose licence, source or name is refused. |
+| `deps-unused` | Remove the dependency; `just fix` runs `cargo shear --fix`. |
+| `check-docs`, `check-agents` | The [Documentation contract](documentation-contract.md) or the [Agent contract](agent-contract.md) names the rule. |
+| `check-specs`, `analyse-specs` | `just install-allium` if the binary is missing; otherwise fix the module. |
+| `snapshots-check` | `just snapshots-review`, or `just snapshots-accept` and read the diff before committing. |
+| `check-clean` | Find the recipe that wrote the file. A recipe that changes the worktree is a defect in that recipe. |
+
+`just lock`, `just sync`, `just install-toolchain`, `just install-tools` and
+`just install-allium` reach the network, and an agent runs them only when its task
+authorises it.
+
+## What the hook gate contains
+
+`just lint` runs `.pre-commit-config.yaml` over every file. This is the read-only
+configuration, and it is the one installed as the pre-commit hook.
+
+| Hook | Checks |
+| --- | --- |
+| `fmt-check`, `toml-check`, `deps-unused` | Gates 4, 5 and 14, when a Rust file, a TOML file or a manifest is among the files. Each runs through its `just` recipe: a git hook does not inherit the `Justfile`'s `PATH`, so routing through the recipe is what lets it find the environment's tools, and it keeps each tool's arguments in one place. |
+| `validate-docs`, `validate-agents` | The two contracts, so a hook catches them before the aggregate does. |
+| `check-specs`, `analyse-specs` | The specifications, through `allium`. Needs the pinned binary; see above. |
+| `editorconfig-checker` | Whitespace, line endings, final newlines. |
+| `markdownlint-cli2` | Markdown structure. |
+| `typos` | Spelling, excluding the lockfiles. |
+| `lychee` | Link targets, offline. |
+| `shellcheck` | The shell scripts under `scripts/`. |
+| `actionlint` | Every GitHub Actions workflow, its structure only — see below. |
+| `ripsecrets` | Credential material, with its output suppressed so a match is never logged. |
+| Builtin `check-*` | Large files, case conflicts, merge markers, JSON, TOML, YAML, private keys, shebangs. |
+
+The four contract and specification hooks run their `bg-*` scripts through
+`pixi run --frozen`, because a git hook does not inherit the `Justfile`'s `PATH`, and a
+bare `pixi run` could rewrite `pixi.lock` from inside a commit. Clippy is deliberately not
+a hook: a cold build over every target blocks a commit for minutes, so it is gate 6 and a
+CI step instead.
+
+Third-party hooks are pinned to commit SHAs with a version comment beside each.
+
+One gap is worth knowing about rather than being surprised by. `actionlint` analyses a
+`run:` block by handing it to `shellcheck`, and it reports nothing at all when it cannot
+find `shellcheck` on its own `PATH`. Under `prek` each hook gets its own environment, so
+the `shellcheck` hook one row up is not the one `actionlint` can see, and the shell
+embedded in a workflow goes unread. Every `run:` in this repository's workflows and its
+setup action is a single line, nearly all of them one `just` recipe, so there is no
+embedded shell to miss today. A block of more than a line
+added to a workflow deserves `shellcheck` by hand until the gap is closed.
+
+## The mutating counterpart
+
+`.pre-commit-fix.yaml` holds the hooks that write: `cargo fmt`, `taplo fmt`,
+`cargo shear --fix`, end-of-file and trailing-whitespace repair, and
+`markdownlint --fix`. It is never installed as a hook and runs only from `just fix`.
+`cargo clippy --fix` is not among them: it needs a full build and permission to touch a
+dirty tree, so it is a line in the `fix` recipe itself.
+
+## In continuous integration
+
+`.github/workflows/ci.yml` runs the same recipes in four gate jobs, each on Ubuntu and
+each starting with the repository's composite setup action, which installs the pixi
+environment, the toolchain, the tools `tools.txt` and `tools-source.txt` pin, and the hook
+environments.
+
+| Job | Runs |
+| --- | --- |
+| `rust` | `check-toolchain`, `lock-check`, `fmt-check`, `toml-check`, `clippy`, `metrics`, `effects`, `features`, `test`, `snapshots-check`, `doc`, `deps-unused` |
+| `coverage` | `coverage`, then uploads `lcov.info` as an artifact kept for seven days |
+| `deny` | `deny` |
+| `documents` | `install-allium`, `lint`, `check-docs`, `check-agents`, `check-specs`, `analyse-specs` |
+
+A fifth job, `check`, needs all four and runs no recipe: it fails when any of them failed,
+was cancelled or was skipped. It exists so that branch protection can name one check that
+never changes. A gate job added later joins its `needs`, and protection stays as it is.
+
+The mapping is not one to one. `rust` runs `test`, where the gate runs `test-doc` and
+`coverage`; `lint` runs in `documents`; and no job runs `check-clean`, since each job
+runs its recipes directly rather than through `just check`. Past the composite setup action,
+nothing in CI runs a command that does not exist in the `Justfile`.
+
+`.github/workflows/audit.yml` runs `just audit` on every pull request, weekly, and by
+hand. It is never a required check: a fetch of the advisory database can fail for reasons
+that have nothing to do with the diff.
+
+`.github/workflows/pages.yml` runs on every push to `main`, and by hand. Its `build` job
+runs `check-toolchain` and `site` after the same setup action and uploads `target/doc`;
+its `deploy` job publishes that to GitHub Pages, and only from `main`. It is not a gate:
+neither job is among `check`'s `needs`, so it is never a required check, and a
+deployment that fails blocks no merge.
+[Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md) has the procedure.
+
+## On `main`
+
+`main` is protected, and one check, `check`, must pass before a branch merges into it.
+That is the aggregate job above, which fails unless `rust`, `coverage`, `deny` and
+`documents` all succeeded, so a gate job is added by joining its `needs` and the
+protection itself never changes. `audit` is never required.
+
+The branch is not required to be up to date with `main` first, and no review is required —
+neither earns its cost on a repository with one author. Force pushes and deletion are
+refused. Administrators are not bound by the rule, so the direct push remains available
+when it is genuinely wanted; the protection is there to stop an unproved merge, not to stop
+the author.
+
+A push to `main` publishes the API reference through `pages.yml`. That deployment is not
+a gate and not a required check.
+
+## Related pages
+
+- [Commands](commands.md)
+- [Architecture](../explanation/architecture.md)
+- [Quality philosophy](../explanation/quality-philosophy.md)
+- [Documentation contract](documentation-contract.md)
+- [Agent contract](agent-contract.md)
+- [Troubleshooting](../operations/troubleshooting.md)
+- [Decision 0008](../decisions/0008-std-library.md)
+- [Decision 0009](../decisions/0009-rust-quality-gate.md)
+- [Decision 0012](../decisions/0012-metrics-gate.md)
