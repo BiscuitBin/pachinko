@@ -351,9 +351,10 @@ errors in 0006, 0012 and 0014, and `maintain-dependencies.md` was aligned with 0
 where the dependency note goes (beside the range and in the pull request, as L's record
 and L's how-to each say one half of).
 
-### Verification, at `012b884`
+### Verification, at `d089a0d`
 
-Full output: `ai_tmp/T07/verification-final.txt`.
+Re-run after the code-review fixes; the only later commit adds these notes. Full output:
+`ai_tmp/T07/verification-final2.txt`.
 
 ```text
 $ just check-docs
@@ -368,7 +369,7 @@ docs/explanation/quality-philosophy.md:15:The argument on this page was carried 
 docs/explanation/architecture.md:23:libpawdoku at `ccdd001`, a single library crate, and widened to two crates here.
                                                                               exit 0
 $ rg -n -i 'sudoku|wasm|no_std' docs/decisions
-docs/decisions/0008-std-library.md:20, :21, :34, :40, :98 (why no_std was not chosen)  exit 0
+docs/decisions/0008-std-library.md:20, :21, :34, :40, :99 (why no_std was not chosen)  exit 0
 $ ls docs/decisions/000[2-79]-*.md docs/decisions/001[0-3]-*.md | wc -l
       11                                                                      exit 0
 $ rg --files-without-match 'Carried from libpawdoku' docs/decisions/000[2-79]-*.md docs/decisions/001[0-3]-*.md
@@ -378,13 +379,13 @@ $ rg -l 'Carried from' docs/decisions/0001-*.md docs/decisions/0008-*.md docs/de
 $ for r in $(just --summary); do ... || echo MISSING $r; done   (every recipe in commands.md)
                                                                               exit 0
 $ diff <(the 19 recipes in pyproject.toml) <(rows 1-19 of quality-gates.md)  exit 0
-$ just check
+$ just check                                                                  exit 0
 All checks passed and the worktree is unchanged.
 $ git status --short                                                          exit 0 (empty)
 ```
 
 `just --list` prints 40 recipes; `default` is covered in prose (a bare `just`), the rest
-each have a row. `RUSTUP_TOOLCHAIN=1.98.1 just check-toolchain` was also re-run here:
+each have a row. At `012b884`, `RUSTUP_TOOLCHAIN=1.98.1 just check-toolchain` was re-run:
 it printed `1.98.1-aarch64-apple-darwin (overridden by environment variable
 RUSTUP_TOOLCHAIN)` and exited 0, which is the hand-back below.
 
