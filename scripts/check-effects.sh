@@ -13,10 +13,9 @@
 #
 # The checks, in order: (0) the libpachinko clippy.toml still restates the root
 # one, which it shadows; (1) libpachinko trips no ban; (2) the fixture under
-# tests/fixtures/effects-violation trips every ban exactly once, through the same
-# commands and the same matchers checks 1 and 3 decide with, so a ban that cannot
-# fire, or a matcher that cannot see it, fails the gate; (3) pachinko trips no
-# std-API ban. Offline throughout: the fixture's crates are path stubs.
+# tests/fixtures/effects-violation trips every ban exactly once, read by the same
+# matchers checks 1 and 3 decide with, so a ban that cannot fire, or a matcher that
+# cannot see it, fails the gate; (3) pachinko trips no std-API ban. Offline throughout: the fixture's crates are path stubs.
 #
 # The fixture is also the inventory: its stubs under deps/ and the `// ban:` tags
 # on its breaks must name exactly the bans above and in clippy.toml, so deleting
@@ -47,12 +46,17 @@ unset CLIPPY_CONF_DIR
 # and colour codes would hide every finding from the matchers, so each cargo
 # run passes --color never, which outranks that variable and any cargo config.
 # A progress bar forced on shares stderr with the findings and can glue itself to
-# one, and a warnings setting of allow or deny would hide the fixture's findings
-# or fail its build, so both are pinned here, where they outrank cargo config too.
-# A lint cap in RUSTFLAGS or a config's rustflags is not overridden: the probe
-# then sees nothing fire, and its failure names that cause.
+# one, a warnings setting of allow or deny would hide the fixture's findings or
+# fail its build, and a debug-assertions override would turn check 1's release pass
+# into another debug one, so each is pinned here; cargo ranks these variables above
+# its config files and the manifests' profiles. A lint cap in RUSTFLAGS or a
+# config's rustflags is not overridden: the probe then sees nothing fire, and its
+# failure names that cause.
 export CARGO_TERM_PROGRESS_WHEN=never
 export CARGO_BUILD_WARNINGS=warn
+export CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true
+export CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true
+export CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=false
 
 crate_names=$(printf '%s\n' "$banned_crates" | awk 'NF { print $1 }' | sort)
 api_paths=$(sed -n 's/^ *{ path = "\([^"]*\)", reason = "effect:.*/\1/p' "$api_bans" | sort)
@@ -186,20 +190,26 @@ fi
 # with none, so code behind either `cfg(feature)` or `cfg(not(feature))` is
 # compiled by one of them, and with every feature in the release profile, so code
 # behind `cfg(not(debug_assertions))`, which ships in every release build, is too.
-# Code behind a target the host is not stays unseen; linting it would need that
-# target's std installed. So does code behind `cfg(not(clippy))`, which clippy
+# Code behind a target the host is not stays unseen (linting it would need that
+# target's std installed), as does code behind `cfg(not(clippy))`, which clippy
 # never compiles, and behind any custom `--cfg` these passes do not set. The two
 # lints are forbidden outright, so an `#[allow]`, an `#[expect]` or a `[lints]`
-# entry in libpachinko cannot silence a ban: it fails to compile instead. $pass
-# is left unquoted, so the release pass splits into its two flags.
-for pass in --all-features --no-default-features '--all-features --release'; do
-    run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets $pass -- \
+# entry in libpachinko cannot silence a ban: it fails to compile instead. Each
+# pass sets its flags as the positional parameters, which the script has no other
+# use for.
+for pass in all none release; do
+    case $pass in
+    all) set -- --all-features ;;
+    none) set -- --no-default-features ;;
+    release) set -- --all-features --release ;;
+    esac
+    run_clippy "$PWD/crates/libpachinko" -p libpachinko --all-targets "$@" -- \
         -F clippy::disallowed_methods -F clippy::disallowed_types
     hits=$(banned_in_clippy "$clippy_out")
     if [ -n "$hits" ] || [ "$clippy_status" -ne 0 ]; then
         printf '%s\n' "$clippy_out" >&2
         printf 'effects: clippy %s over libpachinko exited %s, want 0\nbanned APIs used:\n%s\nwant none\n' \
-            "$pass" "$clippy_status" "$hits" >&2
+            "$*" "$clippy_status" "$hits" >&2
         exit 1
     fi
 done
@@ -229,7 +239,7 @@ if [ "$inventory" != "$api_paths" ]; then
     printf 'effects: the fixture'"'"'s // ban: tags and the effect entries in %s disagree\n' "$api_bans" >&2
     printf 'tagged, not in %s:\n%s\n' "$api_bans" "$(minus "$inventory" "$api_paths")" >&2
     printf 'in %s, not tagged:\n%s\n' "$api_bans" "$(minus "$api_paths" "$inventory")" >&2
-    printf '%s\n' 'each break and its tag must stay on one line that starts `fn `' >&2
+    printf '%s\n' 'each break and its tag must stay on one line that starts "fn "' >&2
     exit 1
 fi
 run_clippy "$PWD/crates/libpachinko" --manifest-path "$fixture/Cargo.toml" --all-features
@@ -239,7 +249,9 @@ if [ "$clippy_status" -ne 0 ] || [ "$got" != "$inventory" ]; then
     printf 'effects: the API probe exited %s, want 0, and must fire every ban exactly once\n' "$clippy_status" >&2
     printf 'silent:\n%s\n' "$(minus "$inventory" "$got")" >&2
     printf 'fired more than once:\n%s\n' "$(printf '%s\n' "$got" | uniq -d)" >&2
-    if [ -z "$got" ]; then
+    if [ "$clippy_status" -ne 0 ]; then
+        printf '%s\n' 'the fixture did not compile: a ban may name an API unstable on the pinned toolchain' >&2
+    elif [ -z "$got" ]; then
         printf '%s\n' 'nothing fired: a lint cap or -A warnings in RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS' \
             'or a cargo config rustflags entry would hide every finding' >&2
     fi

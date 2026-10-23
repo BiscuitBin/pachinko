@@ -2,10 +2,10 @@
 //! `scripts/check-effects.sh` can fail unless each entry fires once here. Nothing
 //! here runs: clippy only has to resolve it. Most breaks are full paths; a few take
 //! indirect forms (an alias, `use std as s`, a glob, a macro body, a function value,
-//! a method on a parameter, an inferred argument), each still the only break of its
-//! entry, so the bans are shown to resolve names rather than match text. One
-//! function per break, so an `exit` cannot make the rest unreachable; `set_var` and
-//! `remove_var` are taken as values, so nothing here needs `unsafe`.
+//! a method on a parameter), each still the only break of its entry, so the bans are
+//! shown to resolve names rather than match text. One function per break, so an
+//! `exit` cannot make the rest unreachable; `set_var` and `remove_var` are taken as
+//! values, so nothing here needs `unsafe`.
 //!
 //! Each break ends in a `// ban:` tag naming the entries it trips. The tags are the
 //! inventory the script holds the clippy.toml entries to, so deleting a ban there
@@ -61,7 +61,8 @@ fn fs_remove_dir_all() { std::fs::remove_dir_all("a"); } // ban: std::fs::remove
 fn fs_remove_file() { std::fs::remove_file("a"); } // ban: std::fs::remove_file
 fn fs_rename() { std::fs::rename("a", "b"); } // ban: std::fs::rename
 fn fs_set_permissions(p: &std::fs::Permissions) { std::fs::set_permissions("a", p.clone()); } // ban: std::fs::Permissions std::fs::set_permissions
-// `set_times` takes its `FileTimes` inferred, so that type's ban does not fire twice.
+// `set_times` takes its `FileTimes` inferred, so that type's ban does not fire twice:
+// a type ban fires where the type is named, not on a value whose type is inferred.
 fn fs_set_times() { std::fs::set_times("a", Default::default()); } // ban: std::fs::set_times
 fn fs_set_times_nofollow() { std::fs::set_times_nofollow("a", Default::default()); } // ban: std::fs::set_times_nofollow
 fn fs_soft_link() { std::fs::soft_link("a", "b"); } // ban: std::fs::soft_link
@@ -134,6 +135,7 @@ fn net_socket_addr_v6(_: std::net::SocketAddrV6) {} // ban: std::net::SocketAddr
 fn net_tcp_listener() { std::net::TcpListener::bind("a"); } // ban: std::net::TcpListener
 fn net_tcp_stream() { std::net::TcpStream::connect("a"); } // ban: std::net::TcpStream
 fn net_udp_socket() { std::net::UdpSocket::bind("a"); } // ban: std::net::UdpSocket
+fn unix_incoming(_: std::os::unix::net::Incoming<'_>) {} // ban: std::os::unix::net::Incoming
 fn unix_datagram() { std::os::unix::net::UnixDatagram::unbound(); } // ban: std::os::unix::net::UnixDatagram
 fn unix_listener() { std::os::unix::net::UnixListener::bind("a"); } // ban: std::os::unix::net::UnixListener
 fn unix_stream() { std::os::unix::net::UnixStream::connect("a"); } // ban: std::os::unix::net::UnixStream

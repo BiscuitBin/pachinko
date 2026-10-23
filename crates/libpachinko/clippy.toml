@@ -58,6 +58,7 @@ disallowed-types = [
   { path = "std::net::TcpStream", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::net::ToSocketAddrs", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::net::UdpSocket", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
+  { path = "std::os::unix::net::Incoming", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::os::unix::net::UnixDatagram", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::os::unix::net::UnixListener", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },
   { path = "std::os::unix::net::UnixStream", reason = "effect: the network is reached through a trait libpachinko defines (decision 0008)" },

@@ -24,10 +24,11 @@ max_suppression_ratio = 0.05
 [suppression]
 pin_headroom = 0.10
 
-# On with no `[[architecture.pattern]]` table: there are no modules to bound yet
-# (decision 0012), and the first boundary rule needs only its table. The effect bans
-# are not rules here, because this file also governs crates/pachinko, which may use
-# every effect; they are gate 8's, in crates/libpachinko/clippy.toml.
+# On with no `[[architecture.pattern]]` table: there are no modules to bound yet. The
+# first boundary rule flips no switch; it adds its table and a fixture that breaks it
+# once, which `just metrics` must see fail (decision 0012). The effect bans are not
+# rules here, because this file also governs crates/pachinko, which may use every
+# effect; they are gate 8's, in crates/libpachinko/clippy.toml.
 [architecture]
 enabled = true
 
