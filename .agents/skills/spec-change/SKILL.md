@@ -9,7 +9,7 @@ The specifications under `docs/specs/` decide behaviour. Code that disagrees wit
 
 1. Read `AGENTS.md` and `docs/explanation/specifications.md`. Identify which module under `docs/specs/` owns the behaviour; each module's header states its Scope, Includes and Excludes. Today there is one, the placeholder `docs/specs/pachinko.allium`, which declares no behaviour; the first real module extends or replaces it.
 2. Read the whole module before editing, including its `Scope`, `Excludes` and `open question` blocks. A change that belongs in another module's scope goes there instead.
-3. Edit the specification: state the rule as a trigger, its guards and its outcomes. Record what you could not decide as a new `open question` rather than guessing at a product decision.
+3. Read the `allium` skill for the language, then edit the specification: state the rule as a trigger, its guards and its outcomes. Record what you could not decide as a new `open question` rather than guessing at a product decision.
 4. Check that dependent modules still hold. A module others import is depended on by each of them, so a change to a trigger or an entity ripples.
 5. Derive the tests from the changed clauses before writing implementation, and confirm they fail first. A test that is already green proves nothing about the new behaviour.
 6. Implement until the tests pass. Never weaken a test to make it pass — fix the specification and re-derive instead.
