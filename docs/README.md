@@ -36,6 +36,7 @@ Specifications, under Understand, to see how the two relate.
 - [Test and debug](how-to/test-and-debug.md)
 - [Work with the specifications](how-to/work-with-the-specs.md)
 - [Maintain dependencies](how-to/maintain-dependencies.md)
+- [Build the container image](how-to/build-the-container-image.md)
 - [Deploy to GitHub Pages](how-to/deploy-to-github-pages.md)
 
 ## Understand
@@ -64,5 +65,6 @@ Specifications, under Understand, to see how the two relate.
 ## Decisions
 
 - [Architecture decisions](decisions/README.md) — the record of what was chosen and why.
+- [Decision 0015: The container image](decisions/0015-container-image.md)
 - [Decision 0016: The release process](decisions/0016-release-process.md)
 - [Decision 0017: Mutation testing, benchmarks and fuzzing](decisions/0017-mutation-bench-and-fuzz.md)
