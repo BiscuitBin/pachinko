@@ -124,6 +124,22 @@ jobs:
       - run: just check-specs
       - run: just analyse-specs
 
+  # Advisory before 1.0; independent of the required check aggregate.
+  semver:
+    name: semver
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: semver
+      - run: just semver
+
   # The one required check (CONVENTIONS.md §10). It needs every gate job and
   # fails if any of them failed, was cancelled or was skipped, so protection
   # names `check` alone and never changes when a job is added, renamed or

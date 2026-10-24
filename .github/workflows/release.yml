@@ -1,0 +1,156 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'libpachinko-v[0-9]+.[0-9]+.[0-9]+'
+      - 'pachinko-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.guards.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: release-verify
+      - run: just install-allium
+      - run: just check
+      - name: Verify tag, version, main ancestry and release notes
+        id: guards
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG" || {
+            echo '::error::Cannot fetch the release tag'; exit 1;
+          }
+          commit=$(git rev-parse HEAD)
+          tagged=$(git rev-parse "$TAG^{commit}")
+          [ "$commit" = "$tagged" ] || {
+            echo '::error::HEAD is not the tag commit'; exit 1;
+          }
+          git fetch --no-tags origin main || {
+            echo '::error::Cannot fetch main'; exit 1;
+          }
+          git merge-base --is-ancestor "$commit" FETCH_HEAD || {
+            echo '::error::The tag commit has not reached main'; exit 1;
+          }
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import sys
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          tag = os.environ["TAG"]
+          match = re.fullmatch(r"(libpachinko|pachinko)-v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))", tag)
+          if match is None:
+              fail("Invalid crate release tag")
+          crate, version = match.groups()
+          try:
+              metadata = json.loads(subprocess.check_output([
+                  "cargo", "metadata", "--locked", "--offline", "--no-deps", "--format-version", "1",
+              ]))
+              packages = [p for p in metadata["packages"] if p["name"] == crate]
+              if len(packages) != 1 or packages[0]["version"] != version:
+                  fail("The tag disagrees with the crate manifest version")
+              lines = pathlib.Path("CHANGELOG.md").read_text().splitlines()
+          except (OSError, ValueError, subprocess.CalledProcessError) as error:
+              fail(f"Cannot read release metadata: {error}")
+          heading = rf"## {crate} \[{re.escape(version)}\]\[{crate}-{re.escape(version)}\] - [0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
+          starts = [i for i, line in enumerate(lines) if re.fullmatch(heading, line)]
+          if len(starts) != 1:
+              fail("Expected exactly one dated crate release heading")
+          section = []
+          for line in lines[starts[0] + 1:]:
+              if line.startswith("## ") or re.match(r"^\[[^]]+\]:", line):
+                  break
+              section.append(line)
+          if not any(line.strip() and not line.startswith("#") for line in section):
+              fail("The crate release section is empty")
+          PY
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          persist-credentials: false
+      - name: Recheck tag and extract the verified crate section
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          VERIFIED_COMMIT: ${{ needs.verify.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG" || {
+            echo '::error::Cannot fetch the release tag again'; exit 1;
+          }
+          tagged=$(git rev-parse "$TAG^{commit}")
+          [ "$tagged" = "$VERIFIED_COMMIT" ] || {
+            echo '::error::The release tag moved after verification'; exit 1;
+          }
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import sys
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          match = re.fullmatch(r"(libpachinko|pachinko)-v((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))", os.environ["TAG"])
+          if match is None:
+              fail("Invalid crate release tag")
+          crate, version = match.groups()
+          heading = rf"## {crate} \[{re.escape(version)}\]\[{crate}-{re.escape(version)}\] - [0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}"
+          lines = pathlib.Path("CHANGELOG.md").read_text().splitlines()
+          starts = [i for i, line in enumerate(lines) if re.fullmatch(heading, line)]
+          if len(starts) != 1:
+              fail("Expected exactly one dated crate release heading")
+          section = []
+          for line in lines[starts[0] + 1:]:
+              if line.startswith("## ") or re.match(r"^\[[^]]+\]:", line):
+                  break
+              section.append(line)
+          if not any(line.strip() and not line.startswith("#") for line in section):
+              fail("The crate release section is empty")
+          pathlib.Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_text(
+              "\n".join(section).strip() + "\n"
+          )
+          PY
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --notes-file "$RUNNER_TEMP/release-notes.md"

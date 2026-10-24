@@ -109,6 +109,30 @@ test:
 test-doc:
     cargo test --doc --workspace --all-features --locked
 
+# Optional baseline overrides discovery. Before any library release, compare this
+# branch with main's merge base; afterwards use the latest reachable library tag.
+# Outside the full gate: API compatibility is advisory until the 1.0 release.
+# semver-checks does not accept --locked, so prove both locks first and run offline.
+semver baseline="": lock-check
+    #!/bin/sh
+    set -eu
+    baseline="$1"
+    if [ -z "$baseline" ]; then
+        tags=$(git tag --merged HEAD --list 'libpachinko-v[0-9]*')
+        if [ -n "$tags" ]; then
+            baseline=$(git describe --tags --match 'libpachinko-v[0-9]*' --abbrev=0 HEAD)
+        else
+            main_ref=main
+            if git show-ref --verify --quiet refs/remotes/origin/main; then
+                main_ref=origin/main
+            fi
+            baseline=$(git merge-base HEAD "$main_ref")
+        fi
+    fi
+    git rev-parse --verify "$baseline^{commit}" >/dev/null
+    printf 'semver: libpachinko baseline %s\n' "$baseline"
+    CARGO_NET_OFFLINE=true cargo semver-checks -p libpachinko --baseline-rev "$baseline"
+
 # Gate 19: snapshots match, and every .snap file is referenced by a test.
 # Run the whole suite so the orphan check sees every reference. --check and
 # INSTA_UPDATE=no fail mismatches without writing pending files.

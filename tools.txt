@@ -6,3 +6,5 @@
 # (typos, ripsecrets, lychee, shellcheck, actionlint, editorconfig-checker,
 # markdownlint-cli2) are not listed: one owner per pin.
 cargo-hack@0.6.45
+# T14, verified 2026-10-23: release binaries for both platforms, no conda package.
+cargo-release@1.1.7

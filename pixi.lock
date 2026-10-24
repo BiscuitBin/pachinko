@@ -26,6 +26,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-insta-1.48.0-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-llvm-cov-0.9.1-h8569b68_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-nextest-0.9.146-hf19af3b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-semver-checks-0.51.0-hf19af3b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-shear-1.13.4-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/just-1.58.0-hf19af3b_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_103.conda
@@ -62,6 +63,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-insta-1.48.0-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-llvm-cov-0.9.1-h14c297a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-nextest-0.9.146-hc2d82ec_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-semver-checks-0.51.0-hc2d82ec_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-shear-1.13.4-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/just-1.58.0-hc2d82ec_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libcxx-23.1.4-h55c6f16_0.conda
@@ -183,6 +185,19 @@ packages:
   run_exports: {}
   size: 7141613
   timestamp: 1790052195930
+- conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-semver-checks-0.51.0-hf19af3b_0.conda
+  sha256: da55d14bd50c7aad5aeecd729af8fcd09d17527825cc89f38d2294322ae18c7a
+  md5: eec712e5bf5bb5aa0000c70c40a55efa
+  depends:
+  - libgcc >=15
+  - __glibc >=2.17,<3.0.a0
+  constrains:
+  - __glibc >=2.17
+  license: MIT OR Apache-2.0
+  purls: []
+  run_exports: {}
+  size: 6098801
+  timestamp: 1791152529239
 - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-shear-1.13.4-hb17b654_0.conda
   sha256: 94373c16f026c1dad2d2442d54c7bef629fc04a75b77f45080ddb6141cb92364
   md5: 74e875c25c2dafc75c7cf91eb845876d
@@ -625,6 +640,18 @@ packages:
   run_exports: {}
   size: 6553222
   timestamp: 1790052186280
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-semver-checks-0.51.0-hc2d82ec_0.conda
+  sha256: c50187545de0dbb484b1990ca8de9744837348dfdabc8a83ed5afcaf7b826b1c
+  md5: 9eaf0eaabfbeaa08578aa33149695e6c
+  depends:
+  - __osx >=11.0
+  constrains:
+  - __osx >=11.0
+  license: MIT OR Apache-2.0
+  purls: []
+  run_exports: {}
+  size: 5581226
+  timestamp: 1791152595786
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-shear-1.13.4-h6fdd925_0.conda
   sha256: bc43853bd72ad986c67b52a98fcaa942add93e3e3d058f2a12069e8186cce246
   md5: f006168454197a1447532fd8e284984b

@@ -12,8 +12,10 @@ program or a sequence of commands that reproduces the problem helps us investiga
 
 ## Supported versions
 
-Only `main` is supported. No version has been released, and neither crate is published
-to crates.io. Fixes land on `main`; there are no release branches to backport to.
+Only `main` is supported. Crate tags identify snapshots under the
+[release process](docs/decisions/0016-release-process.md); they do not establish
+supported maintenance lines. Fixes land on `main`, with no backports. Neither crate is
+published to crates.io.
 
 ## What is in scope
 
