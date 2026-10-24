@@ -37,7 +37,9 @@ Clippy's `pedantic` and `cargo` groups, and a named set beyond them, at `warn` i
 recipe alone: a local build never breaks mid-edit, and the gate still fails. A lint is
 silenced with `#[expect(lint, reason = "...")]` on the item it names, never a blanket
 `allow`, so a suppression that stops being needed reports itself; `allow_attributes` and
-`allow_attributes_without_reason` enforce that. A line-coverage floor of 90 over
+`allow_attributes_without_reason` enforce that for an outer `#[allow]` and for any `allow`
+without a reason, and review holds an inner `#![allow(..., reason = "...")]`, which passes
+both. A line-coverage floor of 90 over
 `crates/*/src/**`, measured by `cargo llvm-cov nextest` and enforced by
 `--fail-under-lines`, lowered by lowering complexity and never by lowering the number.
 `cargo hack --feature-powerset` on the host. rustdoc with `-D warnings --cfg docsrs`, so

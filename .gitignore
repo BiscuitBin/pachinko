@@ -54,3 +54,8 @@ mutants.out*/
 # see would abort the gate's worktree check; reviewed .snap files are committed.
 *.snap.new
 *.pending-snap
+
+# The Allium loop's ledger, witness record and trace
+# (allium-skill-reference/allium/driving-the-loop.md, section 8), which the
+# loop would otherwise append here itself.
+.allium-loop/

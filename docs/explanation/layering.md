@@ -28,8 +28,8 @@ module that implements it may use what its specification imports and nothing abo
 Today there is one specification module, `pachinko.allium`, which declares no behaviour
 and imports nothing, and one Rust module, `crates/libpachinko/src/lib.rs`, so there is
 nothing to order. When the first specification change splits the domain into modules,
-the code's modules follow it; [Specifications](specifications.md) explains how a module
-states its imports.
+the code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-the-first-behavioural-module)
+shows how a module states its imports.
 
 ## Why the direction matters
 

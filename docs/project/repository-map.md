@@ -29,6 +29,7 @@ library and the library never on the service.
 │   ├── libpachinko/        The library: the domain, once the specifications define one
 │   │   ├── Cargo.toml
 │   │   ├── README.md
+│   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
 │   │   └── src/
 │   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
 │   └── pachinko/           The service: a minimal binary built around the library
@@ -40,7 +41,7 @@ library and the library never on the service.
 │       └── tests/
 │           └── binary.rs   Runs the built binary as a user would
 ├── tests/fixtures/
-│   └── effects-violation/  The effects probe's fixture, which T10 adds: breaks every ban once
+│   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
 │   ├── manifest.yml        Every page and record: its title, kind, audience and the topics it owns
 │   ├── specs/              The Allium modules: behaviour is decided here
@@ -63,9 +64,8 @@ library and the library never on the service.
 └── target/ .pixi/ .tools/ ai_tmp/   Gitignored; never committed
 ```
 
-The configuration of the std-API bans arrives with the mechanism T10 chooses for the
-effects gate, as `crates/libpachinko/clippy.toml` or as `rustqual-effects.toml` at the
-root; this map names the one that lands.
+The effects gate's std-API bans live in `crates/libpachinko/clippy.toml`, which clippy
+reads for libpachinko alone in place of the root file, so it restates every root line.
 
 ## What each part is responsible for
 
@@ -82,7 +82,7 @@ root; this map names the one that lands.
 | `allium-skill-reference/` | Vendored reference material for the Allium skills, kept outside `.agents/` and ignored by every linter ([decision 0010](../decisions/0010-skill-reference-material.md)). |
 | `.pixi/envs/default/bin` | Every tool `pyproject.toml` pins and the tooling package's console scripts, installed from `pixi.lock`. First on `PATH` inside every recipe, and also on `PATH` under `pixi run`, which the hooks use, and in every CI step after the setup action activates the environment; it is not on a plain shell's `PATH`. |
 | `.tools/bin` | cargo-hack from `tools.txt`, rustqual from `tools-source.txt`, and the Allium checker. On `PATH` inside every recipe, after the pixi environment. |
-| `tests/fixtures/effects-violation/` | Arrives with T10, with the probe. A crate that is its own workspace, with a committed `Cargo.lock` and offline path-dependency stubs for the banned crates, one of them reached only transitively. It breaks every ban on libpachinko exactly once, and `just effects` fails unless every ban fires there. |
+| `tests/fixtures/effects-violation/` | The effects gate's probe. A crate that is its own workspace, with a committed `Cargo.lock` and offline path-dependency stubs for the banned crates, one of them reached only transitively. It breaks every ban on libpachinko exactly once, and `just effects` fails unless every ban fires there. |
 | `target/` | Cargo's build output. `just coverage` writes its report under `target/llvm-cov/`. |
 
 Which of these may import which is not a matter of taste; see

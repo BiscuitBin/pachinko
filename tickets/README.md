@@ -36,6 +36,7 @@ snapshot.
 | T15 | Mutation testing: cargo-mutants as a weekly report | `T15-mutation-testing.md` | T11 | T12 to T14, T16 | open |
 | T16 | Benchmarks and fuzzing: a divan bench, a fuzz crate on stable, a weekly fuzz job | `T16-bench-and-fuzz.md` | T11 | T12 to T15 | open |
 | T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | open |
+| T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | open |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07.
@@ -48,7 +49,8 @@ T00 ─┬─ T01 ────────────┐
      └─ T05, T06, T07 ──┴─ T11 ─┬─ T12 ── T14 ─┐
                                 ├─ T13 ────────┤
                                 ├─ T15 ────────┼─ T17
-                                └─ T16 ────────┘
+                                ├─ T16 ────────┘
+                                └─ T18
 ```
 
 The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
@@ -70,6 +72,8 @@ The graph is acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
   spikes already drafted (CONVENTIONS.md §0).
 - **T17** comes last because Renovate has to know every pin, and T13 to T16 add pins: the
   Docker digests, the release and mutation tools, the fuzz crate.
+- **T18** runs, or records as open, the checks the wave-0 and wave-1 hand-backs did not
+  run and T11 could not close. It is off the critical path and blocks nothing.
 
 ## How to pick up a ticket
 

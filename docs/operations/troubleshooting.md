@@ -55,7 +55,7 @@ A bridge under `.claude/` or `.codex/` has grown content, or its frontmatter has
 from the canonical skill. Regenerate it: the canonical frontmatter verbatim, one blank
 line, then the fixed pointer sentence and nothing else. The body is compared against a
 template rather than measured, so a clause of your own fails however short it is —
-[Agent contract](../reference/agent-contract.md) carries the text.
+[Agent contract](../reference/agent-contract.md#what-a-bridge-must-be) carries the text.
 
 ## Coverage fails but everything is tested
 
@@ -74,7 +74,17 @@ the lines.
 effect through a trait libpachinko defines instead, as
 [Architecture](../explanation/architecture.md) explains;
 [Test and debug](../how-to/test-and-debug.md#debug-an-effects-or---locked-failure)
-lists the bans the script checks today.
+lists the bans the script checks.
+
+## `effects: clippy <flags> over libpachinko exited <status>, want 0`
+
+libpachinko calls a std API that `crates/libpachinko/clippy.toml` bans; clippy's output
+above the line names the path and the file. Take the effect through a trait, as for a
+banned crate. The other `effects:` failures say what drifted: the libpachinko
+`clippy.toml` no longer restates the root file (mirror the root change there), or the
+fixture under `tests/fixtures/effects-violation/` and a ban list disagree (add or remove
+the break and its `// ban:` tag with the ban). If the probe reports that nothing fired,
+a lint cap in `RUSTFLAGS` or a cargo config's `rustflags` is hiding every finding.
 
 ## `cargo resolves to <path>, not rustup's proxy`
 

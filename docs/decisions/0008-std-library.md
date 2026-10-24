@@ -44,27 +44,36 @@ the build.
   of CI's `rust` job. `pachinko` is allowed every effect.
 - The bans:
   - **Crates**, through libpachinko's normal dependency tree: `rand`, `rand_core`,
-    `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2`, and any crate T10
-    adds with a reason. Development dependencies are exempt, so a test may use a seeded
-    generator.
+    `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2`. Development
+    dependencies are exempt, so a test may use a seeded generator.
   - **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`,
     `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`, everything under
     `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn`,
     `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder`. Standard I/O
     is not banned, because no named effect covers it.
-- The crate bans are one line in the script,
-  `cargo tree -p libpachinko -e normal --prefix none --locked --offline`, which covers
-  transitive dependencies on the host target (a target-specific dependency on another
-  platform is not seen) and is scoped to libpachinko by construction. It is the only
-  crate guard. `deny.toml` cannot hold these bans: its bans apply to the whole workspace,
-  and its `wrappers` exemption names a banned crate's direct parents only, so it cannot
-  say "anything under `pachinko`". A runtime crate the service reaches through a
-  framework it depends on would still be denied. `deny.toml` therefore bans no effect
-  crate.
-- The std-API bans use the mechanism T10 chooses, on evidence, between clippy's
-  disallowed paths in a configuration read for libpachinko alone and module-prefix rules
-  in a separate rustqual configuration run over `crates/libpachinko` only. Neither can
-  live in a file that also governs `crates/pachinko`, where every effect is allowed.
+- The crate bans are one line in the script, `cargo tree -p libpachinko -e normal
+  --all-features --target all --prefix none --locked --offline`, which covers transitive
+  and optional dependencies on every target and is scoped to libpachinko by
+  construction. It is the only crate guard. `deny.toml` cannot hold these bans: its bans
+  apply to the whole workspace, and its `wrappers` exemption names a banned crate's
+  direct parents only, so it cannot say "anything under `pachinko`". A runtime crate the
+  service reaches through a framework it depends on would still be denied. `deny.toml`
+  therefore bans no effect crate.
+- The std-API bans are clippy's `disallowed-methods` and `disallowed-types`, listed in
+  `crates/libpachinko/clippy.toml` with reasons that begin `effect:`. Clippy reads the
+  first `clippy.toml` it finds walking up from a crate's manifest and merges nothing, so
+  that file governs libpachinko alone, restates every line of the root file, and leaves
+  `crates/pachinko`, where every effect is allowed, under the root file. Clippy resolves
+  names, so an alias, a glob import, a macro body, a function value and a method on a
+  value passed in are caught as surely as a full path. rustqual's `forbid_path_prefix`
+  rules, the alternative, were rejected on evidence: they match text, missed
+  `use std as s`, `use std::*`, a macro body and a renamed import, and could ban
+  `elapsed` only by name, on every type.
+- Clippy needs item paths, not module prefixes, so "everything under" a module is a list
+  of its stable items, 121 of them on the pinned toolchain. A std item added in a later
+  Rust is not banned until it is listed, and a constant cannot be banned at all, so
+  `std::env::consts` stays reachable: it holds compile-time values, like `cfg!`, not an
+  effect.
 - A ban that is not shown to fire is not trusted to hold. The script also runs its checks
   over `tests/fixtures/effects-violation/`, a fixture that breaks every ban exactly once,
   in the forms code writes it, and fails unless each ban fires there; then it checks that
@@ -72,9 +81,6 @@ the build.
   line over the fixture, which is its own workspace with a committed `Cargo.lock` and
   offline path-dependency stubs for the banned crates, one of them reached only
   transitively.
-- Today the script runs the crate check alone, after a positive control that fails
-  unless the tree names libpachinko itself, and prints that the std-API bans and the
-  probe arrive with T10. The gate is green and says what it does not yet cover.
 
 ## Consequences
 
@@ -86,13 +92,16 @@ being impossible.
 
 The effects are nameable, so a direct call compiles and only gate 8 rejects it. The
 protection is as good as the list: a new kind of effect needs a decision record first
-(`AGENTS.md`), and with it a ban in the script and a line in the fixture that breaks it.
-Until T10 lands, a direct std call in libpachinko is caught by review alone, which is why
-the `review-change` skill tells a reviewer to read the diff for one.
+(`AGENTS.md`), and with it a ban in the script or in `crates/libpachinko/clippy.toml`
+and a line in the fixture that breaks it. What the lists cannot see is caught by review
+alone: a std item added after the inventory, and code behind a target the host does not
+compile, since clippy lints only what it builds. That is why the `review-change` skill
+still tells a reviewer to read libpachinko's diff for a direct std call.
 
 Two mechanisms hold the boundary where a target check held most of it before: the crate
-line and the std-API mechanism, each with its probe. The crate line needs no network once
-`just sync` has fetched the tree, so `just check` stays offline.
+line and clippy's disallowed paths, each with its probe. Both run offline once
+`just sync` has fetched the tree, so `just check` stays offline. Every change to the
+root `clippy.toml` is mirrored in libpachinko's, and gate 8 fails when the two drift.
 
 ## What would reopen this
 

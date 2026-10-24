@@ -77,7 +77,7 @@ runs:
     - run: just sync
       shell: bash
     # prek's cache outside the workspace, so check-clean's snapshot never
-    # sees it. PREK_HOME is the variable T03 confirms on prek 0.5.3.
+    # sees it. PREK_HOME is the variable prek 0.5.3 reads for that cache.
     - run: echo "PREK_HOME=${{ runner.temp }}/prek" >> "$GITHUB_ENV"
       shell: bash
     # The seven hook clones, the Go, Node and rustup toolchains and the
@@ -89,7 +89,7 @@ runs:
         path: ${{ runner.temp }}/prek
         key: ${{ runner.os }}-${{ runner.arch }}-prek-${{ hashFiles('.pre-commit-config.yaml', '.pre-commit-fix.yaml', 'pixi.lock') }}
     # The prepare and the lychee warm are the point; the shim it writes into
-    # the runner's .git is harmless. After this step no step reaches the
-    # network.
+    # the runner's .git is harmless. After this step the action reaches the
+    # network no more; a job's own install-allium or audit step still does.
     - run: just install-hooks
       shell: bash

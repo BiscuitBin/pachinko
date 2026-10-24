@@ -36,15 +36,14 @@ the two look the same in the log.
 
 Gate 8, `just effects`, is where this matters most. It holds the rule that libpachinko
 performs no effect itself ([decision 0008](../decisions/0008-std-library.md);
-[Architecture](architecture.md) explains the boundary). Today `scripts/check-effects.sh`
-checks only libpachinko's normal dependency tree against the banned crates, and it already
-carries a positive control: it fails if the tree it read does not name libpachinko itself,
-because an empty answer would match no ban and pass. The bans on the standard library's
-clock, filesystem, environment, network, process and thread APIs arrive with the mechanism
-T10 chooses, and with them the probe: a fixture under `tests/fixtures/effects-violation/`
-that breaks every ban exactly once, and a script that fails unless every ban fires there
-and none fires on `pachinko`. Until the probe lands the script says so on every run rather
-than claiming more than it checks.
+[Architecture](architecture.md) explains the boundary). `scripts/check-effects.sh`
+carries a positive control for its crate bans: it fails if the tree it read does not name
+libpachinko itself, because an empty answer would match no ban and pass. Its bans on the
+standard library's clock, filesystem, environment, network, process and thread APIs are
+clippy's disallowed paths, and a path clippy cannot resolve is only a warning, so a
+misspelt ban would hold nothing. The probe is the control for both: a fixture under
+`tests/fixtures/effects-violation/` breaks every ban exactly once, and the script fails
+unless every ban fires there and none fires on `pachinko`.
 
 ## Fix the cause, not the report
 
@@ -54,8 +53,9 @@ it passes are all ways of deleting the signal while keeping the machinery.
 
 Where a rule is genuinely wrong for this project, the fix is to configure it once, in the
 config file, with a comment saying why. Here that file is the `[workspace.lints]` table in
-the root `Cargo.toml`, with `clippy.toml` beside it: `module_name_repetitions` is allowed
-there because the readable name is the repeated one, and the comment says so. At a call
+the root `Cargo.toml`, with `clippy.toml` beside it: `multiple_crate_versions` is allowed
+there because cargo-deny already owns that check and names the crates, and the comment
+says so. At a call
 site the only form is `#[expect(lint, reason = "...")]` on the item it names, never a
 blanket `allow`, because an expectation that stops being met is itself a warning, so a
 suppression that no longer suppresses anything reports itself.
