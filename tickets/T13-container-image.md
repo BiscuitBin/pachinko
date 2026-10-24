@@ -1,7 +1,7 @@
 ---
 id: T13
 title: "Container image: a multi-stage Dockerfile, `just image`, a CI build"
-status: in_progress
+status: done
 depends_on: [T11]
 parallel_with: [T12, T14, T15, T16]
 branch: ticket/t13-container-image
@@ -117,10 +117,11 @@ just check
 
 ## Hand-back notes
 
-Implementation and local verification are complete. Status remains `in_progress`
-until the separately authorised push, pull request and first `image` CI run. No
-CI URL exists yet; the runner half of §12 claim 9 remains unverified. No push,
-pull request, registry publication or repository setting change was performed.
+Implementation, local verification and PR CI verification are complete. The user
+subsequently authorised pushing this branch and opening a visual PR: PR 14 is
+`https://github.com/BiscuitBin/pachinko/pull/14`. The successful first run and
+its tested merge commit are recorded below. No registry publication or repository
+setting change was performed.
 
 ### Baseline — commit `2c93ae3`, untouched
 
@@ -163,7 +164,7 @@ The conformance reviewer independently confirmed them through `git ls-remote`.
 
 `docker version` exited 0: client and server Docker 29.4.0, OrbStack on
 `darwin/arm64` with a `linux/arm64` daemon. Thus §12 claim 9 holds locally;
-`ubuntu-latest` awaits the authorised PR run. The recipe adds `--platform linux/amd64`
+`ubuntu-latest` is verified by the first PR run recorded below. The recipe adds `--platform linux/amd64`
 to step 4's command to enforce this ticket's platform scope on this host.
 
 The first uncached build finished the release compilation in 6.24 seconds;
@@ -248,9 +249,45 @@ One attempted Claude breakage call was rejected by automatic approval review bec
 it would export repository content to an external model API. That pass used the fresh
 Codex reviewer instead. The separately approved Claude conformance call completed.
 
-Pending acceptance: authorise the push and PR separately, run the workflow, record its
-URL and tested merge commit, confirm the `image` and aggregate `check` jobs pass,
-and set this ticket to `done`. The review does not count absent CI evidence as success.
+The subsequently authorised push and PR supplied the pending CI evidence below;
+the ticket is now `done`.
+
+### PR evidence — source commit `d47e74c`, tested merge commit `47df0d7`
+
+On 2026-10-24 UTC, the user requested `$show-me` followed by `$visual-pr` and
+explicitly asked to open the PR with diagrams. Pushed `ticket/t13-container-image`
+and opened PR 14. The visual description includes build-stage boundaries, the
+runtime call sequence, required CI dependencies, and observed local outcomes.
+Its requested saved artifact is `.humanlayer/tasks/pr-14/description.md`.
+
+Re-ran `just image`, `docker run`, image inspection and `just check` on source
+commit `d47e74c` before the push: all exited 0, the same output and image
+configuration as above, and the full gate ended with
+`All checks passed and the worktree is unchanged.`
+
+CI run: `https://github.com/BiscuitBin/pachinko/actions/runs/40065797710`.
+Image job: `https://github.com/BiscuitBin/pachinko/actions/runs/40065797710/job/120788668006`.
+The image checkout log confirms tested merge commit
+`47df0d7d3202f78c176ec7a66605be1aa8374bff`, merging source commit
+`d47e74c5805f3271758d2130502508d41bc7915e` into main `2c93ae3`.
+The run API reports completed/success, with `rust`, `coverage`, `deny`,
+`documents`, `image`, `semver` and required `check` all successful.
+
+```text
+$ gh run view 40065797710 --json status,conclusion
+{"conclusion":"success","status":"completed"}
+exit 0
+
+$ docker run --rm pachinko:dev  # from the image job log
+pachinko 0.1.0
+step conclusion: success
+```
+
+The image log confirms both Docker client and server are available on
+`ubuntu-latest`, and records `push: false`, `load: true` and successful runtime
+output. Thus both halves of §12 claim 9 hold; T17 can carry this result into the
+conventions table. The follow-up commit adds only this completion evidence and
+the user-requested saved visual description, with no build or runtime changes.
 
 ## Open points
 
