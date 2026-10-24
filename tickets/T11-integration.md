@@ -224,8 +224,10 @@ lands.
 - The analyser checks producers only, so a green `analyse-specs` does not prove a guard
   is satisfiable (T06:267-272); `work-with-the-specs.md` does not say so.
 - Several T07 sentences go stale when T13, T14 or T17 lands, on pages those tickets do
-  not list (T07:659-700): 0006, 0007, 0012, 0013, 0014, `api.md`,
-  `deploy-to-github-pages.md`, `purpose-and-scope.md`, `security-model.md`.
+  not list (T07:659-700): 0006, 0007, 0012 (including the six jobs that run the setup
+  action, which T14's `verify` job joins), 0013, 0014, `api.md`,
+  `deploy-to-github-pages.md`, `purpose-and-scope.md`, `security-model.md`, and
+  `quality-gates.md`'s sentence that T13's `image` job joins `check`'s `needs`.
 
 **Owned by a wave-2 ticket:** the root documents and crate READMEs (T12), the `SECURITY.md`
 pointer to vulnerability reporting (T12), the newer action releases (T17), and the T07
@@ -392,6 +394,8 @@ Carried into `tickets/CONVENTIONS.md` §12 as an Outcome column:
 | T07 | The tutorial replayed before T02, T06 and T10 merged (T07:259-296) | Open: T18 item 8 |
 | T07 | L's claims carried without a run: `allium-cli` 3.6.1 on crates.io, rustqual 1.8.3's counting, Cargo's dev-dependency cycles (T07:478-479, :498-500, :530-531) | Open: T18 item 10 |
 | T07 | "No custom domain" inferred from `html_url` (T07:521-522) | Closed: `cname` is `null` (step 4) |
+| T07 | Branch protection as `quality-gates.md` describes it, read from T01's notes (T07:532-534) | Closed: step 4's whole response, equal to T01's: `check` only, `strict: false`, no reviews, force pushes and deletions refused, administrators not bound |
+| T07 | The `github-pages` environment admitting `main` alone, and the first deployment at `49890ae`, read from T01's notes (T07:501-503) | Closed: at 00:06Z on 2026-10-24, `environments/github-pages` reads `custom_branch_policies: true` with one policy, `{"name":"main","type":"branch"}`, and the earliest `github-pages` deployment is `49890ae`, created 02:43:52Z on 2026-10-23 |
 | T01 | Bootstrap steps 3 (Chromatic) and 5 (package access) skipped | Closed: neither applies; nothing here uses Chromatic or publishes a package |
 
 T18 is `tickets/T18-verification-gaps.md`, in the README index and graph.
