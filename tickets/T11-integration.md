@@ -299,9 +299,9 @@ Specification diagnostics...........Failed  (hook id: check-specs, exit code: 1)
   docs/specs/pachinko.allium:22:1: error: parse error: expected declaration (…), found 'this'
 Specification analysis..............Failed  (hook id: analyse-specs, exit code: 1)
 commit exit 1                         (HEAD still 46c2e33)
-$ printf '\nThe recieve path.\n' >> docs/README.md; git add …; git commit -m 'probe: typo'
+$ printf '\nThe <receive, misspelt> path.\n' >> docs/README.md; git add …; git commit -m 'probe: typo'
 typos...............................Failed  (exit code: 2)
-  error: `recieve` should be `receive`  ╭▸ docs/README.md:68:5
+  error: `<the misspelling>` should be `receive`  ╭▸ docs/README.md:68:5
 commit exit 1
 $ cmp docs/README.md <copy taken before the commit>
 cmp exit 0                            (typos reported and did not rewrite)
