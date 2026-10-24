@@ -218,7 +218,7 @@ Cargo-semver-checks 0.51.0, published 2026-10-03, has upstream archives and cond
 packages on both platforms. The generated lock diff adds only those two packages and
 their environment references. The pins are in `tools.txt` and `pyproject.toml`.
 
-Commit `7dbed57` with uncommitted changes, exit 0:
+Commit `c6751a8`, exit 0:
 
 ```text
 $ cargo release --version
@@ -233,13 +233,13 @@ such as `## libpachinko [0.1.1][libpachinko-0.1.1] - 2026-10-24`. This keeps one
 file, usable Markdown links and exactly one match per crate. Replacements spell full
 tag names, preserving the other crate and earlier releases.
 
-A remote-free scratch clone under `ai_tmp/` held candidate commit `3484f6f`, copied from
-`7dbed57` with the implementation changes. Each command below exited 0. No registry
+A remote-free scratch clone under `ai_tmp/` started at candidate commit `c6751a8`,
+rebased on current main `2d7bd36`. Each command below exited 0. No registry
 publish, remote push or real repository tag occurred. Cargo-release's public registry
 lookup required network access even with publishing disabled. Its `Publishing` display
 is a phase label; inherited `publish = false` and release `publish = false` stayed set.
 
-Scratch commit `2acaa3c`, prepared on `release/libpachinko-v0.1.1`:
+Scratch commit `fd04fce`, prepared on `release/libpachinko-v0.1.1`:
 
 ```text
 $ cargo release patch -p libpachinko
@@ -271,12 +271,12 @@ warning: aborting release due to dry run; re-run with `--execute`
 $ cargo release patch -p libpachinko --no-tag --execute --no-confirm
    Upgrading libpachinko from 0.1.0 to 0.1.1
     Updating pachinko's dependency from 0.1.0 to 0.1.1
-[release/libpachinko-v0.1.1 2acaa3c] Release libpachinko 0.1.1
+[release/libpachinko-v0.1.1 fd04fce] Release libpachinko 0.1.1
  4 files changed, 7 insertions(+), 4 deletions(-)
   Publishing libpachinko
 ```
 
-Scratch commit `2acaa3c`, changelog diff (the service section is unchanged):
+Scratch commit `fd04fce`, changelog diff (the service section is unchanged):
 
 ```diff
 diff --git a/CHANGELOG.md b/CHANGELOG.md
@@ -302,7 +302,7 @@ index ab54745..9cba00b 100644
  [pachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
 ```
 
-Scratch merge commit `0e799ec`, all commands exit 0:
+Scratch merge commit `320a76b`, all commands exit 0:
 
 ```text
 $ git switch main
@@ -311,11 +311,11 @@ $ cargo release tag -p libpachinko --execute --no-confirm
 $ git cat-file -t libpachinko-v0.1.1
 tag
 $ git rev-parse libpachinko-v0.1.1^{commit} HEAD
-0e799ec630c41b6055bf0935d3ce4e93868a90f4
-0e799ec630c41b6055bf0935d3ce4e93868a90f4
+320a76b2ac065c3647189038f569f7c6bac050f8
+320a76b2ac065c3647189038f569f7c6bac050f8
 ```
 
-Scratch commit `f35cda4`, prepared on `release/pachinko-v0.1.1` after the library merge:
+Scratch commit `1d48ee9`, prepared on `release/pachinko-v0.1.1` after the library merge:
 
 ```text
 $ cargo release patch -p pachinko
@@ -344,12 +344,12 @@ $ cargo release patch -p pachinko
 warning: aborting release due to dry run; re-run with `--execute`
 $ cargo release patch -p pachinko --no-tag --execute --no-confirm
    Upgrading pachinko from 0.1.0 to 0.1.1
-[release/pachinko-v0.1.1 f35cda4] Release pachinko 0.1.1
+[release/pachinko-v0.1.1 1d48ee9] Release pachinko 0.1.1
  3 files changed, 6 insertions(+), 3 deletions(-)
   Publishing pachinko
 ```
 
-Scratch commit `f35cda4`, changelog diff (the library section is unchanged):
+Scratch commit `1d48ee9`, changelog diff (the library section is unchanged):
 
 ```diff
 diff --git a/CHANGELOG.md b/CHANGELOG.md
@@ -374,7 +374,7 @@ index 9cba00b..7668621 100644
 +[pachinko-0.1.1]: https://github.com/BiscuitBin/pachinko/releases/tag/pachinko-v0.1.1
 ```
 
-Scratch merge commit `ac84c02`, all commands exit 0:
+Scratch merge commit `5a977c3`, all commands exit 0:
 
 ```text
 $ git switch main
@@ -383,13 +383,13 @@ $ cargo release tag -p pachinko --execute --no-confirm
 $ git cat-file -t pachinko-v0.1.1
 tag
 $ git rev-parse pachinko-v0.1.1^{commit} HEAD
-ac84c02a2fdf53daa70167cadc7d7a9cc62a56d8
-ac84c02a2fdf53daa70167cadc7d7a9cc62a56d8
+5a977c3ad2b3021cb8b3b1069d8c26817a1ef938
+5a977c3ad2b3021cb8b3b1069d8c26817a1ef938
 ```
 
 ### Semver and claim 7
 
-Commit `7dbed57` with uncommitted changes, exit 0, before any real library tag:
+Commit `c6751a8`, exit 0, before any real library tag:
 
 ```text
 $ just semver
@@ -397,23 +397,23 @@ cargo update --workspace --locked --offline
      Locking 0 packages to highest Rust 1.99 compatible versions
 pixi lock --check --offline --dry-run
 i Dry-run: lock file would not change
-semver: libpachinko baseline 7dbed57085d177530ca1b034a593527f373f1528
-     Cloning 7dbed57085d177530ca1b034a593527f373f1528
+semver: libpachinko baseline 2d7bd36be5cf7613a61610768dee353ee202fa3f
+     Cloning 2d7bd36be5cf7613a61610768dee353ee202fa3f
     Building libpachinko v0.1.0 (current)
-       Built [   0.145s] (current)
+       Built [   0.110s] (current)
      Parsing libpachinko v0.1.0 (current)
       Parsed [   0.000s] (current)
     Building libpachinko v0.1.0 (baseline)
-       Built [   0.173s] (baseline)
+       Built [   0.161s] (baseline)
      Parsing libpachinko v0.1.0 (baseline)
       Parsed [   0.000s] (baseline)
     Checking libpachinko v0.1.0 -> v0.1.0 (no change; assume minor)
-     Checked [   0.003s] 202 checks: 202 pass, 58 skip
+     Checked [   0.002s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.581s] libpachinko
+    Finished [   0.497s] libpachinko
 ```
 
-Scratch merge commit `0e799ec`, exit 0, with a reachable library release tag:
+Scratch merge commit `320a76b`, exit 0, with a reachable library release tag:
 
 ```text
 $ just semver
@@ -424,17 +424,17 @@ i Dry-run: lock file would not change
 semver: libpachinko baseline libpachinko-v0.1.1
      Cloning libpachinko-v0.1.1
     Building libpachinko v0.1.1 (current)
-       Built [   0.350s] (current)
+       Built [   0.437s] (current)
      Parsing libpachinko v0.1.1 (current)
-      Parsed [   0.001s] (current)
+      Parsed [   0.002s] (current)
     Building libpachinko v0.1.1 (baseline)
-       Built [   0.162s] (baseline)
+       Built [   0.189s] (baseline)
      Parsing libpachinko v0.1.1 (baseline)
       Parsed [   0.000s] (baseline)
     Checking libpachinko v0.1.1 -> v0.1.1 (no change; assume minor)
-     Checked [   0.004s] 202 checks: 202 pass, 58 skip
+     Checked [   0.005s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.807s] libpachinko
+    Finished [   0.939s] libpachinko
 ```
 
 Claim 7 holds: a Git revision baseline works before the first release, and discovery
@@ -472,9 +472,13 @@ Neither checkpoint had a high finding, so no second round was required. The repo
 no separate `code-review` skill is installed.
 
 The scratch clone was deleted after retaining the quoted evidence and review logs.
-The final gate below was rerun after the documentation fix.
+The final gate below was rerun after the documentation fix and the rebase onto
+`2d7bd36`. That upstream change only adds T18 ticket evidence; no implementation
+changed. `just lock` regenerated the locks without a diff, and both scratch proofs
+and both semver baseline checks above were rerun. The existing review verdicts
+remain applicable to the same implementation.
 
-Commit `7dbed57` with uncommitted changes, exit 0 for each:
+Commit `c6751a8`, exit 0 for each:
 
 ```text
 $ rg -n 'permissions|environment|tags:|concurrency' -A3 .github/workflows/release.yml
