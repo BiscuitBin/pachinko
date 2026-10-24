@@ -72,6 +72,9 @@ may instead tag the existing 0.1.0 without a bump; omit `patch` during preparati
 1. Locally update `main` with `git pull --ff-only` and create
    `release/libpachinko-v0.1.1`. Write the release notes under
    `## libpachinko [Unreleased][libpachinko-unreleased]`, leaving the other crate's section alone.
+   Commit the notes locally with `git add CHANGELOG.md` and
+   `git commit -m "Prepare libpachinko release notes"`. Confirm `git status --short`
+   prints nothing before continuing: cargo-release requires a clean worktree.
 2. Run `just check` and `just semver`. Before the first library tag, semver compares
    this branch with main's merge base; after it, with the last reachable library tag.
    `just semver <revision>` chooses a specific baseline. This report is advisory on

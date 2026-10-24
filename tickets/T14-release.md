@@ -218,7 +218,7 @@ Cargo-semver-checks 0.51.0, published 2026-10-03, has upstream archives and cond
 packages on both platforms. The generated lock diff adds only those two packages and
 their environment references. The pins are in `tools.txt` and `pyproject.toml`.
 
-Commit `c6751a8`, exit 0:
+Commit `d114508` with uncommitted changes, exit 0:
 
 ```text
 $ cargo release --version
@@ -227,37 +227,41 @@ cargo-release 1.1.7
 
 ### Changelog and scratch proof
 
-The chosen headings are `## libpachinko [Unreleased][libpachinko-unreleased]` and its
-service counterpart. Dated headings use explicit crate-qualified version references,
-such as `## libpachinko [0.1.1][libpachinko-0.1.1] - 2026-10-24`. This keeps one root
-file, usable Markdown links and exactly one match per crate. Replacements spell full
-tag names, preserving the other crate and earlier releases.
+The headings are `## libpachinko [Unreleased][libpachinko-unreleased]` and its service
+counterpart. Dated headings use explicit crate-qualified version references. Each
+replacement spells the full tag name and preserves the other crate and older releases.
 
-A remote-free scratch clone under `ai_tmp/` started at candidate commit `c6751a8`,
-rebased on current main `2d7bd36`. Each command below exited 0. No registry
-publish, remote push or real repository tag occurred. Cargo-release's public registry
-lookup required network access even with publishing disabled. Its `Publishing` display
-is a phase label; inherited `publish = false` and release `publish = false` stayed set.
+A remote-free scratch clone under `ai_tmp/` started at `d114508`, with the handbook
+correction committed as `4caf0e94c701b828cd2377bc5b8d6faa1cfb305a`. Each proof edited and committed release
+notes, confirmed clean status, then ran release preparation and tagging. No registry
+publish, remote push or real repository tag occurred. Cargo-release's registry lookup
+used network access even with publishing disabled. Its `Publishing` phase display does
+not lift either publish prohibition.
 
-Scratch commit `fd04fce`, prepared on `release/libpachinko-v0.1.1`:
+Scratch notes commit `9b7873b`, all commands exit 0:
 
 ```text
+$ git add CHANGELOG.md
+$ git commit -m "Prepare libpachinko release notes"
+[release/libpachinko-v0.1.1 9b7873b] Prepare libpachinko release notes
+ 1 file changed, 4 insertions(+)
+$ git status --short
 $ cargo release patch -p libpachinko
    Upgrading libpachinko from 0.1.0 to 0.1.1
     Updating pachinko's dependency from 0.1.0 to 0.1.1
    Replacing in ../../CHANGELOG.md
---- ../../CHANGELOG.md original
-+++ ../../CHANGELOG.md replaced
+--- ../../CHANGELOG.md  original
++++ ../../CHANGELOG.md  replaced
 @@ -11,6 +11,8 @@
 
  ## libpachinko [Unreleased][libpachinko-unreleased]
 
 +## libpachinko [0.1.1][libpachinko-0.1.1] - 2026-10-24
 +
- ### Added
+ ### Changed
 
- - An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
-@@ -33,5 +35,6 @@
+ - Verified release preparation with committed notes.
+@@ -37,5 +39,6 @@
  - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
    The crate is not published to crates.io.
 
@@ -268,19 +272,24 @@ $ cargo release patch -p libpachinko
 
   Publishing libpachinko
 warning: aborting release due to dry run; re-run with `--execute`
+```
+
+Scratch bump commit `5a8697a`, exit 0:
+
+```text
 $ cargo release patch -p libpachinko --no-tag --execute --no-confirm
    Upgrading libpachinko from 0.1.0 to 0.1.1
     Updating pachinko's dependency from 0.1.0 to 0.1.1
-[release/libpachinko-v0.1.1 fd04fce] Release libpachinko 0.1.1
+[release/libpachinko-v0.1.1 5a8697a] Release libpachinko 0.1.1
  4 files changed, 7 insertions(+), 4 deletions(-)
   Publishing libpachinko
 ```
 
-Scratch commit `fd04fce`, changelog diff (the service section is unchanged):
+Scratch bump commit `5a8697a`, changelog diff (the other crate is unchanged):
 
 ```diff
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index ab54745..9cba00b 100644
+index f3232f7..4fdf92b 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
 @@ -11,6 +11,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
@@ -289,10 +298,10 @@ index ab54745..9cba00b 100644
 
 +## libpachinko [0.1.1][libpachinko-0.1.1] - 2026-10-24
 +
- ### Added
+ ### Changed
 
- - An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
-@@ -33,5 +35,6 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
+ - Verified release preparation with committed notes.
+@@ -37,5 +39,6 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
  - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
    The crate is not published to crates.io.
 
@@ -302,37 +311,42 @@ index ab54745..9cba00b 100644
  [pachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
 ```
 
-Scratch merge commit `320a76b`, all commands exit 0:
+Scratch merge commit `5b73c60`, all commands exit 0:
 
 ```text
 $ git switch main
-$ git merge --no-ff release/libpachinko-v0.1.1 -m "Merge library release proof"
+$ git merge --no-ff release/libpachinko-v0.1.1 -m "Merge libpachinko release proof"
 $ cargo release tag -p libpachinko --execute --no-confirm
 $ git cat-file -t libpachinko-v0.1.1
 tag
 $ git rev-parse libpachinko-v0.1.1^{commit} HEAD
-320a76b2ac065c3647189038f569f7c6bac050f8
-320a76b2ac065c3647189038f569f7c6bac050f8
+5b73c6090d2c884a4517cf2262fe9da41dd91582
+5b73c6090d2c884a4517cf2262fe9da41dd91582
 ```
 
-Scratch commit `1d48ee9`, prepared on `release/pachinko-v0.1.1` after the library merge:
+Scratch notes commit `da50504`, all commands exit 0:
 
 ```text
+$ git add CHANGELOG.md
+$ git commit -m "Prepare pachinko release notes"
+[release/pachinko-v0.1.1 da50504] Prepare pachinko release notes
+ 1 file changed, 4 insertions(+)
+$ git status --short
 $ cargo release patch -p pachinko
    Upgrading pachinko from 0.1.0 to 0.1.1
    Replacing in ../../CHANGELOG.md
---- ../../CHANGELOG.md original
-+++ ../../CHANGELOG.md replaced
-@@ -29,6 +29,8 @@
+--- ../../CHANGELOG.md  original
++++ ../../CHANGELOG.md  replaced
+@@ -33,6 +33,8 @@
 
  ## pachinko [Unreleased][pachinko-unreleased]
 
 +## pachinko [0.1.1][pachinko-0.1.1] - 2026-10-24
 +
- ### Added
+ ### Changed
 
- - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
-@@ -37,4 +39,5 @@
+ - Verified release preparation with committed notes.
+@@ -45,4 +47,5 @@
 
  [libpachinko-unreleased]: https://github.com/BiscuitBin/pachinko/compare/libpachinko-v0.1.1...HEAD
  [libpachinko-0.1.1]: https://github.com/BiscuitBin/pachinko/releases/tag/libpachinko-v0.1.1
@@ -342,30 +356,35 @@ $ cargo release patch -p pachinko
 
   Publishing pachinko
 warning: aborting release due to dry run; re-run with `--execute`
+```
+
+Scratch bump commit `7c2b234`, exit 0:
+
+```text
 $ cargo release patch -p pachinko --no-tag --execute --no-confirm
    Upgrading pachinko from 0.1.0 to 0.1.1
-[release/pachinko-v0.1.1 1d48ee9] Release pachinko 0.1.1
+[release/pachinko-v0.1.1 7c2b234] Release pachinko 0.1.1
  3 files changed, 6 insertions(+), 3 deletions(-)
   Publishing pachinko
 ```
 
-Scratch commit `1d48ee9`, changelog diff (the library section is unchanged):
+Scratch bump commit `7c2b234`, changelog diff (the other crate is unchanged):
 
 ```diff
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 9cba00b..7668621 100644
+index 3b702ab..3120e10 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -29,6 +29,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
+@@ -33,6 +33,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
  ## pachinko [Unreleased][pachinko-unreleased]
 
 +## pachinko [0.1.1][pachinko-0.1.1] - 2026-10-24
 +
- ### Added
+ ### Changed
 
- - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
-@@ -37,4 +39,5 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
+ - Verified release preparation with committed notes.
+@@ -45,4 +47,5 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
  [libpachinko-unreleased]: https://github.com/BiscuitBin/pachinko/compare/libpachinko-v0.1.1...HEAD
  [libpachinko-0.1.1]: https://github.com/BiscuitBin/pachinko/releases/tag/libpachinko-v0.1.1
@@ -374,22 +393,24 @@ index 9cba00b..7668621 100644
 +[pachinko-0.1.1]: https://github.com/BiscuitBin/pachinko/releases/tag/pachinko-v0.1.1
 ```
 
-Scratch merge commit `5a977c3`, all commands exit 0:
+Scratch merge commit `aedfd9a`, all commands exit 0:
 
 ```text
 $ git switch main
-$ git merge --no-ff release/pachinko-v0.1.1 -m "Merge service release proof"
+$ git merge --no-ff release/pachinko-v0.1.1 -m "Merge pachinko release proof"
 $ cargo release tag -p pachinko --execute --no-confirm
 $ git cat-file -t pachinko-v0.1.1
 tag
 $ git rev-parse pachinko-v0.1.1^{commit} HEAD
-5a977c3ad2b3021cb8b3b1069d8c26817a1ef938
-5a977c3ad2b3021cb8b3b1069d8c26817a1ef938
+aedfd9adf037c35a327865ab32b4b0df6e2da84c
+aedfd9adf037c35a327865ab32b4b0df6e2da84c
 ```
+
+The scratch clone was deleted after retaining these logs.
 
 ### Semver and claim 7
 
-Commit `c6751a8`, exit 0, before any real library tag:
+Commit `d114508` with uncommitted changes, exit 0, before any real library tag:
 
 ```text
 $ just semver
@@ -400,20 +421,20 @@ i Dry-run: lock file would not change
 semver: libpachinko baseline 2d7bd36be5cf7613a61610768dee353ee202fa3f
      Cloning 2d7bd36be5cf7613a61610768dee353ee202fa3f
     Building libpachinko v0.1.0 (current)
-       Built [   0.110s] (current)
+       Built [   0.150s] (current)
      Parsing libpachinko v0.1.0 (current)
       Parsed [   0.000s] (current)
     Building libpachinko v0.1.0 (baseline)
-       Built [   0.161s] (baseline)
+       Built [   0.170s] (baseline)
      Parsing libpachinko v0.1.0 (baseline)
       Parsed [   0.000s] (baseline)
     Checking libpachinko v0.1.0 -> v0.1.0 (no change; assume minor)
      Checked [   0.002s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.497s] libpachinko
+    Finished [   0.578s] libpachinko
 ```
 
-Scratch merge commit `320a76b`, exit 0, with a reachable library release tag:
+Scratch merge commit `5b73c60`, exit 0, with a reachable library tag:
 
 ```text
 $ just semver
@@ -424,17 +445,17 @@ i Dry-run: lock file would not change
 semver: libpachinko baseline libpachinko-v0.1.1
      Cloning libpachinko-v0.1.1
     Building libpachinko v0.1.1 (current)
-       Built [   0.437s] (current)
+       Built [   0.150s] (current)
      Parsing libpachinko v0.1.1 (current)
-      Parsed [   0.002s] (current)
+      Parsed [   0.001s] (current)
     Building libpachinko v0.1.1 (baseline)
-       Built [   0.189s] (baseline)
+       Built [   0.146s] (baseline)
      Parsing libpachinko v0.1.1 (baseline)
       Parsed [   0.000s] (baseline)
     Checking libpachinko v0.1.1 -> v0.1.1 (no change; assume minor)
      Checked [   0.005s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.939s] libpachinko
+    Finished [   0.562s] libpachinko
 ```
 
 Claim 7 holds: a Git revision baseline works before the first release, and discovery
@@ -471,14 +492,34 @@ Neither checkpoint had a high finding, so no second round was required. The repo
 `review-change` skill and these independent reviews supplied the review workflow;
 no separate `code-review` skill is installed.
 
-The scratch clone was deleted after retaining the quoted evidence and review logs.
-The final gate below was rerun after the documentation fix and the rebase onto
-`2d7bd36`. That upstream change only adds T18 ticket evidence; no implementation
-changed. `just lock` regenerated the locks without a diff, and both scratch proofs
-and both semver baseline checks above were rerun. The existing review verdicts
-remain applicable to the same implementation.
+PR review finding `4365918598` (Copilot, low) was confirmed against cargo-release
+1.1.7's source and a scratch reproduction. Maintenance step 1 left release notes
+uncommitted. It now supplies a local notes commit and requires empty
+`git status --short` output before proceeding. The PR diagram includes that step.
+No cleanliness check was bypassed.
 
-Commit `c6751a8`, exit 0 for each:
+Scratch candidate `4caf0e94c701b828cd2377bc5b8d6faa1cfb305a` with modified notes on
+`release/libpachinko-v0.1.1`, expected exit 101, error excerpt:
+
+```text
+$ cargo release patch -p libpachinko
+error: uncommitted changes detected, please resolve before release:
+         CHANGELOG.md (Status(WT_MODIFIED))
+```
+
+The committed-notes success cases and both semver baselines are refreshed above.
+The original checkpoint reviews remain applicable to the unchanged release machinery;
+this low finding requires no further round under section 14. `review-docs` and
+`review-change` cover the handbook correction. Verification below was rerun after
+the correction on current main `2d7bd36`; no rebase was needed.
+
+The first lint found a missing blank line around a quoted proof block. `just fix`
+failed while formatting that ticket, leaving it empty; no other tracked path was
+changed. The ticket was recovered from its committed content and the retained proof
+logs, with the missing blank line added. The formatter issue is handed back outside
+T14's allowed paths; the read-only checks remain enabled.
+
+Commit `d114508` with uncommitted changes, exit 0 for each:
 
 ```text
 $ rg -n 'permissions|environment|tags:|concurrency' -A3 .github/workflows/release.yml
@@ -525,11 +566,11 @@ Explicit `consolidate-commits = false` fixed this; both corrected proofs are quo
 above, with the rendered commit subjects. The library bump updates the service's
 constraint but not its version or changelog.
 
-Push, pull-request creation, the protected `release` environment, a real local tag,
-tag push and deployment approval remain separate authorizations. The environment must
-be created with the maintainer as its one required reviewer and its protection rules
-read back into the pull request before merging. No repository setting was changed.
-The first real version remains the maintainer's decision.
+The authorized branch push and PR creation produced PR 13. Subsequent explicit
+authorization created `release` with `steven-cutting` as sole required reviewer;
+rule `69922875` was read back and quoted in the PR. Self-review is allowed for the
+sole maintainer. Real local tags, tag pushes and deployment approval remain separate
+authorizations. The first real version remains the maintainer's decision.
 
 ## Open points
 
