@@ -31,8 +31,7 @@ cargo-nextest pin.
 
 Renovate, through the Mend-hosted app, installed on 2026-10-24 for the whole `BiscuitBin`
 organisation rather than this repository alone, and configured here by `renovate.json`
-at the repository root. Until that file reaches `main` (ticket T17), Renovate reads no
-configuration of this repository's own. Native managers read the crates (both
+at the repository root. Native managers read the crates (both
 cargo roots), the actions, the pixi pins and the `Dockerfile`. Regex managers read the
 rest: the toolchain channel, `rust-version`, `tools.txt` and `tools-source.txt`,
 `nextest-version`, the tooling tag, the pixi bootstrap pair and the hook revs. The native
@@ -82,7 +81,8 @@ the `python` pin. A toolchain pull request arrives red when the lint set moves, 
 person finishes it with `just clippy`.
 
 Each regex manager is proved only by Renovate itself, from its dependency dashboard or a
-real pull request, once `renovate.json` is on `main`.
+real pull request; the first dashboard, on 2026-10-24, listed every one (ticket T17's
+hand-back notes).
 
 ## What would reopen this
 
