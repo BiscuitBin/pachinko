@@ -128,7 +128,8 @@ proposes and what stays manual; and decision 0018 records it.
 - Every pin in step 2's inventory is either covered (with quoted evidence from the
   dashboard or a pull request) or listed as manual with a reason in the how-to.
 - The app is installed on this repository only, and its permissions are in the security
-  model.
+  model. (Departed from at the maintainer's choice: the app is installed organisation-wide;
+  see the hand-back notes.)
 - `renovate.json` validates.
 - `CONVENTIONS.md` §12 claims 7, 8 and 9 have outcomes, each citing the ticket whose
   hand-back notes hold the evidence.
@@ -140,7 +141,7 @@ proposes and what stays manual; and decision 0018 records it.
 
 ```sh
 npx --yes --package renovate -- renovate-config-validator renovate.json
-gh api repos/BiscuitBin/pachinko/installation --jq '.app_slug'
+gh api orgs/BiscuitBin/installations --jq '.installations[].app_slug'
 just check-docs
 just check
 ```
@@ -365,17 +366,33 @@ $ just check   (exit 0)
 All checks passed and the worktree is unchanged.
 ```
 
+### Step 4: installation
+
+The maintainer installed the Mend Renovate app on 2026-10-24, for every repository in the
+`BiscuitBin` organisation rather than `BiscuitBin/pachinko` alone, and chose to keep it
+that way; the security model, decision 0018 and the acceptance criterion say so. The
+ticket's `gh api repos/BiscuitBin/pachinko/installation` answers only to the app's own
+token (a user token gets `401 A JSON web token could not be decoded`), so the organisation
+listing stands in for it:
+
+```text
+$ gh api orgs/BiscuitBin/installations --jq '.installations[] | {app_slug, repository_selection, permissions, events, created_at}'   (exit 0)
+{"app_slug":"renovate","created_at":"2026-10-24T13:48:08.000-07:00","events":["issues","issue_comment","pull_request","pull_request_review_comment","push","repository"],"permissions":{"administration":"read","checks":"write","contents":"write","issues":"write","members":"read","metadata":"read","packages":"read","pull_requests":"write","statuses":"write","vulnerability_alerts":"read","workflows":"write"},"repository_selection":"all"}
+```
+
+Against S01's list it adds `members: read` and `packages: read`; the pages now carry the
+installation's own list. Right after installation `pachinko` had no open issue or pull
+request from Renovate.
+
 ### Pending authorisation
 
 Each is a separate ask; none has been performed.
 
-1. Install the Mend Renovate app from github.com/apps/renovate on `BiscuitBin/pachinko`
-   only (an organisation owner may have to), re-reading the permission list on the
-   installation screen against the security model.
-2. Push this branch and open its pull request; the merge is the maintainer's.
-3. Step 5's evidence: read the dependency dashboard and quote, per manager, the detected
-   dependency (or an update pull request), with read-only `gh` calls; then
-   `gh api repos/BiscuitBin/pachinko/installation --jq '.app_slug'`. Expected on the
+1. Push this branch and open its pull request; the merge is the maintainer's.
+2. Step 5's evidence, once the pull request has merged: read the dependency dashboard and
+   quote, per manager, the detected dependency (or an update pull request), with
+   read-only `gh` calls. That commit also drops the four "until `renovate.json` reaches
+   `main`" sentences. Expected on the
    dashboard: no lookup warning for the path dependency `libpachinko`, and
    `biscuit-games-tooling` under the regex manager (the pixi manager skips it as
    `unspecified-version`).

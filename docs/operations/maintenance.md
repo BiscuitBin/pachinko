@@ -61,8 +61,8 @@ describes. A moved checker re-verifies every module under `docs/specs/`. The mod
 no waiver today; any waiver added later is valid only against the version it was verified
 on, so each is checked again.
 
-Renovate's Mend app is not installed yet (ticket T17); until it is, every pin here moves
-by hand. Once it is, Renovate lists the pending moves for these pins on its dependency
+Renovate's Mend app is installed, but until `renovate.json` reaches `main` (ticket T17),
+every pin here moves by hand. Once it does, Renovate lists the pending moves for these pins on its dependency
 dashboard, and each pull request opens only when it is approved there, except a
 vulnerability fix, which opens unasked once vulnerability alerts are enabled. Nothing
 merges on its own. What no rule moves, lychee's `LYCHEE_VERSION` beside its rev, the

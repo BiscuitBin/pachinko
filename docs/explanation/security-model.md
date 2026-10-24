@@ -65,13 +65,15 @@ for tests are never a source to use where unpredictability matters.
   ([decision 0012](../decisions/0012-metrics-gate.md)). It also runs with the GitHub
   token unset, so the build scripts it compiles cannot read the token.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
-  app, which is to be installed on `BiscuitBin/pachinko` alone (pending, ticket T17) and
-  will be the one party outside the maintainer and GitHub Actions that holds write access
-  here ([decision 0018](../decisions/0018-renovate.md)). Its installation screen asks for
-  read access to Dependabot alerts, administration and metadata, and read and write
-  access to checks, contents, commit statuses, issues, pull requests and workflows. Those
-  are the permissions as libpawdoku's S01 recorded them; the installation is to be
-  checked against this list on the day, and this page corrected if the screen differs.
+  app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
+  this one alone, and the one party outside the maintainer and GitHub Actions that holds
+  write access here ([decision 0018](../decisions/0018-renovate.md)). The installation
+  holds read access to administration, Dependabot alerts, metadata, packages and the
+  organisation's members, and read and write access to checks, contents, commit
+  statuses, issues, pull requests and workflows, as the organisation's installation
+  record lists them (`gh api orgs/BiscuitBin/installations`). Because the installation is
+  organisation-wide, those permissions reach every `BiscuitBin` repository, including any
+  added later.
   The app never merges: `renovate.json` sets `"automerge": false`, and `main` takes nothing
   without a green `check`, a context bound to the GitHub Actions app, so no other app can
   report it. Branch protection requires no review, so that the maintainer merges is

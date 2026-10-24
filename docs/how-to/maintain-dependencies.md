@@ -18,8 +18,9 @@ poisons every downstream resolution: two crates pinning different patch releases
 dependency cannot be built together. The tools are the other way round: `pyproject.toml`
 pins each one exactly, and `pixi.lock`, committed beside it, records the resolution.
 Renovate reads the pins ([decision 0018](../decisions/0018-renovate.md)) and lists every
-pending move on its dependency dashboard, an issue in this repository. Its Mend app is not
-installed yet (ticket T17), so until it is, every pin below moves by hand. Nothing opens
+pending move on its dependency dashboard, an issue in this repository. Its Mend app is
+installed, but until `renovate.json` reaches `main` (ticket T17), every pin below moves by
+hand. Nothing opens
 until you approve that move there, with one exception: once vulnerability alerts are
 enabled on the repository, a vulnerability-fix pull request opens without approval.
 Renovate never merges. What it does not read is below, under

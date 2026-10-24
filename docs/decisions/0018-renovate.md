@@ -29,9 +29,10 @@ cargo-nextest pin.
 
 ## Decision
 
-Renovate, through the Mend-hosted app, to be installed on `BiscuitBin/pachinko` alone,
-configured by `renovate.json` at the repository root. The installation is pending (ticket
-T17); until then nothing reads the configuration. Native managers read the crates (both
+Renovate, through the Mend-hosted app, installed on 2026-10-24 for the whole `BiscuitBin`
+organisation rather than this repository alone, and configured here by `renovate.json`
+at the repository root. Until that file reaches `main` (ticket T17), Renovate reads no
+configuration of this repository's own. Native managers read the crates (both
 cargo roots), the actions, the pixi pins and the `Dockerfile`. Regex managers read the
 rest: the toolchain channel, `rust-version`, `tools.txt` and `tools-source.txt`,
 `nextest-version`, the tooling tag, the pixi bootstrap pair and the hook revs. The native
@@ -63,11 +64,12 @@ pull request.
 
 ## Consequences
 
-The app's installation screen, as libpawdoku's S01 recorded it, asks for read access to
-Dependabot alerts, administration and metadata, and read and write access to checks,
-contents, commit statuses, issues, pull requests and workflows, which the [security
-model](../explanation/security-model.md) records and which are to be re-read on the day of
-installation. That is the one trust it is given that a contributor's branch is not. The
+The installation holds read access to administration, Dependabot alerts, metadata,
+packages and the organisation's members, and read and write access to checks, contents,
+commit statuses, issues, pull requests and workflows, which the [security
+model](../explanation/security-model.md) records. Against libpawdoku's S01 record it adds
+packages and members, and being organisation-wide it reaches every `BiscuitBin`
+repository. That is the one trust it is given that a contributor's branch is not. The
 `check` context is bound to the GitHub Actions app and no review is required, so "a person
 merges" rests on `automerge` staying off.
 
@@ -80,7 +82,7 @@ the `python` pin. A toolchain pull request arrives red when the lint set moves, 
 person finishes it with `just clippy`.
 
 Each regex manager is proved only by Renovate itself, from its dependency dashboard or a
-real pull request, after the app is installed.
+real pull request, once `renovate.json` is on `main`.
 
 ## What would reopen this
 
