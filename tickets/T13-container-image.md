@@ -289,6 +289,51 @@ output. Thus both halves of §12 claim 9 hold; T17 can carry this result into th
 conventions table. The follow-up commit adds only this completion evidence and
 the user-requested saved visual description, with no build or runtime changes.
 
+### Merge-conflict baseline — commit `7ee7bfc`, untouched
+
+The first attempts found pixi's cargo before rustup's proxy and a sandbox-blocked
+prek cache. With rustup's cargo first and access to the existing tool caches:
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+### Merge-conflict verification — commit `04eda64`
+
+Rebased onto `origin/main` at `983b23f`, which merged T15. The only conflict was
+`docs/manifest.yml`: retained decision 0015 alongside decisions 0016 and 0017,
+with all metadata unchanged. The two T13 commits became `2c1c54e` and `04eda64`.
+The range comparison preserves both tickets' changes; no lockfile was edited.
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+exit 0
+
+$ just image
+#15 naming to docker.io/library/pachinko:dev done
+#15 DONE 0.1s
+exit 0
+
+$ docker run --rm pachinko:dev
+pachinko 0.1.0
+exit 0
+
+$ docker image inspect pachinko:dev --format '{{.Config.User}} {{.Config.Entrypoint}} {{.Architecture}} {{.Size}}'
+nonroot:nonroot [/pachinko] amd64 9359369
+exit 0
+```
+
+Docker also emitted its expected amd64-on-arm64 emulation warning. Both `FROM`
+lines still carry their original digests (`rg -n '^FROM ' Dockerfile`, exit 0).
+Two fresh-context Codex `gpt-6-astra` reviewers independently checked conformance
+and breakage of the rebase delta under §14; neither found an actionable defect.
+The root review under `review-change` confirmed both lanes were preserved and
+all nine invariants remain intact. The earlier PR run above describes the original
+commits; new CI evidence awaits separate authorisation to push the rebased branch.
+
 ## Open points
 
 - The image is `linux/amd64` only. `linux/arm64` joins when something deploys it.
