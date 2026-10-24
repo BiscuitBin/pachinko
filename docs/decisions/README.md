@@ -35,6 +35,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0012](0012-metrics-gate.md) | The metrics gate |
 | [0013](0013-api-reference-on-github-pages.md) | The API reference on GitHub Pages |
 | [0014](0014-service-runtime-deferred.md) | The service runtime waits for the specifications |
+| [0015](0015-container-image.md) | The container image |
 | [0016](0016-release-process.md) | The release process |
 | [0017](0017-mutation-bench-and-fuzz.md) | Mutation testing, benchmarks and fuzzing |
 

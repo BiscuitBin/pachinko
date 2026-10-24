@@ -159,8 +159,9 @@ rest of what this repository deliberately does not do.
 
 ## What wave 2 adds
 
-T13 will add a container image whose entrypoint is the `pachinko` binary, built in CI on
-every pull request without pushing it. The release process tags each crate on its own
+The container image's entrypoint is the `pachinko` binary, built in CI on every pull
+request without pushing it
+([decision 0015](../decisions/0015-container-image.md)). The release process tags each crate on its own
 and cuts a GitHub Release, with `publish = false` kept
 ([decision 0016](../decisions/0016-release-process.md)).
 

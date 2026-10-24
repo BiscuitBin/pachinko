@@ -13,6 +13,7 @@
     {"path": "how-to/test-and-debug.md", "title": "Test and debug", "kind": "how-to", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["test_workflow"], "requires": []},
     {"path": "how-to/work-with-the-specs.md", "title": "Work with the specifications", "kind": "how-to", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["specification_workflow"], "requires": []},
     {"path": "how-to/maintain-dependencies.md", "title": "Maintain dependencies", "kind": "how-to", "audience": ["maintainer", "agent"], "canonical_for": ["dependency_maintenance"], "requires": []},
+    {"path": "how-to/build-the-container-image.md", "title": "Build the container image", "kind": "how-to", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["container_image_workflow"], "requires": []},
     {"path": "how-to/deploy-to-github-pages.md", "title": "Deploy to GitHub Pages", "kind": "how-to", "audience": ["maintainer", "operator", "agent"], "canonical_for": ["deployment_procedure"], "requires": []},
 
     {"path": "explanation/architecture.md", "title": "Architecture", "kind": "explanation", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["system_architecture"], "requires": []},
@@ -47,6 +48,7 @@
     {"path": "decisions/0012-metrics-gate.md", "title": "Decision 0012: The metrics gate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_metrics_gate"], "requires": []},
     {"path": "decisions/0013-api-reference-on-github-pages.md", "title": "Decision 0013: The API reference on GitHub Pages", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_api_reference_on_pages"], "requires": []},
     {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: The service runtime waits for the specifications", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_service_runtime_deferred"], "requires": []},
+    {"path": "decisions/0015-container-image.md", "title": "Decision 0015: The container image", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_container_image"], "requires": []},
     {"path": "decisions/0016-release-process.md", "title": "Decision 0016: The release process", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_release_process"], "requires": []},
     {"path": "decisions/0017-mutation-bench-and-fuzz.md", "title": "Decision 0017: Mutation testing, benchmarks and fuzzing", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_mutation_bench_fuzz"], "requires": []}
   ]
