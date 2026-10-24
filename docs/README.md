@@ -65,3 +65,4 @@ Specifications, under Understand, to see how the two relate.
 
 - [Architecture decisions](decisions/README.md) — the record of what was chosen and why.
 - [Decision 0016: The release process](decisions/0016-release-process.md)
+- [Decision 0017: Mutation testing, benchmarks and fuzzing](decisions/0017-mutation-bench-and-fuzz.md)

@@ -20,7 +20,7 @@ checkout), and is the one command a fresh clone needs the network for. Nothing i
 `just check` reaches it once `just sync` has fetched the registry index: `lock-check` and
 `deny` then answer from that cache, and `lint` finds every hook environment already
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
-rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit` and
+rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants` and
 `check-links-online` are outside `just check`, and so is every recipe that writes.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
@@ -77,6 +77,7 @@ proves and why.
 | `just site` | What GitHub Pages serves: empties `target/doc`, runs `just doc`, and writes a root `index.html` that links to the libpachinko and pachinko pages, because stable rustdoc writes none. Writes only under `target/`. Outside `just check`; the Pages workflow runs it on every push to `main`. [Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md) has the procedure. |
 | `just deny` | cargo-deny's licence, ban and source checks over every dependency that ships, offline once `just sync` has run. Gate 13. |
 | `just audit` | cargo-deny's advisory check against the RustSec database. Over the network, so outside `just check`; CI runs it on every pull request and weekly, in its own workflow. |
+| `just mutants [args...]` | Mutation report over the workspace with every feature, using `cargo test` on a copy excluding Gitignored paths. Passes `--locked` to builds and tests. Writes `mutants.out/`, renaming the previous report to `mutants.out.old`. Outside `just check`; runs weekly and by hand. |
 | `just deps-unused` | cargo-shear: a dependency a crate declares and never uses. Gate 14. |
 
 ## Documents
