@@ -1,0 +1,172 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "schedule:earlyMondays",
+    ":dependencyDashboardApproval"
+  ],
+  "rangeStrategy": "update-lockfile",
+  "automerge": false,
+  "lockFileMaintenance": { "enabled": true, "schedule": ["* 0-3 * * 1"] },
+  "pre-commit": { "enabled": false },
+  "rust-toolchain": { "enabled": false },
+  "packageRules": [
+    {
+      "description": "Crates: Cargo.lock within the caret ranges, or a range in Cargo.toml when a release falls outside it, both cargo roots, one pull request, with major updates in a pull request of their own beside it (separateMajorMinor). Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
+      "matchManagers": ["cargo"],
+      "groupName": "crates"
+    },
+    {
+      "description": "Remote actions, SHA and version comment together, one pull request, with major updates in a pull request of their own beside it (separateMajorMinor). Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "The toolchain in three places, every one read from the same tags of the rust image on Docker Hub, the -slim-bookworm variant the Dockerfile builds on: channel in rust-toolchain.toml, rust-version in Cargo.toml and fuzz/Cargo.toml, and the Dockerfile's build stage. The two regex managers keep only -slim-bookworm tags through extractVersionTemplate, and docker versioning keeps the Dockerfile on its suffix, so no member moves to a release whose image is not on Docker Hub; this is the tag-set option, not a minimumReleaseAge. Docker versioning keeps the component count: channel and the Dockerfile tag read x.y.z-slim-bookworm and move on a patch, rust-version reads x.y-slim-bookworm and moves only on a minor; the official image pushes both tags from one build. A digest-only Dockerfile update, when the image is rebuilt under the same tag, moves only the digest, which is harmless. Held for dashboard approval, because a toolchain moves the clippy lint set; a vulnerability-fix pull request skips that approval.",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["rust"],
+      "groupName": "rust toolchain",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The distroless run stage: a digest under the nonroot tag. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["gcr.io/distroless/cc-debian12"],
+      "groupName": "distroless base",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Tool pins in pyproject.toml. A notice until the hosted app is shown to relock pixi.lock; a stale pixi.lock fails lock-check. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchManagers": ["pixi"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "requires-python in pyproject.toml, the one thing the pep621 manager reads there. pixi owns Python through python = \"3.14.*\", so the floor moves by hand with that pin. The pixi manager's reading is its own and stays on.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["requires-python"],
+      "enabled": false
+    },
+    {
+      "description": "nextest-version in .config/nextest.toml equals the cargo-nextest pin in pyproject.toml, so both read conda-forge and move in one pull request. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchDepNames": ["cargo-nextest"],
+      "groupName": "cargo-nextest",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The tooling package's release tag, which also moves the allium pin. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchDepNames": ["biscuit-games-tooling"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "pixi itself: the requires-pixi floor in pyproject.toml and pixi-version in the setup action, one pull request. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchDepNames": ["prefix-dev/pixi"],
+      "groupName": "pixi bootstrap",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The github-actions manager would read setup-pixi's pixi-version input under prefix-dev/pixi as well; the regex manager owns it.",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["prefix-dev/pixi"],
+      "enabled": false
+    },
+    {
+      "description": "Lock-file maintenance rewrites pixi.lock as well as Cargo.lock, and the pixi relock is unproven. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Binaries in tools.txt and source builds in tools-source.txt. Each is a download nothing verifies beyond the transport or the registry checksum, and rustqual is a gate. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchDepNames": ["cargo-hack", "cargo-release", "cargo-fuzz", "rustqual"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Hook revs in both prek configs, one pull request, because a hook is code the gate runs on every commit. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchFileNames": [".pre-commit-config.yaml", ".pre-commit-fix.yaml"],
+      "groupName": "hook revs",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "lychee moves by hand: LYCHEE_VERSION in both argument lists must match its rev, and its tag prefix is lychee-v.",
+      "matchDepNames": ["lycheeverse/lychee"],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "rust-toolchain.toml's channel, from the rust image's x.y.z-slim-bookworm tags (see the rust toolchain rule).",
+      "managerFilePatterns": ["/^rust-toolchain\\.toml$/"],
+      "matchStrings": ["channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)-slim-bookworm$"
+    },
+    {
+      "customType": "regex",
+      "description": "rust-version in the workspace and fuzz manifests, the channel's major.minor, from the rust image's x.y-slim-bookworm tags (see the rust toolchain rule).",
+      "managerFilePatterns": ["/^Cargo\\.toml$/", "/^fuzz/Cargo\\.toml$/"],
+      "matchStrings": ["rust-version = \"(?<currentValue>\\d+\\.\\d+)\""],
+      "depNameTemplate": "rust",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker",
+      "extractVersionTemplate": "^(?<version>\\d+\\.\\d+)-slim-bookworm$"
+    },
+    {
+      "customType": "regex",
+      "description": "tools.txt and tools-source.txt: one name@version per line, resolved on crates.io.",
+      "managerFilePatterns": ["/^tools\\.txt$/", "/^tools-source\\.txt$/"],
+      "matchStrings": ["(?<depName>[a-z0-9_-]+)@(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "datasourceTemplate": "crate"
+    },
+    {
+      "customType": "regex",
+      "description": "nextest-version, which must equal the cargo-nextest pin in pyproject.toml, read from the same conda-forge package.",
+      "managerFilePatterns": ["/^\\.config/nextest\\.toml$/"],
+      "matchStrings": ["nextest-version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "cargo-nextest",
+      "packageNameTemplate": "conda-forge/cargo-nextest",
+      "datasourceTemplate": "conda"
+    },
+    {
+      "customType": "regex",
+      "description": "The tooling package's release tag.",
+      "managerFilePatterns": ["/^pyproject\\.toml$/"],
+      "matchStrings": [
+        "biscuit-games-tooling = \\{ git = \"https://github\\.com/(?<packageName>[^\"]+)\", tag = \"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\" \\}"
+      ],
+      "depNameTemplate": "biscuit-games-tooling",
+      "datasourceTemplate": "github-tags"
+    },
+    {
+      "customType": "regex",
+      "description": "requires-pixi, the floor that moves with pixi-version in the setup action.",
+      "managerFilePatterns": ["/^pyproject\\.toml$/"],
+      "matchStrings": ["requires-pixi = \">=(?<currentValue>\\d+\\.\\d+\\.\\d+)\""],
+      "depNameTemplate": "prefix-dev/pixi",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "setup-pixi's pixi-version input, read here rather than by the github-actions manager, under the requires-pixi floor's depName.",
+      "managerFilePatterns": ["/^\\.github/actions/setup/action\\.yml$/"],
+      "matchStrings": ["pixi-version: v(?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "prefix-dev/pixi",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Hook revs in both prek configs: a full SHA with the release tag as its comment. lychee's lychee-v comment does not match.",
+      "managerFilePatterns": ["/^\\.pre-commit-config\\.yaml$/", "/^\\.pre-commit-fix\\.yaml$/"],
+      "matchStrings": [
+        "- repo: https://github\\.com/(?<depName>[^/\\s]+/[^/\\s]+)\\n    rev: (?<currentDigest>[a-f0-9]{40}) # (?<currentValue>v\\d+(?:\\.\\d+)+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "loose",
+      "autoReplaceStringTemplate": "- repo: https://github.com/{{{depName}}}\n    rev: {{{newDigest}}} # {{{newValue}}}"
+    }
+  ]
+}

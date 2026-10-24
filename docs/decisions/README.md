@@ -38,6 +38,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0015](0015-container-image.md) | The container image |
 | [0016](0016-release-process.md) | The release process |
 | [0017](0017-mutation-bench-and-fuzz.md) | Mutation testing, benchmarks and fuzzing |
+| [0018](0018-renovate.md) | Dependency updates through Renovate |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Two recipes in the gate list decision 0009
@@ -53,11 +54,11 @@ there, and keeps the topic slug it had, because the slug is what a cross-reposit
 reference names. Three entries are new here: 0001, 0008 and 0014. Nothing here is
 rendered from a template, so no frozen inventory of numbers applies.
 
-Numbers 0015 to 0018 are reserved for the wave-2 tickets that take those decisions: 0015
+Numbers 0015 to 0018 were reserved for the wave-2 tickets that took those decisions: 0015
 for the container image (T13), 0016 for the release process (T14), 0017 for mutation
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
-Renovate (T17). Each adds its file, its manifest entry and its row above. The next
-decision this repository takes outside those is 0019.
+Renovate (T17). Each added its file, its manifest entry and its row above. The next
+decision is 0019.
 
 ## Writing a new one
 

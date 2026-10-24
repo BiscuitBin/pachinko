@@ -64,6 +64,24 @@ for tests are never a source to use where unpredictability matters.
   strategy, so nothing unsigned arrives by it
   ([decision 0012](../decisions/0012-metrics-gate.md)). It also runs with the GitHub
   token unset, so the build scripts it compiles cannot read the token.
+- **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
+  app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
+  this one alone, and the one party outside the maintainer and GitHub Actions that holds
+  write access here ([decision 0018](../decisions/0018-renovate.md)). The installation
+  holds read access to administration, Dependabot alerts, metadata, packages and the
+  organisation's members, and read and write access to checks, contents, commit
+  statuses, issues, pull requests and workflows, as the organisation's installation
+  record lists them (`gh api orgs/BiscuitBin/installations`). Because the installation is
+  organisation-wide, those permissions reach every `BiscuitBin` repository, including any
+  added later.
+  The app never merges: `renovate.json` sets `"automerge": false`, and `main` takes nothing
+  without a green `check`, a context bound to the GitHub Actions app, so no other app can
+  report it. Branch protection requires no review, so that the maintainer merges is
+  policy resting on automerge staying off, not something protection enforces. Every
+  update waits for approval on Renovate's dependency dashboard, with one exception: once
+  vulnerability alerts are enabled on the repository, Renovate's vulnerability-fix pull
+  requests skip that approval by default, so one can open unasked. A Renovate branch runs
+  the same jobs as anyone's, with `contents: read` and no secret.
 - **Memory safety.** `#![forbid(unsafe_code)]` holds in every crate through the
   workspace lint table in the root `Cargo.toml`, which sets `unsafe_code = "forbid"` for
   every member that inherits it. `forbid`, not `deny`: no member and no item can opt back

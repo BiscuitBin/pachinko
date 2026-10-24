@@ -17,8 +17,63 @@ stated deviation from the games' exact-pin rule, because a library that writes `
 poisons every downstream resolution: two crates pinning different patch releases of one
 dependency cannot be built together. The tools are the other way round: `pyproject.toml`
 pins each one exactly, and `pixi.lock`, committed beside it, records the resolution.
-Nothing updates either lockfile for you, and a maintainer moves every pin by hand.
-Renovate takes that over when ticket T17 lands; until then there is no bot here.
+Renovate reads the pins ([decision 0018](../decisions/0018-renovate.md)) and lists every
+pending move on its dependency dashboard, an issue in this repository. Its Mend app is
+installed, but until `renovate.json` reaches `main` (ticket T17), every pin below moves by
+hand. Nothing opens
+until you approve that move there, with one exception: once vulnerability alerts are
+enabled on the repository, a vulnerability-fix pull request opens without approval.
+Renovate never merges. What it does not read is below, under
+[What the updater proposes and what stays manual](#what-the-updater-proposes-and-what-stays-manual).
+
+## What the updater proposes and what stays manual
+
+`renovate.json` at the repository root names every pin Renovate reads, and every rule
+in it waits for a dashboard click while `:dependencyDashboardApproval` is in its
+`extends`, vulnerability fixes excepted. An approved pull request runs the same jobs as
+any branch, with `contents: read` and no secret. Read its diff as you would anyone's;
+the security model lists what the app itself may do
+([Security model](../explanation/security-model.md)).
+
+| Group | What moves |
+| --- | --- |
+| `crates` | `Cargo.lock` and `fuzz/Cargo.lock` within the caret ranges, or a range itself when a release falls outside it, which is the diff to read |
+| `github actions` | each remote action's SHA with its version comment, in the workflows and the `setup` action |
+| `rust toolchain` | `channel`, `rust-version` in both manifests, and the `Dockerfile`'s build-stage `rust` tag and digest |
+| `distroless base` | the run stage's digest under its `nonroot` tag |
+| `pixi bootstrap` | `requires-pixi` in `pyproject.toml` and `pixi-version` in the `setup` action, together |
+| `cargo-nextest` | the pin in `pyproject.toml` and `nextest-version` in `.config/nextest.toml`, together |
+| `hook revs` | every hook SHA and comment in both prek configurations, but lychee's |
+| one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
+| lock-file maintenance | the transitive closure of `Cargo.lock`, `fuzz/Cargo.lock` and `pixi.lock` |
+
+Major updates open in a pull request of their own beside their group's, because
+Renovate's `separateMajorMinor` is on and takes precedence over a group.
+
+Four moves stay with you:
+
+- **lychee.** `LYCHEE_VERSION` in both of its argument lists must match its rev comment,
+  and its tags are prefixed `lychee-v`, so `renovate.json` disables it. Move all three
+  together, as [Hook pins](#hook-pins) describes.
+- **The allium binary.** Its version and checksums are inside `biscuit-games-tooling`;
+  they move when that tag moves ([Moving the Allium binary](#moving-the-allium-binary)).
+- **`pixi.lock` after a `pyproject.toml` change.** Whether the hosted app may run
+  `pixi lock` is not documented. A Renovate branch that edits a pixi pin, the tooling tag
+  or `requires-pixi` may leave `pixi.lock` stale, which `just lock-check` and setup-pixi
+  refuse. Relock on that branch with `pixi update <name>`, or `pixi update` for lock-file
+  maintenance, and push the result under your own name.
+- **`requires-python`.** pixi owns Python, so `renovate.json` disables the `pep621`
+  manager's reading of this floor in `pyproject.toml`; move it with the `python` pin.
+
+A toolchain pull request is a prompt, not a finished change. clippy's lint set moves with
+the release, so a red `rust` job on that branch is often new lints, but the job runs
+formatting, tests, snapshots and documentation as well: read which step failed. For a lint
+failure, check the branch out, run `just clippy`, fix what it finds and push. No manager
+reads the version the crate READMEs and the `Dockerfile`'s first comment repeat; update
+those on the same branch.
+`rust-version` moves only on a minor release; a patch release leaves `1.99` correct. All
+three places take their versions from the `rust` image's `-slim-bookworm` tags on Docker
+Hub, so the channel never moves to a release that has no image yet.
 
 ## Check that the lockfiles still match
 
@@ -118,9 +173,11 @@ in `pyproject.toml` and an exact `pixi-version` on the `setup-pixi` step in
 
 ## The toolchain
 
-`channel` in `rust-toolchain.toml` and `rust-version` in the root `Cargo.toml` move
-together. After a bump run `just install-toolchain`, then `just clippy`, because the lint
-set moves with the release and `-D warnings` turns every new lint into a failure.
+`channel` in `rust-toolchain.toml`, `rust-version` in the root and fuzz `Cargo.toml`, and
+the `Dockerfile`'s build-stage `rust` tag move in Renovate's one `rust toolchain` pull
+request, `rust-version` only on a minor release. On its branch run `just
+install-toolchain`, then `just clippy`, because the lint set moves with the release and
+`-D warnings` turns every new lint into a failure.
 
 ## Hook pins
 
@@ -129,8 +186,9 @@ full commit SHA, with the release tag as a comment. lychee also carries `LYCHEE_
 at the head of both its argument lists, which must match the comment; the comment beside
 the hook says why. The `builtin` hygiene hooks carry no pin.
 
-To move a pin, resolve the release's commit and replace both the SHA and the comment,
-in every file that names the hook. Tags are often annotated, so ask for the commit: the
+Renovate's `hook revs` group moves every hook but lychee. To move lychee, or any pin by
+hand, resolve the release's commit and replace both the SHA and the comment, in every
+file that names the hook. Tags are often annotated, so ask for the commit: the
 SHA a tag reference answers with names the tag object, which neither a `rev:` nor a
 `uses:` line accepts. For typos, the worked example:
 
@@ -207,8 +265,8 @@ the pin, but only after `just install-allium` has actually installed it.
 `ci.yml`, `audit.yml`, `pages.yml` and the composite `setup` action pin every remote action in a
 `uses:` line to a full commit SHA with its version comment, never to a tag. The one
 exception is the local `uses: ./.github/actions/setup`, a path in this repository that
-moves with the commit that calls it. The same `gh api` line resolves a tag to
-the commit to paste. The toolchain the jobs build with is not pinned here: the setup
+moves with the commit that calls it. Renovate's `github actions` group moves the SHAs and
+comments; by hand, the same `gh api` line resolves a tag to the commit to paste. The toolchain the jobs build with is not pinned here: the setup
 action runs `just install-toolchain`, so CI reads `rust-toolchain.toml` like everyone else.
 
 `actionlint` runs inside `just lint`, so a malformed workflow fails locally.
