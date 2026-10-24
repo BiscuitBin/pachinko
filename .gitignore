@@ -59,3 +59,9 @@ mutants.out*/
 # (allium-skill-reference/allium/driving-the-loop.md, section 8), which the
 # loop would otherwise append here itself.
 .allium-loop/
+
+# Fuzz build products, corpora and crash/coverage output (lockfile is committed).
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/

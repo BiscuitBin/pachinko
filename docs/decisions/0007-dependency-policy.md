@@ -27,10 +27,10 @@ library's manifest is written for the consumer that would reopen decision 0001, 
 outside this workspace, and that consumer would inherit whatever it says.
 
 Two further facts shape the mechanism. The gate runner snapshots the worktree between
-recipes and aborts on any change, so no recipe may rewrite `Cargo.lock`. And no crate
-depends on anything outside the workspace yet: the one dependency is the service's path
-dependency on `libpachinko`, and the first external one arrives with the specification
-that needs it, because cargo-shear fails the gate on a dependency nothing uses.
+recipes and aborts on any change, so no recipe may rewrite `Cargo.lock`. The first
+external dependencies are development harnesses introduced by T16; normal
+workspace dependencies still consist only of the service’s path dependency on
+`libpachinko`. Cargo-shear fails the gate on a dependency nothing uses.
 
 ## Decision
 
@@ -66,6 +66,25 @@ its Provenance section lists this record among the deliberate deviations from th
 conventions.
 The reason is the one above. An exact pin is a promise about this repository's
 resolution; in a library it becomes a demand on everyone else's.
+
+## Harness dependencies
+
+T16 adds divan 0.1.21 through `[workspace.dependencies]` as a library development
+dependency only. It provides the benchmark harness and black box; it is outside the
+graph consumers resolve and cargo-deny’s `exclude-dev` graph. Its MSRV is 1.80.0,
+below the pinned compiler. Its transitive packages are committed in `Cargo.lock`.
+
+The unpublished `fuzz/` crate is excluded from the workspace. It names libfuzzer-sys
+0.4.13 directly because it cannot inherit workspace dependencies; this is the explicit
+exception to inheritance above. Its libFuzzer driver supplies the byte fuzzing harness,
+and `fuzz/Cargo.lock` pins its separate graph. `lock-check` proves that lock offline
+alongside the workspace and pixi locks. cargo-fuzz 0.13.2 is a tool pin in `tools.txt`,
+with no locked flag: `just fuzz` validates the locks first and runs offline.
+
+Unlike the service's workspace path dependency, the unpublished fuzz harness names
+`libpachinko` by path alone: its excluded manifest is not updated by cargo-release.
+This exception avoids a stale version constraint; a library version bump still requires
+refreshing `fuzz/Cargo.lock` before the locked checks can pass.
 
 ## Consequences
 

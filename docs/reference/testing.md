@@ -15,10 +15,11 @@ runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests 
 `.config/nextest.toml` names the minimum nextest version it needs (the pin itself is in
 `pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
-report, is there for a job that wants one; no recipe selects it today. Neither crate has
-a development dependency yet. A property-test crate and insta, the snapshot crate, each
-arrive with the first test that needs it, as a development dependency only, with the
-note [decision 0007](../decisions/0007-dependency-policy.md) asks for beside its range.
+report, is there for a job that wants one; no recipe selects it today. Divan is the
+library’s development dependency for benchmarks. A property-test crate and insta, the
+snapshot crate, each arrive with the first test that needs it, as a development
+dependency only, with the note that
+[decision 0007](../decisions/0007-dependency-policy.md) asks for beside its range.
 
 ## Layout
 
@@ -187,7 +188,7 @@ outside the recipes are ignored.
 writing a snapshot or pending file. The snapshot gate also rejects a `.snap` file no
 test refers to. It runs the entire suite through cargo-insta with nextest and every
 feature, so every reference is seen. cargo-insta cannot pass `--locked` to nextest;
-the snapshot recipes validate both locks first and run cargo-insta offline.
+the snapshot recipes validate all three locks first and run cargo-insta offline.
 
 A changed snapshot asks whether the change was intended. The person who changed it reads
 the diff, reviews pending snapshots through `just snapshots-review` at a terminal, and
@@ -196,6 +197,41 @@ accepts without prompting and deletes any `.snap` file no test refers to. Give t
 in the pull request or hand-back notes.
 The [snapshot workflow](../how-to/test-and-debug.md#read-and-accept-a-changed-snapshot)
 explains the commands in order.
+
+## Benchmarks
+
+`just bench` runs the divan smoke benchmark over `libpachinko::version()`, passing
+its function pointer and result through `divan::black_box` to retain a runtime call.
+The measurement includes indirect-call overhead. Extra Cargo options may follow the
+recipe. This establishes the harness; real workloads arrive with their specifications.
+Timings depend on the machine and its load, so benchmarks run manually and never in CI
+or `just check`. Clippy still compiles the bench target in the gate.
+
+## Fuzzing
+
+`just fuzz` runs the `smoke` target for 300 seconds; `just fuzz smoke 20` selects a
+shorter run. Compilation is additional time. The target feeds arbitrary bytes to a
+local UTF-8 round-trip check and calls the library’s version function. It is a harness
+smoke test, with no claim about a domain parser. A panic fails the run and writes a
+reproducer under `fuzz/artifacts/smoke/`.
+
+The recipe uses the pinned stable toolchain with `--sanitizer none`; it does not need
+nightly and provides no sanitizer instrumentation. It checks the locks before running
+cargo-fuzz offline, since cargo-fuzz cannot take `--locked`. Run `just sync` after a
+lock update. `fuzz/` is excluded from the workspace, has its own committed lockfile and
+repeats the workspace’s unsafe-code and non-ASCII-identifier forbid levels and Clippy
+policy. Keep the copied lint levels aligned with the root table. The existing
+`fmt-check`, `clippy` and `lock-check` recipes reach it by `--manifest-path`, as do the
+matching format, fix, sync and lock operations. libfuzzer-sys compiles C++, so the gate
+needs Xcode command-line tools on macOS or a C++ compiler such as `g++` on Linux.
+The cargo-fuzz 0.13.2 macOS binary is x86 only and needs Rosetta 2 on Apple silicon;
+the recipe selects the native rustc host triple explicitly.
+
+The separate `fuzz.yml` workflow runs weekly and by hand, for 300 seconds per target,
+with crash artifacts uploaded on failure. It is outside the required CI aggregate.
+Corpora, crash artifacts, coverage output and builds are ignored; reproducer files must
+be promoted to regression tests when domain targets arrive. See
+[decision 0017](../decisions/0017-mutation-bench-and-fuzz.md) for the scope and tradeoffs.
 
 ## What the current suite proves
 

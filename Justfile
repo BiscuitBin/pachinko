@@ -56,13 +56,15 @@ install-tools:
 install-allium:
     bg-install-allium
 
-# Both lockfiles, exactly as committed. Never rewrites either.
+# All three lockfiles, exactly as committed. Never rewrites any.
 sync:
     cargo fetch --locked
+    cargo fetch --locked --manifest-path fuzz/Cargo.toml
     pixi install --frozen
 
 lock:
     cargo update --workspace
+    cargo update --workspace --manifest-path fuzz/Cargo.toml
     pixi lock
 
 # Within the manifest's constraints only; every direct pin is exact, so this
@@ -70,6 +72,7 @@ lock:
 # rewrites the pins themselves and is not this recipe.
 lock-upgrade:
     cargo update
+    cargo update --manifest-path fuzz/Cargo.toml
     pixi update
 
 # Offline, like every gate recipe: a cold Cargo cache fails rather than
@@ -78,6 +81,7 @@ lock-upgrade:
 # would otherwise rewrite a stale lock from that restricted solve.
 lock-check:
     cargo update --workspace --locked --offline
+    cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
     pixi lock --check --offline --dry-run
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
@@ -95,6 +99,16 @@ install-hooks:
     -RUSTUP_AUTO_INSTALL=0 prek run lychee --files README.md
 
 # ---------------------------------------------------------------- develop ---
+
+# Timings measure the machine: run manually, never in CI or the gate.
+bench *args:
+    cargo bench --workspace --all-features --locked --bench '*' "$@"
+
+# cargo-fuzz has no --locked: validate locks first, then run offline. The host
+# target avoids the x86 default of cargo-fuzz's macOS binary on Apple silicon.
+# Stable with no sanitizer; seconds bounds fuzzing time, excluding compilation.
+fuzz target="smoke" seconds="300": lock-check
+    CARGO_NET_OFFLINE=true cargo fuzz run "$1" --sanitizer none --target "$(rustc -vV | sed -n 's/^host: //p')" -- -max_total_time="$2"
 
 build:
     cargo build --workspace --all-features --locked
@@ -116,7 +130,7 @@ test-doc:
 # Optional baseline overrides discovery. Before any library release, compare this
 # branch with main's merge base; afterwards use the latest reachable library tag.
 # Outside the full gate: API compatibility is advisory until the 1.0 release.
-# semver-checks does not accept --locked, so prove both locks first and run offline.
+# semver-checks does not accept --locked, so prove all locks first and run offline.
 semver baseline="": lock-check
     #!/bin/sh
     set -eu
@@ -161,6 +175,7 @@ snapshots-accept: lock-check
 
 format:
     cargo fmt --all
+    cargo fmt --manifest-path fuzz/Cargo.toml
     taplo fmt
 
 # Automatic repairs. The fix config is run twice because a
@@ -168,7 +183,9 @@ format:
 fix:
     -prek run --all-files --config .pre-commit-fix.yaml
     prek run --all-files --config .pre-commit-fix.yaml
+    cargo fmt --manifest-path fuzz/Cargo.toml
     cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged
+    cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
     just lint
 
 # ------------------------------------------------------------------ check ---
@@ -178,6 +195,7 @@ lint:
 
 fmt-check:
     cargo fmt --all --check
+    cargo fmt --manifest-path fuzz/Cargo.toml --check
 
 toml-check:
     taplo fmt --check
@@ -187,6 +205,7 @@ toml-check:
 # local build never breaks mid-edit; this is where warnings become failures.
 clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked -- -D warnings
 
 # Gate 7: complexity, cohesion and coupling, through rustqual against
 # rustqual.toml, once per crate. The version check comes first: rustqual's
