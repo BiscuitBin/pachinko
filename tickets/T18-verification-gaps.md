@@ -147,10 +147,12 @@ git status --short
 
 ## Hand-back notes
 
-Executed on 2026-10-23. Only this ticket is a deliverable. The source under test was
-`main` at `c1b4bcb`; the ticket branch is `ticket/t18-verification-gaps` (the
+Executed on 2026-10-23, with items 1, 3 and 7 rerun on 2026-10-24 as described below.
+Only this ticket is a deliverable. The source under test was `main` at `c1b4bcb`, and
+`7dbed57` for those reruns; the ticket branch is `ticket/t18-verification-gaps` (the
 Supacode-created uppercase branch name was normalized before committing). No product
-behaviour, gate, recipe, handbook page or dependency changed.
+behaviour, gate, recipe, handbook page or dependency changed. Outside the repository,
+item 1 leaves the primary checkout's pre-commit shim installed, as AGENTS.md intends.
 
 The table is the disposition of all thirteen items. An Open row is intentionally not a
 claim of verification. The quoted excerpts below are the durable evidence; raw logs
@@ -158,15 +160,21 @@ remain uncommitted. Absolute paths in command output identify the original execu
 locations, not files a later reader needs. Parenthesized empty-output annotations are
 editorial, not command output.
 
+On 2026-10-24 the maintainer authorized the remaining checks. Items 1, 3 and 7 were
+then run against `main` at `7dbed57` (T12's merge; it changes no crate source, recipe or gate configuration, but it does
+change `README.md`, which initialization's lychee hook and `just check` read, so the
+reruns are evidence at `7dbed57`, not at `c1b4bcb`), each in a section headed by that commit. Items 2 and 4 stay Open: they
+wait on a snapshot and on a calendar event, not on authorization.
+
 | Item | Disposition | Evidence or reason; closing event for Open items |
 | --- | --- | --- |
-| 1. Primary hook shim | Open | This session has no authorization to initialize or make a trial commit in the primary checkout. A maintainer-authorized run of item 1 on primary `main`, including the rejected commit and branch cleanup, closes it. The secondary worktree's initialization skips hook installation. |
-| 2. Snapshot recipes | Open | There is still no snapshot or `insta` dependency. The first ticket that takes a snapshot must quote accept writing it, check rejecting a change, and review listing it. No fixture or dependency was added here. |
-| 3. Empty caches | Open | Initialization and the complete gate pass with the named cache directories isolated, but the existing home directory remains visible and Cargo reuses the host's whole `bin` directory, including `cargo-binstall`. This does not prove that no cache was reused. A maintainer's run in a fresh user account, VM or container with independently verified empty tool caches, quoting initialization, the full gate and its tested commit, closes it. |
-| 4. Network recipes and scheduled Audit | Open | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The successful GitHub API read reports zero scheduled Audit runs on `main`. The first successful Monday 06:00 UTC scheduled Audit run on `main`, quoted by URL, tested commit and conclusion, closes the remaining part. |
+| 1. Primary hook shim | Closed | At `7dbed57`, after the maintainer's authorization: the primary checkout's `just initialize` installed the shim, and its hook refused a malformed specification with `Specification diagnostics ... Failed` and exit 1. The scratch branch was deleted and the primary checkout left clean. |
+| 2. Snapshot recipes | Open | There is still no snapshot or `insta` dependency, and authorization does not change that: the ticket names the first ticket that takes a snapshot as the closing event. It must quote accept writing it, check rejecting a change, and review listing it. No fixture or dependency was added here. |
+| 3. Empty caches | Closed | At `7dbed57`, in a new `linux/amd64` Ubuntu 24.04 container as a new user: `.cargo`, `.rustup`, `.pixi`, `.cache` and prek's directories were absent and no rustup, cargo, pixi, just, prek or cargo-binstall was on `PATH`. After the handbook's two installers, `just initialize` and `just check` both exit 0. The 2026-10-23 run with only named cache directories isolated is kept below as superseded. |
+| 4. Network recipes and scheduled Audit | Open | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The successful GitHub API read reports zero scheduled Audit runs on `main`. Re-read on 2026-10-24 at 03:13 UTC (`gh run list --workflow audit.yml --branch main --event schedule` printed `[]`): still zero `schedule` runs, the only Audit run on `main` being a `workflow_dispatch`. The first successful Monday 06:00 UTC scheduled Audit run on `main` (first due 2026-10-26), quoted by URL, tested commit and conclusion, closes the remaining part. |
 | 5. Optional banned crate | Closed | The optional path dependency `rand`, behind `probe-rand`, is named by the effects rejection. |
 | 6. Every ban, both ways | Closed | At the T11 merge: all 373 required negative cases match their own exact diagnostics, covering eight crate bans and 121 API entries through 119 fixture functions. The restored effects control passes. |
-| 7. Linux network denial | Open | Host is macOS. The cached Linux container is ARM64, whereas the pinned pixi workspace supports `linux-64`; its unprivileged `unshare -rn` also fails to launch. This is not denial evidence. An authorized x86-64 Linux environment that can create the namespace must run the full gate with only `lo` and both failing curl controls under §11. |
+| 7. Linux network denial | Closed | At `7dbed57`, in the same `linux/amd64` container run with seccomp and AppArmor unconfined: `unshare -rn` held only `lo`, both §11 curl controls failed (exit 6 and 7), and `just check` exit 0 inside the denial. The 2026-10-23 ARM64 attempt is kept below as superseded. |
 | 8. Tutorial on main | Closed | Own main-based scratch clone initialized; baseline, docs, both predicted failures, corrected suite, full gate and restoration all executed. |
 | 9. Gate negative controls | Closed | Format, feature powerset, coverage floor, rustdoc, unused dependency, and deny license/source/openssl controls each reach the intended rejection and pass again after restoration. |
 | 10. Claims carried from L | Closed | crates.io search, rustqual counting and suppression controls, all upstream release asset records, and Cargo cycle pair executed. Third-party QuickInstall archives are distinguished from upstream release assets. |
@@ -206,10 +214,243 @@ Exit status: 0
 
 ### Item 1: primary hook shim — commit `c1b4bcb`
 
+Superseded by the authorized rerun above, which closes item 1.
 No primary-checkout command was run: the authorization stop in item 1 applies.
 The ticket's explicit Open disposition is used; no primary-checkout operation is
 awaiting or assumed to have approval. The maintainer's separately authorized primary
 checkout trial, including its rejected commit and branch cleanup, is the closing event.
+
+### Item 1, rerun: primary hook shim — commit `7dbed57`
+
+Run on 2026-10-24 in the primary checkout, `/Users/scutting/projects/pachinko`, after
+the maintainer authorized it. That checkout was on `main`, clean, and already at
+`origin/main` once fetched; it had no `.pixi/`, `.tools/` or hook before this run.
+rustup's proxy was put first on `PATH`, as in the baseline above.
+
+```text
+$ git pull --ff-only # primary checkout
+Already up to date.
+$ git rev-parse --short HEAD
+7dbed57
+$ git status --short
+(stdout empty)
+Exit status: 0
+```
+
+The quoted status is `git status --short`'s; the pull's output was piped through
+`tail`, so its own status was not captured, and `rev-parse` printing the expected
+commit is the evidence it took effect. The initialize exit below is zsh's `${pipestatus[1]}`, the recipe's own status, not that
+of the `tail` that trimmed its output.
+
+```text
+$ PATH=$HOME/.cargo/bin:$PATH just initialize # primary checkout, last 12 lines
+prek install --overwrite --hook-type=pre-commit --prepare-hooks
+Installed Git hook at `.git/hooks/pre-commit`
+prek prepare-hooks --config .pre-commit-fix.yaml
+RUSTUP_AUTO_INSTALL=0 prek run lychee --files README.md
+lychee...................................................................Passed
+
+Ready. Next: just check.
+Nothing has been formatted, staged, committed, tagged, or pushed.
+initialize exit 0
+```
+
+```text
+$ command ls -l .git/hooks/pre-commit # primary checkout; `command` bypasses a shell alias
+-rwxr-xr-x@ 1 scutting  staff  427 Oct 23 20:07 .git/hooks/pre-commit
+Exit status: 0
+```
+
+The shim's line 6 names the primary checkout's own prek:
+`PREK="/Users/scutting/projects/pachinko/.pixi/envs/default/bin/prek"`.
+
+On the scratch branch `t18-hook-probe`, the line `this is not allium {{{` was appended
+to `docs/specs/pachinko.allium`, staged, and committed without `--no-verify`:
+
+```text
+$ git commit -m 'T18 hook probe: malformed spec' # primary checkout, excerpt
+Documentation contract...................................................Passed
+Agent instruction contract...........................(no files to check)Skipped
+Specification diagnostics................................................Failed
+- hook id: check-specs
+- exit code: 1
+
+  docs/specs/pachinko.allium: 1 diagnostic
+    docs/specs/pachinko.allium:22:1: error: parse error: expected declaration (entity, rule, enum, value, config, surface, actor, given, default, variant, deferred, use, open question, contract, invariant), found 'this'
+Specification analysis...................................................Failed
+commit exit 1 # git commit's own status, from `$?`
+$ git log -1 --format='%h %s'
+7dbed57 Merge pull request #11 from BiscuitBin/ticket/T12-maintainer-docs
+```
+
+The commit did not land. The file was restored and the branch deleted, as one `&&`
+chain ending in `git status --short`, whose status is quoted:
+
+```text
+$ git restore --staged --worktree docs/specs/pachinko.allium
+$ git switch -q main
+$ git branch -D t18-hook-probe
+Deleted branch t18-hook-probe (was 7dbed57).
+$ git status --short # primary checkout
+(stdout empty)
+Exit status: 0
+```
+
+The shim stays installed: AGENTS.md has the primary checkout install it once, and it
+now runs for commits from every worktree, this one included.
+
+### Items 3 and 7, rerun: fresh x86-64 Linux — commit `7dbed57`
+
+One container ran both items, so item 7's denial applies to the clone item 3 had just
+initialized. A first container run piped `just initialize` through `tail`, so its
+quoted exit status was `tail`'s; the review caught it, and that run is discarded. Every
+output below is from the second run, in a new container from the same image, which
+captures each recipe's own status. Both runs printed the same results.
+
+The host command and the default-seccomp control, from the run log:
+
+```text
+host$ docker run --rm --name t18-linux2 --platform linux/amd64 --security-opt seccomp=unconfined --security-opt apparmor=unconfined -v /Users/scutting/projects/pachinko:/src:ro -v $scratch/run.sh:/run.sh:ro ubuntu@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac sh /run.sh
+host$ docker run --rm --platform linux/amd64 ubuntu@sha256:68ee... sh -c 'unshare -rn true; echo "unshare without seccomp flag: exit $?"'
+unshare: unshare failed: Operation not permitted
+unshare without seccomp flag: exit 1
+```
+
+OrbStack ran the image as `linux/amd64` under Rosetta (`uname -sm` below). The two
+`--security-opt` flags are the only container settings changed, and only so the
+namespace can launch. The primary checkout was bind-mounted read-only at `/src`,
+used only as the clone source, and the container was removed after the run
+(`docker run --rm`, exit 0).
+
+As root, apt installed `curl git ca-certificates build-essential iproute2 xz-utils`
+(system packages, not tool caches; exit 0) and created the new user `t18`. Everything
+below ran as `t18`, with `PATH=$HOME/.cargo/bin:$HOME/.pixi/bin:/usr/local/bin:/usr/bin:/bin`.
+
+```text
+$ uname -sm; id -un; echo HOME=$HOME
+Linux x86_64
+t18
+HOME=/home/t18
+Exit status: 0
+$ ls -A $HOME
+.bash_logout
+.bashrc
+.profile
+run.sh
+Exit status: 0
+$ for d in .cargo .rustup .pixi .cache .local/share/prek .cache/prek; do ...; done # loop body abbreviated
+.cargo absent
+.rustup absent
+.pixi absent
+.cache absent
+.local/share/prek absent
+.cache/prek absent
+Exit status: 0
+$ command -v rustup cargo pixi just prek cargo-binstall || true
+(stdout empty)
+Exit status: 0
+```
+
+`run.sh` is the script driving this run. The two one-time installers are the ones
+`docs/how-to/develop-locally.md` gives, with rustup's non-interactive flags:
+
+```text
+$ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+Exit status: 0
+$ curl -fsSL https://pixi.sh/install.sh | sh
+Exit status: 0
+$ pixi --version; rustup --version; command -v cargo
+pixi 0.83.0
+rustup 1.29.2 (d8c92c676 2026-10-21)
+/home/t18/.cargo/bin/cargo
+Exit status: 0
+$ pixi global install just; command -v just
+/home/t18/.pixi/bin/just
+Exit status: 0
+$ git -c safe.directory="*" clone -q /src $HOME/work
+Exit status: 0
+$ git rev-parse --short HEAD; git status --short
+7dbed57
+Exit status: 0
+```
+
+Item 3, the first run with every cache empty:
+
+```text
+$ just initialize > $HOME/init.log 2>&1; rc=$?; tail -15 $HOME/init.log; exit $rc
+downloading https://github.com/juxt/allium-tools/releases/download/v3.6.1/allium-x86_64-unknown-linux-gnu.tar.gz
+installed allium 3.6.1 at /home/t18/work/.tools/bin/allium
+cargo fetch --locked
+pixi install --frozen
+✔ The default environment has been installed.
+git rev-parse --is-inside-work-tree >/dev/null
+test -x .pixi/envs/default/bin/prek || { printf '%s\n' 'the pixi environment is not installed; run just initialize first' >&2; exit 2; }
+prek install --overwrite --hook-type=pre-commit --prepare-hooks
+Installed Git hook at `.git/hooks/pre-commit`
+prek prepare-hooks --config .pre-commit-fix.yaml
+RUSTUP_AUTO_INSTALL=0 prek run lychee --files README.md
+lychee...................................................................Passed
+
+Ready. Next: just check.
+Nothing has been formatted, staged, committed, tagged, or pushed.
+Exit status: 0
+```
+
+The same log shows rustup installing the pinned toolchain from nothing, and rustqual
+compiled from source:
+
+```text
+$ grep -nE "downloading|installing|installed|active-toolchain|1\.99" $HOME/init.log | head -20 # excerpt
+4:info: syncing channel updates for 1.99.1-x86_64-unknown-linux-gnu
+6:info: downloading 6 components
+7:info: the active toolchain `1.99.1-x86_64-unknown-linux-gnu` has been installed
+13:1.99.1-x86_64-unknown-linux-gnu (overridden by '/home/t18/work/rust-toolchain.toml')
+23:cargo-binstall:  WARN The package rustqual v1.8.3 will be installed from source (with cargo)
+Exit status: 0
+```
+
+```text
+$ just check > $HOME/check1.log 2>&1; rc=$?; tail -5 $HOME/check1.log; exit $rc
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+Exit status: 0
+$ git status --short
+(stdout empty)
+Exit status: 0
+```
+
+Item 7, in the same clone, directly afterwards. One `unshare -rn` invocation ran a
+four-step script inside the namespace:
+
+```text
+$ unshare -rn sh $HOME/denied.sh
+--- interfaces in the namespace
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN mode DEFAULT group default qlen 1000\    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+--- control 1
+curl: (6) Could not resolve host: static.rust-lang.org
+curl static.rust-lang.org exit 6
+--- control 2
+curl: (7) Failed to connect to 1.1.1.1 port 443 after 2 ms: Couldn't connect to server
+curl 1.1.1.1 exit 7
+--- just check
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+just check exit 0
+Exit status: 0
+$ git status --short
+(stdout empty)
+Exit status: 0
+```
+
+The denied `just check` reused the `target/` directory the item 3 run had just built,
+as a developer's second run would. It shows the gate needs no network once initialized,
+which is what §11 asks; it is not a cold build under denial.
 
 ### Item 2: snapshots — commit `c1b4bcb`
 
@@ -218,7 +459,7 @@ it cannot close this item. The first snapshot ticket owns the three required tri
 
 ### Item 3: isolated cache directories, incomplete isolation — commit `c1b4bcb`
 
-This item remains Open. The runs below establish only isolation of the named cache
+Superseded by the fresh Linux rerun above, which closes item 3. At the time, this item remained Open. The runs below establish only isolation of the named cache
 directories. They do not establish that every tool ignored other home-rooted state.
 Session instructions prohibit repurposing `HOME`; no fresh account, VM or container
 was created. A fully isolated run with verified empty caches is the closing event.
@@ -1293,6 +1534,9 @@ Exit status: 0
 
 ### Item 7: Linux network denial — commit `c1b4bcb`
 
+Superseded by the fresh Linux rerun above, which closes item 7. This first attempt is
+kept as the record of why it was Open.
+
 `uname -s` returned `Darwin` (exit 0). Docker inspection found the cached pixi
 image to be `arm64 linux` (exit 0); its namespace prerequisite probe returned:
 
@@ -2023,13 +2267,13 @@ Neither reviewer wrote or triaged its own findings.
 | C-1 | Invalid as a checkpoint defect: the final gate and review record were still pending, and the Markdown typo was already corrected. Finalization is recorded below. |
 | C-2 | Invalid: the ticket explicitly permits an Open disposition; no primary-checkout operation was attempted or assumed approved. |
 | C-3 | Invalid: the named maintainer trials are closing events. The Linux prerequisite result was clarified without claiming all container configurations fail. |
-| C-4 | Valid: named cache directories did not establish complete isolation. Item 3 is Open. |
+| C-4 | Valid: named cache directories did not establish complete isolation. Item 3 was Open at that review; the 2026-10-24 rerun closes it. |
 | C-5 | Valid excerpt omission: added the failing gate's own 26.56% total and exact floor-step explanation. |
 | C-6 | Valid: added the restored source-dependency control, which exits 0. |
 | C-7 | Valid: added the inventory and coverage status evidence. |
 | C-8 | Invalid as a checkpoint defect: cleanup was scheduled after review, and restoring generated files resets their content. Removed an unsupported lockfile assertion and labeled the diff artifact accurately. |
 | C-9 | Partly valid: removed the scratch-log citation and distinguished silent-output annotations from actual output; added positive HTML file controls. Genuine absolute paths in output were retained. |
-| B-1 | Valid: the reused Cargo bin symlink includes host tools as well as proxies. Corrected the description; item 3 stays Open. |
+| B-1 | Valid: the reused Cargo bin symlink includes host tools as well as proxies. Corrected the description; item 3 stayed Open until the 2026-10-24 rerun. |
 | B-2 | Partly valid: embedded and executed a fail-closed inventory parser. The actual command results support the other exit annotations; a missing JSON wrapper does not invalidate them. |
 | B-3 | Valid: added direct comparisons of both restored archive copies against their bases. Git status alone cannot inspect ignored scratch copies. |
 | B-4 | Valid excerpt omission, resolved with C-5. |
@@ -2040,7 +2284,7 @@ Neither reviewer wrote or triaged its own findings.
 There were no valid high-severity findings, so §14 requires no second round.
 The reviewers independently confirmed the required per-ban cases, gate rejection
 stages, dependency-exclusion pairs and inventory counts. All valid findings were
-resolved within this ticket's scope. The five Open verification items retain their
+resolved within this ticket's scope. At that review, the five Open verification items retained their
 reasons and closing events; no gate, source, dependency or owning page was changed.
 
 ### Final gate — commit `c1b4bcb` with uncommitted ticket changes
@@ -2055,7 +2299,40 @@ All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
 
+### Rerun review — commit `c1b4bcb` with uncommitted ticket changes
+
+The ticket branch still sits on `c1b4bcb`; the reruns tested a clone of `7dbed57`. One
+fresh-context reviewer, which edited nothing, applied §14's questions to the rerun
+sections against the raw container log, the script that wrote it and the hook output.
+It confirmed that item 7 uses the exact §11 controls with only `lo`, and that no
+requirement of items 1, 3 or 7 was dropped.
+
+| Finding | Verdict and action |
+| --- | --- |
+| R-1 (high) | Valid: the first container run's initialize status was `tail`'s. Items 3 and 7 were rerun in a new container capturing each recipe's own status; only that run is quoted. |
+| R-2 | Partly valid: item 1's statuses came from the session's own `$?` and `${pipestatus[1]}` captures, not the hook log the reviewer had. Each quote now says which status it is, and where a `&&` chain shares one. |
+| R-3 | Valid: the second run's log records the host `docker run` line and the default-seccomp `unshare` failure; both are quoted. |
+| R-4 | Valid: `7dbed57` changes `README.md`, which initialization and the gate read. The intro says so. |
+| R-5 | Valid, minor: statuses labelled, the elided initialize lines restored, toolchain installation quoted. |
+| R-6 | Valid, minor: the hook is quoted with the real `ls -l`, bypassing the shell's alias. |
+| R-7 | Valid, minor: item 4's re-read quotes its command and its `[]` output. |
+| R-8 | Valid, minor: the intro, C-4 and B-1 now say which state they describe; this section and the final gate below record the new hand-back state. |
+
+No high-severity finding remains, so §14 needs no second round. No container, scratch
+branch or primary-checkout change remains, except the hook item 1 installs.
+
+### Final gate after the reruns — commit `c1b4bcb` with uncommitted ticket changes
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
 ## Open points
 
-Items 1, 2, 3, 4 and 7 remain Open for the reasons and closing events in the disposition
-table. No other verification item was dropped.
+Items 2 and 4 remain Open for the reasons and closing events in the disposition table:
+item 2 until the first ticket that takes a snapshot, item 4 until the first scheduled
+Audit run on `main`, due 2026-10-26 at 06:00 UTC. Items 1, 3 and 7 were closed on
+2026-10-24 under the maintainer's authorization. No other verification item was
+dropped.
