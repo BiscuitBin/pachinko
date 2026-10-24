@@ -14,6 +14,7 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 ### Added
 
 - Manual divan benchmarks and stable byte fuzzing with a weekly crash-reporting job.
+- Workspace mutation testing through `just mutants` and a weekly report workflow.
 - An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
   Allium specifications.
 - A pinned toolchain and tools, the `just initialize` setup, and the read-only

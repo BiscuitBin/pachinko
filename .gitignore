@@ -46,8 +46,8 @@ target/
 *.profraw
 lcov.info
 
-# What cargo-mutants writes, if T15 adopts it; ignored now so a first run can
-# never trip the snapshot.
+# T15: `just mutants` writes mutants.out/ and renames the previous run to
+# mutants.out.old; neither can trip the worktree snapshot.
 mutants.out*/
 
 # A test run outside the recipes may leave pending snapshots. A file Git can

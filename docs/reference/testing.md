@@ -127,6 +127,28 @@ Distinguish an untested branch from an unreachable one. Defensive code no input 
 should be deleted rather than covered; see
 [Quality philosophy](../explanation/quality-philosophy.md).
 
+## Mutation testing
+
+`just mutants` runs cargo-mutants over both crates with every feature, mutating a copy
+of the tree and leaving its report in the ignored `mutants.out/`. The previous report
+moves to `mutants.out.old`. Gitignored paths are excluded from the copy. Additional
+arguments can be passed through the recipe, for example `just mutants --list`.
+It uses `cargo test` so doctests participate; nextest would miss those assertions.
+
+- **Caught:** the mutation compiled and a test failed.
+- **Missed:** the changed program still passed its tests; inspect the missing assertion.
+- **Unviable:** the mutation did not compile.
+- **Timed out:** the test exceeded its time limit; inspect the log before drawing a conclusion.
+
+Exit 0 means every viable mutant was caught, 2 means a survivor, 3 a timeout and 4 a
+failing baseline. A red weekly report asks for investigation; it blocks no merge.
+The tool never mutates functions named `new`, so constructor logic still needs tests
+written by a person. Test code is excluded too. Equivalent mutants may be excluded
+through `exclude_re` in `.cargo/mutants.toml`, with a comment explaining why no
+observable behaviour changes. Create that file only when needed; do not add the
+`mutants` crate or a skip attribute. The policy is explained in
+[Quality philosophy](../explanation/quality-philosophy.md).
+
 ## Snapshots
 
 No test takes a snapshot yet. The recipes are in place and cargo-insta is pinned with the

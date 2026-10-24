@@ -93,6 +93,20 @@ evidence that anything works.
 When a test and the code disagree, one of them is wrong and the specification says which.
 Neither is adjusted until it passes.
 
+## Mutation testing asks whether an assertion would notice
+
+Coverage says a line ran. Mutation testing asks whether a test would notice that line
+changing. A survivor on a covered line exposes exactly what the coverage floor cannot
+see; the floor stays at 90 per cent. A surviving mutant is either a missing assertion,
+which gets added, or an equivalent change with no observable difference, which is
+excluded in `.cargo/mutants.toml` with a comment explaining that equivalence.
+
+`just mutants` and the weekly workflow are reports, never gates: the run grows towards
+hours as the workspace grows, and a survivor calls for human judgement rather than a
+score threshold. [Testing](../reference/testing.md#mutation-testing) records the tool's
+outcomes and blind spots; [decision 0017](../decisions/0017-mutation-bench-and-fuzz.md)
+records the adoption.
+
 ## Related pages
 
 - [Quality gates](../reference/quality-gates.md)

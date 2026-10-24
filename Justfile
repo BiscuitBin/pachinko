@@ -268,6 +268,15 @@ deny:
 audit:
     cargo deny --locked check advisories
 
+# Mutation testing, a report and never a gate: it grows with the workspace towards
+# hours, and a mutant that survives asks for a judgement. It mutates a copy of the
+# tree, so the worktree gains only mutants.out/, which Git ignores; the copy leaves
+# out what Git ignores, or it would carry .pixi/ and .tools/ into every build.
+# `cargo test`, not nextest, because nextest skips doctests and a mutant only a
+# doc example catches would be reported missed. Exit 2 means a mutant survived.
+mutants *args:
+    cargo mutants --workspace --all-features --gitignore=true --cargo-arg=--locked "$@"
+
 deps-unused:
     cargo shear
 

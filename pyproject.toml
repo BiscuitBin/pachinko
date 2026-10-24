@@ -27,6 +27,9 @@ cargo-nextest = "==0.9.146"
 cargo-llvm-cov = "==0.9.1"
 cargo-deny = "==0.20.2"
 cargo-insta = "==1.48.0"
+# A weekly report, never a gate (mutants.yml); decision 0017.
+# Verified 2026-10-23: neither conda-forge platform build depends on rust.
+cargo-mutants = "==27.1.0"
 # T14, verified 2026-10-23 on both supported platforms; decision 0016.
 cargo-semver-checks = "==0.51.0"
 # conda-forge's newest on 2026-09-24; the pin follows conda-forge, not crates.io.
