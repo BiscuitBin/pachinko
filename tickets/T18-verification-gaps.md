@@ -70,7 +70,9 @@ Scratch copies, scratch branches and logs live under `ai_tmp/` and are never com
    4. **The network recipes no lane ran.** `just lock` on `main` (then
       `git status --short` empty), `just lock-upgrade` on a scratch branch (quote the diff
       it makes and reset), and `just check-links-online`, each with its exit code
-      (**network, authorised**). `just audit` is closed by CI's Audit run on `main`.
+      (**network, authorised**). `just audit` is closed by CI's Audit run on `main`; its
+      weekly schedule is not, so quote the first scheduled Audit run on `main` (Mondays,
+      06:00 UTC) by its URL and conclusion.
    5. **An optional banned dependency.** In a scratch copy, add `rand` to libpachinko as
       an optional path dependency behind a feature; quote `just effects` failing and
       naming `rand`. The crate line passes `--all-features`, but no lane exercised the

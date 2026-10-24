@@ -78,8 +78,8 @@ the build.
   over `tests/fixtures/effects-violation/`, a fixture that breaks every ban exactly once,
   in the forms code writes it, and fails unless each ban fires there; then it checks that
   none fires on `crates/pachinko`. The crate bans are probed by the same `cargo tree`
-  line over the fixture, which is its own workspace with a committed `Cargo.lock` and
-  offline path-dependency stubs for the banned crates, one of them reached only
+  line over the fixture, which is its own workspace with a committed `Cargo.lock` and an
+  empty offline path dependency named for each banned crate, one of them reached only
   transitively.
 
 ## Consequences
