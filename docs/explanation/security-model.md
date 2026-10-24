@@ -70,8 +70,9 @@ for tests are never a source to use where unpredictability matters.
   in.
 - **No effects in the library.** libpachinko reaches the clock, randomness, the
   filesystem, the network, the environment and threads only through traits it defines,
-  and `just effects` proves the crate bans today; the std-API bans join it with T10,
-  and until then a direct std call is caught by review ([Architecture](architecture.md),
+  and `just effects` holds both its crate bans and its std-API bans, each with a probe
+  that shows every ban fires. Code clippy does not compile and crates outside the ban
+  list are left to review ([Architecture](architecture.md),
   [decision 0003](../decisions/0003-effects-behind-traits.md)).
 - **Workflow permissions.** `ci.yml` and `audit.yml` hold `contents: read` and nothing
   else. `pages.yml` holds more, `pages: write` and `id-token: write`, on its deploy job

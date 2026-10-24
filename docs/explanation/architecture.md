@@ -46,8 +46,8 @@ binary's one-line `main`, and `tests/binary.rs` runs the built binary as a user 
 test, and it means the clock, the filesystem, the environment, the network and threads
 are all nameable from inside it: nothing in the language stops a call to
 `std::time::Instant::now` or `std::fs::read`. So the effects are not unreachable; they
-are banned. Today a gate proves the crate bans hold; the std-API bans join it with T10,
-and until then a direct std call is caught by review.
+are banned, and a gate holds both the crate bans and the std-API bans, with review
+covering what the gate cannot see.
 [Decision 0008](../decisions/0008-std-library.md) records that choice and the
 alternative it rejected.
 
@@ -83,28 +83,48 @@ only; `pachinko` is allowed every effect.
 
 | Banned in `libpachinko` | Which |
 | --- | --- |
-| Crates, through its normal dependency tree | `rand`, `rand_core`, `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2`, and any crate T10 adds with a reason |
+| Crates, through its normal dependency tree | `rand`, `rand_core`, `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2` |
 | std APIs | `std::time::SystemTime::now`, `std::time::Instant::now`, `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`; everything under `std::fs`, `std::env`, `std::net` and `std::process`; `std::thread::spawn`, `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder` |
+
+The table names what is banned; `crates/libpachinko/clippy.toml` is the list, 121 item
+paths. Where another path reaches the same effect it is banned too: the `Path`
+filesystem queries, the unix `fs` and `net` extensions, `std::hash::RandomState`,
+`std::thread::available_parallelism` and the timed `std::sync` waits. A constant cannot
+be banned, so `std::env::consts` stays reachable; it holds compile-time values, not an
+effect.
 
 Development dependencies are exempt, so a test may use a seeded generator. Standard I/O
 (`std::io::stdin` and the rest) is not banned, because no named effect covers it.
+`std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` but stays allowed, by the
+maintainer's choice: it changes diagnostics, not results, so libpachinko should not
+branch on its `status()`.
 
-**What the script checks today.** It runs `cargo tree -p libpachinko -e normal --prefix
-none --locked --offline` and fails if any line names a banned crate, matched as a whole
-name so that `rand` never matches `rand_core`. That covers transitive dependencies on
-the host target, so a target-specific dependency on another platform is not seen, and is
-scoped to `libpachinko` by construction. A positive control comes first: a tree that does
-not list `libpachinko` itself proves nothing, so the script fails on one. It then prints
-that the std-API bans and the probe arrive with T10. This is the only crate guard:
-`deny.toml` bans no effect crate, because its bans are workspace-wide and its `wrappers`
-exempt only a banned crate's direct parents, so a ban there would also reject the crates
-the service reaches transitively. Its one ban is `openssl-sys`, everywhere.
+**The crate bans.** The script reads `cargo tree -p libpachinko -e normal
+--all-features --target all --prefix none --locked --offline` and fails if any line
+names a banned crate, matched as a whole name so that `rand` never matches `rand_core`.
+That covers transitive and optional dependencies on every target, and is scoped to
+`libpachinko` by construction. A positive control comes first: a tree that does not list
+`libpachinko` itself proves nothing, so the script fails on one. This is the only crate
+guard: `deny.toml` bans no effect crate, because its bans are workspace-wide and its
+`wrappers` exempt only a banned crate's direct parents, so a ban there would also reject
+the crates the service reaches transitively. Its one ban is `openssl-sys`, everywhere.
 
-**What T10 adds.** The std-API bans, through the mechanism T10 chooses, and a probe: a
-fixture under `tests/fixtures/effects-violation/` that breaks every ban exactly once, so
-the gate fails unless every named ban fires there and none fires on `crates/pachinko`. A
-ban that cannot be shown to fire is not trusted to hold.
-[Quality gates](../reference/quality-gates.md) lists gate 8 among the others.
+**The std-API bans.** They are clippy's `disallowed-methods` and `disallowed-types`, in
+`crates/libpachinko/clippy.toml`, each with a reason that begins `effect:`. Clippy reads
+the first `clippy.toml` it finds walking up from a crate's manifest, so that file governs
+libpachinko alone, and the service, linted with the root file, keeps every effect.
+Clippy resolves names, so an alias, a glob import, a macro body, a function value and a
+method on a value passed in are all caught. Because the lists name items rather than
+modules, a std item added in a later Rust is not banned until it is listed. Clippy lints
+only what it builds, so code behind a target the host does not compile, under a mix of
+features none of gate 8's passes sets, or under `cfg(not(clippy))` or a custom `cfg` is
+not linted. Review covers all of these.
+
+**The probe.** A ban that cannot be shown to fire is not trusted to hold. A fixture under
+`tests/fixtures/effects-violation/` breaks every ban exactly once, and the gate fails
+unless every ban fires there and none fires on `crates/pachinko`.
+[Quality gates](../reference/quality-gates.md#gate-8-the-effects-bans) lists the script's
+checks in order.
 
 ## What crosses the boundary
 

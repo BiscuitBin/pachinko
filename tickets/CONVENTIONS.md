@@ -237,20 +237,22 @@ Wave 2 creates paths of its own; each wave-2 ticket lists them.
 Root `Cargo.toml` is L `Cargo.toml` with: `repository` and `homepage` set to
 `https://github.com/BiscuitBin/pachinko`; `rust-version` per §2; no
 `[workspace.dependencies]`; the `std_instead_of_core`, `std_instead_of_alloc` and
-`alloc_instead_of_core` lines removed (decision 2); the `module_name_repetitions`
-comment reworded without the sudoku example; the `[profile.release]` comment about pyo3
-removed. T00 lands the full lint table at once, because `-D warnings` is decided by it
-and a skeleton with fewer lints would only move the failures into T02.
+`alloc_instead_of_core` lines removed (decision 2); the `module_name_repetitions` line
+removed (T02: the lint is in the restriction group, which the table never enables); the
+`[profile.release]` comment about pyo3 removed. T00 lands the full lint table at once,
+because `-D warnings` is decided by it and a skeleton with fewer lints would only move
+the failures into T02.
 
 `crates/libpachinko/Cargo.toml`: L `crates/pawdoku/Cargo.toml`'s package shape, every
 field `.workspace = true`, `name = "libpachinko"`, a domain-neutral `description`
-(the `cargo` lint group requires one, plus `keywords`, `categories` and `readme`), no
-`no-std` category, no `[features]` and no dependencies. `src/lib.rs`: the crate docs
-(stating that the domain arrives with the specifications) and one item,
-`pub const fn version() -> &'static str` returning `env!("CARGO_PKG_VERSION")`, with a
-doctest and an in-module unit test, so that every gate has something to format, lint,
-test, document and measure. `env!` is read at compile time and is not the effect
-decision 3 bans.
+with `keywords`, `categories` and `readme` (the metadata the `cargo` group's
+`cargo_common_metadata` names; the lint skips a `publish = false` package, so they are
+kept for the docs and for the day publishing is decided), no `no-std` category, no
+`[features]` and no dependencies. `src/lib.rs`: the crate docs (stating that the domain
+arrives with the specifications) and one item, `pub const fn version() -> &'static str`
+returning `env!("CARGO_PKG_VERSION")`, with a doctest and an in-module unit test, so
+that every gate has something to format, lint, test, document and measure. `env!` is
+read at compile time and is not the effect decision 3 bans.
 
 `crates/pachinko/Cargo.toml`: the same shape, `name = "pachinko"`, one dependency,
 `libpachinko = { path = "../libpachinko", version = "0.1.0" }`. Cargo then enforces the
@@ -520,7 +522,8 @@ Dependencies says none. It declares no entity, rule, surface or invariant. `just
 check-specs` and `just analyse-specs` must each print one block with empty `diagnostics`
 and `findings` (§12 claim 1). If allium refuses a module with no declarations, the
 fallback is the smallest declaration the language reference allows that states no
-behaviour, recorded in T00's hand-back notes and in the module's own comment.
+behaviour, recorded in T00's hand-back notes and in the module's own comment. Outcome
+(T00, T06): allium accepted the module with no declaration, so no fallback was needed.
 
 ### The effects boundary (T10)
 
@@ -537,8 +540,8 @@ What is banned, in libpachinko only:
 
 The mechanism is T10's choice among these, decided by evidence (§12 claim 2):
 
-- **Crates:** a `cargo tree -p libpachinko -e normal --prefix none --locked --offline`
-  line in `scripts/check-effects.sh` that must match none of the banned names (covers
+- **Crates:** a `cargo tree -p libpachinko -e normal --all-features --target all --prefix
+  none --locked --offline` line in `scripts/check-effects.sh` that must match none of the banned names (covers
   transitives, scoped to libpachinko by construction). It is the only crate guard;
   `deny.toml` bans no effect crate (§1 fact 3).
 - **std APIs:** either clippy's `disallowed-methods` and `disallowed-types` in a
@@ -565,9 +568,27 @@ Whatever the mechanism, `scripts/check-effects.sh`:
    transitively (T10 step 4).
 3. Checks that no ban fires on `crates/pachinko`, which is allowed every effect.
 
-T00's version of the script does step 1 for crates only (the `cargo tree` line over an
-empty dependency tree) and prints that the std-API bans and the probe arrive with T10, so
-gate 8 is green and honest from the first commit.
+T00's version of the script did step 1 for crates only (the `cargo tree` line over an
+empty dependency tree) and printed that the std-API bans and the probe arrived with T10,
+so gate 8 was green and honest from the first commit. T00's review widened the crate
+line with `--all-features --target all`, so optional dependencies and those of another
+platform are seen too.
+
+**Outcome (T10, carried by T11).** T10 chose clippy for the std APIs. Clippy reads
+`crates/libpachinko/clippy.toml` for libpachinko alone and shadows the root file, so that
+file restates every root line, and the script's check 0 fails when the two drift.
+rustqual's `forbid_path_prefix` was rejected: it matches text, so it missed `use std as
+s`, a glob, a macro body and a renamed import, and could ban `elapsed` only by name.
+Clippy takes item paths, not modules, so "everything under" a module is a list of its
+stable items: 121 entries with reasons beginning `effect:`, wider than the list above
+where a path reaches the same effect (the `Path` filesystem queries, the unix `fs` and
+`net` extensions, `RandomState`, `available_parallelism`, the timed `std::sync` waits). The
+script runs four checks: 0, the drift check; then the three above, with clippy run three
+times over libpachinko (every feature, none, and every feature in the release profile).
+Known limits, each recorded in T10's Open points: a constant cannot be banned, so
+`std::env::consts` stays reachable; code behind another target's `cfg`, a mix of
+features, `cfg(not(clippy))` or a custom `cfg`, and std items newer than the list are
+left to review; `Backtrace::capture` stays allowed by the maintainer's choice.
 
 ## 10. CI
 
@@ -693,20 +714,20 @@ ticket after T13, T14 and T16, carries claims 7 to 9 from their hand-back notes.
 §12 claims about pixi, prek, binstall and the hooks were settled in L; a ticket re-checks
 them only by running the gate.
 
-| # | Claim | Check | Owner |
-| --- | --- | --- | --- |
-| 1 | allium 3.6.1 reports empty `diagnostics` and `findings` for a module with no declarations | `just check-specs`, `just analyse-specs` on §9's module | T00 first, T06 |
-| 2 | Clippy reads `crates/libpachinko/clippy.toml` for libpachinko alone and shadows rather than merges the root file; rustqual pattern rules can be scoped to one crate by running it over that directory | A deliberate violation in a scratch copy, each mechanism in turn | T10 |
-| 3 | L's lint table is green on the new stable | `just clippy` on T00's pin | T00, T02 |
-| 4 | An integration test running `CARGO_BIN_EXE_pachinko` makes `main.rs` count as covered under `cargo llvm-cov nextest`, so the one-line-main shape reaches 90% | `just coverage`, then `cargo llvm-cov report --show-missing-lines` | T00 first, T02 |
-| 5 | B's pixi git dependency installs in `BiscuitBin` CI with no credential | T00's stub run on `main`, then T01's full run | T01 |
-| 6 | T `scripts/bootstrap_repo.sh` works on an organisation-owned repository; Pages works on the free organisation plan for a public repository | The script without `--apply`, then with it | T01 |
-| 7 | cargo-semver-checks has a usable baseline before the first release (`--baseline-rev`) | A scratch run against `main` | T14 |
-| 8 | cargo-fuzz still works on the pinned stable with `--sanitizer none` | `just fuzz` on the smoke target | T16 |
-| 9 | docker is available locally and on `ubuntu-latest` runners | `docker version`; the first CI run | T13 |
-| 10 | `just snapshots-check` is green on a workspace with no `insta` dependency and no `.snap` file | The recipe on T00's tree | T00 first, T02 |
-| 11 | rustqual 1.8.3 runs over a crate with no `[[architecture.pattern]]` table and two tiny files without a finding | `just metrics` | T00 first, T10 |
-| 12 | `cargo tree -p libpachinko -e normal --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | `just effects` under §11's network denial, with its negative control | T00 first, T10 |
+| # | Claim | Check | Owner | Outcome |
+| --- | --- | --- | --- | --- |
+| 1 | allium 3.6.1 reports empty `diagnostics` and `findings` for a module with no declarations | `just check-specs`, `just analyse-specs` on §9's module | T00 first, T06 | Holds; no fallback declaration. T00 hand-back (claims table), T06 hand-back; both recipes green in T11's fresh clone, network denied. |
+| 2 | Clippy reads `crates/libpachinko/clippy.toml` for libpachinko alone and shadows rather than merges the root file; rustqual pattern rules can be scoped to one crate by running it over that directory | A deliberate violation in a scratch copy, each mechanism in turn | T10 | The clippy half holds: the crate file shadows the root one (every root key goes silent for libpachinko), and the same call in pachinko fires nothing. T10 hand-back, Step 2. The rustqual half was not settled: rustqual ran over a scratch crate only, missed four of eleven forms, and was rejected, so the claim is moot. |
+| 3 | L's lint table is green on the new stable | `just clippy` on T00's pin | T00, T02 | Holds on 1.99.1 after one assertion change (T00), with every `clippy.toml` key valid and a mistyped key failing (T02). L's own tree was not linted. |
+| 4 | An integration test running `CARGO_BIN_EXE_pachinko` makes `main.rs` count as covered under `cargo llvm-cov nextest`, so the one-line-main shape reaches 90% | `just coverage`, then `cargo llvm-cov report --show-missing-lines` | T00 first, T02 | Holds; `main.rs` 100%, no `--ignore-filename-regex`. T00 and T02 hand-backs. |
+| 5 | B's pixi git dependency installs in `BiscuitBin` CI with no credential | T00's stub run on `main`, then T01's full run | T01 | Holds. The fetch with no credential is the stub run `39874411413` on `8b01c0c`, a pixi cache miss; T01's four-job run restored the environment from cache. T01 hand-back, Claim 5. |
+| 6 | T `scripts/bootstrap_repo.sh` works on an organisation-owned repository; Pages works on the free organisation plan for a public repository | The script without `--apply`, then with it | T01 | Holds with repository admin rights; no organisation-owner action was needed. T01 hand-back, State after; protection read back unchanged by T11. |
+| 7 | cargo-semver-checks has a usable baseline before the first release (`--baseline-rev`) | A scratch run against `main` | T14 | Open; T17 records it. |
+| 8 | cargo-fuzz still works on the pinned stable with `--sanitizer none` | `just fuzz` on the smoke target | T16 | Open; T17 records it. |
+| 9 | docker is available locally and on `ubuntu-latest` runners | `docker version`; the first CI run | T13 | Open; T17 records it. |
+| 10 | `just snapshots-check` is green on a workspace with no `insta` dependency and no `.snap` file | The recipe on T00's tree | T00 first, T02 | Holds, and the gate fires on an unreferenced `.snap` (T02's scratch commit). T00 and T02 hand-backs. |
+| 11 | rustqual 1.8.3 runs over a crate with no `[[architecture.pattern]]` table and two tiny files without a finding | `just metrics` | T00 first, T10 | Holds on both crates. T00 and T10 hand-backs. |
+| 12 | `cargo tree -p libpachinko -e normal --all-features --target all --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | `just effects` under §11's network denial, with its negative control | T00 first, T10 | Holds: `just effects` with a cold `target/effects` and both controls failing (T10, at `2ebacac`), and the whole `just check` in a fresh clone of `46c2e33` under the denial (T11). macOS only; no lane ran `unshare -rn`. |
 
 ## 13. Risks every ticket states where it applies
 

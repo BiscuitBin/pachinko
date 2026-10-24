@@ -98,7 +98,7 @@ Once a test takes one:
 
 If a run outside these recipes has left pending files, `just snapshots-review` opens
 cargo-insta's interactive review at a terminal. Read each change there before accepting
-it. The full rule and file locations belong to [Testing](../reference/testing.md).
+it. The full rule and file locations belong to [Testing](../reference/testing.md#snapshots).
 
 ## Debug a coverage failure
 
@@ -131,12 +131,15 @@ it exercises need a unit or integration test as well. Never lower `coverage_floo
 
 ## Debug an effects or `--locked` failure
 
-`just effects` runs `scripts/check-effects.sh`, which today fails when libpachinko's
-normal dependency tree names a banned crate: `rand`, `rand_core`, `getrandom`, `tokio`,
+`just effects` runs `scripts/check-effects.sh`, which fails when libpachinko's normal
+dependency tree names a banned crate: `rand`, `rand_core`, `getrandom`, `tokio`,
 `async-std`, `smol`, `mio` or `socket2`. The line it prints names the crate; a
-development dependency is exempt, so a test may still use one. The bans on the standard
-library's clock, filesystem, environment, network, process and thread APIs arrive with
-the mechanism T10 chooses. Either way the fix is to take the effect through a trait
+development dependency is exempt, so a test may still use one. It also fails when
+libpachinko calls one of the standard library's clock, filesystem, environment, network,
+process or thread APIs, which clippy reports as `use of a disallowed method` or `type`
+with the path, from the bans in `crates/libpachinko/clippy.toml`. The bans hold in
+libpachinko's own tests too, so a test that needs a real effect belongs under
+`crates/pachinko/tests/`. Either way the fix is to take the effect through a trait
 libpachinko defines, with its real implementation in `pachinko`, as
 [Architecture](../explanation/architecture.md) and
 [decision 0008](../decisions/0008-std-library.md) describe; never a suppression that

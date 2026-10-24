@@ -23,7 +23,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
 | 6 | `clippy` | `cargo clippy -- -D warnings` | Every lint in the workspace table is clean over every crate target and feature, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
-| 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on the host target, names no banned crate. The std-API bans and their probe join it with T10; until then a direct std call in libpachinko is caught by review. |
+| 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API in what clippy compiles for the host with every feature, with none, and with every feature in the release profile; and the probe fixture trips every ban once while pachinko trips none. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
 | 10 | `test-doc` | `cargo test --doc` | Every doc example compiles and passes. |
 | 11 | `coverage` | `cargo llvm-cov nextest` | Every unit and integration test passes, and line coverage over `crates/*/src/**` is at or above the floor of 90%. Doctests are gate 10's. |
@@ -74,8 +74,8 @@ another on `PATH`. Then it runs rustqual twice against `rustqual.toml`, over
 `crates/libpachinko` and over `crates/pachinko`, each with warnings as failures. The
 module-boundary rules wait for there to be modules to order, as
 [Layering](../explanation/layering.md) records, so there is no rule to probe yet; the
-effect bans, which are boundary rules of a kind, are gate 8's, and their probe arrives
-with T10.
+effect bans, which are boundary rules of a kind, are gate 8's, with a probe of their
+own.
 Nothing proves the complexity, cohesion and coupling sections are running with the numbers
 written, and [Decision 0012](../decisions/0012-metrics-gate.md) records that as a risk it
 accepted. Like gates 17 and 18, gate 7 needs a per-worktree binary: `just install-tools`
@@ -89,21 +89,38 @@ the bans and explains the boundary, and
 [Decision 0008](../decisions/0008-std-library.md) why a gate holds it. `just effects`
 runs `scripts/check-effects.sh`, which applies to libpachinko alone.
 
-Today the script checks the crate bans only. It reads
-`cargo tree -p libpachinko -e normal --prefix none --locked --offline`, which covers
-transitive dependencies on the host target, so a target-specific dependency on another
-platform is not seen. It fails unless that tree names libpachinko itself, and fails on
-any line whose crate name is a banned one. It then prints that the std-API bans and the
-probe arrive with T10, so the gate is green and honest about what it covers; until then
-a direct std call in libpachinko is caught by review.
+The crate bans are a list at the top of the script, read against
+`cargo tree -p libpachinko -e normal --all-features --target all --prefix none --locked
+--offline`, which covers transitive and optional dependencies on every target. The
+std-API bans are clippy's `disallowed-methods` and `disallowed-types` entries in
+`crates/libpachinko/clippy.toml` whose reason begins `effect:`. The script runs offline,
+in four checks:
 
-T10 adds the std-API bans, by the mechanism it chooses, and a probe: a fixture under
-`tests/fixtures/effects-violation/` that breaks every ban exactly once, over which the
-script fails unless every ban fires, and a check that none fires on `crates/pachinko`.
+0. `crates/libpachinko/clippy.toml`, less comments and its effect entries, still reads
+   line for line as the root `clippy.toml`, which it shadows, and the root file holds no
+   effect entry.
+1. libpachinko names no banned crate, after a positive control that fails unless the
+   tree names libpachinko itself, and uses no banned std API in three clippy passes:
+   every feature, no default features, and every feature in the release profile.
+2. The fixture under `tests/fixtures/effects-violation/` trips every ban exactly once,
+   read by the same matchers checks 1 and 3 decide with, and its path dependencies under
+   `deps/` and the `// ban:` tags on its breaks name exactly the two ban lists, so a ban
+   deleted from one list but not the other fails the gate.
+3. pachinko, linted with the root file, trips no std-API ban.
 
-A failure names the banned crate and the line of the tree that holds it. Move the effect
+The script pins cargo's colour, progress bar, warnings level and debug assertions, so
+the caller's settings cannot hide a finding. A lint cap in the caller's `RUSTFLAGS` or a
+cargo config's `rustflags` is not overridden: the probe then sees nothing fire, fails,
+and names that cause. Clippy lints only what its three passes compile, so the following
+are left to review: code behind another target's `cfg`; code under a mix of features
+none of the passes sets; code under `cfg(not(clippy))` or a custom `cfg`; and a std item
+added after the inventory.
+
+A failure names the banned crate or std path and where it was found. Move the effect
 behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake
 beside the trait; a banned crate a test needs belongs in the development dependencies.
+The bans apply to libpachinko's own tests too, so a test that needs a real effect
+belongs under `crates/pachinko/tests/`.
 
 ## Outside the gate
 

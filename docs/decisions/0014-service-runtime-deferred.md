@@ -51,9 +51,13 @@ dependency tree adds nothing for cargo-deny to judge.
 
 When the service gains a runtime, the effects boundary keeps it out of the library.
 `tokio`, `async-std`, `smol`, `mio` and `socket2` are among the crates `just effects`
-bans from libpachinko's normal dependency tree, and the mechanism T10 chooses will ban
-`std::net`, `std::thread::spawn` and the rest of the std APIs that reach an effect, so
-the runtime can live only in `pachinko` ([decision 0008](0008-std-library.md)).
+bans from libpachinko's normal dependency tree, and clippy's disallowed paths in
+`crates/libpachinko/clippy.toml` ban `std::net`, `std::thread::spawn` and the rest of the
+std APIs that reach an effect, so the runtime belongs in `pachinko`
+([decision 0008](0008-std-library.md)). The crate bans are a list of names: a crate
+outside it that spawns threads or reads the clock internally passes `just effects`, and
+only the review [decision 0007](0007-dependency-policy.md) requires of each new
+dependency stops it.
 cargo-deny cannot draw that line: its `wrappers` name direct parents only, so `deny.toml`
 bans no effect crate ([Configuration](../reference/configuration.md)). One cargo-deny ban
 does reach the service: `openssl-sys` is denied across the workspace, so whatever stack
