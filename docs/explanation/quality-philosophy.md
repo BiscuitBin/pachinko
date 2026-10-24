@@ -54,8 +54,8 @@ it passes are all ways of deleting the signal while keeping the machinery.
 Where a rule is genuinely wrong for this project, the fix is to configure it once, in the
 config file, with a comment saying why. Here that file is the `[workspace.lints]` table in
 the root `Cargo.toml`, with `clippy.toml` beside it: `multiple_crate_versions` is allowed
-there because cargo-deny already owns that check and names the crates, and the comment
-says so. At a call
+there because, with cargo-deny owning that check and naming the crates, the lint is
+wrong here, and the comment says so. At a call
 site the only form is `#[expect(lint, reason = "...")]` on the item it names, never a
 blanket `allow`, because an expectation that stops being met is itself a warning, so a
 suppression that no longer suppresses anything reports itself.

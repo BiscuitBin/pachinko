@@ -70,10 +70,15 @@ the build.
   `use std as s`, `use std::*`, a macro body and a renamed import, and could ban
   `elapsed` only by name, on every type.
 - Clippy needs item paths, not module prefixes, so "everything under" a module is a list
-  of its stable items, 121 of them on the pinned toolchain. A std item added in a later
+  of its stable items. With the other paths that reach the same effects (the `Path`
+  filesystem queries, the unix `fs` and `net` extensions, `RandomState`,
+  `available_parallelism`, the timed `std::sync` waits), the file holds 121 entries on
+  the pinned toolchain: it is the list, and "The bans" above name what it covers. A std
+  item added in a later
   Rust is not banned until it is listed, and a constant cannot be banned at all, so
   `std::env::consts` stays reachable: it holds compile-time values, like `cfg!`, not an
-  effect.
+  effect. `std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` and stays allowed
+  by the maintainer's choice, because it changes diagnostics rather than results.
 - A ban that is not shown to fire is not trusted to hold. The script also runs its checks
   over `tests/fixtures/effects-violation/`, a fixture that breaks every ban exactly once,
   in the forms code writes it, and fails unless each ban fires there; then it checks that

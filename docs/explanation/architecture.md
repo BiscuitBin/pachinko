@@ -46,7 +46,8 @@ binary's one-line `main`, and `tests/binary.rs` runs the built binary as a user 
 test, and it means the clock, the filesystem, the environment, the network and threads
 are all nameable from inside it: nothing in the language stops a call to
 `std::time::Instant::now` or `std::fs::read`. So the effects are not unreachable; they
-are banned, and a gate proves both the crate bans and the std-API bans hold.
+are banned, and a gate holds both the crate bans and the std-API bans, with review
+covering what the gate cannot see.
 [Decision 0008](../decisions/0008-std-library.md) records that choice and the
 alternative it rejected.
 
@@ -85,8 +86,18 @@ only; `pachinko` is allowed every effect.
 | Crates, through its normal dependency tree | `rand`, `rand_core`, `getrandom`, `tokio`, `async-std`, `smol`, `mio` and `socket2` |
 | std APIs | `std::time::SystemTime::now`, `std::time::Instant::now`, `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`; everything under `std::fs`, `std::env`, `std::net` and `std::process`; `std::thread::spawn`, `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder` |
 
+The table names what is banned; `crates/libpachinko/clippy.toml` is the list, 121 item
+paths. Where another path reaches the same effect it is banned too: the `Path`
+filesystem queries, the unix `fs` and `net` extensions, `std::hash::RandomState`,
+`std::thread::available_parallelism` and the timed `std::sync` waits. A constant cannot
+be banned, so `std::env::consts` stays reachable; it holds compile-time values, not an
+effect.
+
 Development dependencies are exempt, so a test may use a seeded generator. Standard I/O
 (`std::io::stdin` and the rest) is not banned, because no named effect covers it.
+`std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` but stays allowed, by the
+maintainer's choice: it changes diagnostics, not results, so libpachinko should not
+branch on its `status()`.
 
 **The crate bans.** The script reads `cargo tree -p libpachinko -e normal
 --all-features --target all --prefix none --locked --offline` and fails if any line

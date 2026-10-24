@@ -128,8 +128,8 @@ itself, as [Architecture](../explanation/architecture.md) explains;
 The `effects` gate's std-API bans, as `disallowed-methods` and `disallowed-types` entries
 whose reason begins `effect:`. Clippy reads the first `clippy.toml` it finds walking up
 from a crate's manifest and merges nothing, so this file shadows the root `clippy.toml`
-for libpachinko: it restates every root line verbatim, and gate 8 fails when the two
-differ by more than the effect entries. A change to the root file is mirrored here. A
+for libpachinko: it restates every root setting in the same order, and gate 8 fails when
+the two differ in anything but comments, blank lines and the effect entries. A change to the root file is mirrored here. A
 ban is added with a reason beginning `effect:` and broken once in the fixture with a
 `// ban:` tag; a path that does not resolve is only a warning, so the fixture is what
 proves an entry is live.
@@ -138,7 +138,7 @@ proves an entry is live.
 
 The `effects` gate's probe, a crate that is its own workspace with a committed
 `Cargo.lock`. Its `src/lib.rs` breaks each std-API ban once, on a line that starts with
-`fn` and ends with a `// ban:` tag naming the path; `deps/` holds an empty offline
+`fn` and ends with a `// ban:` tag naming the path or paths it breaks; `deps/` holds an empty offline
 path dependency named for each banned crate, one of them reached only through `deps/wrapper` and one only
 under `cfg(windows)`. The fixture's `rustfmt.toml` turns formatting off, so each break
 stays on its one line.
