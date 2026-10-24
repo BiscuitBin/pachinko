@@ -18,9 +18,7 @@ poisons every downstream resolution: two crates pinning different patch releases
 dependency cannot be built together. The tools are the other way round: `pyproject.toml`
 pins each one exactly, and `pixi.lock`, committed beside it, records the resolution.
 Renovate reads the pins ([decision 0018](../decisions/0018-renovate.md)) and lists every
-pending move on its dependency dashboard, an issue in this repository. Its Mend app is
-installed, but until `renovate.json` reaches `main` (ticket T17), every pin below moves by
-hand. Nothing opens
+pending move on its dependency dashboard, an issue in this repository. Nothing opens
 until you approve that move there, with one exception: once vulnerability alerts are
 enabled on the repository, a vulnerability-fix pull request opens without approval.
 Renovate never merges. What it does not read is below, under
@@ -45,7 +43,7 @@ the security model lists what the app itself may do
 | `cargo-nextest` | the pin in `pyproject.toml` and `nextest-version` in `.config/nextest.toml`, together |
 | `hook revs` | every hook SHA and comment in both prek configurations, but lychee's |
 | one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
-| lock-file maintenance | the transitive closure of `Cargo.lock`, `fuzz/Cargo.lock` and `pixi.lock` |
+| lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock` and `fuzz/Cargo.lock` together under the `crates` group, and `pixi.lock` |
 
 Major updates open in a pull request of their own beside their group's, because
 Renovate's `separateMajorMinor` is on and takes precedence over a group.

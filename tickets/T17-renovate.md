@@ -1,7 +1,7 @@
 ---
 id: T17
 title: "Renovate: `renovate.json` over every pin, the how-to and the record"
-status: in-progress
+status: done
 depends_on: [T13, T14, T15, T16]
 parallel_with: [T12]
 branch: ticket/t17-renovate
@@ -384,18 +384,34 @@ Against S01's list it adds `members: read` and `packages: read`; the pages now c
 installation's own list. Right after installation `pachinko` had no open issue or pull
 request from Renovate.
 
-### Pending authorisation
+### Step 5: the dashboard
 
-Each is a separate ask; none has been performed.
+This lane went in as pull request #18, which the maintainer merged at `1ca3b45` on
+2026-10-24 21:02 UTC. Renovate closed its default-config onboarding pull request #17 (opened at
+20:51, before `renovate.json` was on `main`) and opened the Dependency Dashboard, issue #19,
+at 21:03. Its body is saved as `ai_tmp/t17/dashboard-19.md`, read with
+`gh issue view 19 -R BiscuitBin/pachinko --json body`. Per manager, quoted from it:
 
-1. Push this branch and open its pull request; the merge is the maintainer's.
-2. Step 5's evidence, once the pull request has merged: read the dependency dashboard and
-   quote, per manager, the detected dependency (or an update pull request), with
-   read-only `gh` calls. That commit also drops the four "until `renovate.json` reaches
-   `main`" sentences. Expected on the
-   dashboard: no lookup warning for the path dependency `libpachinko`, and
-   `biscuit-games-tooling` under the regex manager (the pixi manager skips it as
-   `unspecified-version`).
+| Manager | Detected | Grouping on the dashboard |
+| --- | --- | --- |
+| cargo | `divan 0.1.21` (`Cargo.toml`), `libfuzzer-sys 0.4.13` (`fuzz/Cargo.toml`); both crate manifests listed with no dependency and no lookup warning for the path dependency | `Lock file maintenance` on `renovate/lock-file-maintenance-crates` |
+| dockerfile | `rust 1.99.1-slim-bookworm@sha256:86234e…`, `gcr.io/distroless/cc-debian12 nonroot@sha256:9dac0a…` | no update pending |
+| github-actions | every remote `uses:` in the setup action and six workflows; no `prefix-dev/pixi` | `Update github actions (Swatinem/rust-cache, actions/upload-artifact, prefix-dev/setup-pixi)` |
+| pep621 | `pyproject.toml` with no dependency: `requires-python` is off | none |
+| pixi | 12 pins, `python 3.14.*` and the 11 exact tools; no `biscuit-games-tooling` | one pull request per pin (`prek`, `cargo-binstall`, `cargo-insta`, `just`, `python 3.15.*`); `Lock file maintenance` on `renovate/lock-file-maintenance` |
+| regex: channel | `rust-toolchain.toml`: `rust 1.99.1` | `rust toolchain`, no update pending |
+| regex: rust-version | `Cargo.toml`: `rust 1.99`; `fuzz/Cargo.toml`: `rust 1.99` | `rust toolchain`, no update pending |
+| regex: tools | `tools.txt`: `cargo-hack 0.6.45`, `cargo-release 1.1.7`, `cargo-fuzz 0.13.2`; `tools-source.txt`: `rustqual 1.8.3` | no update pending |
+| regex: nextest-version | `.config/nextest.toml`: `cargo-nextest 0.9.146` → `0.9.149` | `Update dependency cargo-nextest to v0.9.149`, one branch with the pixi pin |
+| regex: tooling tag | `pyproject.toml`: `biscuit-games-tooling v0.3.0` | no update pending |
+| regex: requires-pixi and pixi-version | `pyproject.toml` and `.github/actions/setup/action.yml`: `prefix-dev/pixi 0.81.0` → `0.83.0` | `Update dependency prefix-dev/pixi to v0.83.0`, one branch `renovate/pixi-bootstrap` |
+| regex: hook revs | six revs in `.pre-commit-config.yaml` (no lychee) and markdownlint in `.pre-commit-fix.yaml` | `Update hook revs (DavidAnson/markdownlint-cli2, crate-ci/typos, editorconfig-checker/editorconfig-checker)`, and `editorconfig-checker … to v4` on its own major branch |
+
+Every entry sits under "Pending Approval"; no update pull request opened. Every regex
+manager detected exactly the pins `ai_tmp/t17/match.py` claims. Lock-file maintenance
+arrived as two branches, the crates group's and pixi's, so the how-to's table now says
+so. The four "until `renovate.json` reaches `main`" sentences are gone. Whether the hosted
+app relocks `pixi.lock` stays unproven until a pixi pull request is approved.
 
 ## Open points
 
