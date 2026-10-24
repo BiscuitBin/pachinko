@@ -1,7 +1,7 @@
 ---
 id: T13
 title: "Container image: a multi-stage Dockerfile, `just image`, a CI build"
-status: open
+status: in_progress
 depends_on: [T11]
 parallel_with: [T12, T14, T15, T16]
 branch: ticket/t13-container-image
@@ -117,9 +117,140 @@ just check
 
 ## Hand-back notes
 
-To be written by the executing agent: the digests and the day, the image size, the build
-output, the CI run URL, the outcome of `CONVENTIONS.md` §12 claim 9, and the review
-record for each checkpoint (`CONVENTIONS.md` §14).
+Implementation and local verification are complete. Status remains `in_progress`
+until the separately authorised push, pull request and first `image` CI run. No
+CI URL exists yet; the runner half of §12 claim 9 remains unverified. No push,
+pull request, registry publication or repository setting change was performed.
+
+### Baseline — commit `2c93ae3`, untouched
+
+The first attempt could not find `bg-project-check` (exit 127). Ran the fresh-worktree
+`just initialize` authorised by §11, with rustup's cargo first on `PATH`; the
+secondary worktree skipped installing hooks. The full untouched baseline then passed:
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+The supplied branch used uppercase `T13`; renamed it to the ticket's lowercase
+`ticket/t13-container-image` through a temporary name because the filesystem is
+case-insensitive. Fetched `origin` on 2026-10-24 UTC; `origin/main` remains `2c93ae3`,
+the base of this lane. No rebase changes were needed.
+
+### Pins — commit `2c93ae3` with uncommitted changes
+
+Resolved on 2026-10-24 UTC (2026-10-23 locally), using each full, unfiltered
+`docker buildx imagetools inspect` output, exit 0:
+
+| Tag | Index digest |
+| --- | --- |
+| `rust:1.99.1-slim-bookworm` | `sha256:86234e857a413004348b471d11a4ebe1aa92d2eae2b6b143cac68fd1ac3c48be` |
+| `gcr.io/distroless/cc-debian12:nonroot` | `sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f` |
+
+On the same day, read `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` for each
+row below (exit 0; all returned commit objects, so no annotated-tag dereference).
+The conformance reviewer independently confirmed them through `git ls-remote`.
+
+| Action | Tag | Commit |
+| --- | --- | --- |
+| `actions/checkout` | `v7.0.1` | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| `docker/setup-buildx-action` | `v4.4.1` | `f87e5991a6d7451dcb8d9637bfbc97413f497069` |
+| `docker/build-push-action` | `v7.4.0` | `c3c9e263c25d99ce0380d002d59b67737d91b0dc` |
+
+### Local verification — commit `2c93ae3` with uncommitted changes
+
+`docker version` exited 0: client and server Docker 29.4.0, OrbStack on
+`darwin/arm64` with a `linux/arm64` daemon. Thus §12 claim 9 holds locally;
+`ubuntu-latest` awaits the authorised PR run. The recipe adds `--platform linux/amd64`
+to step 4's command to enforce this ticket's platform scope on this host.
+
+The first uncached build finished the release compilation in 6.24 seconds;
+subsequent verification reused its layers. The runtime image reports 9,359,369 bytes
+(about 9.4 MB); the build toolchain stays in the build stage.
+
+```text
+$ just image
+ docker build --platform linux/amd64 --tag pachinko:dev .
+#15 naming to docker.io/library/pachinko:dev done
+#15 DONE 0.1s
+exit 0
+
+$ docker run --rm pachinko:dev
+pachinko 0.1.0
+exit 0
+
+$ docker image inspect pachinko:dev --format '{{.Config.User}} {{.Config.Entrypoint}} {{.Architecture}} {{.Size}}'
+nonroot:nonroot [/pachinko] amd64 9359369
+exit 0
+```
+
+The bare `docker run` also emits Docker's expected amd64-on-arm64 emulation warning.
+Both `FROM` lines carry the full digests above (`rg -n '^FROM ' Dockerfile`, exit 0).
+The workflow adds `image` to `check.needs`, loads before running, and never pushes.
+
+Copied the build inputs to `ai_tmp/mismatch/`, changed only the copied `channel`
+from `1.99.1` to `1.99.2`, and built that context with `--platform linux/amd64`.
+The build rejected the mismatch before copying crates or running cargo:
+
+```text
+$ docker build --platform linux/amd64 --tag pachinko:t13-mismatch ai_tmp/mismatch
+Rust base image mismatch: pin=1.99.2; image=rustc 1.99.1 (58cf8f9c3 2026-10-13)
+exit 1 (expected)
+```
+
+The original workspace pin remained unchanged. The negative-control wrapper also
+required a nonzero Docker status and the specific mismatch diagnostic, and exited 0.
+
+```text
+$ just check-docs
+Validated 42 pages and 43 canonical topics.
+exit 0
+
+$ just check
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+The staged-file hook gate also passed, including the new files, actionlint, secret
+scanning, Markdown, spelling, links and the documentation contract. The initial docs
+failure was Docker's Go template braces being treated as unresolved handbook template
+syntax; the how-to now uses plain inspection and explains the expected JSON fields.
+No Rust source, dependency, lockfile, threshold or source-quality gate changed.
+
+### Checkpoint 1 review — commit `2c93ae3` with uncommitted changes
+
+Two fresh-context reviewers inspected the complete lane diff: Claude Code with
+`claude-opus-5-5` for conformance, and a Codex subagent with `gpt-6-astra` for breakage.
+A separate Codex `gpt-6-astra` triager checked every finding against the files and raw
+verification logs, and applied the one valid fix as the only writer. The breakage
+reviewer found no actionable defect. The conformance findings were:
+
+- C1, medium: valid. Decision 0015 omitted §8's required Related pages section.
+  The triager added it and links to the how-to and decision 0014.
+- C2, low: rejected as a defect. The copied toolchain file makes rustup download
+  missing pinned components; step 3 requires that file beside the build, and the
+  how-to documents the network requirement. The compiler mismatch guard still fails
+  before the build can install a different compiler.
+- C3, informational: no defect. The explicit amd64 flag enforces the stated scope.
+- C4, informational: current ignore patterns match. Future `.gitignore` edits must
+  update `.dockerignore`; no new drift gate is required by this ticket.
+
+No high-severity finding, so no second review round was required. The root agent
+also applied `review-change`: all nine invariants remain intact, documentation has
+one owner per topic, and the change stays inside this ticket's files. The unavailable
+`code-review` skill was covered by that repository review and the independent reviews.
+The final full gate was rerun after the documentation fix. Raw review and verification
+files remain gitignored under `ai_tmp/`.
+
+One attempted Claude breakage call was rejected by automatic approval review because
+it would export repository content to an external model API. That pass used the fresh
+Codex reviewer instead. The separately approved Claude conformance call completed.
+
+Pending acceptance: authorise the push and PR separately, run the workflow, record its
+URL and tested merge commit, confirm the `image` and aggregate `check` jobs pass,
+and set this ticket to `done`. The review does not count absent CI evidence as success.
 
 ## Open points
 

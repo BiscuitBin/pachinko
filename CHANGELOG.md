@@ -30,6 +30,7 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 ### Added
 
 - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
+- A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.
 

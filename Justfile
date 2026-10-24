@@ -99,6 +99,10 @@ install-hooks:
 build:
     cargo build --workspace --all-features --locked
 
+# Needs docker; builds the linux/amd64 image and sits outside just check.
+image:
+    docker build --platform linux/amd64 --tag pachinko:dev .
+
 # nextest runs the unit and integration tests; it cannot run doctests, so those
 # follow through cargo test. INSTA_UPDATE=no makes a mismatch fail without a
 # pending file, which would trip the gate's worktree check.
