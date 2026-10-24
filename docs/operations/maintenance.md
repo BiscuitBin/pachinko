@@ -23,6 +23,13 @@ RustSec advisory database every Monday, as well as on every pull request, and it
 a required check, so a failure there blocks nothing and is easy to miss. An advisory
 against a crate in `Cargo.lock` is fixed by moving that crate, not by ignoring it.
 
+Read the week's `mutants` workflow too. Download its `mutants` artifact and inspect
+`outcomes.json`, the missed-mutant list and the individual logs in `mutants.out/`.
+Use [Testing](../reference/testing.md#mutation-testing) to interpret the outcomes and
+[Quality philosophy](../explanation/quality-philosophy.md) to resolve survivors.
+The report runs Monday at 07:00 UTC and by hand. If its mutation step takes more than
+fifteen minutes, raise the workflow's thirty-minute timeout before it becomes a limit.
+
 **Monthly.** Move the dependency pins, one kind at a time, as
 [Maintain dependencies](../how-to/maintain-dependencies.md) describes. `just lock-upgrade`
 moves both lockfiles within the manifests' constraints — `Cargo.lock` within the caret

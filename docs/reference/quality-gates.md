@@ -124,7 +124,7 @@ belongs under `crates/pachinko/tests/`.
 
 ## Outside the gate
 
-`test`, `build`, `audit`, `site`, `plan-spec` and `check-links-online` are recipes that
+`test`, `build`, `audit`, `mutants`, `site`, `plan-spec` and `check-links-online` are recipes that
 `just check` does not run. `test` runs nextest and the doctests in one go, which
 `coverage` and `test-doc` already cover between them; `build` compiles what `clippy` and
 `features` already compile; `site` builds the API reference that `doc` has proved, for
@@ -132,7 +132,9 @@ belongs under `crates/pachinko/tests/`.
 suggestion list for tests, which nothing asserts on. `check-links-online` needs the
 network, and a check that can fail because a third party is down is not a gate. `audit`
 is missing for the same reason: it reads the RustSec advisory database, and runs in a
-workflow of its own. [Commands](commands.md) lists every recipe. Wave 2 (T13 to T17)
+workflow of its own. Mutation testing is a report because runtime grows with the
+workspace and survivors require judgement; there is no score threshold.
+[Commands](commands.md) lists every recipe. Wave 2 (T13 to T17)
 adds recipes outside `just check` only, and leaves the nineteen gates as they are; T13's
 `image` CI job will join the `needs` of the `check` aggregate job.
 
@@ -239,6 +241,12 @@ nothing in CI runs a command that does not exist in the `Justfile`.
 hand. It is never a required check: a fetch of the advisory database can fail for reasons
 that have nothing to do with the diff.
 
+`.github/workflows/mutants.yml` runs `just mutants` every Monday at 07:00 UTC and by
+hand, with a thirty-minute timeout. It uploads `mutants.out/` even after a failure unless
+cancelled, retaining reports for 28 days. It runs on no pull request, is never required,
+and is never among `check`'s `needs`. Raise the timeout when the mutation step takes
+more than half of it.
+
 `.github/workflows/pages.yml` runs on every push to `main`, and by hand. Its `build` job
 runs `check-toolchain` and `site` after the same setup action and uploads `target/doc`;
 its `deploy` job publishes that to GitHub Pages, and only from `main`. It is not a gate:
@@ -251,7 +259,7 @@ deployment that fails blocks no merge.
 `main` is protected, and one check, `check`, must pass before a branch merges into it.
 That is the aggregate job above, which fails unless `rust`, `coverage`, `deny` and
 `documents` all succeeded, so a gate job is added by joining its `needs` and the
-protection itself never changes. `audit` is never required.
+protection itself never changes. `audit` and `mutants` are never required.
 
 The branch is not required to be up to date with `main` first, and no review is required —
 neither earns its cost on a repository with one author. Force pushes and deletion are
