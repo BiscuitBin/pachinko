@@ -18,10 +18,11 @@ poisons every downstream resolution: two crates pinning different patch releases
 dependency cannot be built together. The tools are the other way round: `pyproject.toml`
 pins each one exactly, and `pixi.lock`, committed beside it, records the resolution.
 Renovate reads the pins ([decision 0018](../decisions/0018-renovate.md)) and lists every
-pending move on its dependency dashboard, an issue in this repository. Nothing opens until
-you approve that move there, with one exception: once vulnerability alerts are enabled on
-the repository, a vulnerability-fix pull request opens without approval. Renovate never
-merges. What it does not read is below, under
+pending move on its dependency dashboard, an issue in this repository. Its Mend app is not
+installed yet (ticket T17), so until it is, every pin below moves by hand. Nothing opens
+until you approve that move there, with one exception: once vulnerability alerts are
+enabled on the repository, a vulnerability-fix pull request opens without approval.
+Renovate never merges. What it does not read is below, under
 [What the updater proposes and what stays manual](#what-the-updater-proposes-and-what-stays-manual).
 
 ## What the updater proposes and what stays manual
@@ -45,6 +46,9 @@ the security model lists what the app itself may do
 | one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
 | lock-file maintenance | the transitive closure of `Cargo.lock`, `fuzz/Cargo.lock` and `pixi.lock` |
 
+Major updates open in a pull request of their own beside their group's, because
+Renovate's `separateMajorMinor` is on and takes precedence over a group.
+
 Four moves stay with you:
 
 - **lychee.** `LYCHEE_VERSION` in both of its argument lists must match its rev comment,
@@ -61,11 +65,14 @@ Four moves stay with you:
   manager's reading of this floor in `pyproject.toml`; move it with the `python` pin.
 
 A toolchain pull request is a prompt, not a finished change. clippy's lint set moves with
-the release, so a red `rust` job on that branch is the lint set moving, not a regression:
-check the branch out, run `just clippy`, fix what it finds and push. `rust-version` moves
-only on a minor release; a patch release leaves `1.99` correct. All three places take
-their versions from the `rust` image's `-slim-bookworm` tags on Docker Hub, so the
-channel never moves to a release that has no image yet.
+the release, so a red `rust` job on that branch is often new lints, but the job runs
+formatting, tests, snapshots and documentation as well: read which step failed. For a lint
+failure, check the branch out, run `just clippy`, fix what it finds and push. No manager
+reads the version the crate READMEs and the `Dockerfile`'s first comment repeat; update
+those on the same branch.
+`rust-version` moves only on a minor release; a patch release leaves `1.99` correct. All
+three places take their versions from the `rust` image's `-slim-bookworm` tags on Docker
+Hub, so the channel never moves to a release that has no image yet.
 
 ## Check that the lockfiles still match
 

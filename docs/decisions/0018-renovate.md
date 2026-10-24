@@ -17,10 +17,10 @@ and `pre-commit` ecosystems, and its pre-commit updater reads the `rev: <sha> # 
 form. What Renovate alone reaches is the one-line pins outside any ecosystem: the
 `tools.txt` lines, `rust-version` grouped with the toolchain, the tooling package's tag,
 setup-pixi's `pixi-version` input and the markdownlint rev repeated in
-`.pre-commit-fix.yaml`. Neither bot relocks `pixi.lock` on its own, but Renovate can at
-least list the pixi pins. S01 recommended Renovate through the Mend app, on condition
-that the maintainer accepts the app's write access. The maintainer accepted it for this
-repository.
+`.pre-commit-fix.yaml`. Dependabot cannot read a pixi manifest; Renovate can at least
+list the pixi pins, and whether the Mend app can relock `pixi.lock` is unproven. S01
+recommended Renovate through the Mend app, on condition that the maintainer accepts the
+app's write access. The maintainer accepted it for this repository.
 
 Wave 2 added pins S01 never saw: the `Dockerfile`'s two base images by tag and digest
 (decision 0015), cargo-release and cargo-fuzz in `tools.txt`, the fuzz crate's own
@@ -29,10 +29,11 @@ cargo-nextest pin.
 
 ## Decision
 
-Renovate, through the Mend-hosted app installed on `BiscuitBin/pachinko` alone, configured
-by `renovate.json` at the repository root. Native managers read the crates (both cargo
-roots), the actions, the pixi pins and the `Dockerfile`. Regex managers read the rest:
-the toolchain channel, `rust-version`, `tools.txt` and `tools-source.txt`,
+Renovate, through the Mend-hosted app, to be installed on `BiscuitBin/pachinko` alone,
+configured by `renovate.json` at the repository root. The installation is pending (ticket
+T17); until then nothing reads the configuration. Native managers read the crates (both
+cargo roots), the actions, the pixi pins and the `Dockerfile`. Regex managers read the
+rest: the toolchain channel, `rust-version`, `tools.txt` and `tools-source.txt`,
 `nextest-version`, the tooling tag, the pixi bootstrap pair and the hook revs. The native
 `pre-commit` manager stays off because it reads a SHA rev only as `# frozen:`, and the
 native `rust-toolchain` manager is off for the reason below.
@@ -62,20 +63,21 @@ pull request.
 
 ## Consequences
 
-The app holds read access to Dependabot alerts, administration and metadata, and read
-and write access to checks, contents, commit statuses, issues, pull requests and
-workflows, which the [security model](../explanation/security-model.md) records. That is
-the one trust it is given that a contributor's branch is not. The `check` context is bound
-to the GitHub Actions app and no review is required, so "a person merges" rests on
-`automerge` staying off.
+The app's installation screen, as libpawdoku's S01 recorded it, asks for read access to
+Dependabot alerts, administration and metadata, and read and write access to checks,
+contents, commit statuses, issues, pull requests and workflows, which the [security
+model](../explanation/security-model.md) records and which are to be re-read on the day of
+installation. That is the one trust it is given that a contributor's branch is not. The
+`check` context is bound to the GitHub Actions app and no review is required, so "a person
+merges" rests on `automerge` staying off.
 
-Three moves stay manual and the how-to says why: lychee, whose `LYCHEE_VERSION` argument
+Four moves stay manual and the how-to says why: lychee, whose `LYCHEE_VERSION` argument
 must match its rev and whose tags carry a `lychee-v` prefix; the allium binary, which moves
 with the tooling tag; and the `pixi.lock` relock after a pixi pin moves, until the hosted
-app is shown to run `pixi lock`. A toolchain pull request arrives red when the lint set
-moves, and a person finishes it with `just clippy`. `requires-python` in `pyproject.toml`
-is disabled for Renovate's `pep621` manager, because pixi owns Python; it moves by hand
-with the `python` pin.
+app is shown to run `pixi lock`; and `requires-python` in `pyproject.toml`, which is
+disabled for Renovate's `pep621` manager because pixi owns Python, and moves by hand with
+the `python` pin. A toolchain pull request arrives red when the lint set moves, and a
+person finishes it with `just clippy`.
 
 Each regex manager is proved only by Renovate itself, from its dependency dashboard or a
 real pull request, after the app is installed.

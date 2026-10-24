@@ -13,12 +13,12 @@
   "rust-toolchain": { "enabled": false },
   "packageRules": [
     {
-      "description": "Crates: Cargo.lock within the caret ranges, both cargo roots, one pull request. Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
+      "description": "Crates: Cargo.lock within the caret ranges, or a range in Cargo.toml when a release falls outside it, both cargo roots, one pull request, with major updates in a pull request of their own beside it (separateMajorMinor). Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
       "matchManagers": ["cargo"],
       "groupName": "crates"
     },
     {
-      "description": "Remote actions, SHA and version comment together, one pull request. Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
+      "description": "Remote actions, SHA and version comment together, one pull request, with major updates in a pull request of their own beside it (separateMajorMinor). Held for dashboard approval while :dependencyDashboardApproval is in extends; a vulnerability-fix pull request skips that approval.",
       "matchManagers": ["github-actions"],
       "groupName": "github actions"
     },

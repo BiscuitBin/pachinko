@@ -61,11 +61,13 @@ describes. A moved checker re-verifies every module under `docs/specs/`. The mod
 no waiver today; any waiver added later is valid only against the version it was verified
 on, so each is checked again.
 
-Renovate lists the pending moves for these pins on its dependency dashboard, and each pull
-request opens only when it is approved there, except a vulnerability fix, which opens
-unasked once vulnerability alerts are enabled. Nothing merges on its own. What no rule
-moves, lychee's `LYCHEE_VERSION` beside its rev, the allium checksums inside the tooling
-package, and `pixi.lock` until the hosted app's relock is proven, still moves by hand as
+Renovate's Mend app is not installed yet (ticket T17); until it is, every pin here moves
+by hand. Once it is, Renovate lists the pending moves for these pins on its dependency
+dashboard, and each pull request opens only when it is approved there, except a
+vulnerability fix, which opens unasked once vulnerability alerts are enabled. Nothing
+merges on its own. What no rule moves, lychee's `LYCHEE_VERSION` beside its rev, the
+allium checksums inside the tooling package, `requires-python` beside the `python` pin,
+and `pixi.lock` until the hosted app's relock is proven, still moves by hand as
 [Maintain dependencies](../how-to/maintain-dependencies.md#what-the-updater-proposes-and-what-stays-manual)
 describes.
 

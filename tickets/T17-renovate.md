@@ -272,6 +272,53 @@ Raw files in `ai_tmp/review/T17-1/`.
 No high-severity finding, so no second round. The rerun of the validator and of
 `match.py` after the fixes is quoted above.
 
+### Review 2 (`CONVENTIONS.md` §14) — `6c0d1df` with the fixes uncommitted
+
+Conformance and breakage lenses in parallel; triage by a separate Claude Opus 5.5
+subagent, which applied the fixes. Raw files in `ai_tmp/review/T17-2/`.
+
+- **T17-2-a1 (medium), conformance; T17-2-b1 (medium), breakage.** Decision 0018 and the
+  security model said the app is installed and holds its permissions, and the how-to
+  described a working dashboard. **Valid**: the app is not installed (step 4). Fixed:
+  each of the four pages says once that the installation is pending (ticket T17), and
+  the permissions are those S01 recorded, to be re-read on the day. Step 5's commit
+  removes those sentences.
+- **T17-2-a2 (low), conformance.** "Neither bot relocks `pixi.lock`" stated as known what
+  is unproven for the Mend app. **Valid.** Fixed in decision 0018's context.
+- **T17-2-b2 (medium), breakage.** The how-to read any red `rust` job on a toolchain
+  branch as new lints, though the job also runs formatting, tests, snapshots and
+  documentation. **Valid.** Fixed: read which step failed; `just clippy` for a lint.
+- **T17-2-b3 (low), breakage.** The crates and actions rules promised one pull request,
+  but `separateMajorMinor` (default `true`) takes priority over a group. **Valid**, per
+  Renovate's configuration reference. Fixed in both descriptions and in one how-to
+  sentence below the group table.
+
+No high-severity finding, so no second round. After the fixes the validator exits 0
+("Config validated successfully against 1 file(s)"), `match.py` reports "8 managers,
+0 failing", and `just check-docs` and `just lint` exit 0.
+
+### `code-review` skill (medium) — `6c0d1df` with review 2's fixes uncommitted
+
+Ten unverified findings, each checked by the executing agent:
+
+- Invalid: the pixi manager double-reading `biscuit-games-tooling` (Renovate's pixi
+  extractor skips it as `unspecified-version`, review 1's triage); the github-actions
+  manager reading `pixi-version` under another name (its extractor, run here, returns
+  depName `prefix-dev/pixi`, datasource `github-releases`, depType `uses-with`, so the
+  disabling rule matches); the `lockFileMaintenance` schedule repeating the global one
+  (L's draft writes it on purpose; harmless).
+- Fixed: majors in a group open together in one pull request of their own, not one each
+  (`separateMultipleMajor` is off), in both rule descriptions and the how-to; the crates
+  description now says a range moves when a release falls outside it; decision 0018 and
+  the maintenance page now name `requires-python` among the manual moves, as the how-to
+  does; the CHANGELOG line no longer says "every pin"; the how-to tells the toolchain
+  branch to update the version the crate READMEs and the `Dockerfile`'s first comment
+  repeat, which no manager reads.
+- Handed back, outside Files touched: `tools-source.txt:7` still says rustqual is
+  "Bumped by hand"; `crates/*/README.md` and `Dockerfile:1` repeat the toolchain version;
+  a `tools.txt` bump is resolved on crates.io, which does not prove the release binaries
+  `just install-tools` needs exist yet, so the approver checks them before the click.
+
 ### Steps 6 and 7
 
 The docs as the ticket lists them, in held-mode wording. Every place that says an update
@@ -306,6 +353,17 @@ The first wants a follow-up edit.
   separate `main` pull request, at the maintainer's choice.
 - The branch is `ticket/T17-renovate`, not the frontmatter's `ticket/t17-renovate`
   (Supacode's naming).
+
+### Final verification — `6c0d1df` with review 2's and `code-review`'s fixes, committed next
+
+```text
+$ npx --yes --package renovate@44.181.1 -- renovate-config-validator --strict   (exit 0)
+ INFO: Config validated successfully against 1 file(s)
+$ python3 -I ai_tmp/t17/match.py .   (exit 0)
+8 managers, 0 failing
+$ just check   (exit 0)
+All checks passed and the worktree is unchanged.
+```
 
 ### Pending authorisation
 
