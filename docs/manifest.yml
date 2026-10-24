@@ -50,6 +50,7 @@
     {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: The service runtime waits for the specifications", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_service_runtime_deferred"], "requires": []},
     {"path": "decisions/0015-container-image.md", "title": "Decision 0015: The container image", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_container_image"], "requires": []},
     {"path": "decisions/0016-release-process.md", "title": "Decision 0016: The release process", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_release_process"], "requires": []},
-    {"path": "decisions/0017-mutation-bench-and-fuzz.md", "title": "Decision 0017: Mutation testing, benchmarks and fuzzing", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_mutation_bench_fuzz"], "requires": []}
+    {"path": "decisions/0017-mutation-bench-and-fuzz.md", "title": "Decision 0017: Mutation testing, benchmarks and fuzzing", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_mutation_bench_fuzz"], "requires": []},
+    {"path": "decisions/0018-renovate.md", "title": "Decision 0018: Dependency updates through Renovate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_dependency_updates"], "requires": []}
   ]
 }

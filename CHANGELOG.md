@@ -26,6 +26,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   pre-commit hook, and both crates' API reference hosted on GitHub Pages.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow,
   with a semver report for the library. Neither crate is published to crates.io.
+- Renovate configuration over every pin, each update held for approval on its dashboard
+  except vulnerability fixes, with the pins that stay manual named in the handbook.
 
 ## pachinko [Unreleased][pachinko-unreleased]
 

@@ -38,15 +38,20 @@ pin itself moves in `pyproject.toml`, then `pixi update <name>`, then `pixi.lock
 committed. A line in `tools.txt` or `tools-source.txt` moves by hand and takes effect at
 the next `just install-tools`; a `tools-source.txt` line moves one release at a time,
 with `just check` run on each, because rustqual is a gate. A hook `rev` or a GitHub
-Action SHA moves by hand, with its version comment moved beside it.
+Action SHA moves with its version comment beside it, in Renovate's `hook revs` or
+`github actions` pull request once approved; lychee's rev and `LYCHEE_VERSION` move by
+hand.
 
 **Monthly.** Run `just check-links-online`. It is not part of the gate because it needs
 the network, so external links rot silently until someone looks.
 
-**Per toolchain release.** Bump `channel` in `rust-toolchain.toml` and `rust-version` in
-the root `Cargo.toml` together, run `just install-toolchain`, then run `just clippy`
-before anything else: clippy's lint set moves with the release, and a lint that is new
-under `-D warnings` fails the gate with no change to the code. `just check` follows.
+**Per toolchain release.** Renovate's `rust toolchain` pull request moves `channel` in
+`rust-toolchain.toml`, the `Dockerfile`'s build-stage `rust` tag and, on a minor release
+only, `rust-version` in the root and fuzz `Cargo.toml`; all three take their versions
+from the `rust` image's `-slim-bookworm` tags, so the toolchain waits for its image. On that branch run
+`just install-toolchain`, then `just clippy` before anything else: clippy's lint set
+moves with the release, and a lint that is new under `-D warnings` fails the gate with no
+change to the code. `just check` follows.
 
 **Per Allium release.** The checker's version and its checksums live in the
 `biscuit-games-tooling` package, not here; moving that package's pin in `pyproject.toml`
@@ -56,8 +61,13 @@ describes. A moved checker re-verifies every module under `docs/specs/`. The mod
 no waiver today; any waiver added later is valid only against the version it was verified
 on, so each is checked again.
 
-Nothing here moves on its own: no bot opens a pull request for any of these pins until
-ticket T17 brings Renovate.
+Renovate lists the pending moves for these pins on its dependency dashboard, and each pull
+request opens only when it is approved there, except a vulnerability fix, which opens
+unasked once vulnerability alerts are enabled. Nothing merges on its own. What no rule
+moves, lychee's `LYCHEE_VERSION` beside its rev, the allium checksums inside the tooling
+package, and `pixi.lock` until the hosted app's relock is proven, still moves by hand as
+[Maintain dependencies](../how-to/maintain-dependencies.md#what-the-updater-proposes-and-what-stays-manual)
+describes.
 
 ## Cut a release
 
