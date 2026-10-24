@@ -525,6 +525,32 @@ The `rg` positive control is step 6's first search, which matches and exits 0 ov
 same paths. `ai_tmp/fresh` is deleted after these notes are committed (step 7). The
 commit that adds these notes changes only this file.
 
+### Pull request
+
+Push, `gh pr create` and one follow-up push of this evidence, authorised by the
+maintainer at 2026-10-24T01:20:37Z. PR: `https://github.com/BiscuitBin/pachinko/pull/10`,
+head `36c7521`, pushed as `ticket/t11-integration`. GitHub tested the merge commit
+`172aac4` (`HEAD is now at 172aac4 Merge 36c7521… into 46c2e33…` in the jobs' checkout).
+
+```text
+$ gh pr checks 10 --repo BiscuitBin/pachinko
+audit      pass  33s  .../actions/runs/40049381217/job/120738372558
+check      pass   4s  .../actions/runs/40049381502/job/120738573252
+coverage   pass  28s  .../actions/runs/40049381502/job/120738373963
+deny       pass  28s  .../actions/runs/40049381502/job/120738374253
+documents  pass  49s  .../actions/runs/40049381502/job/120738373876
+rust       pass  38s  .../actions/runs/40049381502/job/120738373969
+exit 0
+$ gh pr checks 10 --repo BiscuitBin/pachinko --required
+check      pass   4s  .../actions/runs/40049381502/job/120738573252
+exit 0
+```
+
+CI run `https://github.com/BiscuitBin/pachinko/actions/runs/40049381502`; Audit run
+`https://github.com/BiscuitBin/pachinko/actions/runs/40049381217`. A fresh clone of
+`main` after the merge is optional: step 3 proved the gate on `main` before this branch,
+and this run proved the merge.
+
 ## Open points
 
 None.
