@@ -28,7 +28,7 @@ env:
 # Ubuntu only: the crates are pure computation with eol=lf forced by
 # .gitattributes and rustfmt, so a second operating system would prove
 # nothing the first does not. `check`, last, is the one required check; the
-# four gate jobs are its `needs`, so no name carries a slash or a space.
+# gate jobs are its `needs`, so no name carries a slash or a space.
 jobs:
   rust:
     name: rust
@@ -124,6 +124,26 @@ jobs:
       - run: just check-specs
       - run: just analyse-specs
 
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: pachinko:dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: docker run --rm pachinko:dev
+
   # Advisory before 1.0; independent of the required check aggregate.
   semver:
     name: semver
@@ -149,7 +169,7 @@ jobs:
   # no setup action, and no `${{ }}` inside a shell line.
   check:
     name: check
-    needs: [rust, coverage, deny, documents]
+    needs: [rust, coverage, deny, documents, image]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

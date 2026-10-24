@@ -48,6 +48,7 @@ proves and why.
 | --- | --- |
 | `just bench [args…]` | Run divan benchmarks manually, with optional Cargo arguments. Never in CI or `just check`. |
 | `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all three locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
+| `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. See [Build the container image](../how-to/build-the-container-image.md). |
 | `just build` | Build every crate with every feature. Outside `just check`. |
 | `just test` | Every unit and integration test through cargo-nextest with `INSTA_UPDATE=no`: a snapshot mismatch fails without writing pending files. Then every doctest through `cargo test --doc`, because nextest cannot run doctests. Outside `just check`, where `coverage` and `test-doc` run the same tests. |
 | `just test-doc` | Every doctest. Gate 10. |
