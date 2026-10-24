@@ -50,7 +50,7 @@ Scratch copies, scratch branches and logs live under `ai_tmp/` and are never com
    authorised) and quote the baseline `just check` last line.
 2. Work through the items in order. Each runs in a scratch copy or on a scratch branch
    that is deleted afterwards, and `git status --short` is quoted empty after each.
-   Items 1 to 12:
+   Items 1 to 13:
 
    1. **The primary checkout's hook shim.** In the primary checkout on an up-to-date
       `main`, `just initialize`, then `ls -l .git/hooks/pre-commit`; on a scratch branch
@@ -77,11 +77,16 @@ Scratch copies, scratch branches and logs live under `ai_tmp/` and are never com
       an optional path dependency behind a feature; quote `just effects` failing and
       naming `rand`. The crate line passes `--all-features`, but no lane exercised the
       optional case; the fixture probes a target-gated and a transitive dependency only.
-   6. **The per-ban red runs at `main`'s tip.** Re-run T10's red harness: for each of the
-      eight crate bans and each `effect:` entry in `crates/libpachinko/clippy.toml`, a
-      scratch copy with that break removed from `tests/fixtures/effects-violation/` must
-      make `just effects` fail naming it. T10 ran it at `a2f88a1`, before the last bans
-      were added.
+   6. **The per-ban red runs at `main`'s tip.** Re-run T10's red harness, every ban
+      both ways, in a scratch copy reverted after each run. For each of the eight crate
+      bans, the crate added to libpachinko makes `just effects` fail naming it, and the
+      crate removed from `tests/fixtures/effects-violation/` makes it fail with the crate
+      probe not seeing it. For each `effect:` entry in `crates/libpachinko/clippy.toml`,
+      the break moved into libpachinko fails naming the ban, the fixture's break silenced
+      with its `// ban:` tag kept fails naming it as silent, and the break deleted with
+      its tag fails the inventory check naming it as not tagged. Each run quotes its exit
+      and that diagnostic; a run that fails for another reason does not count. T10 ran
+      it at `a2f88a1`, before the last bans were added.
    7. **Network denial on Linux.** `unshare -rn just check` on Linux, in a namespace
       holding only `lo`, with both `CONVENTIONS.md` §11 curl probes failing; every lane
       showed the denial on macOS only.
@@ -89,22 +94,37 @@ Scratch copies, scratch branches and logs live under `ai_tmp/` and are never com
       `main`, quoting each failure it predicts and the final green `just check`. T07
       replayed it before T02, T06 and T10 merged.
    9. **A negative control for each gate no lane made fire.** In a scratch copy, one
-      breaking change per recipe, quoting the recipe's non-zero exit and reverting:
-      `fmt-check`, `features`, the `coverage` floor, `doc`, `deps-unused`, and `deny`'s
-      `licenses`, `sources` and `openssl-sys` ban.
+      breaking change per recipe that leaves the build and the recipe's earlier steps
+      green, quoting the recipe's non-zero exit with the line in which the gate itself
+      rejects the break, then the recipe passing again once the break is reverted:
+      `fmt-check`, `features`, the `coverage` floor (its `--fail-under-lines` step, not
+      a compile or test failure), `doc`, `deps-unused`, and `deny`'s `licenses`,
+      `sources` and `openssl-sys` ban, each naming the licence, source or crate it
+      refuses. A failure before the gate runs is not evidence.
    10. **Claims carried from L without a local run.** `cargo search allium-cli` shows
-       3.6.1 (decision 0005); rustqual 1.8.3's line counting and its handling of an
-       `#[expect]` against the suppression budget (decision 0012); Cargo accepts a
+       3.6.1 (decision 0005); rustqual 1.8.3's line counting, its handling of an
+       `#[expect]` against the suppression budget, and its having no release binary for
+       any version, which puts it in `tools-source.txt` (decision 0012); Cargo accepts a
        dev-dependency cycle and refuses a normal one (`docs/explanation/layering.md`).
        Quote each, or record the sentence as unverified for the maintainer.
-   11. **`exclude-dev` and dev-dependencies.** In a scratch copy, a dev-dependency from a
-       git source passes `just deny` (`deny.toml`'s `[graph]` comment says `[sources]`
-       skips dev-dependencies). Quote it.
+   11. **`exclude-dev` and dev-dependencies.** `deny.toml`'s `[graph]` comment says
+       dev-dependencies skip `[sources]` and `just audit`. Show both halves in a scratch
+       copy, each with a paired control: a git dependency fails `just deny` as a normal
+       dependency and passes as a dev-dependency, and a crate release with a RustSec
+       advisory fails `just audit` as a normal dependency and passes as a
+       dev-dependency (**network, authorised**). Quote all four runs with their exit
+       codes.
    12. **The std-API inventory against std.** A mechanical comparison of the `effect:`
        entries in `crates/libpachinko/clippy.toml` with the pinned toolchain's stable
        items under `std::fs`, `std::env`, `std::net` and `std::process` (rustdoc JSON or
        an equivalent listing), quoting the difference, which must be empty or explained
        (constants, which clippy cannot ban; windows-only paths).
+   13. **The coverage debugging commands.** After `just coverage`, run
+       `cargo llvm-cov report --html` and quote `target/llvm-cov/html/index.html` existing,
+       then `cargo llvm-cov report --show-missing-lines` and its output, then from cold
+       `INSTA_UPDATE=no cargo llvm-cov nextest --workspace --all-features --locked --html`,
+       each with its exit code. `docs/how-to/test-and-debug.md` documents all three; T07
+       checked the flags with `cargo-llvm-cov llvm-cov report --help` only.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the hand-back notes before the final
    commit. Ask: which Closed item cites evidence that does not execute it; which quoted

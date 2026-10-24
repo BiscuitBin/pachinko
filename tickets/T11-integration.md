@@ -166,10 +166,11 @@ lists below give each item's resolution. "Tn:L" cites a line of `tickets/Tn-*.md
 | "Any crate T10 adds with a reason": T10 added none | T07:553 | Dropped from `architecture.md` and 0008 |
 | The skills still said the std-API bans arrive later, and that a probe failure is always a script defect | T05:218-219, :231-232; T10:906-907 | `.agents/skills/rust-change/SKILL.md`, `.agents/skills/review-change/SKILL.md`, `.agents/skills/fix-quality/SKILL.md` |
 | `AGENTS.md`: "No workflow publishes yet" | T05:190-191; T07:458-459 | `pages.yml` deploys on every push to `main`, so a push there is a deployment |
+| `AGENTS.md`: invariant 8's "every gate passes `--locked`" | T05:280-282; T07:454-457 | A sentence after the invariants names its two exceptions, `deps-unused` and the snapshot recipes; the invariant's text stays as §7 has it |
 | The setup action names L's ticket T03, and says no later step reaches the network | T00:435-436, :450-451 (to T01, not acted on) | `.github/actions/setup/action.yml` comments |
 | `.allium-loop/` is not ignored, so an Allium loop dirties the worktree | T05:276-279 (a T00 follow-up) | `.gitignore` line, and its mention in `configuration.md` |
-| `module_name_repetitions` is still described as allowed | T02:280-281; T07:631-632 | Row deleted from `configuration.md`; `quality-philosophy.md`'s example is now `multiple_crate_versions` |
-| The `cargo` group "requires" the package metadata | T02:282-284 | `configuration.md` says why the fields are kept |
+| `module_name_repetitions` is still described as allowed | T02:280-281; T07:631-632 | Row deleted from `configuration.md`; `quality-philosophy.md`'s example is now `multiple_crate_versions`; `CONVENTIONS.md` §3 says the line was removed |
+| The `cargo` group "requires" the package metadata | T02:282-284 | `configuration.md` and `CONVENTIONS.md` §3 say why the fields are kept |
 | `forbid` and `deny` "fail everywhere"; taplo sorts "every" dependency table; `_typos.toml` allowlist | T02 code review (T02:269, :276); T10:818 | `configuration.md` |
 | The inner `#![allow(..., reason)]` gap | T02:302-307 | `0009` and `configuration.md`'s lint row say review holds that form |
 | `layering.md` sends the reader to the wrong page for imports | T07:648 (T06's fact) | Links `work-with-the-specs.md#add-the-first-behavioural-module` |
@@ -187,8 +188,10 @@ free plan, so no `if: false`), the `app_id`, the `ci.yml` comment rewrite and th
 `name:`; T02's `wildcards`, `exclude-dev`, Windows-target, licence-allowance,
 `definition_in_module_root` and profile comments, and the `insta` rule in `testing.md`;
 T05's waiver terms and snapshot rule on T07's pages, decision 0010's facts, the
-dotfile exclusions, every recipe the skills name, and the `AGENTS.md` sentences that rest
-on T00, T02 and T06; T06's every page and link T07 wrote against it; T07's metrics
+dotfile exclusions, every recipe the skills name, the vendored skills' bare `allium`
+advice, kept verbatim while `AGENTS.md`'s specs block sends agents to the pinned checker
+(T05:287-290), and the `AGENTS.md` sentences that rest on T00, T02 and T06; T06's every
+page and link T07 wrote against it; T07's metrics
 sentences, T01 facts and wave-2 sentences, which are true until their wave-2 ticket
 lands.
 
@@ -200,9 +203,6 @@ lands.
 - PR #5 (T01's Pages evidence) has no recorded push authorisation; the maintainer merged it.
 - `tickets/README.md`'s Status column reads `open` for every done lane; the README says
   frontmatter is authoritative, and T11 may touch only T18's row.
-- Invariant 8 says every gate passes `--locked`; `deps-unused` and the snapshot recipes
-  cannot (T05:280-282; T07:454-457). Decision 0007 and `quality-gates.md` already narrow
-  it; the invariant is §7's verbatim text.
 - `AGENTS.md` is about 1300 words against §7's "about 1000" (T05:291-292).
 - Whether a gate should reject the inner `#![allow]` form (T02:302-307).
 - The release profile's fat LTO was to be measured by T13, which has no measuring step (T02:296-300).
@@ -210,6 +210,13 @@ lands.
 - The crate bans are a denylist; T10 proposes an allowlist of libpachinko's tree (T10:915-922).
 - `std::env::consts` stays reachable, against §9's "everything under `std::env`" (T10:938-943).
 - Std code behind another target's `cfg`, and windows-only std paths, are not linted (T10:944-947).
+- Code under a mix of mutually exclusive features, under `cfg(not(clippy))` or under a
+  custom `cfg` is not linted (T10:951-957); the handbook and the skills now leave it to
+  review.
+- A value of a banned type from an unbanned source goes unflagged (T10:958-963); each
+  source PR #9's review found is banned, and a later one is the new-std-items case.
+- A revert that restores an older mtime can let cargo replay stale clippy warnings, in
+  gates 6 and 8 (T10:968-969).
 - libpachinko's own tests are held to the bans too (T10:970-974); the handbook now says so.
 - T10 edited the frozen `_typos.toml` (`ede`) on its branch (T10:818), and lanes merged
   `main` rather than rebasing (T10:160-162).
@@ -218,9 +225,8 @@ lands.
   `scripts/initialize.sh` say "components and targets" with no target listed (T00:437-440).
 - `CONVENTIONS.md` text this ticket left as the historical design, outside §9 and §12:
   §1 fact 4 and §3 (the mechanism as T10's open choice), §2 and §4 ("verbatim", with the
-  renumbered decision references, T00:338-340), §3's `module_name_repetitions` and
-  `cargo` group wording (T02:280-284), §7's word count, §10's stub job, §11's rebase rule,
-  §13's toolchain bump (which should re-run the std inventory, T10:948-950).
+  renumbered decision references, T00:338-340), §7's word count, §10's stub job, §11's
+  rebase rule, §13's toolchain bump (which should re-run the std inventory, T10:948-950).
 - The analyser checks producers only, so a green `analyse-specs` does not prove a guard
   is satisfiable (T06:267-272); `work-with-the-specs.md` does not say so.
 - Several T07 sentences go stale when T13, T14 or T17 lands, on pages those tickets do
@@ -335,13 +341,26 @@ succeeded. Read back at 23:37:21Z:
 $ gh api repos/BiscuitBin/pachinko/branches/main/protection/required_status_checks --jq '[.checks[] | {context, app_id}]'
 [{"app_id":15368,"context":"check"}]                                  exit 0
 $ gh api repos/BiscuitBin/pachinko/branches/main/protection > protection-now.json   exit 0
-$ diff <(jq -S . T01's ai_tmp/protection-after.json) <(jq -S . protection-now.json)
+```
+
+At `8e5121b`, offline in `ai_tmp/t11/`, with T01's `ai_tmp/protection-after.json`
+copied to `t01-protection-after.json`:
+
+```text
+$ jq -S . t01-protection-after.json > after-sorted.json                             exit 0
+$ jq -S . protection-now.json > now-sorted.json                                     exit 0
+$ wc -l after-sorted.json now-sorted.json
+      46 after-sorted.json
+      46 now-sorted.json
+      92 total                                                                      exit 0
+$ diff after-sorted.json now-sorted.json
 (nothing)                                                             exit 0
 ```
 
 One entry, `check`, `app_id` 15368 (GitHub Actions, as T01 recorded). T01 saved the
-whole response after its apply at 01:11:57Z, in its own worktree's `ai_tmp/`; normalised
-with `jq -S .`, it equals today's response field for field, so nothing changed.
+whole response after its apply at 01:11:57Z, in its own worktree's `ai_tmp/`; each file
+normalised with `jq -S .` exits 0 and gives 46 lines, and the two normalised files are
+equal field for field, so nothing changed.
 Pages also reads `{"build_type":"workflow","cname":null,"html_url":"https://biscuitbin.github.io/pachinko/","https_enforced":true}`
 (23:59:21Z), so there is no custom domain.
 
@@ -374,6 +393,7 @@ Carried into `tickets/CONVENTIONS.md` §12 as an Outcome column:
 | T00, T07, T10 | The hook shim in a primary checkout refusing a bad commit (T00:428-431; T07:302-304; T10:158-168) | Closed for the shim: step 3's clone refused a malformed spec and a misspelling. Open for the maintainer's own primary checkout, whose `.git/hooks` holds samples only: T18 item 1 |
 | T06 | The spec hooks never refused a commit; `analyse-specs` never ran on a module that does not parse (T06:184-203) | Closed: step 3, both hooks `Failed` on the malformed module |
 | T00 | typos `--force-exclude` reports without rewriting, shown by no control (T00:353-355) | Closed: step 3, `cmp exit 0` |
+| T00, T02 | Clippy over L's own tree on 1.99.1, handed from T00 to T02 (T00:316-321, :328) and not run by T02, which linted this tree (T02:170) | Closed as moot: L's code is not carried here, so only this tree meets the lint table on the pin, and `clippy` runs over it in step 3's offline `just check`; any site the new lints flag in L, such as `assert_is_empty`, is L's to fix |
 | T00, T02, T07 | `snapshots-review` and `snapshots-accept`, and `snapshots-check` on a real snapshot | Open: T18 item 2, closed by the first snapshot's ticket |
 | T00, T01, T02, T10 | `audit.yml` on `main`; `just audit` | Closed: run `40042032474` (`advisories ok`) |
 | T07 | `audit.yml`'s weekly schedule never observed (T07:516) | Open: T18 item 4 |
@@ -392,7 +412,8 @@ Carried into `tickets/CONVENTIONS.md` §12 as an Outcome column:
 | T02 | `wildcards`, `cargo_common_metadata` and the `module_name_repetitions` removal shown in scratch copies or lint dumps only (T02:151-157, :215-226) | Closed: the scratch runs are quoted in T02's notes; nothing on `main` claims more |
 | T02 | The nextest `ci` profile never selected | Closed: the handbook and the file say nothing selects it; the profile's future is a maintainer decision (above) |
 | T07 | The tutorial replayed before T02, T06 and T10 merged (T07:259-296) | Open: T18 item 8 |
-| T07 | L's claims carried without a run: `allium-cli` 3.6.1 on crates.io, rustqual 1.8.3's counting, Cargo's dev-dependency cycles (T07:478-479, :498-500, :530-531) | Open: T18 item 10 |
+| T07 | L's claims carried without a run: `allium-cli` 3.6.1 on crates.io, rustqual 1.8.3's counting and missing release binary, Cargo's dev-dependency cycles (T07:478-479, :498-500, :530-531) | Open: T18 item 10 |
+| T07 | `cargo llvm-cov report --html` and `--show-missing-lines` in `test-and-debug.md`, checked by `--help` only (T07:537-538) | Open: T18 item 13; step 3's `just coverage` runs `report` with `--fail-under-lines` and `--lcov` only |
 | T07 | "No custom domain" inferred from `html_url` (T07:521-522) | Closed: `cname` is `null` (step 4) |
 | T07 | Branch protection as `quality-gates.md` describes it, read from T01's notes (T07:532-534) | Closed: step 4's whole response, equal to T01's: `check` only, `strict: false`, no reviews, force pushes and deletions refused, administrators not bound |
 | T07 | The `github-pages` environment admitting `main` alone, and the first deployment at `49890ae`, read from T01's notes (T07:501-503) | Closed: at 00:06Z on 2026-10-24, `environments/github-pages` reads `custom_branch_policies: true` with one policy, `{"name":"main","type":"branch"}`, and the earliest `github-pages` deployment is `49890ae`, created 02:43:52Z on 2026-10-23 |
@@ -422,6 +443,47 @@ At `55e38ae`:
   `agent-contract.md`, `purpose-and-scope.md`, `work-with-the-specs.md`, `maintenance.md`,
   `architecture.md` and `quality-philosophy.md`, and decision 0008's three sentences on
   the `no_std` and wasm design it rejected, which describe the library it was carried from.
+
+### Review records (`CONVENTIONS.md` §14)
+
+Reviewers: codex-cli 0.163.0, `codex exec -m gpt-6-astra -s read-only`, one conformance
+and one breakage reviewer per checkpoint, briefed with the ticket, `CONVENTIONS.md` and
+every lane's hand-back notes, and run with stdin closed. Triage: one fresh-context Claude
+Opus 5.5 subagent per finding, read-only; then one writer per checkpoint, in turn,
+applied the valid fixes. Neither reviewers nor triagers wrote the change. Both
+checkpoints ran over `8e5121b`, so the reconciliation list and the claims tables were
+reviewed together, before the `main` pull request was asked for. No finding was high,
+so neither checkpoint ran a second round. Raw files: `ai_tmp/review/T11-{1,2}/`,
+uncommitted.
+
+Checkpoint 1, the reconciliation list (step 2):
+
+| Id | Severity | Verdict | Applied |
+| --- | --- | --- | --- |
+| C1, B01 | medium | Valid: T10's other unlinted cases (feature mixes, `cfg(not(clippy))`, custom cfgs) were missing from the list and from the review guidance, and quality-gates row 8 claimed more than the three passes see | Row 8 qualified; 0008, `architecture.md`, `quality-gates.md`, `CONVENTIONS.md` §9 and both review skills name them; the rest of T10's limits listed for the maintainer |
+| C2, B03 | medium | Valid: the new `fix-quality` line read every probe failure as list drift; the script also reports a lint cap, a fixture that does not compile and a matcher miss | `fix-quality` routes each message to its cause |
+| B02 | medium | Valid: 0014 said the runtime "can live only in `pachinko`", but the crate bans are a denylist | 0014 says what the lists enforce and what review covers |
+| B04 | medium | Valid, handed back: CI runs no `check-clean`; adding a step changes CI, which T01 handed to the maintainer | Already in "Left for the maintainer" |
+| B05 | medium | Valid, handed back: 0013 and 0012 go stale when T14 and T17 land, and neither lists them; changing wave-2 tickets is out of scope, and the sentences are true today | Already in "Left for the maintainer" |
+| C3 | low | Valid: 0008 said only gate 8 rejects a direct call; gate 6 reads the same file | "gates 6 and 8" |
+| C4 | low | Valid: T05's bare-`allium` hand-back had no disposition | Listed as true on `main` |
+| B06 | low | Valid: invariant 8's exceptions were left to the maintainer though T07 handed them to T11 | `AGENTS.md` names the two exceptions after the invariants, leaving §7's text |
+| B07 | low | Valid: `CONVENTIONS.md` §3 still told an agent to keep the removed `module_name_repetitions` line and that the `cargo` group requires the metadata | §3 corrected |
+
+Checkpoint 2, the claims tables and T18 (step 5):
+
+| Id | Severity | Verdict | Applied |
+| --- | --- | --- | --- |
+| C01, BR-01 | medium | Valid: T18 item 11 tested `[sources]` only, and without a control | Item 11 pairs normal and dev-dependency runs for both sources and advisories |
+| C02 | medium | Valid: linting L's tree on 1.99.1, handed from T00 to T02, had no row | Row added, closed as moot: L's code is not carried here |
+| BR-02 | medium | Valid: T18 item 6 removed fixture breaks only, not T10's "every ban, both ways" | Item 6 restates the harness's cases and wants each case's own diagnostic |
+| BR-03 | medium | Valid: T18 item 9 accepted any non-zero exit | Item 9 wants the gate's own rejection after green prerequisites, then a green revert |
+| C03 | low | Valid: rustqual's missing release binary was not carried into T18 | Added to item 10 |
+| C04 | low | Valid: `cargo llvm-cov report --html` was checked by `--help` only | Row added; T18 item 13 |
+| BR-04 | low | Valid: the quoted `diff <(jq …) <(jq …)` hid both `jq` exits | Requoted as separate steps, each with its exit (step 4) |
+
+After the fixes, at the commit below: `just check-docs`, `just check-agents` and
+`just lint` exit 0, and the final verification follows.
 
 ## Open points
 

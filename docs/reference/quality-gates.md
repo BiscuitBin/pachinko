@@ -23,7 +23,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
 | 6 | `clippy` | `cargo clippy -- -D warnings` | Every lint in the workspace table is clean over every crate target and feature, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
-| 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API; and the probe fixture trips every ban once while pachinko trips none. |
+| 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API in what clippy compiles for the host with every feature, with none, and with every feature in the release profile; and the probe fixture trips every ban once while pachinko trips none. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
 | 10 | `test-doc` | `cargo test --doc` | Every doc example compiles and passes. |
 | 11 | `coverage` | `cargo llvm-cov nextest` | Every unit and integration test passes, and line coverage over `crates/*/src/**` is at or above the floor of 90%. Doctests are gate 10's. |
@@ -111,8 +111,10 @@ in four checks:
 The script pins cargo's colour, progress bar, warnings level and debug assertions, so
 the caller's settings cannot hide a finding. A lint cap in the caller's `RUSTFLAGS` or a
 cargo config's `rustflags` is not overridden: the probe then sees nothing fire, fails,
-and names that cause. Clippy lints only what the host compiles, so code behind another
-target's `cfg` and a std item added after the inventory are left to review.
+and names that cause. Clippy lints only what its three passes compile, so the following
+are left to review: code behind another target's `cfg`; code under a mix of features
+none of the passes sets; code under `cfg(not(clippy))` or a custom `cfg`; and a std item
+added after the inventory.
 
 A failure names the banned crate or std path and where it was found. Move the effect
 behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake

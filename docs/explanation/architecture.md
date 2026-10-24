@@ -104,8 +104,10 @@ the first `clippy.toml` it finds walking up from a crate's manifest, so that fil
 libpachinko alone, and the service, linted with the root file, keeps every effect.
 Clippy resolves names, so an alias, a glob import, a macro body, a function value and a
 method on a value passed in are all caught. Because the lists name items rather than
-modules, a std item added in a later Rust is not banned until it is listed, and code
-behind a target the host does not compile is not linted; review covers both.
+modules, a std item added in a later Rust is not banned until it is listed. Clippy lints
+only what it builds, so code behind a target the host does not compile, under a mix of
+features none of gate 8's passes sets, or under `cfg(not(clippy))` or a custom `cfg` is
+not linted. Review covers all of these.
 
 **The probe.** A ban that cannot be shown to fire is not trusted to hold. A fixture under
 `tests/fixtures/effects-violation/` breaks every ban exactly once, and the gate fails

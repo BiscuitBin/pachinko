@@ -90,13 +90,15 @@ disallowed by `clippy.toml`, for their iteration order rather than for any targe
 timeout needs the clock, which is banned, so it comes through a clock trait rather than
 being impossible.
 
-The effects are nameable, so a direct call compiles and only gate 8 rejects it. The
+The effects are nameable, so a direct call compiles and gates 6 and 8 reject it. The
 protection is as good as the list: a new kind of effect needs a decision record first
 (`AGENTS.md`), and with it a ban in the script or in `crates/libpachinko/clippy.toml`
 and a line in the fixture that breaks it. What the lists cannot see is caught by review
-alone: a std item added after the inventory, and code behind a target the host does not
-compile, since clippy lints only what it builds. That is why the `review-change` skill
-still tells a reviewer to read libpachinko's diff for a direct std call.
+alone, since clippy lints only what it builds: a std item added after the inventory,
+code behind a target the host does not compile, code under a mix of features none of
+gate 8's three passes sets, and code under `cfg(not(clippy))` or a custom `cfg`. That is
+why the `review-change` skill still tells a reviewer to read libpachinko's diff for a
+direct std call.
 
 Two mechanisms hold the boundary where a target check held most of it before: the crate
 line and clippy's disallowed paths, each with its probe. Both run offline once

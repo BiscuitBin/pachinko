@@ -237,20 +237,22 @@ Wave 2 creates paths of its own; each wave-2 ticket lists them.
 Root `Cargo.toml` is L `Cargo.toml` with: `repository` and `homepage` set to
 `https://github.com/BiscuitBin/pachinko`; `rust-version` per §2; no
 `[workspace.dependencies]`; the `std_instead_of_core`, `std_instead_of_alloc` and
-`alloc_instead_of_core` lines removed (decision 2); the `module_name_repetitions`
-comment reworded without the sudoku example; the `[profile.release]` comment about pyo3
-removed. T00 lands the full lint table at once, because `-D warnings` is decided by it
-and a skeleton with fewer lints would only move the failures into T02.
+`alloc_instead_of_core` lines removed (decision 2); the `module_name_repetitions` line
+removed (T02: the lint is in the restriction group, which the table never enables); the
+`[profile.release]` comment about pyo3 removed. T00 lands the full lint table at once,
+because `-D warnings` is decided by it and a skeleton with fewer lints would only move
+the failures into T02.
 
 `crates/libpachinko/Cargo.toml`: L `crates/pawdoku/Cargo.toml`'s package shape, every
 field `.workspace = true`, `name = "libpachinko"`, a domain-neutral `description`
-(the `cargo` lint group requires one, plus `keywords`, `categories` and `readme`), no
-`no-std` category, no `[features]` and no dependencies. `src/lib.rs`: the crate docs
-(stating that the domain arrives with the specifications) and one item,
-`pub const fn version() -> &'static str` returning `env!("CARGO_PKG_VERSION")`, with a
-doctest and an in-module unit test, so that every gate has something to format, lint,
-test, document and measure. `env!` is read at compile time and is not the effect
-decision 3 bans.
+with `keywords`, `categories` and `readme` (the metadata the `cargo` group's
+`cargo_common_metadata` names; the lint skips a `publish = false` package, so they are
+kept for the docs and for the day publishing is decided), no `no-std` category, no
+`[features]` and no dependencies. `src/lib.rs`: the crate docs (stating that the domain
+arrives with the specifications) and one item, `pub const fn version() -> &'static str`
+returning `env!("CARGO_PKG_VERSION")`, with a doctest and an in-module unit test, so
+that every gate has something to format, lint, test, document and measure. `env!` is
+read at compile time and is not the effect decision 3 bans.
 
 `crates/pachinko/Cargo.toml`: the same shape, `name = "pachinko"`, one dependency,
 `libpachinko = { path = "../libpachinko", version = "0.1.0" }`. Cargo then enforces the
@@ -584,9 +586,9 @@ where a path reaches the same effect (the `Path` filesystem queries, the unix `f
 script runs four checks: 0, the drift check; then the three above, with clippy run three
 times over libpachinko (every feature, none, and every feature in the release profile).
 Known limits, each recorded in T10's Open points: a constant cannot be banned, so
-`std::env::consts` stays reachable; code behind another target's `cfg` and std items
-newer than the list are left to review; `Backtrace::capture` stays allowed by the
-maintainer's choice.
+`std::env::consts` stays reachable; code behind another target's `cfg`, a mix of
+features, `cfg(not(clippy))` or a custom `cfg`, and std items newer than the list are
+left to review; `Backtrace::capture` stays allowed by the maintainer's choice.
 
 ## 10. CI
 
