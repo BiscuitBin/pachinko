@@ -25,7 +25,7 @@ repos:
         entry: just fmt-check
         language: system
         pass_filenames: false
-        files: ^(crates/.*\.rs|rustfmt\.toml)$
+        files: ^((crates|fuzz)/.*\.rs|rustfmt\.toml)$
 
       - id: toml-check
         name: taplo format and lint

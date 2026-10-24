@@ -47,6 +47,7 @@
     {"path": "decisions/0012-metrics-gate.md", "title": "Decision 0012: The metrics gate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_metrics_gate"], "requires": []},
     {"path": "decisions/0013-api-reference-on-github-pages.md", "title": "Decision 0013: The API reference on GitHub Pages", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_api_reference_on_pages"], "requires": []},
     {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: The service runtime waits for the specifications", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_service_runtime_deferred"], "requires": []},
-    {"path": "decisions/0016-release-process.md", "title": "Decision 0016: The release process", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_release_process"], "requires": []}
+    {"path": "decisions/0016-release-process.md", "title": "Decision 0016: The release process", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_release_process"], "requires": []},
+    {"path": "decisions/0017-mutation-bench-and-fuzz.md", "title": "Decision 0017: Mutation testing, benchmarks and fuzzing", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_mutation_bench_fuzz"], "requires": []}
   ]
 }

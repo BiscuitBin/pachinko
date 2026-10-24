@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+exclude = ["fuzz"]
+
+# Decision 0007: divan times the smoke benchmark, as a development dependency
+# only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
+[workspace.dependencies]
+divan = "0.1.21"
 
 [workspace.package]
 edition = "2024"

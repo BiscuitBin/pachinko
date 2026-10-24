@@ -32,3 +32,10 @@ pre-release-replacements = [
   { file = "../../CHANGELOG.md", search = "(?m)^## libpachinko \\[Unreleased\\]\\[libpachinko-unreleased\\]\n", replace = "## libpachinko [Unreleased][libpachinko-unreleased]\n\n## libpachinko [{{version}}][libpachinko-{{version}}] - {{date}}\n", exactly = 1 },
   { file = "../../CHANGELOG.md", search = "(?m)^\\[libpachinko-unreleased\\]: .*", replace = "[libpachinko-unreleased]: {{repository}}/compare/libpachinko-v{{version}}...HEAD\n[libpachinko-{{version}}]: {{repository}}/releases/tag/libpachinko-v{{version}}", exactly = 1 },
 ]
+
+[dev-dependencies]
+divan = { workspace = true }
+
+[[bench]]
+name = "version"
+harness = false

@@ -36,6 +36,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0013](0013-api-reference-on-github-pages.md) | The API reference on GitHub Pages |
 | [0014](0014-service-runtime-deferred.md) | The service runtime waits for the specifications |
 | [0016](0016-release-process.md) | The release process |
+| [0017](0017-mutation-bench-and-fuzz.md) | Mutation testing, benchmarks and fuzzing |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Two recipes in the gate list decision 0009

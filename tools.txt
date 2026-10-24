@@ -8,3 +8,5 @@
 cargo-hack@0.6.45
 # T14, verified 2026-10-23: release binaries for both platforms, no conda package.
 cargo-release@1.1.7
+# T16, verified 2026-10-23: stable without sanitizers; macOS binary needs Rosetta.
+cargo-fuzz@0.13.2
