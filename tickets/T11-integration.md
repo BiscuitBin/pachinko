@@ -1,7 +1,7 @@
 ---
 id: T11
 title: "Integration: the first green `just check` from a fresh clone and in CI, branch protection read back"
-status: open
+status: done
 depends_on: [T01, T02, T05, T06, T07, T10]
 parallel_with: []
 branch: ticket/t11-integration
@@ -423,11 +423,11 @@ T18 is `tickets/T18-verification-gaps.md`, in the README index and graph.
 
 ### Cleanliness (step 6)
 
-At `55e38ae`:
+At `97b399b`:
 
 - `rg -n -i 'stub|lands with T|arrive with T|TODO' docs AGENTS.md .agents crates` exits 0.
   Every line names T12 (the two crate READMEs) or the specifications (`testing.md:65`,
-  `api.md:71`, `architecture.md:69`), or uses the word otherwise: a dev-dependency that
+  `api.md:71`, `architecture.md:70`), or uses the word otherwise: a dev-dependency that
   arrives "with the first test that needs it" (`testing.md:20`) and one that "lands with
   the code" (`maintain-dependencies.md:74`), "never stub" (`terminology.md:35`,
   `layering.md:57-58`, `quality-philosophy.md`'s heading), the `todo` lint
@@ -482,8 +482,48 @@ Checkpoint 2, the claims tables and T18 (step 5):
 | C04 | low | Valid: `cargo llvm-cov report --html` was checked by `--help` only | Row added; T18 item 13 |
 | BR-04 | low | Valid: the quoted `diff <(jq …) <(jq …)` hid both `jq` exits | Requoted as separate steps, each with its exit (step 4) |
 
-After the fixes, at the commit below: `just check-docs`, `just check-agents` and
-`just lint` exit 0, and the final verification follows.
+After the fixes, at `9c7b8e8`: `just check` exit 0, `All checks passed and the worktree
+is unchanged.`
+
+### Code review
+
+The implement skill's `/code-review` at medium effort over `main...HEAD` (`9c7b8e8`)
+returned ten findings. Three were this ticket's close-out, not yet written: the
+`status:`, the final verification and the step 6 searches at the last commit; all three
+are below. Applied in `97b399b`:
+
+- The ban table in `architecture.md` and decision 0008's list named §9's set only; both
+  now say `crates/libpachinko/clippy.toml` is the list, 121 entries, name what it adds,
+  and say `std::env::consts` stays reachable.
+- `Backtrace::capture` was allowed only in `CONVENTIONS.md`; 0008 and `architecture.md`
+  record it.
+- `security-model.md` and `architecture.md`'s summary said the gate proves the bans
+  hold, without the limits; both now leave the rest to review.
+- `AGENTS.md`'s invariant 8 sentence cited 0007, which names only the snapshot
+  exception, and repeated the snapshot recipes' rule; it now points to
+  `quality-gates.md` and to the block below.
+- `configuration.md` said the restated `clippy.toml` must match verbatim; check 0
+  ignores comments and blank lines. A `// ban:` tag may name more than one path.
+- `quality-philosophy.md`'s example now says why the lint is wrong here.
+
+### Final verification
+
+`git fetch origin` exit 0; `origin/main` is `46c2e33`, an ancestor of `HEAD`, so no
+rebase was needed. At `97b399b` (log `ai_tmp/t11/final.log`):
+
+```text
+$ just check
+… the twenty recipes, as in step 3 …
+All checks passed and the worktree is unchanged.                      exit 0
+$ git status --short
+(nothing)                                                             exit 0
+$ rg -n '\bT(0[0-9]|10)\b' docs AGENTS.md .agents crates .github .config Justfile scripts
+(nothing)                                                             exit 1
+```
+
+The `rg` positive control is step 6's first search, which matches and exits 0 over the
+same paths. `ai_tmp/fresh` is deleted after these notes are committed (step 7). The
+commit that adds these notes changes only this file.
 
 ## Open points
 
