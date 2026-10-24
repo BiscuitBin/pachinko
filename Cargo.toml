@@ -11,8 +11,17 @@ license = "Apache-2.0"
 repository = "https://github.com/BiscuitBin/pachinko"
 homepage = "https://github.com/BiscuitBin/pachinko"
 authors = ["Steven Cutting"]
-# Neither crate goes to crates.io; release tooling is a later ticket's decision.
+# Neither crate goes to crates.io; decision 0016 defines GitHub Releases.
 publish = false
+
+[workspace.metadata.release]
+allow-branch = ["main", "release/*"]
+# Keep crate/version placeholders available even when a dependent is updated.
+consolidate-commits = false
+pre-release-commit-message = "Release {{crate_name}} {{version}}"
+tag-message = "Release {{crate_name}} {{version}}"
+publish = false
+push = false
 
 # Every level here is `warn` so a local build never breaks mid-edit; `just clippy`
 # passes `-D warnings`, which is where a warning becomes a failure. The `forbid` and

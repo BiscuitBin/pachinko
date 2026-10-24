@@ -52,6 +52,67 @@ on, so each is checked again.
 Nothing here moves on its own: no bot opens a pull request for any of these pins until
 ticket T17 brings Renovate.
 
+## Cut a release
+
+Each crate is released independently. [Decision 0016](../decisions/0016-release-process.md)
+records the mechanism; `CHANGELOG.md` owns its release notes. Neither crate goes to
+crates.io, and the GitHub Release has no binary assets. Only `main` is supported, with
+no backports, as [SECURITY.md](../../SECURITY.md) states.
+
+Before the workflow merges, separately authorize creation of the GitHub environment
+`release`, with the maintainer as its one required reviewer. Read its protection rules
+back and record them in the pull request. Without this, GitHub would create an
+unprotected environment on the first run. No real release is authorized by implementing
+the release process.
+
+The following example prepares a library patch. Substitute `pachinko` for a service
+release and choose the next version deliberately. For the first release the maintainer
+may instead tag the existing 0.1.0 without a bump; omit `patch` during preparation.
+
+1. Locally update `main` with `git pull --ff-only` and create
+   `release/libpachinko-v0.1.1`. Write the release notes under
+   `## libpachinko [Unreleased][libpachinko-unreleased]`, leaving the other crate's section alone.
+2. Run `just check` and `just semver`. Before the first library tag, semver compares
+   this branch with main's merge base; after it, with the last reachable library tag.
+   `just semver <revision>` chooses a specific baseline. This report is advisory on
+   pull requests; before libpachinko 1.0, make it a required job in `check`'s needs.
+3. Run `cargo release patch -p libpachinko` for the dry run. Then run
+   `cargo release patch -p libpachinko --no-tag --execute`. This bumps the selected
+   crate, rewrites only its changelog section and commits locally; it does not publish
+   or push. Review the whole diff, including any dependent constraint update and the
+   lockfile. After a library version bump, update the explicit version assertions in
+   the unit test and doctest in `crates/libpachinko/src/lib.rs`, the service unit test
+   in `crates/pachinko/src/lib.rs`, and the binary test in
+   `crates/pachinko/tests/binary.rs`. The service prints the library version, so its
+   output assertions follow a library bump even when the service version stays the
+   same; a service-only bump does not change those expectations. Commit these assertion
+   updates on the release branch before running `just check` on the resulting commit
+   and opening the release pull request.
+4. Separately authorize the branch push and opening the pull request. Merge only after
+   the required `check` passes. The release commit must reach main through that pull
+   request. No tag is made on the release branch.
+5. Locally switch to `main` and run `git pull --ff-only`. Compare `date -u +%F` with
+   the date in `## libpachinko [0.1.1][libpachinko-0.1.1] - YYYY-MM-DD`. It must be today's
+   UTC date, and the notes must be non-empty. If the day changed, merge a one-line
+   re-dating pull request first, then pull main again. Repeat this check if the UTC
+   day changes before the tag push. Before the first tag, review `SECURITY.md`, the
+   changelog and the README for claims the release would make false.
+6. Separately authorize the real local tag. Run
+   `cargo release tag -p libpachinko --execute` on the updated main merge commit.
+   Confirm `git cat-file -t libpachinko-v0.1.1` prints `tag` and
+   `git rev-parse libpachinko-v0.1.1^{commit} HEAD` prints the same commit twice.
+7. Separately authorize `git push origin libpachinko-v0.1.1`. Push that one tag.
+   CI's read-only verify job runs setup, installs Allium, runs `just check`, and
+   checks the tag's commit, crate version, ancestry on main and changelog section.
+   The date guard accepts any correctly shaped date so reruns work on later days;
+   the local check above is what enforces the UTC push day.
+8. Review the waiting deployment in the `release` environment. Approving that
+   deployment is a separate authorization to create the GitHub Release. The privileged
+   job runs no setup or build tools, fetches the tag again, refuses a changed commit,
+   and creates the Release from that crate's changelog section with `--verify-tag`.
+   A rerun after a Release already exists fails rather than rewriting it silently;
+   inspect the existing Release before choosing any further action.
+
 ## Secrets
 
 None are stored, and there is nothing to rotate. Continuous integration uses the token

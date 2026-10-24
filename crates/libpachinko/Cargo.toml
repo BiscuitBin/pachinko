@@ -25,3 +25,10 @@ workspace = true
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 targets = ["x86_64-unknown-linux-gnu"]
+
+[package.metadata.release]
+tag-prefix = "libpachinko-"
+pre-release-replacements = [
+  { file = "../../CHANGELOG.md", search = "(?m)^## libpachinko \\[Unreleased\\]\\[libpachinko-unreleased\\]\n", replace = "## libpachinko [Unreleased][libpachinko-unreleased]\n\n## libpachinko [{{version}}][libpachinko-{{version}}] - {{date}}\n", exactly = 1 },
+  { file = "../../CHANGELOG.md", search = "(?m)^\\[libpachinko-unreleased\\]: .*", replace = "[libpachinko-unreleased]: {{repository}}/compare/libpachinko-v{{version}}...HEAD\n[libpachinko-{{version}}]: {{repository}}/releases/tag/libpachinko-v{{version}}", exactly = 1 },
+]
