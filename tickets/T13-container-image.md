@@ -332,8 +332,22 @@ Two fresh-context Codex `gpt-6-astra` reviewers independently checked conformanc
 and breakage of the rebase delta under §14; neither found an actionable defect.
 The root review under `review-change` confirmed both lanes were preserved and
 all nine invariants remain intact. The earlier PR run above describes the original
-commits; new CI evidence awaits separate authorisation to push the rebased branch.
+commits. The rebased commits were then pushed: `51212d5` merged the existing PR history
+(parents `bf97c24` and `7ee7bfc`), so the push went through without force. PR 14's CI
+run `https://github.com/BiscuitBin/pachinko/actions/runs/40066558127` (pull_request)
+and Audit run `https://github.com/BiscuitBin/pachinko/actions/runs/40066558113` on
+head `51212d5` both succeeded (the merge commit they tested was not read), and the PR
+merged as `53fdb11`.
 
 ## Open points
 
 - The image is `linux/amd64` only. `linux/arm64` joins when something deploys it.
+  Still open on 2026-10-24: nothing deploys the image yet.
+- `.dockerignore` mirrors `.gitignore` by hand, with no drift gate. Synced on 2026-10-24
+  on branch `review-and-finish-bootstrap` (commit `b0c931f`) with T15's `mutants.out`
+  comment and T16's four `fuzz/` entries.
+- `.humanlayer/tasks/pr-14/description.md`, which the follow-up commit added outside
+  Files touched, was removed on 2026-10-24 on the same branch, by the maintainer's
+  choice: it is scratch output.
+- CI evidence for the rebased commits: closed by PR 14's run on `51212d5` (Merge-conflict
+  verification).

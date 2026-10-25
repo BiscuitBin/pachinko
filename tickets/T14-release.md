@@ -576,7 +576,9 @@ authorizations. The first real version remains the maintainer's decision.
 
 - The first version. The draft cut `0.1.0`; both crates are `0.1.0` in their manifests
   already, so the first tag is `v0.1.0` of each with no bump, or a bump to `0.1.1`.
-  The maintainer decides when the first release is cut.
+  The maintainer decides when the first release is cut. Still open on 2026-10-24:
+  `release.yml` has never run. It closes when the maintainer chooses the version and
+  authorizes the tag push and the `release` deployment, and that run is quoted.
 
 - Version-independent assertions in the library unit test/doctest and both service
   output tests would remove the manual release step. Closed on 2026-10-24 on branch
@@ -585,3 +587,15 @@ authorizations. The first real version remains the maintainer's decision.
   `libpachinko::version()`, and Maintenance's step 3 no longer asks for a test edit. In
   a scratch copy, a library-only bump to `0.1.1` left `cargo test --workspace` green,
   and replacing `version()`'s body with `"xyzzy"` still failed it (exit 101).
+
+- `just fix` emptied this ticket (the formatter defect handed back above). Closed on
+  2026-10-24 on branch `review-and-finish-bootstrap` (commit `b0c931f`). The fix
+  configuration's markdownlint hook appended its config globs to every parallel prek
+  batch, so each batch fixed all 112 Markdown files at once and the racing writes
+  corrupted the file. With `pass_filenames: false`, one process fixes each file once: in
+  a scratch clone the file was repaired and a rerun exited 0.
+
+- Cargo-release's registry lookup reaches the network even with publishing disabled.
+  Closed on 2026-10-24 on the same branch (commit `e00bc3b`): Maintenance's steps 3 and
+  6 say the `cargo release` commands look up the crates.io index, so release preparation
+  and tagging need the network.

@@ -71,7 +71,7 @@ constants belong in source where they can be reviewed.
 | `lychee.toml` | The link checker's settings and excluded paths. |
 | `_typos.toml` | The only typos configuration: the excluded lockfiles and directories, and the allowlisted `mis`, `als` and `ede`. A `[tool.typos]` table in `pyproject.toml` would be ignored. |
 | `.editorconfig` | Whitespace for every file type: UTF-8, LF, a final newline and two-space indentation by default; four spaces for Rust, the `Justfile` and the specifications; Markdown and `LICENSE` left to their own indentation. |
-| `.gitattributes` | LF line endings for every text file; `Cargo.lock` and `pixi.lock` marked generated, `pixi.lock` merged as binary and left out of diffs; `allium-skill-reference/` marked vendored. |
+| `.gitattributes` | LF line endings for every text file; every `Cargo.lock`, `fuzz/Cargo.lock` included, and `pixi.lock` marked generated, `pixi.lock` merged as binary and left out of diffs; `allium-skill-reference/` marked vendored. |
 | `.gitignore` | Everything the gate must never see in the worktree: `target/`, `.pixi/`, `.tools/`, `ai_tmp/`, the lychee cache, coverage and snapshot leftovers, Claude Code's runtime state under `.claude/` apart from its tracked settings and skills, and the Allium loop's `.allium-loop/` records. `just check` snapshots the worktree between recipes, so a file Git can see aborts the run. |
 | `docs/manifest.yml` | The handbook's registry: every page's path, title, kind, audience and the topics it owns. The [Documentation contract](documentation-contract.md) owns its rules. |
 

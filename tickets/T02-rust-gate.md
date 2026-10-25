@@ -305,3 +305,17 @@ binary is a few lines today, so build time gives no reason to drop them.
   the gate. One possible closure, enabling a lint or check that rejects every `allow`
   form, belongs to whichever lane next owns the lint table or the agent contract (T05's
   `rust-change` rule could say it in the meantime).
+
+  Closed on 2026-10-24 on branch `review-and-finish-bootstrap`. The `rust-change` skill
+  now says an inner `#![allow(lint, reason = "...")]` passes both attribute lints, so
+  review rejects it (commit `ae29219`). No gate rejects that form, by the maintainer's
+  choice, which decision 0009 and `docs/reference/configuration.md` record (commit
+  `e00bc3b`).
+- `[profile.release]`: kept by the maintainer's choice on 2026-10-24, after T13's image
+  build compiled the release binary in 6.24 s uncached for a 9.4 MB image. The
+  `Cargo.toml` comment no longer waits for T13 (commit `b0c931f`).
+- The nextest `ci` profile no recipe or workflow selects: still open, the maintainer's
+  decision. It closes when CI selects the profile or the profile is deleted. Renovate now
+  moves `nextest-version` with the pixi `cargo-nextest` pin in one branch (T17).
+- The first snapshot and `insta`: still open, as T18 item 2. It closes with the first
+  ticket that takes a snapshot.

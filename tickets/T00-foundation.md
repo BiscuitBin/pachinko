@@ -528,3 +528,26 @@ Fresh clone of `ticket/t00-foundation` at `09401de` into a scratch directory:
   `CONVENTIONS.md` §9 by a `main` pull request.
 - If the new stable's lint set forces more than a handful of table changes, say so: the
   maintainer may prefer to pin the stable L uses and bump it as a follow-up.
+
+Neither condition arose: allium accepted the empty module (claim 1), and the new stable
+forced one lint, fixed with no table change (Toolchain). The hand-backs above have since
+been settled:
+
+- "Components and targets": closed on 2026-10-24 on branch `review-and-finish-bootstrap`
+  (commit `b0c931f`). The `install-toolchain` comment and `scripts/initialize.sh` now say
+  "components" only.
+- The `effects` recipe comment: T10's script replaced the interim one, and `b0c931f`
+  rewrote the comment on the same branch. It says the crate bans and the mechanism are
+  the script's, and the std-API bans are the `effect:` entries in
+  `crates/libpachinko/clippy.toml`.
+- The setup action's `T03` and its "no step reaches the network" comment: corrected by
+  T11 (`55e38ae`). `ci.yml`'s `cancel-in-progress` on `main` is kept by the maintainer's
+  choice on 2026-10-24, recorded in `docs/reference/quality-gates.md` (commit `e00bc3b`).
+- The network list and invariant 4: T05 made the list exact and worded the invariant as
+  the lint table enforces it; the list gained `just image` on 2026-10-24 (commit
+  `ae29219`).
+- F1: T10 runs the crate line with `--all-features --target all`; T18 item 5 showed an
+  optional banned dependency fails it.
+- The code review's literal `0.1.0` in the tests: replaced on 2026-10-24 (commit
+  `43a1f49`). The tests now follow the manifests, so a release bump needs no test edit
+  (T14's Open points).

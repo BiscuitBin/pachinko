@@ -976,3 +976,13 @@ Exit status: 0
   makes every change to the root `clippy.toml` a two-file change, which check 0
   enforces. The alternative, a directory only gate 8 reads through `CLIPPY_CONF_DIR`,
   would lose the bans in gate 6 and in editors.
+
+On 2026-10-24 the maintainer ratified four of these limits, and decision 0008,
+Architecture and Quality gates record each as the maintainer's choice (branch
+`review-and-finish-bootstrap`, commit `e00bc3b`): `std::env::consts` stays reachable;
+code behind another target's `cfg` stays review's; the bans cover libpachinko's own
+tests; and the crate bans stay a denylist of eight names, so the allowlist proposal
+under "For T11" is not taken. The new-std-items point now has a step in Maintenance's
+toolchain bump, which re-runs the inventory (same commit). The other points are settled
+records: `std::process`, `std::sync` and `Backtrace::capture` were decided after PR #9's
+review, and the rest are limits review covers.

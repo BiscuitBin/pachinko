@@ -65,8 +65,12 @@ proposes and what stays manual; and decision 0018 records it.
 3. **`renovate.json`.** The draft's, with: the `Dockerfile` (Renovate's native
    `dockerfile` manager handles `tag@digest`); `fuzz/` as a second cargo root;
    `tools-source.txt` beside `tools.txt` in the regex manager; and every new tool pin from
-   wave 2. Validate with `npx --yes --package renovate -- renovate-config-validator`
-   (network, authorised) or the equivalent the draft names.
+   wave 2. Validate with
+   `npx --yes --package renovate@44.181.1 -- renovate-config-validator --strict`
+   (network, authorised), from the repository root with no file argument. An unpinned
+   `renovate` can resolve a cached release too old for this file, and a file argument
+   checks it as global configuration, not repository configuration (hand-back notes,
+   Step 3).
 
    The toolchain moves in one pull request, in three places: `rust-toolchain.toml`'s
    `channel`, `[workspace.package] rust-version`, and the `Dockerfile`'s build-stage
@@ -140,7 +144,8 @@ proposes and what stays manual; and decision 0018 records it.
 ## Verification
 
 ```sh
-npx --yes --package renovate -- renovate-config-validator renovate.json
+# From the repository root, with no file argument (Step 3's notes say why).
+npx --yes --package renovate@44.181.1 -- renovate-config-validator --strict
 gh api orgs/BiscuitBin/installations --jq '.installations[].app_slug'
 just check-docs
 just check
@@ -148,9 +153,9 @@ just check
 
 ## Hand-back notes
 
-Run on 2026-10-23 in the Supacode worktree for this ticket. Steps 2, 3, 6 and 7 are
-done and committed on the lane branch; steps 4 and 5 wait for authorisation (below), so
-`status:` is `in-progress`, not `done`.
+Run on 2026-10-23 and 2026-10-24 in the Supacode worktree for this ticket. Steps 2, 3, 6
+and 7 were done and committed on the lane branch first; steps 4 and 5 waited for
+authorisation and ran on 2026-10-24 (Step 4 and Step 5 below), so `status:` is `done`.
 
 ### Baseline — `5748060`, untouched
 
@@ -384,6 +389,12 @@ Against S01's list it adds `members: read` and `packages: read`; the pages now c
 installation's own list. Right after installation `pachinko` had no open issue or pull
 request from Renovate.
 
+Vulnerability alerts: on 2026-10-24,
+`gh api repos/BiscuitBin/pachinko/vulnerability-alerts` answered HTTP 204, which means
+alerts are enabled on the repository. So the vulnerability-fix exception the docs name
+applies now: such a pull request can open without dashboard approval, and still never
+merges itself.
+
 ### Step 5: the dashboard
 
 This lane went in as pull request #18, which the maintainer merged at `1ca3b45` on
@@ -415,5 +426,24 @@ app relocks `pixi.lock` stays unproven until a pixi pull request is approved.
 
 ## Open points
 
-None. Step 3 groups the toolchain with `rust-version` and the `Dockerfile`'s `rust`
-image.
+None was listed at hand-back. Step 3 groups the toolchain with `rust-version` and the
+`Dockerfile`'s `rust` image. The items the notes hand back, as they stand on 2026-10-24
+(branch `review-and-finish-bootstrap`):
+
+- The stale mentions in Steps 6 and 7: closed (commit `e00bc3b`). Decision 0007's
+  sentence now names Renovate's held updates, `docs/reference/quality-gates.md`'s wave-2
+  note is gone, and decision 0015's toolchain group sentence is true as written.
+- `tools-source.txt`'s "Bumped by hand": closed (commit `b0c931f`). It now says Renovate
+  proposes each bump and holds it for approval.
+- A `tools.txt` bump resolved on crates.io: closed (commit `e00bc3b`).
+  `docs/how-to/maintain-dependencies.md` tells the approver to check that the release
+  archives exist first.
+- The validator without a recipe: ratified by the maintainer. It stays the ad-hoc pinned
+  command, `renovate@44.181.1` with `--strict` and no file argument, and the how-to
+  records it (commit `e00bc3b`). Step 3 and Verification now give that form.
+- The crate READMEs and `Dockerfile:1` repeating the toolchain version: a settled
+  record. The how-to tells the toolchain branch to update them by hand.
+- The dashboard entries under Pending Approval, the `github actions` group among them:
+  still open. Each closes when the maintainer approves it and merges its pull request.
+- Whether the hosted app relocks `pixi.lock`: still open. It closes when a pixi entry is
+  approved and its pull request's diff is read.

@@ -522,7 +522,7 @@ $ rg -n '\bT(0[0-9]|10)\b' docs AGENTS.md .agents crates .github .config Justfil
 ```
 
 The `rg` positive control is step 6's first search, which matches and exits 0 over the
-same paths. `ai_tmp/fresh` is deleted after these notes are committed (step 7). The
+same paths. `ai_tmp/fresh` was deleted after these notes were committed (step 7). The
 commit that adds these notes changes only this file.
 
 ### Pull request
@@ -553,4 +553,34 @@ and this run proved the merge.
 
 ## Open points
 
-None.
+None was listed at hand-back. On 2026-10-24 each "Left for the maintainer" item has
+this disposition; a commit cited is on branch `review-and-finish-bootstrap`.
+
+| Item | Disposition |
+| --- | --- |
+| CI runs no `check-clean` | Closed by the maintainer's choice: each gate job ends with `just check-clean` (`b0c931f`) |
+| `concurrency` cancels a run on `main` | Kept by the maintainer's choice, recorded in `docs/reference/quality-gates.md` (`e00bc3b`) |
+| T's `bootstrap_repo.sh` defects | Still open: closes when the maintainer authorises an upstream report, or declines one |
+| PR #5's push authorisation | A settled record: the maintainer merged it |
+| `tickets/README.md`'s Status column | Closed: the index reads `done` for every ticket, as each frontmatter does |
+| `AGENTS.md` length | Still open, the maintainer's decision (T05's Open points) |
+| A gate for the inner `#![allow]` | No gate, by the maintainer's choice (`e00bc3b`); the `rust-change` skill tells review to reject the form (`ae29219`) |
+| Fat LTO in the release profile | Kept by the maintainer's choice; the `Cargo.toml` comment says so (`b0c931f`) |
+| The nextest `ci` profile | Still open, the maintainer's decision (T02's Open points); Renovate now moves `nextest-version` with the pin |
+| The crate bans as a denylist | Kept by the maintainer's choice (`e00bc3b`) |
+| `std::env::consts` reachable | Ratified by the maintainer (`e00bc3b`) |
+| Std code behind another target's `cfg` | Ratified as review's (`e00bc3b`) |
+| Feature mixes, `cfg(not(clippy))`, custom cfgs | A settled record: left to review |
+| A banned type's value from an unbanned source | A settled record: the new-std-items case |
+| Stale clippy warnings after an mtime revert | A settled record: no action |
+| libpachinko's tests held to the bans | Ratified by the maintainer (`e00bc3b`) |
+| T10's `_typos.toml` edit; lanes merged `main` | The edit is a settled record; §11 now allows a rebase onto, or a merge of, `origin/main` |
+| `check-toolchain`, the `effects` comment, "and targets" | Closed (`b0c931f`; T07's and T00's Open points) |
+| `CONVENTIONS.md` text left as the historical design | Closed: `CONVENTIONS.md` now states what landed, §13's std inventory included; Maintenance's toolchain bump has the same step (`e00bc3b`) |
+| The analyser checks producers only | Closed: `work-with-the-specs.md` says so (`e00bc3b`) |
+| T07 sentences stale after T13, T14 or T17 | Closed (`e00bc3b`) |
+
+The newer action releases, owned by T17, wait for approval on Dependency Dashboard #19
+(T01's Open points). T18 items 2 and 4 stay open (T18's Open points). Step 6's lines
+that name the specifications close when the first specification that defines behaviour
+or names an effect lands and rewrites them.

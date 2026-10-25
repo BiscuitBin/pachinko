@@ -770,4 +770,26 @@ Other
 
 ## Open points
 
-None.
+None was listed at hand-back. The items handed back and the sentences written to the
+design, as they stand on 2026-10-24:
+
+- `check-toolchain` does not enforce the pin (checkpoint 2, B1): closed on 2026-10-24 on
+  branch `review-and-finish-bootstrap` (commit `b0c931f`). The recipe now refuses a
+  toolchain that is not `rust-toolchain.toml`'s `channel`, or one selected by
+  `RUSTUP_TOOLCHAIN` or a `rustup override`: the plain run exited 0, and
+  `RUSTUP_TOOLCHAIN=1.98.1`, `RUSTUP_TOOLCHAIN=1.99.1` and `rustup override set 1.98.1`
+  each exited 2.
+- `cargo tree` on the host target only: closed by T10, whose crate line passes
+  `--target all`.
+- Invariant 8's "every gate passes `--locked`": closed by T11, which names the two
+  exceptions in `AGENTS.md` and `docs/reference/quality-gates.md`.
+- `AGENTS.md:36`, "No workflow publishes yet": closed by T11 (`55e38ae`).
+- The sentences written to T10's, T02's and T06's design: reconciled by T11.
+- The sentences that went stale when T13 to T17 landed, and the T02 sentences that
+  wave 2 made false (a development dependency, a `[workspace.dependencies]` table, a
+  third lockfile): closed on 2026-10-24 on the same branch (commit `e00bc3b`).
+- Still open, each closing with its event: decision 0003's "will exercise each trait"
+  turns present tense with the first effect trait; the runtime, transport and service
+  surface wait for a specification that names a surface and a record superseding 0014;
+  decision 0012's module-boundary rules return with the first specification that names
+  two modules.

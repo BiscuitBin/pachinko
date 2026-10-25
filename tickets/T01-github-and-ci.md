@@ -445,3 +445,18 @@ checkpoint 2, `just check` was rerun at `abb9588`, as above.
   `just check`, did not. The fix, for example a final `just check-clean` step in each
   gate job, is a delta beyond `CONVENTIONS.md` §10, so it is the maintainer's to decide
   as a follow-up.
+
+The first three were answered in this ticket's own notes: `enforce_admins` is `false`,
+following L (Dry run); step 4's apply enabled private vulnerability reporting
+(`{"enabled":true}`, State after), and T12's `SECURITY.md` links to it; Pages works on
+the free plan and deployed `49890ae` (step 12), so no `if: false` was needed. T11
+confirmed all three on `main`. The rest:
+
+- `check-clean` in CI: closed on 2026-10-24 on branch `review-and-finish-bootstrap`
+  (commit `b0c931f`), by the maintainer's choice. Each `ci.yml` gate job that runs
+  recipes ends with `just check-clean`.
+- T's `bootstrap_repo.sh` defects (checkpoint 1, C1 and B02): still open. They close
+  when the maintainer authorises an upstream report, or declines one.
+- The newer action releases (Action pins): still open. They sit in Renovate's
+  `github actions` group on Dependency Dashboard #19, under Pending Approval, and close
+  when the maintainer approves that entry and merges its pull request.

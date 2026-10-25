@@ -7,6 +7,10 @@ document disagree, this document wins and the ticket is corrected. Changes to th
 document go through a pull request on `main`, never through a lane branch, because every
 lane reads it.
 
+Every ticket is done. On 2026-10-24 this document was corrected to match what landed, so
+a fact stated here is true of the tree; the tickets' hand-back notes record how each one
+came about.
+
 The foundation is a copy of libpawdoku's, adapted. Almost every file a ticket writes
 already exists, finished and green, in L at the pinned commit; a ticket names that file and
 the delta, and the agent reads the original. Restating L here would only give the two
@@ -14,9 +18,10 @@ copies room to disagree.
 
 ## 0. What is being built, and where the sources are
 
-`BiscuitBin/pachinko` (public, on the free organisation plan; today one `first commit`
-holding a stub `README.md`, plus this `tickets/` directory on `bootstrap-tickets`) becomes
-a Cargo workspace of two crates:
+`BiscuitBin/pachinko` (public, on the free organisation plan) began as one `first commit`
+(`9ed604c`) holding a stub `README.md`, plus this `tickets/` directory on
+`bootstrap-tickets`, merged as pull request #1 (`fca730e`). It became a Cargo workspace of
+two crates:
 
 - **`crates/libpachinko`**, crate name `libpachinko`, a std library. It holds the domain
   once the Allium specifications define one, and it never performs an effect itself (§1,
@@ -44,7 +49,8 @@ citation in a ticket is written `L` followed by the path as a code span, for exa
 checked mechanically.
 
 L's own tickets are the second source. Three of its spikes drafted, but never built, the
-work wave 2 does here, and wave-2 tickets adapt those drafts rather than re-deriving them:
+work wave 2 did here, and the wave-2 tickets adapted those drafts rather than re-deriving
+them:
 
 | Pachinko ticket | L draft | Where |
 | --- | --- | --- |
@@ -100,14 +106,23 @@ Facts, each verified in source on 2026-10-21, that shape the mechanism:
 4. **clippy's `disallowed-methods` and `disallowed-types` take item paths, not modules.**
    Banning `std::fs` through clippy means listing `std::fs::File`, `std::fs::read` and the
    rest; rustqual's `forbid_path_prefix` (L `rustqual.toml`, the `[[architecture.pattern]]`
-   tables) takes a module prefix. Which mechanism T10 uses is its decision (§9, §12).
+   tables) takes a module prefix. The mechanism was T10's decision (§9, §12), and T10
+   chose clippy: `disallowed-methods` and `disallowed-types` in
+   `crates/libpachinko/clippy.toml`, 121 entries whose reasons begin `effect:`, beside
+   the `cargo tree` crate line in `scripts/check-effects.sh` and the probe over
+   `tests/fixtures/effects-violation/`.
 5. **L's live state is the baseline, not L's T00.** L's gate grew after its foundation:
    `metrics` (rustqual, L's T22), `snapshots-check` (insta, L's T29), `plan-spec` (L's
    T24), `site` and `pages.yml` (L's T33). Pachinko's T00 starts from L's files at
    `ccdd001`, so all of these exist from the first commit.
-6. **No dependency until the specifications.** cargo-shear (gate `deps-unused`) flags a
-   dependency nothing uses, so L's thiserror, serde, proptest and insta are not copied.
-   The insta recipes land; the `insta` crate does not until something is snapshotted.
+6. **No runtime dependency until the specifications.** cargo-shear (gate `deps-unused`)
+   flags a dependency nothing uses, so L's thiserror, serde, proptest and insta are not
+   copied. The insta recipes land; the `insta` crate does not until something is
+   snapshotted. Wave 1 added no dependency. Wave 2's harnesses added two, each with its
+   decision-0007 note (`docs/decisions/0007-dependency-policy.md`, "Harness
+   dependencies"): T16's divan, through `[workspace.dependencies]`, as libpachinko's only
+   development dependency, and libfuzzer-sys in the excluded `fuzz/` crate, which
+   `fuzz/Cargo.lock` pins.
 7. **B's pixi git dependency is public.** `steven-cutting/biscuit_games_tooling` stays the
    URL in `pyproject.toml`; only this repository's own URLs move to `BiscuitBin/pachinko`.
 
@@ -120,17 +135,19 @@ Facts, each verified in source on 2026-10-21, that shape the mechanism:
 # An exact stable release, bumped deliberately. `channel = "stable"` would move the
 # clippy lint set every six weeks and break `-D warnings` with no diff. rust-version
 # in Cargo.toml follows this pin until a crate is first published.
-channel = "<the newest stable on the day T00 runs>"
+channel = "1.99.1"
 profile = "minimal"
 components = ["rustfmt", "clippy", "llvm-tools-preview"]
 ```
 
-The channel is the newest stable release on the day T00 executes, read from
+The channel was the newest stable release on the day T00 executed, read from
 `https://static.rust-lang.org/dist/channel-rust-stable.toml` (the `[pkg.rust] version`
-line). On 2026-10-21 that was `1.99.1`; L pins `1.98.1`. `rust-version` in
+line). On 2026-10-21 that was `1.99.1`, the pin today; L pins `1.98.1`. `rust-version` in
 `[workspace.package]` is the pin's `major.minor`. Against L: no `targets` line (decision
 2), and no `rust-src` (it served rust-analyzer only; a contributor adds it with
-`rustup component add`). `llvm-tools-preview` serves cargo-llvm-cov.
+`rustup component add`). `llvm-tools-preview` serves cargo-llvm-cov. Renovate's
+`rust toolchain` group now proposes each bump and holds it for dashboard approval
+(decision 0018).
 
 Because L's lint table was tuned against 1.98.1, T00 runs `just clippy` on the new pin
 before freezing anything, and T02 owns any lint the new stable added or renamed (§12
@@ -148,6 +165,11 @@ L `pyproject.toml` with these changes and no others:
   `cargo-insta ==1.48.0`, `cargo-shear ==1.13.4`, `taplo ==0.10.0`, Python `3.14.*`, B at
   `v0.3.0`). Moving them is Renovate's job (T17), not the foundation's.
 
+Wave 2 added two pins of its own, `cargo-semver-checks ==0.51.0` (T14) and
+`cargo-mutants ==27.1.0` (T15). Renovate reads these pins and holds each bump it
+proposes for dashboard approval; a pixi entry stays a notice until the hosted app is
+shown to relock `pixi.lock` (decision 0018).
+
 `pixi.lock` is generated by `pixi lock`, committed, and never hand-edited. Pixi owns the
 tools and the Python environment; rustup owns the compiler; the environment never gains
 `rust` (L `docs/decisions/0011-tool-manager.md`).
@@ -155,26 +177,34 @@ tools and the Python environment; rustup owns the compiler; the environment neve
 ### `tools.txt` and `tools-source.txt` (T00 creates them; frozen in wave 1)
 
 L `tools.txt` (`cargo-hack@0.6.45`) and L `tools-source.txt` (`rustqual@1.8.3`), each
-with its comment block, verbatim. Wave-2 tickets add their own lines (§11).
+with its comment block, verbatim, except that a decision cross-reference follows §8's
+renumbering: `tools-source.txt` cites decision 0012, the metrics gate, where L cites its
+0013 (an implied delta, recorded in T00's Deviations). Wave-2 tickets added their own
+lines (§11): T14's `cargo-release@1.1.7` and T16's `cargo-fuzz@0.13.2` in `tools.txt`. On
+2026-10-24 `tools-source.txt`'s "Bumped by hand" sentence became "Renovate proposes each
+bump and holds it for dashboard approval (decision 0018)".
 
 ### Maintainer prerequisites (not ticket steps)
 
 As L `tickets/CONVENTIONS.md` §2 "Maintainer prerequisites": rustup installed and its
 `~/.cargo/bin/cargo` first on `PATH`; pixi 0.81.0 or newer; any just; gh authenticated
 with access to `BiscuitBin`. If an agent's shell finds `~/.pixi/bin/cargo` first, every
-command is prefixed `PATH="$HOME/.cargo/bin:$PATH"`. docker is a prerequisite for T13
-only (§12 claim 9).
+command is prefixed `PATH="$HOME/.cargo/bin:$PATH"`. docker is a prerequisite for
+`just image` only (T13, §12 claim 9). Since T16, `just check` also needs a C++ compiler,
+because libfuzzer-sys compiles C++ when `just clippy` builds the fuzz crate, and
+`just fuzz` on Apple silicon needs Rosetta 2 (`docs/how-to/develop-locally.md`).
 
 ## 3. Target repository tree (exact paths and owners)
 
 Owner is the lane that writes the final content. T00 creates every path below that has
 T00 in its row, as a stub or in final form, so that `just check` is green on the first
 commit. A path that a lane creates is marked `new`; no other lane touches it. No path has
-two wave-1 owners. `(frozen)` marks files no wave-1 lane touches after T00 (§11).
+two wave-1 owners. `(frozen)` marks files no wave-1 lane touches after T00 (§11); the
+freeze lifted after T11.
 
 ```text
 Cargo.toml                          T00 skeleton -> T02 (lints, profiles)
-Cargo.lock                          T00 (generated; two members, no dependencies)
+Cargo.lock                          T00 (generated; two members, no dependencies) -> T16
 rust-toolchain.toml                 T00 (frozen)
 rustfmt.toml  clippy.toml           T00 working -> T02
 taplo.toml  deny.toml               T00 working -> T02
@@ -191,8 +221,7 @@ crates/pachinko/tests/binary.rs     T00 (runs the built binary) -> T02
 crates/pachinko/README.md           T00 stub -> T12
 scripts/check-effects.sh            T00 working -> T10
 tests/fixtures/effects-violation/   T10 new
-crates/libpachinko/clippy.toml      T10 new, only if T10 chooses clippy (§9)
-rustqual-effects.toml               T10 new, only if T10 chooses rustqual (§9)
+crates/libpachinko/clippy.toml      T10 new (T10 chose clippy, §9)
 LICENSE                             T00 (Apache-2.0 text, final)
 README.md  CHANGELOG.md  SECURITY.md   T00 stub -> T12
 AGENTS.md                           T00 stub (six phrases, 300 words) -> T05
@@ -230,7 +259,12 @@ modules), `docs/explanation/{human-solving,solving-sudoku,puzzle-design}.md`, L'
 0008 (no_std), 0012, 0014 and 0015, `tests/fixtures/metrics-violation/` (its rules were
 sudoku layering), and every snapshot.
 
-Wave 2 creates paths of its own; each wave-2 ticket lists them.
+`rustqual-effects.toml`, the rustqual alternative §9 allowed, was never created. Wave 2
+created paths of its own, each listed in its ticket: `Dockerfile`, `.dockerignore` and
+`docs/how-to/build-the-container-image.md` (T13); `.github/workflows/release.yml` (T14);
+`.github/workflows/mutants.yml` (T15); `crates/libpachinko/benches/`, the excluded `fuzz/`
+crate with its own `Cargo.lock`, the third lockfile, and `.github/workflows/fuzz.yml`
+(T16); `renovate.json` (T17); and decisions 0015 to 0018 (§8).
 
 ### The two crates (T00 writes them; T02 finishes them)
 
@@ -241,7 +275,8 @@ Root `Cargo.toml` is L `Cargo.toml` with: `repository` and `homepage` set to
 removed (T02: the lint is in the restriction group, which the table never enables); the
 `[profile.release]` comment about pyo3 removed. T00 lands the full lint table at once,
 because `-D warnings` is decided by it and a skeleton with fewer lints would only move
-the failures into T02.
+the failures into T02. Wave 2 later added `[workspace.metadata.release]` (T14), and
+`exclude = ["fuzz"]` with a `[workspace.dependencies]` table holding divan (T16).
 
 `crates/libpachinko/Cargo.toml`: L `crates/pawdoku/Cargo.toml`'s package shape, every
 field `.workspace = true`, `name = "libpachinko"`, a domain-neutral `description`
@@ -252,12 +287,14 @@ kept for the docs and for the day publishing is decided), no `no-std` category, 
 arrives with the specifications) and one item, `pub const fn version() -> &'static str`
 returning `env!("CARGO_PKG_VERSION")`, with a doctest and an in-module unit test, so
 that every gate has something to format, lint, test, document and measure. `env!` is
-read at compile time and is not the effect decision 3 bans.
+read at compile time and is not the effect decision 3 bans. Wave 2 added
+`[package.metadata.release]` (T14), and the divan development dependency with the
+`version` bench under `benches/` (T16); libpachinko still has no normal dependency.
 
 `crates/pachinko/Cargo.toml`: the same shape, `name = "pachinko"`, one dependency,
 `libpachinko = { path = "../libpachinko", version = "0.1.0" }`. Cargo then enforces the
-direction: `libpachinko` cannot name `pachinko` without a cycle. The package has a
-library target and a binary target:
+direction: `libpachinko` cannot name `pachinko` without a cycle; T14 later added its
+`[package.metadata.release]`. The package has a library target and a binary target:
 
 - `src/lib.rs`: `pub fn run(out: &mut impl std::io::Write) -> std::io::Result<()>`,
   which writes one line, `pachinko <libpachinko::version()>`. Taking the writer keeps
@@ -271,7 +308,10 @@ library target and a binary target:
 
 ## 4. `Justfile` (T00 writes it; frozen in wave 1)
 
-L `Justfile` at `ccdd001`, with exactly these changes:
+L `Justfile` at `ccdd001`, with exactly these changes at T00. A decision cross-reference
+follows §8's renumbering, an implied delta: the `install-tools` comment cites decision
+0012, the metrics gate, where L cites its 0013 (T00's Deviations). The later changes are
+listed after the gate order.
 
 - The `coverage_floor` comment reads "over crates/*/src/**" (still `"90"`).
 - `wasm-check` is deleted, with its comment.
@@ -288,8 +328,9 @@ L `Justfile` at `ccdd001`, with exactly these changes:
   # checks libpachinko's dependency tree and source against the bans, then runs
   # the same checks over tests/fixtures/effects-violation, which breaks each
   # ban once, and fails unless every ban fires there and none fires on the
-  # pachinko crate. The bans and the mechanism are the script's; this recipe
-  # only runs it.
+  # pachinko crate. The crate bans and the mechanism are the script's, the
+  # std-API bans the `effect:` entries in crates/libpachinko/clippy.toml; this
+  # recipe only runs it.
   effects:
       sh scripts/check-effects.sh
   ```
@@ -297,13 +338,14 @@ L `Justfile` at `ccdd001`, with exactly these changes:
 - `site` writes a root `index.html` that links to both crates' pages
   (`libpachinko/index.html` and `pachinko/index.html`) instead of redirecting to one, with
   the title "pachinko: API reference".
-- No other recipe changes. `snapshots-check`, `snapshots-review`, `snapshots-accept`,
-  `plan-spec`, `install-tools`'s two passes, `audit`, `check-links-online` and
-  `check-clean` are L's text.
+- No other recipe changed at T00. `snapshots-check`, `snapshots-review`,
+  `snapshots-accept`, `plan-spec`, `install-tools`'s two passes, `audit`,
+  `check-links-online` and `check-clean` are L's text.
 
 `coverage` is not changed to ignore `main.rs`. If T00 finds that the binary's lines are
 not counted (§12 claim 4), T00 adds `--ignore-filename-regex 'crates/pachinko/src/main\.rs'`
 to the `coverage` recipe's `report` lines before the Justfile freezes, and records why.
+It did not need to: `main.rs` is counted (§12 claim 4).
 
 **Gate order** (the `recipes` list in `pyproject.toml`), then `check-clean`:
 
@@ -328,7 +370,20 @@ to the `coverage` recipe's `report` lines before the Justfile freezes, and recor
 19. `snapshots-check`
 
 `test`, `build`, `audit`, `site`, `plan-spec` and `check-links-online` are outside
-`check`, as in L. Wave 2 adds recipes outside `check` only (§11).
+`check`, as in L. Wave 2 added recipes outside `check` only (§11): `semver` (T14),
+`mutants` (T15), `image` (T13), and `bench` and `fuzz` (T16).
+
+Since T00 the `Justfile` has also changed in these ways:
+
+- T16 extended `sync`, `lock`, `lock-upgrade`, `lock-check`, `format`, `fix`, `fmt-check`
+  and `clippy` to the excluded `fuzz/` crate with `--manifest-path fuzz/Cargo.toml`, so
+  `lock-check` checks three lockfiles. Clippy over `fuzz/` stays in `just check` by the
+  maintainer's choice of 2026-10-24.
+- On 2026-10-24 `check-toolchain` began refusing a toolchain that is not the pin, or that
+  `RUSTUP_TOOLCHAIN` or a rustup override selected, and not only a cargo that is not
+  rustup's proxy; `install-toolchain`'s comment lost "and targets", since no target is
+  listed; and the `effects` comment above began naming clippy's file as the home of the
+  std-API bans.
 
 ## 5. Hooks and dotfiles
 
@@ -336,7 +391,10 @@ to the `coverage` recipe's `report` lines before the Justfile freezes, and recor
 (neither names a crate; their `files:` patterns already read `crates/.*`). Every remote
 hook keeps L's rev and comment. One delta: the `typos` hook gains
 `args: [--force-exclude]`, so the read-only gate never rewrites a file (upstream's
-default adds `--write-changes`). Both are frozen at T00.
+default adds `--write-changes`). Both were frozen at T00. Two deltas came later: T16's
+`fmt-check` hook also matches `fuzz/`, and on 2026-10-24 the fix config's markdownlint
+hook gained `pass_filenames: false`, because its config globs were appended to every
+parallel batch prek passed it, and the batches raced `--fix` over the same files.
 
 `.editorconfig`, `.gitattributes`, `.gitignore`, `.markdownlint-cli2.jsonc`,
 `lychee.toml`, `_typos.toml` and `taplo.toml` are L's at `ccdd001`. T00 copies them, then
@@ -347,18 +405,22 @@ keeps `mis` (the tickets use the hyphenated prefix) and drops `als`, the sudoku 
 `["br", "important"]`, because `AGENTS.md` uses `<important if>` blocks (§7). T05 cannot
 make this change, because the file freezes at T00. `.gitignore` also ignores Claude
 Code's runtime state under `.claude/` (T00 step 4).
-`taplo.toml` is T02's; the other six are final at T00.
+`taplo.toml` is T02's; the other six were final at T00. Two moved later: T10 added `ede`
+to `_typos.toml`'s words, and `.gitignore` gained `.allium-loop/` (T11), `mutants.out/`
+(T15) and the fuzz crate's outputs (T16), which `.dockerignore` mirrors by hand.
 
 `just initialize` never formats. T00 drops L `scripts/initialize.sh`'s `just format`
 line and its comment, because a first-run script that rewrites files hides drift that the
 gate should report. A carried page or skill that says initialization normalises
-formatting drops that clause.
+formatting drops that clause. On 2026-10-24 the script's toolchain comment lost "and
+targets", as `install-toolchain`'s did (§4).
 
 ## 6. Handbook
 
 The Diátaxis handbook under `docs/`, under the documentation contract L ships
 (L `docs/reference/documentation-contract.md`). `docs/manifest.yml` and `docs/README.md`
-are final at T00 and frozen in wave 1. T00 writes the manifest as L
+were final at T00 and frozen in wave 1; wave 2 registered its own page and records in
+both. T00 writes the manifest as L
 `docs/manifest.yml` minus the entries for the dropped pages and records, with the
 decision records renumbered and retitled as §8 lists, in this order: L's grouping, then
 decisions last. Each registered page has a stub at T00 with valid frontmatter equal to its
@@ -374,11 +436,11 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 | `docs/tutorials/first-change.md` | T07 | same | A domain-neutral exercise that can be followed again: change the line `run()` writes, watch its unit test and the binary test fail, update both, `just check` |
 | `docs/how-to/develop-locally.md` | T07 | same | Two crates; otherwise L's |
 | `docs/how-to/test-and-debug.md` | T07 | same | nextest filters per crate, the binary test, coverage HTML |
-| `docs/how-to/maintain-dependencies.md` | T07 | same | L's; "nothing updates them" until T17 |
+| `docs/how-to/maintain-dependencies.md` | T07 | same | L's; "nothing updates them" until T17, which replaced it: Renovate now proposes each update and holds it for dashboard approval (decision 0018) |
 | `docs/how-to/deploy-to-github-pages.md` | T07 | same | Both crates' rustdoc, `BiscuitBin/pachinko`'s Pages URL |
 | `docs/how-to/work-with-the-specs.md` | T06 | same | The module table has the one placeholder; the waiver terms verbatim |
 | `docs/explanation/specifications.md` | T06 | same | Specifications are the source of truth; there is one module and it states no behaviour yet |
-| `docs/explanation/architecture.md` | T07 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014), and what wave 2 adds (T13, T14), which each ticket updates when it lands |
+| `docs/explanation/architecture.md` | T07 | same | The lib/service split, the effects boundary and who implements it, what is deferred (decision 0014), and what wave 2 added (T13, T14); sentences the wave-2 tickets left in the future tense were brought up to date on 2026-10-24 |
 | `docs/explanation/layering.md` | T07 | same | The crate direction Cargo enforces; module direction follows the spec import graph when there is one |
 | `docs/explanation/quality-philosophy.md` | T07 | same | L's argument; examples from this gate |
 | `docs/explanation/security-model.md` | T07 | same | A library plus a service binary: supply chain, `forbid(unsafe_code)`, cargo-deny, the effects boundary; the service's network surface is deferred |
@@ -392,6 +454,10 @@ will say and which lane writes it. Carried pages keep L's `canonical_for` slugs.
 | `docs/operations/maintenance.md` | T07 | same | L's routine |
 | `docs/operations/troubleshooting.md` | T07 | same | L's, minus wasm |
 | `docs/decisions/README.md` and fourteen records | T07 | §8 | |
+
+Wave 2 added one page, `docs/how-to/build-the-container-image.md` (T13), and decisions
+0015 to 0018 (§8). On 2026-10-24 the handbook was brought up to date with wave 2 and the
+maintainer's choices of that day were recorded on their owning pages.
 
 ## 7. Agent contract
 
@@ -426,7 +492,10 @@ block that names that task. In this order:
 
 There is no commands table: `just --list` is the index. Prose that a gate already
 enforces (rustfmt, taplo, clippy pedantic, EditorConfig) and code snippets are cut. The
-file is about 1000 words. Each of B's six phrases (§1 fact 2) appears at least once
+target was about 1000 words; the file is about 1300 (1326 by `wc -w` on 2026-10-24),
+because the authority list, the network recipe list and the review fixes added the rest
+(T05). Whether to keep that length or cut it back is the maintainer's open question.
+Each of B's six phrases (§1 fact 2) appears at least once
 outside every block, so that no phrase depends on a block's wording.
 
 The nine invariants, in place of L's:
@@ -446,8 +515,11 @@ The nine invariants, in place of L's:
    `--locked` (decision 0007).
 9. No dependency is added without the decision-0007 note.
 
-L's third invariant (errors are thiserror enums) waits for the first error type; L's
-fifth (wasm) is dropped. The Provenance section keeps L's sentence containing `runes`.
+L's third invariant (errors are thiserror enums) waits for the first error type, and
+still waits: no crate has one. The change that adds it adds thiserror with its
+decision-0007 note and the invariant to `AGENTS.md`, since `just deps-unused` rejects
+thiserror before anything uses it. L's fifth (wasm) is dropped. The Provenance section
+keeps L's sentence containing `runes`.
 
 Skills, canonical under `.agents/skills/<name>/SKILL.md`, each with a bridge under
 `.claude/skills/` and `.codex/skills/` whose body is B's `BRIDGE_BODY`. The bridges
@@ -480,7 +552,7 @@ Fourteen skills, twenty-eight bridges. `just check-agents` prints
 A fresh series. A carried record opens "Carried from libpawdoku's decision NNNN at
 `ccdd001`" and keeps L's `canonical_for` slug. Format as L's: frontmatter,
 `# Decision NNNN: title`, Context, Decision, Consequences, What would reopen this,
-Related pages. T07 writes 0001 to 0014; each wave-2 ticket writes its own.
+Related pages. T07 wrote 0001 to 0014; each wave-2 ticket wrote its own.
 
 | Number | File | Title | From L | Slug |
 | --- | --- | --- | --- | --- |
@@ -508,7 +580,8 @@ fakes beside them, real implementations in the service); 0008 is why std and not
 and what keeps the effects out instead (gate 8, §9). 0012's thresholds are L's 0013's;
 its module-boundary rules wait for modules. 0017 is shared by two wave-2 tickets:
 whichever lands first creates the record, its manifest row and its index line with its
-own section; the other rebases and adds its section.
+own section; the other rebases, or merges `main`, and adds its section. T15 landed
+first; T16 merged `main` (`a86d69d`) and kept both sections.
 
 ## 9. The placeholder module and the effects boundary
 
@@ -531,14 +604,17 @@ What is banned, in libpachinko only:
 
 - **Crates**, through its normal dependency tree: `rand`, `rand_core`, `getrandom`,
   `tokio`, `async-std`, `smol`, `mio` and `socket2`, and any crate T10 adds with a
-  reason. Development dependencies are exempt, so a test may use a seeded generator.
+  reason. T10 added none, and the maintainer chose on 2026-10-24 to keep these eight as
+  a denylist rather than an allowlist of libpachinko's tree. Development dependencies are
+  exempt, so a test may use a seeded generator.
 - **std APIs**: `std::time::SystemTime::now`, `std::time::Instant::now`,
   `std::time::Instant::elapsed`, `std::time::SystemTime::elapsed`, everything under
   `std::fs`, `std::env`, `std::net` and `std::process`, `std::thread::spawn`,
   `std::thread::scope`, `std::thread::sleep` and `std::thread::Builder`. Standard I/O
   (`std::io::stdin` and the rest) is not banned: decision 3 does not name it.
 
-The mechanism is T10's choice among these, decided by evidence (§12 claim 2):
+The mechanism was T10's choice among these, decided by evidence (§12 claim 2); the
+outcome below records what it chose:
 
 - **Crates:** a `cargo tree -p libpachinko -e normal --all-features --target all --prefix
   none --locked --offline` line in `scripts/check-effects.sh` that must match none of the banned names (covers
@@ -588,7 +664,13 @@ times over libpachinko (every feature, none, and every feature in the release pr
 Known limits, each recorded in T10's Open points: a constant cannot be banned, so
 `std::env::consts` stays reachable; code behind another target's `cfg`, a mix of
 features, `cfg(not(clippy))` or a custom `cfg`, and std items newer than the list are
-left to review; `Backtrace::capture` stays allowed by the maintainer's choice.
+left to review; `Backtrace::capture` stays allowed by the maintainer's choice. On
+2026-10-24 the maintainer accepted `std::env::consts` staying reachable and another
+target's `cfg` staying review's, and kept the bans over libpachinko's own tests, so a
+test that needs a real effect belongs under `crates/pachinko/tests/`; decision 0008
+records each. T18 item 12 compared the list with the 1.99.1 documentation of `std::fs`,
+`std::env`, `std::net` and `std::process`; a toolchain bump re-runs that inventory
+(§13).
 
 ## 10. CI
 
@@ -600,17 +682,22 @@ at `ccdd001`, with these changes:
 - `pages.yml` publishes `just site`, which now links both crates.
 - The setup action installs every tool except allium; L's description says "The allium
   binary is the documents job's own step". Any job that runs `just check`, `lint`,
-  `check-specs` or `analyse-specs` runs `just install-allium` after the setup action:
-  L's `documents` job, T00's one-job stub and the `verify` job of T14's `release.yml`.
+  `check-specs` or `analyse-specs` runs `just install-allium` after the setup action.
+  T00's one-job stub did until T01 replaced it; today those jobs are L's `documents` job
+  in `ci.yml` and the `verify` job of T14's `release.yml`.
 - Every remote `uses:` keeps a full SHA with a version comment, re-read on the day T01
   runs (`gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, dereferencing annotated tags).
   The local `uses: ./.github/actions/setup` has no pin.
+- Every gate job that runs recipes, `rust`, `coverage`, `deny` and `documents`, ends with
+  `just check-clean`, so a gate step that rewrites a tracked file fails CI. L's jobs did
+  not; the maintainer added the step on 2026-10-24. `concurrency` still cancels an
+  in-progress run on `main`, as L's does, by the maintainer's choice of the same day.
 
 The required check is `check`, the aggregate job, from T01 onward and never anything
 else. A new gate job joins `check`'s `needs` and nothing else moves. In wave 2, T13's
-`image` job joins `needs`, because a Dockerfile that no longer builds is a broken service;
-T14's `semver` job (a report on pull requests, as L's draft argues), the scheduled
-`mutants.yml` and `fuzz.yml`, and the tag-triggered `release.yml` never do.
+`image` job joined `needs`, because a Dockerfile that no longer builds is a broken
+service; T14's `semver` job (a report on pull requests, as L's draft argues), the
+scheduled `mutants.yml` and `fuzz.yml`, and the tag-triggered `release.yml` never do.
 `audit` is never in `needs`.
 
 ## 11. Rules for tickets and lanes
@@ -621,8 +708,9 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   `supacode repo worktree-new --branch <branch> --base main --name <id>`; otherwise
   `git worktree add ../<id> -b <branch> main`. The tools live in the worktree's own
   gitignored `.pixi/` and `.tools/`, so every new worktree runs `just initialize` (network,
-  authorised); only the primary checkout's run installs the shared hook shim, once,
-  after T00 merges (`README.md`, "How to pick up a ticket").
+  authorised); only the primary checkout's run installs the shared hook shim, once
+  (`README.md`, "How to pick up a ticket"). The bootstrap's primary checkout ran it for
+  T18 item 1, at `7dbed57`.
 - **T00 ships a shape-complete skeleton.** `bg-validate-docs` and `bg-validate-agents`
   can only be green if every page, record and skill exists from the first commit, so T00
   ships a stub for each. Lanes **replace** stubs; they never add, rename or reclassify a
@@ -634,33 +722,37 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   `docs/manifest.yml`, `docs/README.md`, `CLAUDE.md`, `.github/copilot-instructions.md`,
   `.claude/settings.json`, `crates/pachinko/src/main.rs` and every bridge. A lane that
   needs a change there stops and hands it back as a T00 follow-up pull request on `main`.
-- **No dependency is added in wave 1.** Nothing uses one yet (§1 fact 6).
+  One lane did not: T10 added `ede` to `_typos.toml` on its branch (§5).
+- **No dependency is added in wave 1.** None was. Wave 2's harnesses then added divan and
+  libfuzzer-sys, each with its decision-0007 note (§1 fact 6).
 - **No path appears in two wave-1 lanes' Files-touched lists.** An agent that finds a
   need to edit another lane's file hands it back instead.
-- **Wave 2 shares files by rebasing.** The frozen list lifts after T11. A wave-2 ticket
-  may then edit its own lines in any file, frozen or owned, and lists each such file in
-  its Files touched as `shared, own lines`. The ones most of them touch are `Justfile`,
-  `pyproject.toml`, `pixi.lock`, `tools.txt`, `.gitignore`, `docs/manifest.yml`,
-  `docs/README.md` (a new page or record must be registered and reachable),
+- **Wave 2 shares files by rebasing or merging.** The frozen list lifted after T11. A
+  wave-2 ticket may then edit its own lines in any file, frozen or owned, and lists each
+  such file in its Files touched as `shared, own lines`. The ones most of them touch are
+  `Justfile`, `pyproject.toml`, `pixi.lock`, `tools.txt`, `.gitignore`,
+  `docs/manifest.yml`, `docs/README.md` (a new page or record must be registered and
+  reachable),
   `docs/decisions/README.md`, `docs/reference/commands.md` and `CHANGELOG.md`. Wave-2
-  tickets merge one at a time, each rebased on the last; `pixi.lock` and `Cargo.lock`
-  are regenerated after the rebase, never merged by hand, and the ticket's verification
-  is rerun and requoted at the rebased commit. A recipe a wave-2 ticket adds sits
-  outside `check`'s recipe list; pre-landing
-  wave-2 recipes in T00 does not work, because the fuzz crate's `--manifest-path` lines in
-  `sync`, `lock`, `fmt-check` and `clippy` would fail before `fuzz/` exists. Each
-  wave-2 ticket's first acceptance criterion is its recipe's green output, quoted.
+  tickets merge one at a time, each rebased onto, or merged with, the last: T16 merged
+  `main` twice (`a86d69d`, `853b259`). `pixi.lock` and `Cargo.lock` are regenerated after
+  the rebase or merge, never merged by hand, and the ticket's verification is rerun and
+  requoted at the resulting commit. A recipe a wave-2 ticket adds sits outside `check`'s
+  recipe list; pre-landing wave-2 recipes in T00 does not work, because the fuzz crate's
+  `--manifest-path` lines in `sync`, `lock`, `lock-check`, `fmt-check` and `clippy` would
+  fail before `fuzz/` exists. Each wave-2 ticket's first acceptance criterion is its
+  recipe's green output, quoted.
 - **Self-contained.** A ticket is written for an agent with no context: it embeds exact
   content or cites this document by section, and names the L, B or T paths to read. It
   never cites a chat transcript, a scratch directory or a tool result.
 - **Paths as code spans.** Ticket text writes repository paths and URLs as code spans,
   never as Markdown links: the hook gate runs lychee offline over `tickets/`.
 - **Definition of done**, for every build ticket: `just check` green in this repository,
-  on the ticket branch rebased onto the current `main`; the ticket's acceptance criteria
-  met; its verification commands run with their output quoted in the hand-back notes;
-  the adversarial reviews the ticket names run (§14) with every valid finding fixed or
-  handed back; and the ticket's `status:` set to `done` in the same pull request. A
-  ticket is done when its gate passes, not when its files exist.
+  on the ticket branch rebased onto, or merged with, the current `main`; the ticket's
+  acceptance criteria met; its verification commands run with their output quoted in the
+  hand-back notes; the adversarial reviews the ticket names run (§14) with every valid
+  finding fixed or handed back; and the ticket's `status:` set to `done` in the same pull
+  request. A ticket is done when its gate passes, not when its files exist.
 - **Green** means two things together: `just check`'s output ends with the runner's line
   `All checks passed and the worktree is unchanged.` (B
   `src/biscuit_games_tooling/run_project_check.py` line 109), and `git status --short`
@@ -668,9 +760,11 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
   untouched worktree before any edit, and its last line is quoted as the baseline; a red
   baseline means `main` is broken, and the fix is a `main` pull request, not this lane's
   work. Before asking to push, the agent runs `git fetch origin` (network, authorised),
-  rebases onto `origin/main`, reruns `just check`, and reruns and requotes the ticket's
-  verification. Two lanes that are each green can
-  merge into a red `main`, and only this rerun sees them together.
+  rebases onto, or merges, `origin/main`, reruns `just check`, and reruns and requotes
+  the ticket's verification. Two lanes that are each green can merge into a red `main`,
+  and only this rerun sees them together. The maintainer chose a merge of `origin/main`
+  for T10 (`6f54c20`), and T16 merged `main` too (`a86d69d`, `853b259`); T11's fresh
+  clone of `46c2e33`, which held every wave-1 lane, was green.
 - **Quoted evidence names its commit.** Each quoted output is headed by the commit it ran
   at (`git rev-parse --short HEAD`, plus "with uncommitted changes" when that is true). A
   rebase, a merge of `main` or a §14 fix round after a quote makes it stale: rerun it and
@@ -708,9 +802,10 @@ T14's `semver` job (a report on pull requests, as L's draft argues), the schedul
 
 Each claim was reasoned from source or documentation but not executed here. The named
 ticket runs the check and records the outcome in its hand-back notes; a claim that fails
-is a design change that comes back through this document. T11 carries the outcomes of
+is a design change that comes back through this document. T11 carried the outcomes of
 the claims wave 0 and wave 1 own (1 to 6, 10 to 12) into this table; T17, the only
-ticket after T13, T14 and T16, carries claims 7 to 9 from their hand-back notes. L's own
+ticket after T13, T14 and T16, carried claims 7 to 9 from their hand-back notes; and
+claim 12's Linux half was carried from T18 item 7 on 2026-10-24. L's own
 §12 claims about pixi, prek, binstall and the hooks were settled in L; a ticket re-checks
 them only by running the gate.
 
@@ -727,30 +822,37 @@ them only by running the gate.
 | 9 | docker is available locally and on `ubuntu-latest` runners | `docker version`; the first CI run | T13 | Holds: locally, Docker 29.4.0 client and server on OrbStack; on `ubuntu-latest`, the `image` job of run `40065797710` built and ran the image. T13 hand-back; carried by T17. |
 | 10 | `just snapshots-check` is green on a workspace with no `insta` dependency and no `.snap` file | The recipe on T00's tree | T00 first, T02 | Holds, and the gate fires on an unreferenced `.snap` (T02's scratch commit). T00 and T02 hand-backs. |
 | 11 | rustqual 1.8.3 runs over a crate with no `[[architecture.pattern]]` table and two tiny files without a finding | `just metrics` | T00 first, T10 | Holds on both crates. T00 and T10 hand-backs. |
-| 12 | `cargo tree -p libpachinko -e normal --all-features --target all --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | `just effects` under §11's network denial, with its negative control | T00 first, T10 | Holds: `just effects` with a cold `target/effects` and both controls failing (T10, at `2ebacac`), and the whole `just check` in a fresh clone of `46c2e33` under the denial (T11). macOS only; no lane ran `unshare -rn`. |
+| 12 | `cargo tree -p libpachinko -e normal --all-features --target all --locked --offline` runs offline after `just sync`, so gate 8 does not need the network | `just effects` under §11's network denial, with its negative control | T00 first, T10 | Holds: `just effects` with a cold `target/effects` and both controls failing (T10, at `2ebacac`), and the whole `just check` in a fresh clone of `46c2e33` under the denial (T11), both on macOS. On Linux, T18 item 7 at `7dbed57`: `just check` exit 0 under `unshare -rn`, the namespace holding only `lo` and both §11 curl controls failing (exit 6 and 7), in an emulated `linux/amd64` Ubuntu 24.04 container under Rosetta (OrbStack), run with seccomp and AppArmor unconfined so the namespace could launch. It reused the warm `target/` T18 item 3 had just built, so it is not a cold build under denial, and it is not a native Linux runner. |
 
 ## 13. Risks every ticket states where it applies
 
 - **The toolchain pin is stale by the time a ticket runs.** A ticket that bumps it bumps
-  `rust-version` with it and re-runs `just clippy`, because the lint set moves.
+  `rust-version` with it and re-runs `just clippy`, because the lint set moves. It also
+  re-runs the std inventory against the new release and bans any new item that reaches
+  an effect, with a fixture line that breaks it (§9), because a std item is not banned
+  until it is listed. Renovate's `rust toolchain` pull request now carries the bump, and
+  `docs/operations/maintenance.md` ("Per toolchain release") holds the procedure.
 - **pixi's rust shadows rustup** in a shell that does not source `~/.cargo/env`;
   `check-toolchain` is the alarm (L `tickets/CONVENTIONS.md` §13).
 - **The small denominator.** Two crates with three items: one untested branch breaches
   90%. Keep each item trivially and fully tested until the specifications bring code.
-- **`--locked` and the snapshot.** Any recipe that rewrites `Cargo.lock` or `pixi.lock`
-  fails `check-clean`; `target/`, `.tools/` and `.pixi/` are ignored from T00.
+- **`--locked` and the snapshot.** Any recipe that rewrites `Cargo.lock`,
+  `fuzz/Cargo.lock` or `pixi.lock` fails `check-clean`; `target/`, `.tools/` and `.pixi/`
+  are ignored from T00.
 - **The network at first run, none in `check`.** As §11.
 - **A gate that cannot fire.** A ban with no fixture breaking it proves nothing; gate 8's
   probe is what makes decision 3 mechanical. A lane that weakens the probe hands it back.
 - **A red stub run on `main`.** T00's merge is the first time the setup action runs on a
   `BiscuitBin` runner (§12 claim 5). If that run is red and T01 then requires `check`,
   every other lane is blocked until T01's workflows land. T01 stops instead of requiring
-  a red check.
+  a red check. The run was green (§12 claim 5).
 - **Organisation settings.** `BiscuitBin` is an organisation, not a user; branch
   protection, Pages and GitHub App installation may need an organisation owner. T01 and
-  T17 say so before acting.
+  T17 say so before acting. T01 needed only repository admin rights (§12 claim 6); the
+  Mend app for Renovate was installed on 2026-10-24 for the whole organisation, by the
+  maintainer's choice, rather than for this repository alone (decision 0018).
 - **Frozen files and follow-ups.** T02, T06 and T10 are the lanes most likely to need a
-  recipe changed; each change is a small `main` pull request, and T11 reconciles what
+  recipe changed; each change is a small `main` pull request, and T11 reconciled what
   accumulated.
 - **lychee and typos over `tickets/`.** Ticket prose must pass typos and carry no
   relative links.

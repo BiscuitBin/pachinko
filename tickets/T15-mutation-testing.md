@@ -196,9 +196,10 @@ No Rust behaviour changed, so no new test seam or TDD cycle was needed.
 
 ### External follow-up and departures
 
-Push, opening a pull request, and a post-merge workflow dispatch each require separate
-authorisation under §11. None has occurred. There is no dispatch URL or downloaded
-CI artifact yet; dispatch and artifact inspection remain post-merge follow-up.
+Push, opening a pull request, and a post-merge workflow dispatch each required separate
+authorisation under §11. The branch was pushed and merged as PR #15 (`983b23f`). The
+post-merge dispatch and the artifact inspection came later; their evidence is under
+Open points.
 
 The draft is adapted to both workspace crates and decision 0017. The conda-forge
 version remains 27.1.0, with the builds reverified on this run's date. The action SHAs
@@ -207,4 +208,10 @@ not include it; the changelog line uses the existing library unreleased section.
 
 ## Open points
 
-None.
+At hand-back the post-merge dispatch was still outstanding. It closed on 2026-10-24
+(2026-10-25 UTC), when a `workflow_dispatch` of `mutants.yml` on `main` ran as
+`https://github.com/BiscuitBin/pachinko/actions/runs/40150107658`, head `f080d62`:
+conclusion `success`, job `mutants` `success`. Its `mutants` artifact, 22531 bytes,
+was downloaded and read: 4 mutants, 4 caught, 0 missed, 0 timeout, 0 unviable
+(cargo-mutants 27.1.0). A local `just mutants` on branch `review-and-finish-bootstrap`
+after `43a1f49` also tested 4 mutants and caught all 4.
