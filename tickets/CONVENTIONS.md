@@ -406,8 +406,9 @@ keeps `mis` (the tickets use the hyphenated prefix) and drops `als`, the sudoku 
 make this change, because the file freezes at T00. `.gitignore` also ignores Claude
 Code's runtime state under `.claude/` (T00 step 4).
 `taplo.toml` is T02's; the other six were final at T00. Two moved later: T10 added `ede`
-to `_typos.toml`'s words, and `.gitignore` gained `.allium-loop/` (T11), `mutants.out/`
-(T15) and the fuzz crate's outputs (T16), which `.dockerignore` mirrors by hand.
+to `_typos.toml`'s words, and `.gitignore` gained `.allium-loop/` (T11) and the fuzz
+crate's outputs (T16), and T15 rewrote the comment on T00's `mutants.out*/` entry; the
+`.dockerignore` mirrors all of it by hand.
 
 `just initialize` never formats. T00 drops L `scripts/initialize.sh`'s `just format`
 line and its comment, because a first-run script that rewrites files hides drift that the

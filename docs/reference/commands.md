@@ -22,7 +22,8 @@ checkout), and is the one command a fresh clone needs the network for. Nothing i
 `deny` then answer from that cache, and `lint` finds every hook environment already
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
 rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants`,
-`image` and `check-links-online` are outside `just check`, and so is every recipe that writes.
+`bench`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
+so is every recipe that writes.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
 `recipes` list in `pyproject.toml`. [Quality gates](quality-gates.md) says what each gate

@@ -118,10 +118,10 @@ cargo config's `rustflags` is not overridden: the probe then sees nothing fire, 
 and names that cause. Clippy lints only what its three passes compile, so the following
 are left to review: code behind another target's `cfg`, such as `cfg(windows)`; code
 under a mix of features none of the passes sets; code under `cfg(not(clippy))` or a
-custom `cfg`; and a std item added after the inventory. `std::env::consts` stays
-reachable, because its items are compile-time constants rather than effects, and the
-crate bans are a denylist of eight names, not an allowlist. These limits stand by the
-maintainer's choice on 2026-10-24.
+custom `cfg`; and a std item added after the inventory. By the maintainer's choice on
+2026-10-24, another target's `cfg` stays review's, `std::env::consts` stays reachable,
+because its items are compile-time constants rather than effects, and the crate bans
+stay a denylist of eight names, not an allowlist.
 
 A failure names the banned crate or std path and where it was found. Move the effect
 behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake
@@ -214,9 +214,10 @@ One gap is worth knowing about rather than being surprised by. `actionlint` anal
 find `shellcheck` on its own `PATH`. Under `prek` each hook gets its own environment, so
 the `shellcheck` hook one row up is not the one `actionlint` can see, and the shell
 embedded in a workflow goes unread. Every `run:` in this repository's workflows and its
-setup action is a single line, nearly all of them one `just` recipe, so there is no
-embedded shell to miss today. A block of more than a line
-added to a workflow deserves `shellcheck` by hand until the gap is closed.
+setup action is a single line, nearly all of them one `just` recipe, except the two blocks
+in `release.yml`: its `verify` job's tag check and its `publish` job's recheck. Both
+passed `shellcheck -s bash` by hand on 2026-10-24. A block of more than a line added to a
+workflow, or a change to those two, deserves `shellcheck` by hand until the gap is closed.
 
 ## The mutating counterpart
 
@@ -256,7 +257,10 @@ The mapping is not one to one. `rust` runs `test`, where the gate runs `test-doc
 `coverage`; `lint` runs in `documents`; and each gate job that runs recipes ends with
 `check-clean`, so a recipe that rewrites a tracked file or leaves an untracked one fails
 in CI as it does in `just check`. Past the composite setup action and `image`'s Docker
-steps, nothing in CI runs a command that does not exist in the `Justfile`.
+steps, nothing in `ci.yml` runs a command that does not exist in the `Justfile`.
+`fuzz.yml` is described in [Testing](testing.md#fuzzing), and `release.yml`, whose jobs
+run git, an inline check and `gh release create` as well as `just check`, in
+[decision 0016](../decisions/0016-release-process.md).
 
 `.github/workflows/audit.yml` runs `just audit` on every pull request, weekly, and by
 hand. It is never a required check: a fetch of the advisory database can fail for reasons

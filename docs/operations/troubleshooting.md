@@ -106,7 +106,7 @@ the pin is missing.
 
 ## `rustup is not installed`
 
-The same gate, one step earlier: there is no `rustup` on `PATH` at all. Install rustup
+The same gate's first step: there is no `rustup` on `PATH` at all. Install rustup
 as [Develop locally](../how-to/develop-locally.md#prerequisites) describes, then run
 `just install-toolchain`.
 

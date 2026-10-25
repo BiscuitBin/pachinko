@@ -124,8 +124,8 @@ method on a value passed in are all caught. Because the lists name items rather 
 modules, a std item added in a later Rust is not banned until it is listed. Clippy lints
 only what it builds, so code behind a target the host does not compile, under a mix of
 features none of gate 8's passes sets, or under `cfg(not(clippy))` or a custom `cfg` is
-not linted. Review covers all of these. These limits, and leaving `std::env::consts`
-reachable, are accepted by the maintainer's choice on 2026-10-24
+not linted. Review covers all of these. Leaving another target's `cfg` to review and
+`std::env::consts` reachable are the maintainer's choice on 2026-10-24
 ([decision 0008](../decisions/0008-std-library.md)).
 
 **The probe.** A ban that cannot be shown to fire is not trusted to hold. A fixture under

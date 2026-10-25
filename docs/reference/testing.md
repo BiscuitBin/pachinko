@@ -39,8 +39,8 @@ the deviation.
 One integration test file exists, and libpachinko has none yet.
 `crates/pachinko/tests/binary.rs` is the binary test: it runs the built service as a user
 would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that the
-process exits zero, prints `pachinko 0.1.0` and a newline, and writes nothing to standard
-error. The file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its
+process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
+and writes nothing to standard error. The file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its
 reason, because an integration test file is its own test module.
 [Run the binary test](../how-to/test-and-debug.md#run-the-binary-test) says how to run it
 and how it divides from the unit test beside `run`.

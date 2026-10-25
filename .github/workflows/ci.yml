@@ -56,8 +56,9 @@ jobs:
       - run: just snapshots-check
       - run: just doc
       - run: just deps-unused
-      # Last in every gate job, as in `just check`: a recipe that rewrites a
-      # tracked file or leaves an untracked one fails here, not only locally.
+      # Last in every gate job that runs recipes, as in `just check`: a recipe
+      # that rewrites a tracked file or leaves an untracked one fails here, not
+      # only locally. `image` runs no recipe and has no setup, so none.
       - run: just check-clean
 
   coverage:
