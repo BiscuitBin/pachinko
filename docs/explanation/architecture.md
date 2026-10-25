@@ -165,7 +165,7 @@ then compares the options and a decision record supersedes
 `run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md) records the
 rest of what this repository deliberately does not do.
 
-## What wave 2 adds
+## What wave 2 added
 
 The container image's entrypoint is the `pachinko` binary, built in CI on every pull
 request without pushing it

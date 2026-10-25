@@ -69,7 +69,7 @@ resolution; in a library it becomes a demand on everyone else's.
 
 ## Harness dependencies
 
-T16 adds divan 0.1.21 through `[workspace.dependencies]` as a library development
+T16 added divan 0.1.21 through `[workspace.dependencies]` as a library development
 dependency only. It provides the benchmark harness and black box; it is outside the
 graph consumers resolve and cargo-deny’s `exclude-dev` graph. Its MSRV is 1.80.0,
 below the pinned compiler. Its transitive packages are committed in `Cargo.lock`.
