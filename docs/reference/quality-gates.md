@@ -16,7 +16,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
-| 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, so `rust-toolchain.toml` is honoured unless an override outranks it, and the run log names the active toolchain. It does not compare that toolchain with the pin: `RUSTUP_TOOLCHAIN`, `+toolchain` or a `rustup override` still passes. |
+| 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
 | 2 | `lock-check` | `cargo update --workspace --locked --offline`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
 | 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
 | 4 | `fmt-check` | `cargo fmt --all --check` | Every Rust file is as rustfmt would write it. |
@@ -149,7 +149,7 @@ suppression is one lint on one line, as
 
 | Gate | First move |
 | --- | --- |
-| `check-toolchain` | Put rustup's cargo first on `PATH`; `just install-toolchain` installs the pinned toolchain. |
+| `check-toolchain` | Put rustup's cargo first on `PATH`; `just install-toolchain` installs the pinned toolchain; unset `RUSTUP_TOOLCHAIN` or run `rustup override unset`. |
 | `lock-check` | A manifest changed without its lockfile: `just lock`, then commit both. A cold Cargo cache fails too: `just sync` fills it. |
 | `lint` | Read which hook failed. `just fix` repairs what the mutating configuration can. |
 | `fmt-check`, `toml-check` | `just fix`, or `just format` for these two alone. |
@@ -233,8 +233,9 @@ was cancelled or was skipped. It exists so that branch protection can name one c
 never changes. A gate job added later joins its `needs`, and protection stays as it is.
 
 The mapping is not one to one. `rust` runs `test`, where the gate runs `test-doc` and
-`coverage`; `lint` runs in `documents`; and no job runs `check-clean`, since each job
-runs its recipes directly rather than through `just check`. Past the composite setup action,
+`coverage`; `lint` runs in `documents`; and each job that runs recipes ends with
+`check-clean`, so a recipe that rewrites a tracked file or leaves an untracked one fails
+in CI as it does in `just check`. `image` runs no recipe and has no such step. Past the composite setup action,
 nothing in CI runs a command that does not exist in the `Justfile`.
 
 `.github/workflows/audit.yml` runs `just audit` on every pull request, weekly, and by

@@ -58,12 +58,16 @@ the manifest. These two are the only curl-pipes in this handbook. Then
 One hazard catches almost everyone once. A cargo from `pixi global`, Homebrew's `rust`
 formula or a Linux distribution ignores `rust-toolchain.toml` and builds with whatever
 release it happens to be, so the lint set silently differs from CI's.
-`just check-toolchain` refuses it before anything else runs, with one of two lines:
+`just check-toolchain` refuses it before anything else runs, with one of three lines:
 
 ```text
 rustup is not installed; see docs/how-to/develop-locally.md
 cargo resolves to /home/you/.pixi/bin/cargo, not rustup's proxy
+the active toolchain is 1.98.1-aarch64-apple-darwin (overridden by environment variable RUSTUP_TOOLCHAIN); it must be 1.99.1, selected by rust-toolchain.toml
 ```
+
+The third is a `RUSTUP_TOOLCHAIN` or a `rustup override` outranking the pin; unset the
+variable, or run `rustup override unset` in the checkout.
 
 The remedy is `~/.cargo/bin` ahead of `~/.pixi/bin` on `PATH`, or
 `pixi global uninstall rust`. The repository's own pixi environment holds no cargo and is

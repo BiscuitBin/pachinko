@@ -35,8 +35,8 @@ fifteen minutes, raise the workflow's thirty-minute timeout before it becomes a 
 moves both lockfiles within the manifests' constraints — `Cargo.lock` within the caret
 ranges, `pixi.lock` beneath the exact tool pins; run `just check` and commit both. A tool
 pin itself moves in `pyproject.toml`, then `pixi update <name>`, then `pixi.lock` is
-committed. A line in `tools.txt` or `tools-source.txt` moves by hand and takes effect at
-the next `just install-tools`; a `tools-source.txt` line moves one release at a time,
+committed. A line in `tools.txt` or `tools-source.txt` moves in Renovate's pull request
+once approved on the dashboard, and takes effect at the next `just install-tools`; a `tools-source.txt` line moves one release at a time,
 with `just check` run on each, because rustqual is a gate. A hook `rev` or a GitHub
 Action SHA moves with its version comment beside it, in Renovate's `hook revs` or
 `github actions` pull request once approved; lychee's rev and `LYCHEE_VERSION` move by

@@ -4,5 +4,7 @@
 # build if one exists and otherwise compiles the crates.io source with --locked; it
 # never takes an unsigned upstream release asset. tools.txt is binary-only and stays
 # so; a pin here can cost a source build at bootstrap, which decision 0012 accepts
-# for the one tool below and no other by default. Bumped by hand, one release at a time, with `just check` run on it.
+# for the one tool below and no other by default. Renovate proposes each bump and holds
+# it for dashboard approval (decision 0018); take one release at a time, with
+# `just check` run on it.
 rustqual@1.8.3

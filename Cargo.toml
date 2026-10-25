@@ -126,7 +126,8 @@ cognitive_complexity = "warn"
 multiple_crate_versions = "allow"
 
 # For the service binary: fat LTO and one codegen unit trade build time for a smaller,
-# faster binary. Revisit when T13 measures the container image build.
+# faster binary. Kept by the maintainer's choice on 2026-10-24, after T13's image build
+# compiled the release binary in 6.24 s uncached for a 9.4 MB runtime image.
 [profile.release]
 lto = "fat"
 codegen-units = 1

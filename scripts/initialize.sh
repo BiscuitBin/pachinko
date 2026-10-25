@@ -13,8 +13,7 @@ git rev-parse --is-inside-work-tree >/dev/null
 # a first run.
 pixi install --locked
 
-# The toolchain rust-toolchain.toml pins, with the components and targets the
-# file names.
+# The toolchain rust-toolchain.toml pins, with the components the file names.
 just install-toolchain
 
 # The pin in `rust-toolchain.toml` is honoured only by rustup's cargo proxy, so

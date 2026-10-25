@@ -56,6 +56,9 @@ jobs:
       - run: just snapshots-check
       - run: just doc
       - run: just deps-unused
+      # Last in every gate job, as in `just check`: a recipe that rewrites a
+      # tracked file or leaves an untracked one fails here, not only locally.
+      - run: just check-clean
 
   coverage:
     name: coverage
@@ -79,6 +82,7 @@ jobs:
           path: target/llvm-cov/lcov.info
           if-no-files-found: error
           retention-days: 7
+      - run: just check-clean
 
   deny:
     name: deny
@@ -95,6 +99,7 @@ jobs:
       # `just sync` fetched. Advisories are audit.yml's, because they need the
       # RustSec database over the network.
       - run: just deny
+      - run: just check-clean
 
   documents:
     name: documents
@@ -123,6 +128,7 @@ jobs:
       # reason.
       - run: just check-specs
       - run: just analyse-specs
+      - run: just check-clean
 
   image:
     name: image
