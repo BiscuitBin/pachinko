@@ -579,5 +579,9 @@ authorizations. The first real version remains the maintainer's decision.
   The maintainer decides when the first release is cut.
 
 - Version-independent assertions in the library unit test/doctest and both service
-  output tests would remove the manual release step. This Rust cleanup is outside
-  T14; until then, Maintenance explicitly requires updating them after library bumps.
+  output tests would remove the manual release step. Closed on 2026-10-24 on branch
+  `review-and-finish-bootstrap`: the library's tests compare `version()` with
+  `env!("CARGO_PKG_VERSION")`, the service's tests build their line from
+  `libpachinko::version()`, and Maintenance's step 3 no longer asks for a test edit. In
+  a scratch copy, a library-only bump to `0.1.1` left `cargo test --workspace` green,
+  and replacing `version()`'s body with `"xyzzy"` still failed it (exit 101).

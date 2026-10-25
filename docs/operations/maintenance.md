@@ -101,14 +101,9 @@ may instead tag the existing 0.1.0 without a bump; omit `patch` during preparati
    `cargo release patch -p libpachinko --no-tag --execute`. This bumps the selected
    crate, rewrites only its changelog section and commits locally; it does not publish
    or push. Review the whole diff, including any dependent constraint update and the
-   lockfile. After a library version bump, update the explicit version assertions in
-   the unit test and doctest in `crates/libpachinko/src/lib.rs`, the service unit test
-   in `crates/pachinko/src/lib.rs`, and the binary test in
-   `crates/pachinko/tests/binary.rs`. The service prints the library version, so its
-   output assertions follow a library bump even when the service version stays the
-   same; a service-only bump does not change those expectations. Commit these assertion
-   updates on the release branch before running `just check` on the resulting commit
-   and opening the release pull request.
+   lockfile. No test names a version: the library's tests compare `version()` with
+   its manifest, and the service's tests build their expected line from
+   `libpachinko::version()`, so a bump of either crate needs no test edit.
 4. Separately authorize the branch push and opening the pull request. Merge only after
    the required `check` passes. The release commit must reach main through that pull
    request. No tag is made on the release branch.

@@ -59,7 +59,7 @@ line `run` writes.
 Open `docs/specs/pachinko.allium`. It is the root module, and today it declares no
 entity, rule, surface or invariant: the domain is not defined yet, and the first change
 that names a behaviour states it there before any code implements it. So no clause
-decides the line `run` writes. Two tests state it instead, byte for byte:
+decides the line `run` writes. Two tests state it instead:
 
 - `run_writes_the_name_and_the_library_version`, the unit test at the foot of
   `crates/pachinko/src/lib.rs`, calls `run` on a `Vec<u8>` and compares what it wrote.
@@ -67,9 +67,9 @@ decides the line `run` writes. Two tests state it instead, byte for byte:
   runs the built binary as a user would and compares its standard output, its standard
   error and its exit status.
 
-Read both expected byte strings now. When this page was written they were
-`b"pachinko 0.1.0\n"`; on a later `main` the version may differ, and the exercise works
-the same with whatever version they hold.
+Read both expected lines now. Each builds the line from `libpachinko::version()`,
+`format!("pachinko {}\n", libpachinko::version())`, so the tests hold whatever version
+the manifest states and the exercise works the same on any `main`.
 
 ## 4. Change something
 
@@ -92,8 +92,8 @@ just test
 
 Each failure is an `assert_eq!` on bytes, so the assertion prints both sides as lists of
 numbers: `left` is what was written, `right` is what the test expected. The numbers are
-the bytes' values; 32 is a space and 10 the newline. When this page was written, the
-unit test reported:
+the bytes' values; 32 is a space and 10 the newline. When this page was written, at
+version 0.1.0, the unit test reported:
 
 ```text
 thread 'tests::run_writes_the_name_and_the_library_version' (316050970) panicked at crates/pachinko/src/lib.rs:26:9:
@@ -132,19 +132,19 @@ are the point: they show the line is stated in two places, and where.
 
 ## 5. Change the tests to match
 
-Update the expected bytes in both tests, inserting `version` and a space after
-`pachinko` and keeping whatever version follows. In `crates/pachinko/src/lib.rs`:
+Update the expected line in both tests, inserting `version` and a space after
+`pachinko`. In `crates/pachinko/src/lib.rs`:
 
 ```diff
--        assert_eq!(out, b"pachinko 0.1.0\n");
-+        assert_eq!(out, b"pachinko version 0.1.0\n");
+-            format!("pachinko {}\n", libpachinko::version()).as_bytes()
++            format!("pachinko version {}\n", libpachinko::version()).as_bytes()
 ```
 
 In `crates/pachinko/tests/binary.rs`:
 
 ```diff
--    assert_eq!(output.stdout, b"pachinko 0.1.0\n");
-+    assert_eq!(output.stdout, b"pachinko version 0.1.0\n");
+-        format!("pachinko {}\n", libpachinko::version()).as_bytes()
++        format!("pachinko version {}\n", libpachinko::version()).as_bytes()
 ```
 
 Run `just test` again. Every nextest test passes, then the doctests. In a real change,

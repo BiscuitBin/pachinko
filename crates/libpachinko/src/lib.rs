@@ -10,7 +10,7 @@
 /// The version of this crate, as its manifest states it.
 ///
 /// ```
-/// assert_eq!(libpachinko::version(), "0.1.0");
+/// assert_eq!(libpachinko::version(), env!("CARGO_PKG_VERSION"));
 /// ```
 #[must_use]
 pub const fn version() -> &'static str {
@@ -23,6 +23,6 @@ mod tests {
 
     #[test]
     fn the_version_is_the_manifests() {
-        assert_eq!(version(), "0.1.0");
+        assert_eq!(version(), env!("CARGO_PKG_VERSION"));
     }
 }

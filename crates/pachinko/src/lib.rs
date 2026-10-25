@@ -23,6 +23,9 @@ mod tests {
     fn run_writes_the_name_and_the_library_version() {
         let mut out = Vec::new();
         run(&mut out).unwrap();
-        assert_eq!(out, b"pachinko 0.1.0\n");
+        assert_eq!(
+            out,
+            format!("pachinko {}\n", libpachinko::version()).as_bytes()
+        );
     }
 }
