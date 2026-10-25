@@ -46,8 +46,8 @@ Framework configuration and conventions are described in
 `crates/pachinko/tests/binary.rs` runs the built service as a user would. Cargo builds
 the `pachinko` binary before it runs that crate's integration tests and hands the test
 its path as `CARGO_BIN_EXE_pachinko`; the test asserts that the binary exits zero, prints
-`pachinko 0.1.0` and one newline on standard output and writes nothing to standard
-error. Run it alone with:
+`pachinko`, a space, `libpachinko::version()` and one newline on standard output and
+writes nothing to standard error. Run it alone with:
 
 ```console
 INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test binary
@@ -88,7 +88,7 @@ Once a test takes one:
    and names the snapshot. These recipes leave no pending file.
 2. Read the diff and decide whether the interface change was intended. Keep the
    behaviour's asserting tests green; the snapshot establishes no correctness.
-3. For an intended change, run `just snapshots-accept`. It checks both locks, reruns
+3. For an intended change, run `just snapshots-accept`. It checks all three locks, reruns
    all unit and integration tests with every feature and accepts pending snapshots
    without prompting. It also deletes a `.snap` file no test refers to, such as one a
    renamed or removed test left behind. It works for an agent without a terminal as well.

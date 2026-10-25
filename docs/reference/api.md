@@ -58,9 +58,10 @@ reference is hosted there.
 `[package.metadata.docs.rs]` table: every feature, `--cfg docsrs`, and one target,
 `x86_64-unknown-linux-gnu`. This is prospective. Both crates are `publish = false`
 ([decision 0006](../decisions/0006-apache-2-0.md)), so nothing is on docs.rs, and the
-release process ticket T14 adds keeps it so: a tag cuts a GitHub Release, not a registry
-publish. Only a later, separately authorised decision to publish would put a crate on
-docs.rs; until then the hosted site is the only API reference.
+release process ([decision 0016](../decisions/0016-release-process.md)) keeps it so: a
+tag cuts a GitHub Release, not a registry publish. Only a later, separately authorised
+decision to publish would put a crate on docs.rs; until then the hosted site is the only
+API reference.
 
 ## What the API promises
 
@@ -69,9 +70,10 @@ a value between threads, copy it or print it. Public structs and enums are
 `#[non_exhaustive]`, so a field or variant added later breaks no consumer. These are
 invariants of [the agent contract](agent-contract.md); the domain types that will carry
 them arrive with the specifications, and today the public API is two functions,
-`libpachinko::version` and `pachinko::run`. Neither crate has features or dependencies
-beyond `pachinko`'s on `libpachinko`. The library performs no effect itself; its effect
-traits will appear here beside their fakes, and
+`libpachinko::version` and `pachinko::run`. Neither crate has features, and neither has
+a normal dependency beyond `pachinko`'s on `libpachinko`; divan, the library's benchmark
+harness, is a development dependency only. The library performs no effect itself; its
+effect traits will appear here beside their fakes, and
 [Architecture](../explanation/architecture.md) explains the boundary.
 
 ## Related pages

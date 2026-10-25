@@ -17,11 +17,11 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
-| 2 | `lock-check` | `cargo update --workspace --locked --offline`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
 | 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
-| 4 | `fmt-check` | `cargo fmt --all --check` | Every Rust file is as rustfmt would write it. |
+| 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` | Every Rust file, the fuzz crate's included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
-| 6 | `clippy` | `cargo clippy -- -D warnings` | Every lint in the workspace table is clean over every crate target and feature, for the host platform, with warnings as errors. |
+| 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz crate's copy of it over the fuzz targets, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
 | 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API in what clippy compiles for the host with every feature, with none, and with every feature in the release profile; and the probe fixture trips every ban once while pachinko trips none. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
@@ -41,6 +41,10 @@ The table leaves out `--locked`, which the recipes
 [decision 0007](../decisions/0007-dependency-policy.md) names pass; `deps-unused` does
 not, and `snapshots-check` cannot pass it through cargo-insta, which is why it runs
 `lock-check` first.
+
+`fuzz/` is a workspace of its own, so gates 2, 4 and 6 name its manifest beside the
+root one. Its clippy pass stays inside `just check` by the maintainer's choice on
+2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s warm.
 
 Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
 The duplication is deliberate: a regression names itself in the list of gates rather than
@@ -112,31 +116,39 @@ The script pins cargo's colour, progress bar, warnings level and debug assertion
 the caller's settings cannot hide a finding. A lint cap in the caller's `RUSTFLAGS` or a
 cargo config's `rustflags` is not overridden: the probe then sees nothing fire, fails,
 and names that cause. Clippy lints only what its three passes compile, so the following
-are left to review: code behind another target's `cfg`; code under a mix of features
-none of the passes sets; code under `cfg(not(clippy))` or a custom `cfg`; and a std item
-added after the inventory.
+are left to review: code behind another target's `cfg`, such as `cfg(windows)`; code
+under a mix of features none of the passes sets; code under `cfg(not(clippy))` or a
+custom `cfg`; and a std item added after the inventory. `std::env::consts` stays
+reachable, because its items are compile-time constants rather than effects, and the
+crate bans are a denylist of eight names, not an allowlist. These limits stand by the
+maintainer's choice on 2026-10-24.
 
 A failure names the banned crate or std path and where it was found. Move the effect
 behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake
 beside the trait; a banned crate a test needs belongs in the development dependencies.
-The bans apply to libpachinko's own tests too, so a test that needs a real effect
-belongs under `crates/pachinko/tests/`.
+The bans apply to libpachinko's own unit and integration tests too, by the maintainer's
+choice on 2026-10-24, so a test that needs a real effect belongs under
+`crates/pachinko/tests/`.
 
 ## Outside the gate
 
-`test`, `build`, `audit`, `mutants`, `site`, `plan-spec` and `check-links-online` are recipes that
-`just check` does not run. `test` runs nextest and the doctests in one go, which
-`coverage` and `test-doc` already cover between them; `build` compiles what `clippy` and
-`features` already compile; `site` builds the API reference that `doc` has proved, for
+`test`, `build`, `audit`, `mutants`, `bench`, `fuzz`, `semver`, `image`, `site`, `plan-spec`
+and `check-links-online` are recipes that `just check` does not run. `test` runs nextest
+and the doctests in one go, which `coverage` and `test-doc` already cover between them;
+`build` compiles what `clippy` and `features` already compile; `site` builds the API
+reference that `doc` has proved, for
 [Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md); and `plan-spec` prints a
 suggestion list for tests, which nothing asserts on. `check-links-online` needs the
 network, and a check that can fail because a third party is down is not a gate. `audit`
 is missing for the same reason: it reads the RustSec advisory database, and runs in a
 workflow of its own. Mutation testing is a report because runtime grows with the
-workspace and survivors require judgement; there is no score threshold.
-[Commands](commands.md) lists every recipe. Wave 2 (T13 to T17)
-adds recipes outside `just check` only, and leaves the nineteen gates as they are; T13's
-`image` CI job will join the `needs` of the `check` aggregate job.
+workspace and survivors require judgement; there is no score threshold. Benchmarks run
+by hand, because machine load makes a timing no gate, and fuzzing runs weekly in a
+workflow of its own ([decision 0017](../decisions/0017-mutation-bench-and-fuzz.md));
+`semver` is advisory before 1.0 ([decision 0016](../decisions/0016-release-process.md));
+and `image` needs Docker, which the source gate does not, so CI's `image` job builds the
+image instead ([decision 0015](../decisions/0015-container-image.md)).
+[Commands](commands.md) lists every recipe.
 
 ## When a gate fails
 
@@ -228,15 +240,23 @@ environments.
 | `deny` | `deny` |
 | `documents` | `install-allium`, `lint`, `check-docs`, `check-agents`, `check-specs`, `analyse-specs` |
 
-A fifth job, `check`, needs all four and runs no recipe: it fails when any of them failed,
-was cancelled or was skipped. It exists so that branch protection can name one check that
-never changes. A gate job added later joins its `needs`, and protection stays as it is.
+A fifth gate job, `image`, runs no recipe and no setup action: it builds the container
+image with Docker, loads it without pushing it, and runs it once
+([decision 0015](../decisions/0015-container-image.md)). A sixth job, `check`, needs all
+five and runs no recipe: it fails when any of them failed, was cancelled or was skipped.
+It exists so that branch protection can name one check that never changes. A gate job
+added later joins its `needs`, and protection stays as it is. A seventh, `semver`, runs
+`just semver` on pull requests only; it is advisory before 1.0 and is not among `check`'s
+`needs` ([decision 0016](../decisions/0016-release-process.md)).
+
+A newer run of `ci.yml` on the same ref cancels the one still in progress, on `main` as on
+a branch, by the maintainer's choice on 2026-10-24.
 
 The mapping is not one to one. `rust` runs `test`, where the gate runs `test-doc` and
-`coverage`; `lint` runs in `documents`; and each job that runs recipes ends with
+`coverage`; `lint` runs in `documents`; and each gate job that runs recipes ends with
 `check-clean`, so a recipe that rewrites a tracked file or leaves an untracked one fails
-in CI as it does in `just check`. `image` runs no recipe and has no such step. Past the composite setup action,
-nothing in CI runs a command that does not exist in the `Justfile`.
+in CI as it does in `just check`. Past the composite setup action and `image`'s Docker
+steps, nothing in CI runs a command that does not exist in the `Justfile`.
 
 `.github/workflows/audit.yml` runs `just audit` on every pull request, weekly, and by
 hand. It is never a required check: a fetch of the advisory database can fail for reasons
@@ -258,9 +278,9 @@ deployment that fails blocks no merge.
 ## On `main`
 
 `main` is protected, and one check, `check`, must pass before a branch merges into it.
-That is the aggregate job above, which fails unless `rust`, `coverage`, `deny` and
-`documents` all succeeded, so a gate job is added by joining its `needs` and the
-protection itself never changes. `audit` and `mutants` are never required.
+That is the aggregate job above, which fails unless `rust`, `coverage`, `deny`,
+`documents` and `image` all succeeded, so a gate job is added by joining its `needs` and
+the protection itself never changes. `audit`, `mutants` and `semver` are never required.
 
 The branch is not required to be up to date with `main` first, and no review is required —
 neither earns its cost on a repository with one author. Force pushes and deletion are

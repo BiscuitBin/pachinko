@@ -60,8 +60,8 @@ the workflow; its creation and every tag push are separately authorized actions.
 `just semver` compares libpachinko against its latest reachable release tag. Before
 the first tag it compares against the branch's merge base with `origin/main`, or local
 `main` when that remote branch is absent. An explicit revision overrides discovery.
-The recipe checks both locks first and runs offline because cargo-semver-checks has
-no locked option. The pull-request job is advisory and outside the required aggregate.
+The recipe checks all three locks first and runs offline because cargo-semver-checks
+has no locked option. The pull-request job is advisory and outside the required aggregate.
 
 ## Consequences
 
@@ -70,10 +70,12 @@ normal after a release, but an empty release cannot pass verification. The first
 release may tag the existing 0.1.0 or bump it; this decision chooses neither.
 The service's library dependency constraint may need to change with a library release;
 that does not require a service version bump or move its changelog section.
-The current library unit test and doctest and both service output tests contain explicit
-version assertions. A library bump requires manually updating and committing those
-assertions before the release gate; the service reports the library version, not its
-own. Maintenance records this release step.
+No test names a version: the library's tests compare its version with its manifest, and
+the service's output tests, which report the library's version rather than its own,
+build their expectation from the library, so a bump needs no test edit. The excluded fuzz
+crate is beyond cargo-release's reach, so a library bump also needs `just lock`, which
+reaches the network, to refresh `fuzz/Cargo.lock` before the locked checks can pass
+([decision 0007](0007-dependency-policy.md)).
 
 There is no release wrapper recipe: the distinct preparation and tag commands expose
 which action changes history. `SECURITY.md` supports only main and promises no

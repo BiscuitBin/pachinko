@@ -63,7 +63,8 @@ Turned down:
 - **A site generator for the handbook.** A second tool and a second build, for a
   handbook whose frontmatter and manifest are made for GitHub's rendering.
 - **Publishing on release only.** There would be nothing to read until the first
-  release, and the release process is still to come (ticket T14, in wave 2).
+  release, and a release is a tag the maintainer makes when they choose
+  ([decision 0016](0016-release-process.md)), not every merge to `main`.
 - **A tree per version.** docs.rs would do that for releases if a crate were ever
   published, and neither is.
 
@@ -71,8 +72,9 @@ Turned down:
 
 The ones that hurt.
 
-- **The one workflow that holds a write scope.** The
-  [security model](../explanation/security-model.md) has a job to describe rather than
+- **The first workflow to hold a write scope.** The release workflow's publish job is
+  the second ([decision 0016](0016-release-process.md)). The
+  [security model](../explanation/security-model.md) has jobs to describe rather than
   an absence, and no page may say the workflows only read.
 - **The site describes `main` and says so nowhere on its pages.** Rustdoc prints the
   crate's version and nothing about the branch, so a reader may find an item no release

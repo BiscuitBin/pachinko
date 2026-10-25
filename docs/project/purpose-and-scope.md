@@ -42,9 +42,11 @@ states is not the library's yet, however obvious it looks.
   specifications ([decision 0014](../decisions/0014-service-runtime-deferred.md)).
 - **No publishing to a registry.** Both crates are `publish = false`, so neither reaches
   a package registry. The API reference is the one thing deployed, to GitHub Pages
-  ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)). Wave 2 adds a
-  release process (T14) that tags a crate and cuts a GitHub Release, with
-  `publish = false` kept.
+  ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)); the container
+  image is built in CI and pushed nowhere
+  ([decision 0015](../decisions/0015-container-image.md)). The release process tags a
+  crate and cuts a GitHub Release with no binary assets, with `publish = false` kept
+  ([decision 0016](../decisions/0016-release-process.md)).
 - **No effect performed by the library.** The library performs no effect itself; the
   service is where effects happen. [Architecture](../explanation/architecture.md)
   explains the boundary, and

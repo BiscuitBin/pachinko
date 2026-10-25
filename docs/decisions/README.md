@@ -51,8 +51,8 @@ This series is the repository's own and starts at 0001. Eleven entries were carr
 libpawdoku's decision records at `ccdd001` when this repository was adapted from it
 (0002 to 0007 and 0009 to 0013); each says so under its heading, with the number it had
 there, and keeps the topic slug it had, because the slug is what a cross-repository
-reference names. Three entries are new here: 0001, 0008 and 0014. Nothing here is
-rendered from a template, so no frozen inventory of numbers applies.
+reference names. Three entries were new at the foundation: 0001, 0008 and 0014. Nothing
+here is rendered from a template, so no frozen inventory of numbers applies.
 
 Numbers 0015 to 0018 were reserved for the wave-2 tickets that took those decisions: 0015
 for the container image (T13), 0016 for the release process (T14), 0017 for mutation

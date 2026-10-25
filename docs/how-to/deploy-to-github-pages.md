@@ -20,7 +20,8 @@ one Pages serves.
 
 The site documents `main`, so it may describe an item no release has. Neither crate is
 published to a registry (`publish = false` in the workspace manifest), so this site is
-the only hosted reference; the release process arrives with T14.
+the only hosted reference; a release tags a crate and cuts a GitHub Release, and
+publishes nothing to a registry ([decision 0016](../decisions/0016-release-process.md)).
 
 ## One-time setup
 
@@ -78,9 +79,10 @@ this handbook gives, because it is the one the Pages settings report.
   artefact; the upload leaves dotfiles out, so cargo's `.lock` file is not published.
   This job holds `contents: read` and nothing else.
 - **`deploy`** publishes the artefact. It holds `pages: write` and `id-token: write`, the
-  only write scopes in any workflow here, and it checks nothing out and runs no code from
-  the repository. It proves itself to Pages with the run's own identity token; no secret
-  is stored. It runs only when the ref is `main`.
+  only write scopes outside `release.yml`, whose `publish` job holds `contents: write`
+  ([decision 0016](../decisions/0016-release-process.md)), and it checks nothing out
+  and runs no code from the repository. It proves itself to Pages with the run's own
+  identity token; no secret is stored. It runs only when the ref is `main`.
 
 A push to `main` deploys, and so does a run started by hand from `main`. A run started by
 hand from any other branch builds, and deploys nothing: the deploy job's own `if:` skips

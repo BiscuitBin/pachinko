@@ -9,10 +9,10 @@ requires: []
 # Make your first change
 
 From a fresh clone to a green gate, through one small change you then put back. The
-first run downloads the pixi environment, a Rust toolchain, cargo-hack and rustqual, the
-Allium checker and the hook environments, so it needs the network, and it needs rustup,
-pixi and `just` installed first; [Develop locally](../how-to/develop-locally.md)
-describes all three.
+first run downloads the pixi environment, a Rust toolchain, the tools `tools.txt` and
+`tools-source.txt` name, the Allium checker and the hook environments, so it needs the
+network, and it needs rustup, pixi, `just` and a C++ compiler installed first;
+[Develop locally](../how-to/develop-locally.md) describes all four.
 The change is small on purpose; what matters is that it passes through every layer the
 repository has today: an item, the tests that state what it does, and the gate.
 
@@ -28,8 +28,9 @@ just check
 ```
 
 `just initialize` installs the pixi environment from `pixi.lock`, installs the toolchain
-`rust-toolchain.toml` pins, refuses a cargo that is not rustup's, installs cargo-hack and
-rustqual into `.tools/bin` and then the Allium checker, syncs both lockfiles and installs
+`rust-toolchain.toml` pins, refuses a cargo that is not rustup's, installs cargo-hack,
+cargo-release, cargo-fuzz and rustqual into `.tools/bin` and then the Allium checker,
+syncs all three lockfiles and installs
 the pre-commit hook, from the primary worktree only; a secondary worktree says so and
 skips that step. It never formats, stages, commits, tags or pushes. If it complains about
 a missing tool, read [Develop locally](../how-to/develop-locally.md).
