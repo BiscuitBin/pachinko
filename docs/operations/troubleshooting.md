@@ -95,9 +95,18 @@ with whatever version it is, so the gate stops before anything compiles. Put
 global pixi install, `pixi global uninstall rust` — until `command -v cargo` prints the
 proxy in `~/.cargo/bin`.
 
+## `the active toolchain is <toolchain>; it must be <pin>, selected by rust-toolchain.toml`
+
+`just check-toolchain` found rustup's proxy, but the toolchain it selects is not the pin
+in `rust-toolchain.toml`, or the file is not what selected it: `RUSTUP_TOOLCHAIN` in the
+environment or a `rustup override` for the directory outranks the file, even when it names
+the same release. The message quotes rustup's own reason in parentheses. Unset the
+variable, or run `rustup override unset` in the checkout, then `just install-toolchain` if
+the pin is missing.
+
 ## `rustup is not installed`
 
-The same gate, one step earlier: there is no `rustup` on `PATH` at all. Install rustup
+The same gate's first step: there is no `rustup` on `PATH` at all. Install rustup
 as [Develop locally](../how-to/develop-locally.md#prerequisites) describes, then run
 `just install-toolchain`.
 

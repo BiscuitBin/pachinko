@@ -7,7 +7,7 @@ description: Diagnose and repair a failing quality gate at its root instead of s
 
 1. Read `AGENTS.md`, then reproduce with the narrowest recipe rather than the whole gate. `just check` names the recipe that failed; run that one alone.
 2. Dispatch on which gate failed:
-   - `check-toolchain` — cargo is not rustup's proxy, or rustup is missing. Put `~/.cargo/bin` first on `PATH`; the pin in `rust-toolchain.toml` is honoured only through that proxy.
+   - `check-toolchain` — cargo is not rustup's proxy, or rustup is missing. Put `~/.cargo/bin` first on `PATH`; the pin in `rust-toolchain.toml` is honoured only through that proxy. If it says the active toolchain must be the pin, `RUSTUP_TOOLCHAIN` or a `rustup override` outranks the file, or the pin is missing: unset the variable or run `rustup override unset`, then `just install-toolchain`.
    - `lock-check` — run `just lock`, which reaches the network and so needs explicit authorization, and read the lockfile diff before accepting it.
    - `lint` — a pre-commit hook failed. A hook named after a gate (`fmt-check`, `toml-check`, `deps-unused`, `validate-docs` for `check-docs`, `validate-agents` for `check-agents`, `check-specs`, `analyse-specs`) goes to that gate's line below. For the rest (Markdown, typos, links, shell, workflows, secrets, whitespace), run `just fix` for what a fixer can repair, then fix the remainder by hand; a secret found by `ripsecrets` is removed, never allowlisted.
    - `fmt-check` or `toml-check` — run `just fix`; never hand-format to match.

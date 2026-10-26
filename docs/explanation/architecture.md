@@ -93,7 +93,11 @@ filesystem queries, the unix `fs` and `net` extensions, `std::hash::RandomState`
 be banned, so `std::env::consts` stays reachable; it holds compile-time values, not an
 effect.
 
-Development dependencies are exempt, so a test may use a seeded generator. Standard I/O
+Development dependencies are exempt from the crate bans, so a test may use a seeded
+generator; the std-API bans still reach libpachinko's own tests, by the maintainer's
+choice on 2026-10-24, and
+[Quality gates](../reference/quality-gates.md#gate-8-the-effects-bans) says where a test
+that needs a real effect goes. Standard I/O
 (`std::io::stdin` and the rest) is not banned, because no named effect covers it.
 `std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` but stays allowed, by the
 maintainer's choice: it changes diagnostics, not results, so libpachinko should not
@@ -108,6 +112,8 @@ That covers transitive and optional dependencies on every target, and is scoped 
 guard: `deny.toml` bans no effect crate, because its bans are workspace-wide and its
 `wrappers` exempt only a banned crate's direct parents, so a ban there would also reject
 the crates the service reaches transitively. Its one ban is `openssl-sys`, everywhere.
+The crate bans stay a denylist of the eight names above rather than an allowlist, by the
+maintainer's choice on 2026-10-24, so a crate outside the list is left to review.
 
 **The std-API bans.** They are clippy's `disallowed-methods` and `disallowed-types`, in
 `crates/libpachinko/clippy.toml`, each with a reason that begins `effect:`. Clippy reads
@@ -118,7 +124,9 @@ method on a value passed in are all caught. Because the lists name items rather 
 modules, a std item added in a later Rust is not banned until it is listed. Clippy lints
 only what it builds, so code behind a target the host does not compile, under a mix of
 features none of gate 8's passes sets, or under `cfg(not(clippy))` or a custom `cfg` is
-not linted. Review covers all of these.
+not linted. Review covers all of these. Leaving another target's `cfg` to review and
+`std::env::consts` reachable are the maintainer's choice on 2026-10-24
+([decision 0008](../decisions/0008-std-library.md)).
 
 **The probe.** A ban that cannot be shown to fire is not trusted to hold. A fixture under
 `tests/fixtures/effects-violation/` breaks every ban exactly once, and the gate fails
@@ -157,7 +165,7 @@ then compares the options and a decision record supersedes
 `run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md) records the
 rest of what this repository deliberately does not do.
 
-## What wave 2 adds
+## What wave 2 added
 
 The container image's entrypoint is the `pachinko` binary, built in CI on every pull
 request without pushing it

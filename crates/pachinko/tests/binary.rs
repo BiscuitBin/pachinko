@@ -13,6 +13,9 @@ fn the_binary_prints_its_line_and_exits_zero() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert_eq!(output.stdout, b"pachinko 0.1.0\n");
+    assert_eq!(
+        output.stdout,
+        format!("pachinko {}\n", libpachinko::version()).as_bytes()
+    );
     assert_eq!(output.stderr, b"");
 }

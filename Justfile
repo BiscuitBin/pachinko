@@ -25,13 +25,15 @@ initialize:
 
 # The pin in rust-toolchain.toml is honoured only by rustup's cargo proxy. A
 # cargo from pixi, Homebrew or a distribution ignores the file and builds with
-# whatever it is, so the gate refuses it before anything else runs.
+# whatever it is, so the gate refuses it before anything else runs. The active
+# toolchain must then be the pin, selected by that file: RUSTUP_TOOLCHAIN or a
+# rustup override outranks it, so either is refused too.
 check-toolchain:
     command -v rustup >/dev/null || { printf '%s\n' 'rustup is not installed; see docs/how-to/develop-locally.md' >&2; exit 2; }
     case "$(command -v cargo)" in "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo) ;; *) printf '%s\n' "cargo resolves to $(command -v cargo), not rustup's proxy" >&2; exit 2;; esac
-    rustup show active-toolchain
+    pin=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml); active=$(rustup show active-toolchain); case "$active" in "$pin"-*" (overridden by '"*"/rust-toolchain.toml')") printf '%s\n' "$active" ;; *) printf '%s\n' "the active toolchain is $active; it must be $pin, selected by rust-toolchain.toml" >&2; exit 2;; esac
 
-# Installs the toolchain, components and targets rust-toolchain.toml names.
+# Installs the toolchain and components rust-toolchain.toml names.
 install-toolchain:
     rustup toolchain install
 
@@ -228,8 +230,9 @@ metrics:
 # checks libpachinko's dependency tree and source against the bans, then runs
 # the same checks over tests/fixtures/effects-violation, which breaks each
 # ban once, and fails unless every ban fires there and none fires on the
-# pachinko crate. The bans and the mechanism are the script's; this recipe
-# only runs it.
+# pachinko crate. The crate bans and the mechanism are the script's, the
+# std-API bans the `effect:` entries in crates/libpachinko/clippy.toml; this
+# recipe only runs it.
 effects:
     sh scripts/check-effects.sh
 

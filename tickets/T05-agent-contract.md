@@ -126,8 +126,9 @@ to two crates and the effects boundary; the seven Allium skills and
 ```sh
 just check-agents
 rg -n -i '(^|[^b])pawdoku|sudoku|wasm|no_std' AGENTS.md .agents/
-mkdir -p ai_tmp/l
-git -C /Users/scutting/projects/libpawdoku archive ccdd001 allium-skill-reference | tar -x -C ai_tmp/l
+rm -rf ai_tmp/l && mkdir -p ai_tmp/l
+git -C /Users/scutting/projects/libpawdoku archive -o "$PWD/ai_tmp/l/ref.tar" ccdd001 allium-skill-reference; echo "exit $?"
+tar -x -f ai_tmp/l/ref.tar -C ai_tmp/l; echo "exit $?"
 diff -r ai_tmp/l/allium-skill-reference allium-skill-reference; echo "exit $?"
 test ! -e skills-lock.json; echo "exit $?"
 rg -c '^<important if="' AGENTS.md
@@ -295,4 +296,26 @@ lines. ai_tmp/l was emptied before this run. The fail-closed form of the vendori
 
 ## Open points
 
-None.
+The items handed back above, as they stand on 2026-10-24:
+
+- The Verification block (B4): closed on 2026-10-24 on branch
+  `review-and-finish-bootstrap`. The block now runs the fail-closed form, with
+  `git archive -o` given an absolute path because `-C` moves the working directory.
+  T11 ran that form at `46c2e33`, all three steps exit 0.
+- `.allium-loop/`: closed by T11 (`55e38ae`), which added it to `.gitignore`.
+- Invariant 8 and `deps-unused`: closed by T11. A sentence after the invariants in
+  `AGENTS.md` names the two exceptions, and `docs/reference/quality-gates.md` records
+  them.
+- The waiver terms and the snapshot rule: T06 wrote the waiver terms into
+  `docs/how-to/work-with-the-specs.md`, and T07 put the snapshot rule on
+  `docs/reference/testing.md`.
+- The vendored skills' bare `allium`: a settled record. They stay verbatim (decision
+  0010), and `AGENTS.md`'s specs block sends agents to the pinned checker.
+- The network list: `AGENTS.md` gained `just image` on 2026-10-24 (commit `ae29219`),
+  so it names eleven recipes, not the ten above.
+- `AGENTS.md` length: still open, the maintainer's decision. `wc -w` gives 1326 on
+  2026-10-24, and §7 now records the gap. It closes when the maintainer accepts the
+  length or asks for a cut.
+- The fetch and rebase before a push: lanes merged `main` rather than rebasing, and
+  T11's fresh clone of `46c2e33` proved the merged lanes green together. §11 now allows
+  a rebase onto, or a merge of, `origin/main`.

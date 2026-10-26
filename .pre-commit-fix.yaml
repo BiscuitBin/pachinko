@@ -47,3 +47,7 @@ repos:
       - id: markdownlint-cli2
         name: markdownlint fix
         args: [--fix]
+        # The config's globs are appended to the files prek passes, so each parallel
+        # batch would fix every Markdown file at once and the racing writes corrupt or
+        # empty them. One process, given the globs alone, fixes each file once.
+        pass_filenames: false

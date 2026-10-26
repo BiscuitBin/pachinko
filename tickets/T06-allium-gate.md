@@ -333,4 +333,8 @@ commit contains only the four ticket-owned files; no probe declarations remain.
 
 ## Open points
 
-None.
+None at hand-back. The analyser limit recorded under Negative controls, that a green
+`just analyse-specs` does not prove a guard is satisfiable, was closed on 2026-10-24 on
+branch `review-and-finish-bootstrap` (commit `e00bc3b`):
+`docs/how-to/work-with-the-specs.md` now says the analyser looks for a producer, and that
+contradictory guards pass.

@@ -184,4 +184,7 @@ reported 100% line coverage. The service README's example was also exercised at
 
 ## Open points
 
-None.
+None at hand-back. Still open on 2026-10-24, and gated on an event: `README.md`'s status
+line and the crate READMEs' "one item today" sentences go stale as the domain grows.
+They close when the first specification that declares behaviour, or a second public
+item in either crate, lands and rewrites them.

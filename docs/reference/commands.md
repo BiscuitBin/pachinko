@@ -13,15 +13,17 @@ prints the same list. This page says what each recipe is for, grouped as the `Ju
 groups them. The `Justfile` is the only supported interface: if something is worth
 running twice, it belongs there rather than in a shell history.
 
-Nine recipes reach the network: `install-toolchain`, `install-tools`, `install-allium`,
-`install-hooks`, `sync`, `lock`, `lock-upgrade`, `audit` and `check-links-online`.
+Ten recipes reach the network: `install-toolchain`, `install-tools`, `install-allium`,
+`install-hooks`, `sync`, `lock`, `lock-upgrade`, `audit`, `check-links-online` and
+`image`.
 `just initialize` runs the first five of them (`install-hooks` only from the primary
 checkout), and is the one command a fresh clone needs the network for. Nothing inside
 `just check` reaches it once `just sync` has fetched the registry index: `lock-check` and
 `deny` then answer from that cache, and `lint` finds every hook environment already
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
-rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants` and
-`check-links-online` are outside `just check`, and so is every recipe that writes.
+rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants`,
+`bench`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
+so is every recipe that writes.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
 `recipes` list in `pyproject.toml`. [Quality gates](quality-gates.md) says what each gate
@@ -32,8 +34,8 @@ proves and why.
 | Recipe | Purpose |
 | --- | --- |
 | `just initialize` | One explicit first run. Installs the pixi environment from `pixi.lock`, the pinned toolchain, the binaries `tools.txt` and `tools-source.txt` list and the pinned `allium` binary; fetches the Cargo dependencies; and installs the hook from the primary checkout; a secondary worktree skips the hook and says so. Over the network. Never formats, stages, commits, tags or pushes. |
-| `just check-toolchain` | Refuse to go on unless `cargo` is rustup's proxy, then print the active toolchain; it does not check that toolchain against the pin in `rust-toolchain.toml`, which `RUSTUP_TOOLCHAIN`, `+toolchain` or a `rustup override` outranks. A cargo from pixi, Homebrew or a distribution ignores that file, so the gate refuses it before anything else runs. Gate 1. |
-| `just install-toolchain` | Install the toolchain, components and targets `rust-toolchain.toml` names, through rustup. Over the network when any of them is missing. |
+| `just check-toolchain` | Refuse to go on unless `cargo` is rustup's proxy and the active toolchain is the pin, selected by `rust-toolchain.toml`, then print it. A cargo from pixi, Homebrew or a distribution ignores that file, and `RUSTUP_TOOLCHAIN` or a `rustup override` outranks it, so the gate refuses each before anything else runs. A `+toolchain` on a direct cargo call is out of its sight; no recipe passes one. Gate 1. |
+| `just install-toolchain` | Install the toolchain and components `rust-toolchain.toml` names, through rustup. Over the network when any of them is missing. |
 | `just install-tools` | Install the tools conda-forge lacks into `.tools/bin/` through the environment's cargo-binstall, in two passes. The `tools.txt` pass takes a release binary or fails, never compiling; the `tools-source.txt` pass, for a tool with no release binary, takes a signed cargo-quickinstall build if one exists and otherwise builds from crates.io source with `--locked`, without a GitHub token. A pass whose list is empty is skipped; a list file that is missing or unreadable fails the recipe. Over the network. |
 | `just install-allium` | Download, verify and install the pinned `allium` binary into `.tools/bin/`, which Git ignores. Over the network; no lockfile can name a binary. |
 | `just sync` | Install `Cargo.lock`, `fuzz/Cargo.lock` and `pixi.lock` exactly as committed; never rewrites them. Run after pulling. Over the network. |
@@ -48,7 +50,7 @@ proves and why.
 | --- | --- |
 | `just bench [args…]` | Run divan benchmarks manually, with optional Cargo arguments. Never in CI or `just check`. |
 | `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all three locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
-| `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. See [Build the container image](../how-to/build-the-container-image.md). |
+| `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. Over the network: the build pulls the digest-pinned base images and fetches the crates inside the container. See [Build the container image](../how-to/build-the-container-image.md). |
 | `just build` | Build every crate with every feature. Outside `just check`. |
 | `just test` | Every unit and integration test through cargo-nextest with `INSTA_UPDATE=no`: a snapshot mismatch fails without writing pending files. Then every doctest through `cargo test --doc`, because nextest cannot run doctests. Outside `just check`, where `coverage` and `test-doc` run the same tests. |
 | `just test-doc` | Every doctest. Gate 10. |

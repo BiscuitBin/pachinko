@@ -71,8 +71,10 @@ reach hours, so it cannot determine whether a change may merge. Constructors nam
 The workflow starts with a thirty-minute timeout; maintenance raises it when the
 mutation step takes more than fifteen minutes.
 
-Clippy now builds libFuzzer’s C++ code and requires a C++ compiler. Apple silicon needs
-Rosetta 2 for the current cargo-fuzz binary. Stable without sanitizers gives coverage
+Clippy now builds libFuzzer’s C++ code and requires a C++ compiler. Its pass over the
+fuzz crate stays inside `just check` by the maintainer’s choice on 2026-10-24: it took
+7.87 seconds cold and about 0.06 seconds warm. Apple silicon needs Rosetta 2 for the
+current cargo-fuzz binary. Stable without sanitizers gives coverage
 guidance and panic detection, without sanitizer checks. A clean smoke run validates
 wiring, not domain correctness. Real targets and deterministic crash regression tests
 arrive with the specifications that define real behaviour. Fuzz output stays ignored.

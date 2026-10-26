@@ -39,7 +39,8 @@ silenced with `#[expect(lint, reason = "...")]` on the item it names, never a bl
 `allow`, so a suppression that stops being needed reports itself; `allow_attributes` and
 `allow_attributes_without_reason` enforce that for an outer `#[allow]` and for any `allow`
 without a reason, and review holds an inner `#![allow(..., reason = "...")]`, which passes
-both. A line-coverage floor of 90 over
+both; by the maintainer's choice on 2026-10-24 no gate rejects that form. A line-coverage
+floor of 90 over
 `crates/*/src/**`, measured by `cargo llvm-cov nextest` and enforced by
 `--fail-under-lines`, lowered by lowering complexity and never by lowering the number.
 `cargo hack --feature-powerset` on the host. rustdoc with `-D warnings --cfg docsrs`, so
@@ -75,8 +76,9 @@ whose behaviour is best shown in doc examples earns no coverage for them. And a 
 
 llvm-cov measuring doctests on stable, which would fold them into the floor. Clippy's cold
 time falling enough to run as a hook. Mutation testing or fuzzing as a gate: T15 and T16
-add them as recipes outside `just check`, and if either joined it, it would change what
-"tested" means, so the floor would be restated rather than raised.
+added them as recipes outside `just check`
+([decision 0017](0017-mutation-bench-and-fuzz.md)), and if either joined it, it would
+change what "tested" means, so the floor would be restated rather than raised.
 
 ## Related pages
 

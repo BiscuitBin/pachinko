@@ -9,12 +9,13 @@ requires: []
 # Maintenance
 
 There is nothing running to operate. The library runs inside whoever calls it, the service
-binary is built and tested by the gate but deployed nowhere, nothing accumulates between
-changes, and there is no on-call. The one thing deployed is the API reference, which a
-workflow publishes on every push to `main`; see
-[Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md). What follows is upkeep of
-the pins that build and check it. The routine is the one carried from libpawdoku at
-`ccdd001`, with this repository's names.
+binary is built and tested by the gate and packed into a container image by CI, but
+deployed nowhere, nothing accumulates between changes, and there is no on-call. The one
+thing deployed is the API reference, which a workflow publishes on every push to `main`;
+see [Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md). A release adds a tag and
+a GitHub Release with no binary assets, as [Cut a release](#cut-a-release) describes. What
+follows is upkeep of the pins that build and check it. The routine is the one carried from
+libpawdoku at `ccdd001`, with this repository's names.
 
 ## Routine
 
@@ -32,13 +33,14 @@ fifteen minutes, raise the workflow's thirty-minute timeout before it becomes a 
 
 **Monthly.** Move the dependency pins, one kind at a time, as
 [Maintain dependencies](../how-to/maintain-dependencies.md) describes. `just lock-upgrade`
-moves both lockfiles within the manifests' constraints — `Cargo.lock` within the caret
-ranges, `pixi.lock` beneath the exact tool pins; run `just check` and commit both. A tool
-pin itself moves in `pyproject.toml`, then `pixi update <name>`, then `pixi.lock` is
-committed. A line in `tools.txt` or `tools-source.txt` moves by hand and takes effect at
-the next `just install-tools`; a `tools-source.txt` line moves one release at a time,
-with `just check` run on each, because rustqual is a gate. A hook `rev` or a GitHub
-Action SHA moves with its version comment beside it, in Renovate's `hook revs` or
+moves all three lockfiles within the manifests' constraints — `Cargo.lock` and
+`fuzz/Cargo.lock` within the caret ranges, `pixi.lock` beneath the exact tool pins; run
+`just check` and commit all three. A tool pin itself moves in `pyproject.toml`, then
+`pixi update <name>`, then `pixi.lock` is committed. A line in `tools.txt` or
+`tools-source.txt` moves in Renovate's pull request once approved on the dashboard, and
+takes effect at the next `just install-tools`; a `tools-source.txt` line moves one release
+at a time, with `just check` run on each, because rustqual is a gate. A hook `rev` or a
+GitHub Action SHA moves with its version comment beside it, in Renovate's `hook revs` or
 `github actions` pull request once approved; lychee's rev and `LYCHEE_VERSION` move by
 hand.
 
@@ -48,10 +50,16 @@ the network, so external links rot silently until someone looks.
 **Per toolchain release.** Renovate's `rust toolchain` pull request moves `channel` in
 `rust-toolchain.toml`, the `Dockerfile`'s build-stage `rust` tag and, on a minor release
 only, `rust-version` in the root and fuzz `Cargo.toml`; all three take their versions
-from the `rust` image's `-slim-bookworm` tags, so the toolchain waits for its image. On that branch run
-`just install-toolchain`, then `just clippy` before anything else: clippy's lint set
-moves with the release, and a lint that is new under `-D warnings` fails the gate with no
-change to the code. `just check` follows.
+from the `rust` image's `-slim-bookworm` tags, so the toolchain waits for its image. On
+that branch run `just install-toolchain`, then `just clippy` before anything else:
+clippy's lint set moves with the release, and a lint that is new under `-D warnings`
+fails the gate with no change to the code. `just check` follows. On the same branch,
+re-run the std inventory, since a std item the new release adds is not banned until it is
+listed: compare the release's stable items under the std modules that the `effect:`
+entries in `crates/libpachinko/clippy.toml` cover with that file, and ban any new item
+that reaches an effect, with a line under `tests/fixtures/effects-violation/` that breaks
+it ([decision 0008](../decisions/0008-std-library.md)). No recipe does this; the
+release's std documentation is the list to compare.
 
 **Per Allium release.** The checker's version and its checksums live in the
 `biscuit-games-tooling` package, not here; moving that package's pin in `pyproject.toml`
@@ -100,15 +108,16 @@ may instead tag the existing 0.1.0 without a bump; omit `patch` during preparati
 3. Run `cargo release patch -p libpachinko` for the dry run. Then run
    `cargo release patch -p libpachinko --no-tag --execute`. This bumps the selected
    crate, rewrites only its changelog section and commits locally; it does not publish
-   or push. Review the whole diff, including any dependent constraint update and the
-   lockfile. After a library version bump, update the explicit version assertions in
-   the unit test and doctest in `crates/libpachinko/src/lib.rs`, the service unit test
-   in `crates/pachinko/src/lib.rs`, and the binary test in
-   `crates/pachinko/tests/binary.rs`. The service prints the library version, so its
-   output assertions follow a library bump even when the service version stays the
-   same; a service-only bump does not change those expectations. Commit these assertion
-   updates on the release branch before running `just check` on the resulting commit
-   and opening the release pull request.
+   or push. Both commands look up the crates.io index even with publishing disabled,
+   so release preparation needs the network. Review the whole diff, including any
+   dependent constraint update and the lockfile. No test names a version: the library's
+   tests compare `version()` with its manifest, and the service's tests build their
+   expected line from `libpachinko::version()`, so a bump of either crate needs no test
+   edit. cargo-release does not see the fuzz crate, which sits outside the workspace, so
+   after a library bump `fuzz/Cargo.lock` still names the old version and `lock-check`
+   fails the locked gate. Run `just lock`, which reaches the network, commit the
+   refreshed `fuzz/Cargo.lock` on the release branch, and run `just check` again before
+   pushing ([decision 0007](../decisions/0007-dependency-policy.md)).
 4. Separately authorize the branch push and opening the pull request. Merge only after
    the required `check` passes. The release commit must reach main through that pull
    request. No tag is made on the release branch.
@@ -119,7 +128,8 @@ may instead tag the existing 0.1.0 without a bump; omit `patch` during preparati
    day changes before the tag push. Before the first tag, review `SECURITY.md`, the
    changelog and the README for claims the release would make false.
 6. Separately authorize the real local tag. Run
-   `cargo release tag -p libpachinko --execute` on the updated main merge commit.
+   `cargo release tag -p libpachinko --execute` on the updated main merge commit; like
+   step 3's commands, it looks up the crates.io index, so it needs the network.
    Confirm `git cat-file -t libpachinko-v0.1.1` prints `tag` and
    `git rev-parse libpachinko-v0.1.1^{commit} HEAD` prints the same commit twice.
 7. Separately authorize `git push origin libpachinko-v0.1.1`. Push that one tag.
@@ -137,9 +147,9 @@ may instead tag the existing 0.1.0 without a bump; omit `patch` during preparati
 ## Secrets
 
 None are stored, and there is nothing to rotate. Continuous integration uses the token
-GitHub mints for each run and discards with it; the Pages deployment's write scopes come
-from that token too. Both crates are `publish = false`, so there is no registry token
-either.
+GitHub mints for each run and discards with it; the Pages deployment's write scopes and
+the release workflow's `contents: write` come from that token too. Both crates are
+`publish = false`, so there is no registry token either.
 
 ## Related pages
 

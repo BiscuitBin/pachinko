@@ -272,11 +272,33 @@ Scope-guard follow-ups, with no edits to the excluded files:
   in `.gitattributes` and caching `fuzz/target` are optional follow-ups. The in-scope
   testing page already documents the new prerequisites and lint maintenance obligation.
 
-No push, pull request or workflow dispatch was performed. A dispatch run URL is not
-available before merge and separate authorization. `fuzz.yml` is independent of
-`check`'s needs; its upload path matches the locally proven crash directory.
+The branch was later pushed and merged as PR #16 (`5748060`); the post-merge dispatch
+evidence is under Open points. `fuzz.yml` is independent of `check`'s needs; its upload
+path matches the locally proven crash directory.
 
 ## Open points
 
 - If the fuzz crate's recipe lines make `just check` slower than the maintainer accepts,
   `clippy` over `fuzz/` can move to `fuzz.yml`; say so with the timing.
+
+  Closed on 2026-10-24: `clippy` over `fuzz/` stays in `just check` by the maintainer's
+  choice, at 7.87 s cold and about 0.06 s warm. Decision 0017 and
+  `docs/reference/quality-gates.md` record it (branch `review-and-finish-bootstrap`,
+  commit `e00bc3b`).
+- The post-merge dispatch: on 2026-10-24 (2026-10-25 UTC) a `workflow_dispatch` of
+  `fuzz.yml` on `main` ran as
+  `https://github.com/BiscuitBin/pachinko/actions/runs/40150109570`, head `f080d62`:
+  conclusion `success`, job `fuzz (smoke)` `success`, no artifact. The crash upload runs
+  only `if: failure()`, so CI has not exercised it; a failing run would.
+- The scope-guard follow-ups: closed on 2026-10-24 on the same branch (commit
+  `e00bc3b`). Maintenance's release step refreshes `fuzz/Cargo.lock` after a library
+  bump, `docs/how-to/develop-locally.md` lists the C++ and Rosetta prerequisites, and
+  the lock counts and harness references name the third lockfile.
+- `fuzz/Cargo.lock` as generated: already true. `.gitattributes`'s `Cargo.lock` pattern
+  has no slash, so it matches at any depth (`git check-attr` reports
+  `linguist-generated: true` for `fuzz/Cargo.lock`).
+- Caching `fuzz/target` in `fuzz.yml`: declined as optional, an optimization rather than
+  a defect.
+- Still open, gated on an event: the bench and the fuzz target exercise
+  `libpachinko::version()` only. Real targets come with the domain implementation the
+  specifications define.

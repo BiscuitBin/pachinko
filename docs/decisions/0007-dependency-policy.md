@@ -69,7 +69,7 @@ resolution; in a library it becomes a demand on everyone else's.
 
 ## Harness dependencies
 
-T16 adds divan 0.1.21 through `[workspace.dependencies]` as a library development
+T16 added divan 0.1.21 through `[workspace.dependencies]` as a library development
 dependency only. It provides the benchmark harness and black box; it is outside the
 graph consumers resolve and cargo-deny’s `exclude-dev` graph. Its MSRV is 1.80.0,
 below the pinned compiler. Its transitive packages are committed in `Cargo.lock`.
@@ -90,11 +90,13 @@ refreshing `fuzz/Cargo.lock` before the locked checks can pass.
 
 The consequences that hurt. The lockfile tests one resolution and consumers get another:
 a bug in a dependency version this repository never resolves is invisible here until a
-consumer hits it. Nothing updates any pin automatically until ticket T17 brings Renovate,
-so until then a maintainer moves every pin by hand and the lockfile ages deliberately
-rather than by neglect. Every addition is a reviewed decision with its reason recorded in
-the manifest beside the range. And caret ranges make `cargo update` a real change every
-time it runs: a moved lockfile is a diff to read, not noise to wave through.
+consumer hits it. Renovate ([decision 0018](0018-renovate.md)) proposes pin moves, but
+holds each one until a maintainer approves it on the dependency dashboard, a
+vulnerability fix excepted once alerts are on, so the lockfile ages deliberately rather
+than by neglect.
+Every addition is a reviewed decision with its reason recorded in the manifest beside the
+range. And caret ranges make `cargo update` a real change every time it runs: a moved
+lockfile is a diff to read, not noise to wave through.
 
 The tools the gate runs are pinned the other way, exactly, because they are an
 application's dependencies rather than a library's;

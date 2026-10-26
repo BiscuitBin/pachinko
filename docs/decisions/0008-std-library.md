@@ -54,19 +54,25 @@ the build.
 - The crate bans are one line in the script, `cargo tree -p libpachinko -e normal
   --all-features --target all --prefix none --locked --offline`, which covers transitive
   and optional dependencies on every target and is scoped to libpachinko by
-  construction. It is the only crate guard. `deny.toml` cannot hold these bans: its bans
-  apply to the whole workspace, and its `wrappers` exemption names a banned crate's
-  direct parents only, so it cannot say "anything under `pachinko`". A runtime crate the
-  service reaches through a framework it depends on would still be denied. `deny.toml`
-  therefore bans no effect crate.
+  construction. It is the only crate guard, and by the maintainer's choice on 2026-10-24
+  it stays a denylist of these eight names, not an allowlist of libpachinko's tree: a
+  crate outside the list is left to the review
+  [decision 0007](0007-dependency-policy.md) requires of each new dependency.
+  `deny.toml` cannot hold these bans: its bans apply to the whole workspace, and its
+  `wrappers` exemption names a banned crate's direct parents only, so it cannot say
+  "anything under `pachinko`". A runtime crate the service reaches through a framework it
+  depends on would still be denied. `deny.toml` therefore bans no effect crate.
 - The std-API bans are clippy's `disallowed-methods` and `disallowed-types`, listed in
   `crates/libpachinko/clippy.toml` with reasons that begin `effect:`. Clippy reads the
   first `clippy.toml` it finds walking up from a crate's manifest and merges nothing, so
   that file governs libpachinko alone, restates every line of the root file, and leaves
-  `crates/pachinko`, where every effect is allowed, under the root file. Clippy resolves
-  names, so an alias, a glob import, a macro body, a function value and a method on a
-  value passed in are caught as surely as a full path. rustqual's `forbid_path_prefix`
-  rules, the alternative, were rejected on evidence: they match text, missed
+  `crates/pachinko`, where every effect is allowed, under the root file. Gates 6 and 8
+  lint every target of the crate, so by the maintainer's choice on 2026-10-24 the bans
+  cover libpachinko's own unit and integration tests too: a test that needs a real
+  effect goes under `crates/pachinko/tests/`. Clippy resolves names, so an alias, a glob
+  import, a macro body, a function value and a method on a value passed in are caught as
+  surely as a full path. rustqual's `forbid_path_prefix` rules, the alternative, were
+  rejected on evidence: they match text, missed
   `use std as s`, `use std::*`, a macro body and a renamed import, and could ban
   `elapsed` only by name, on every type.
 - Clippy needs item paths, not module prefixes, so "everything under" a module is a list
@@ -76,9 +82,10 @@ the build.
   the pinned toolchain: it is the list, and "The bans" above name what it covers. A std
   item added in a later
   Rust is not banned until it is listed, and a constant cannot be banned at all, so
-  `std::env::consts` stays reachable: it holds compile-time values, like `cfg!`, not an
-  effect. `std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` and stays allowed
-  by the maintainer's choice, because it changes diagnostics rather than results.
+  `std::env::consts` stays reachable by the maintainer's choice on 2026-10-24: it holds
+  compile-time values, like `cfg!`, not an effect.
+  `std::backtrace::Backtrace::capture` reads `RUST_BACKTRACE` and stays allowed by the
+  maintainer's choice, because it changes diagnostics rather than results.
 - A ban that is not shown to fire is not trusted to hold. The script also runs its checks
   over `tests/fixtures/effects-violation/`, a fixture that breaks every ban exactly once,
   in the forms code writes it, and fails unless each ban fires there; then it checks that
@@ -103,7 +110,8 @@ alone, since clippy lints only what it builds: a std item added after the invent
 code behind a target the host does not compile, code under a mix of features none of
 gate 8's three passes sets, and code under `cfg(not(clippy))` or a custom `cfg`. That is
 why the `review-change` skill still tells a reviewer to read libpachinko's diff for a
-direct std call.
+direct std call. Code behind another target's `cfg` stays review's by the maintainer's
+choice on 2026-10-24, rather than gaining a pinned target and a clippy pass for each.
 
 Two mechanisms hold the boundary where a target check held most of it before: the crate
 line and clippy's disallowed paths, each with its probe. Both run offline once

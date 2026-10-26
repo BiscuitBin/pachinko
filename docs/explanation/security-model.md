@@ -26,8 +26,8 @@ Very little, and that is the point.
   Continuous integration uses the token GitHub mints for each run and discards with it,
   and the workflows need nothing more: the Pages deployment proves itself with the run's
   own identity token, so it stores no credential either. Every crate sets
-  `publish = false`; how a release is published is the release process's to decide
-  (ticket T14, in wave 2).
+  `publish = false`, and a release cuts a GitHub Release with the run's own token
+  ([decision 0016](../decisions/0016-release-process.md)).
 
 ## What is deliberately not secure
 
@@ -52,10 +52,11 @@ for tests are never a source to use where unpredictability matters.
   The ban is on what ships: development dependencies are outside the graph, because they
   serve the tests only. `deny.toml` bans no effect crate; keeping randomness, async
   runtimes and sockets out of the library is `just effects`' job, below. Every remote
-  hook and every GitHub Action is pinned to a commit SHA, not to a mutable tag. Two
-  tools are the exceptions worth naming. cargo-hack, the one line in `tools.txt`, is
-  taken as a release binary and never compiled. rustqual, the one line in
-  `tools-source.txt`, publishes no binary at all, so it arrives as its crates.io source,
+  hook and every GitHub Action is pinned to a commit SHA, not to a mutable tag. The
+  tools `tools.txt` and `tools-source.txt` pin are the exceptions worth naming.
+  cargo-hack, cargo-release and cargo-fuzz, the three lines in `tools.txt`, are taken as
+  release binaries and never compiled. rustqual, the one line in `tools-source.txt`,
+  publishes no binary at all, so it arrives as its crates.io source,
   checked against the registry index's checksum, and is built on the machine with
   `--locked`, taking the dependency versions its own lockfile names. Were
   cargo-quickinstall to publish a build of the pin, cargo-binstall would take that
@@ -92,12 +93,17 @@ for tests are never a source to use where unpredictability matters.
   that shows every ban fires. Code clippy does not compile and crates outside the ban
   list are left to review ([Architecture](architecture.md),
   [decision 0003](../decisions/0003-effects-behind-traits.md)).
-- **Workflow permissions.** `ci.yml` and `audit.yml` hold `contents: read` and nothing
-  else. `pages.yml` holds more, `pages: write` and `id-token: write`, on its deploy job
-  alone, which checks nothing out and runs no code from the repository
-  ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)). The release
-  workflow T14 designs will be the second to hold more, and it will live in a file of
-  its own rather than widen `ci.yml`.
+- **Workflow permissions.** `ci.yml`, `audit.yml`, `mutants.yml` and `fuzz.yml` hold
+  `contents: read` and nothing else. `pages.yml` holds more, `pages: write` and
+  `id-token: write`, on its deploy job alone, which checks nothing out and runs no code
+  from the repository
+  ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)). `release.yml`
+  is the second to hold more, in a file of its own rather than widening `ci.yml`: it
+  grants nothing at the top level, its `verify` job, which runs the gate on the tag,
+  holds `contents: read`, and its `publish` job alone holds `contents: write`, behind
+  the `release` environment's required reviewer. That job runs no setup or build tool,
+  and checks out the commit `verify` validated and refuses a tag that has moved since
+  ([decision 0016](../decisions/0016-release-process.md)).
 - **Credential leakage.** `ripsecrets` scans every commit, and its output is redacted so
   a match never copies the matched value into a log.
 

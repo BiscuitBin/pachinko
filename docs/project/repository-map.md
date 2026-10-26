@@ -15,7 +15,7 @@ library and the library never on the service.
 ```text
 .
 ├── Cargo.toml              The workspace: members, shared package fields, lints, profiles
-├── Cargo.lock              The pin for every crate; the build gates pass --locked
+├── Cargo.lock              The pin for every workspace crate; the build gates pass --locked
 ├── rust-toolchain.toml     The exact toolchain and its components
 ├── tools.txt               Tools conda-forge lacks, from release binaries into .tools/bin
 ├── tools-source.txt        Tools conda-forge lacks with no release binary, built into .tools/bin
@@ -24,12 +24,17 @@ library and the library never on the service.
 ├── rustqual.toml           The metrics gate's thresholds, run once per crate
 ├── taplo.toml              TOML formatting and lint
 ├── deny.toml               Licences, bans, sources and advisories
+├── renovate.json           Which pins Renovate proposes moving, and how they are grouped
+├── Dockerfile              The service's container image, built in CI and pushed nowhere
+├── .dockerignore           What the image build leaves out of its context
 ├── .config/nextest.toml    The test runner's profiles
 ├── crates/
 │   ├── libpachinko/        The library: the domain, once the specifications define one
 │   │   ├── Cargo.toml
 │   │   ├── README.md
 │   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
+│   │   ├── benches/
+│   │   │   └── version.rs  The smoke benchmark just bench runs
 │   │   └── src/
 │   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
 │   └── pachinko/           The service: a minimal binary built around the library
@@ -40,6 +45,11 @@ library and the library never on the service.
 │       │   └── main.rs     The one-line main: run() on standard output, then the exit code
 │       └── tests/
 │           └── binary.rs   Runs the built binary as a user would
+├── fuzz/                   The fuzz crate, outside the workspace, with its own lockfile
+│   ├── Cargo.toml
+│   ├── Cargo.lock          The pin for the fuzz crate's separate graph
+│   └── fuzz_targets/
+│       └── smoke.rs        The smoke target just fuzz runs
 ├── tests/fixtures/
 │   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
@@ -51,7 +61,7 @@ library and the library never on the service.
 ├── .agents/skills/         Canonical agent procedures
 ├── .claude/  .codex/       Thin bridges to the skills, and Claude Code's shared settings
 ├── allium-skill-reference/ Reference material the Allium skills link to
-├── .github/                CI, the audit and Pages workflows and the composite setup action
+├── .github/                The workflows under workflows/ and the composite setup action
 ├── AGENTS.md               Engineering conventions and the agent working agreement
 ├── CLAUDE.md               A pointer to AGENTS.md, as is .github/copilot-instructions.md
 ├── Justfile                Every supported command
@@ -61,7 +71,7 @@ library and the library never on the service.
 ├── .markdownlint-cli2.jsonc  lychee.toml  _typos.toml   The prose and link checkers
 ├── .editorconfig  .gitattributes  .gitignore   Editor, line-ending and ignore rules
 ├── README.md  CHANGELOG.md  SECURITY.md  LICENSE   The front page, the history, reporting, Apache-2.0
-└── target/ .pixi/ .tools/ ai_tmp/   Gitignored; never committed
+└── target/ .pixi/ .tools/ ai_tmp/ mutants.out/   Gitignored; never committed
 ```
 
 The effects gate's std-API bans live in `crates/libpachinko/clippy.toml`, which clippy
@@ -74,6 +84,8 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `crates/libpachinko/src/` | The library. It holds the domain once the specifications define one; today `lib.rs` holds the crate docs and one item, `version()`, with its doctest and an in-module unit test. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
 | `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. |
 | `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
+| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
+| `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
 | `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
@@ -81,7 +93,8 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `.agents/skills/` | Canonical agent procedures. The two bridge trees, `.claude/skills/` and `.codex/skills/`, point at them and add nothing. |
 | `allium-skill-reference/` | Vendored reference material for the Allium skills, kept outside `.agents/` and ignored by every linter ([decision 0010](../decisions/0010-skill-reference-material.md)). |
 | `.pixi/envs/default/bin` | Every tool `pyproject.toml` pins and the tooling package's console scripts, installed from `pixi.lock`. First on `PATH` inside every recipe, and also on `PATH` under `pixi run`, which the hooks use, and in every CI step after the setup action activates the environment; it is not on a plain shell's `PATH`. |
-| `.tools/bin` | cargo-hack from `tools.txt`, rustqual from `tools-source.txt`, and the Allium checker. On `PATH` inside every recipe, after the pixi environment. |
+| `.github/workflows/` | `ci.yml`, the gate on every pull request and push to `main`, with the `check` job that aggregates the required ones; `audit.yml`, the weekly and per-pull-request advisory check; `mutants.yml` and `fuzz.yml`, the weekly reports; `pages.yml`, which deploys the API reference; and `release.yml`, which runs on a release tag. |
+| `.tools/bin` | cargo-hack, cargo-release and cargo-fuzz from `tools.txt`, rustqual from `tools-source.txt`, and the Allium checker. On `PATH` inside every recipe, after the pixi environment. |
 | `tests/fixtures/effects-violation/` | The effects gate's probe. A crate that is its own workspace, with a committed `Cargo.lock` and an empty offline path dependency named for each banned crate, one of them reached only transitively. It breaks every ban on libpachinko exactly once, and `just effects` fails unless every ban fires there. |
 | `target/` | Cargo's build output. `just coverage` writes its report under `target/llvm-cov/`. |
 

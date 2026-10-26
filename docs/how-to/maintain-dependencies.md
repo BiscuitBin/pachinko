@@ -33,6 +33,19 @@ any branch, with `contents: read` and no secret. Read its diff as you would anyo
 the security model lists what the app itself may do
 ([Security model](../explanation/security-model.md)).
 
+After editing `renovate.json`, validate it from the repository root with no file
+argument, which makes the validator find the file and check it as repository
+configuration; given the path, it checks it as global configuration instead:
+
+```console
+npx --yes --package renovate@44.181.1 -- renovate-config-validator --strict
+```
+
+The version is pinned in the command because a bare `--package renovate` can resolve a
+cached release too old to read the file. It needs Node's `npx` and reaches the network.
+By the maintainer's choice on 2026-10-24 it stays this ad-hoc pinned command rather
+than a `Justfile` recipe, and outside `just check`.
+
 | Group | What moves |
 | --- | --- |
 | `crates` | `Cargo.lock` and `fuzz/Cargo.lock` within the caret ranges, or a range itself when a release falls outside it, which is the diff to read |
@@ -79,8 +92,9 @@ Hub, so the channel never moves to a release that has no image yet.
 just lock-check
 ```
 
-This runs `cargo update --workspace --locked --offline` and
-`pixi lock --check --offline --dry-run`, neither of which writes. It is gate 2 of
+This runs `cargo update --workspace --locked --offline`, once for the workspace and once
+with `--manifest-path fuzz/Cargo.toml`, and `pixi lock --check --offline --dry-run`,
+none of which writes. It is gate 2 of
 `just check`, so a manifest edited without relocking fails the gate rather than
 drifting. Being offline, it fails on a cold Cargo cache rather than fetching the
 registry index; `just sync` fills the cache.
@@ -91,8 +105,9 @@ registry index; `just sync` fills the cache.
 just sync
 ```
 
-This runs `cargo fetch --locked` and `pixi install --frozen`: both lockfiles, exactly as
-committed, and it never rewrites either. It reaches the network, so run it while the
+This runs `cargo fetch --locked` for the workspace and for `fuzz/Cargo.toml`, and
+`pixi install --frozen`: all three lockfiles, exactly as committed, and it never rewrites
+any. It reaches the network, so run it while the
 network is there, before the offline gates need the sources.
 
 ## Update deliberately
@@ -102,25 +117,30 @@ just lock            # relock after a manifest edit
 just lock-upgrade    # move every crate to the newest version its range admits
 ```
 
-`just lock` relocks the workspace against what the manifests state, then runs
-`pixi lock`. It is not a no-op: a dependency whose range was edited, or that is new,
-resolves to the newest version its range admits, not to the version the range names.
-`just lock-upgrade` moves every crate, transitive ones included, to the newest version
-its range admits, which under caret ranges changes plenty, and runs `pixi update`. Every
-tool pin is exact, so that moves transitive packages and one direct one: Python, pinned
-`3.14.*`, whose patch release can move. Both recipes reach the network. Read both
-lockfile diffs before accepting them.
+`just lock` relocks the workspace and the excluded `fuzz/` crate against what the
+manifests state, then runs `pixi lock`. It is not a no-op: a dependency whose range was
+edited, or that is new, resolves to the newest version its range admits, not to the
+version the range names.
+`just lock-upgrade` moves every crate in both `Cargo.lock` and `fuzz/Cargo.lock`,
+transitive ones included, to the newest version its range admits, which under caret
+ranges changes plenty, and runs `pixi update`. Every tool pin is exact, so that moves
+transitive packages and one direct one: Python, pinned `3.14.*`, whose patch release can
+move. Both recipes reach the network. Read every lockfile diff before accepting them.
 
 ## Adding or upgrading a crate
 
-No crate depends on anything outside the workspace yet: the one dependency is the
-service's path dependency on `libpachinko`, and libpachinko will gain its first when the
-specifications define a domain that needs one.
+The one normal workspace dependency is still the service's path dependency on
+`libpachinko`, and libpachinko gains its first when the specifications define a domain
+that needs one. The first external dependencies are harnesses: divan, libpachinko's
+development dependency for its benchmark, and libfuzzer-sys in the excluded `fuzz/`
+crate ([decision 0007](../decisions/0007-dependency-policy.md)).
 
-1. A version lives in one place. The first external dependency adds a
-   `[workspace.dependencies]` table to the root `Cargo.toml`, and a member crate names
-   the dependency with `workspace = true`. Edit the range there.
-2. Run `just lock`, then read the `Cargo.lock` diff before accepting it.
+1. A version lives in one place: the root `Cargo.toml`'s `[workspace.dependencies]`
+   table, and a member crate names the dependency with `workspace = true`. Edit the range
+   there. The excluded `fuzz/` crate cannot inherit that table and names its own, the one
+   exception decision 0007 records.
+2. Run `just lock`, then read the `Cargo.lock` and `fuzz/Cargo.lock` diffs before
+   accepting them.
 3. Run `just sync`, so the new sources are fetched while the network is there.
 4. Run `just deny`: licences, bans and sources, answered offline.
 5. Run `just deps-unused`. It runs cargo-shear, which fails on a dependency no crate
@@ -151,9 +171,13 @@ Two lists hold what conda-forge lacks, one `name@version` per line, and
 `just install-tools` reads both into `.tools/bin`, which Git ignores. It reaches the
 network, and skips a version already installed.
 
-- `tools.txt` (cargo-hack today) is binary-only: its pass never compiles
-  (`--disable-strategies compile`), so a tool with no prebuilt binary fails loudly
-  rather than building at bootstrap.
+- `tools.txt` (cargo-hack, cargo-release and cargo-fuzz today) is binary-only: its pass
+  never compiles (`--disable-strategies compile`), so a tool with no prebuilt binary
+  fails loudly rather than building at bootstrap. Renovate resolves a `tools.txt` bump on
+  crates.io, which does not prove the release archives this pass needs exist, so before
+  approving one on the dashboard, check that the tool's release has an archive for
+  Ubuntu and for macOS. CI runs `just install-tools` on Linux only, so it catches a
+  missing Linux archive after approval and a missing macOS one never.
 - `tools-source.txt` (rustqual today) is for a tool with no prebuilt binary at all. Its
   pass may compile, from crates.io source with `--locked`, or take a signed
   cargo-quickinstall build, but never an unsigned upstream release asset
@@ -260,12 +284,13 @@ the pin, but only after `just install-allium` has actually installed it.
 
 ## Actions in the workflows
 
-`ci.yml`, `audit.yml`, `pages.yml` and the composite `setup` action pin every remote action in a
-`uses:` line to a full commit SHA with its version comment, never to a tag. The one
-exception is the local `uses: ./.github/actions/setup`, a path in this repository that
-moves with the commit that calls it. Renovate's `github actions` group moves the SHAs and
-comments; by hand, the same `gh api` line resolves a tag to the commit to paste. The toolchain the jobs build with is not pinned here: the setup
-action runs `just install-toolchain`, so CI reads `rust-toolchain.toml` like everyone else.
+Every workflow under `.github/workflows/` and the composite `setup` action pin every
+remote action in a `uses:` line to a full commit SHA with its version comment, never to
+a tag. The one exception is the local `uses: ./.github/actions/setup`, a path in this
+repository that moves with the commit that calls it. Renovate's `github actions` group
+moves the SHAs and comments; by hand, the same `gh api` line resolves a tag to the commit
+to paste. The toolchain the jobs build with is not pinned here: the setup action runs
+`just install-toolchain`, so CI reads `rust-toolchain.toml` like everyone else.
 
 `actionlint` runs inside `just lint`, so a malformed workflow fails locally.
 

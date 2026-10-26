@@ -75,8 +75,11 @@ authorization. See [decision 0005](../decisions/0005-project-managed-allium-cli.
 
 `just check-specs` checks syntax and references across the modules.
 `just analyse-specs` repeats those diagnostics and adds process findings, including
-reachability, deadlocks, conflicts and invariants. Use these recipes so the
-project's pin and report checks apply.
+reachability, deadlocks, conflicts and invariants. Reachability there means that some
+rule produces the state or field a guard needs, not that the guard's condition can hold:
+contradictory guards, such as two numeric bounds that cannot both be true, pass, so a
+green `just analyse-specs` is not proof that every guard is satisfiable. Read the rule
+and its tests for that. Use these recipes so the project's pin and report checks apply.
 
 The following section is carried verbatim from libpawdoku at `ccdd001`. Its
 historical module examples describe that repository; this repository currently

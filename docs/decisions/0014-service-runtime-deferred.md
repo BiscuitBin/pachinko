@@ -64,8 +64,9 @@ does reach the service: `openssl-sys` is denied across the workspace, so whateve
 the spike picks carries no native TLS unless a record changes that ban. Each crate the
 choice adds follows [decision 0007](0007-dependency-policy.md).
 
-The wave-2 extras, such as T13's container image of this binary, are planned foundation
-work, not decisions deferred to the specifications.
+The wave-2 extras, such as the container image of this binary
+([decision 0015](0015-container-image.md)), are foundation work, not decisions deferred
+to the specifications.
 
 ## What would reopen this
 
