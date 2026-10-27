@@ -18,7 +18,7 @@ form. What Renovate alone reaches is the one-line pins outside any ecosystem: th
 `tools.txt` lines, `rust-version` grouped with the toolchain, the tooling package's tag,
 setup-pixi's `pixi-version` input and the markdownlint rev repeated in
 `.pre-commit-fix.yaml`. Dependabot cannot read a pixi manifest; Renovate can at least
-list the pixi pins, and whether the Mend app can relock `pixi.lock` is unproven. S01
+list the pixi pins, and whether the Mend app could relock `pixi.lock` was unproven. S01
 recommended Renovate through the Mend app, on condition that the maintainer accepts the
 app's write access. The maintainer accepted it for this repository.
 
@@ -72,24 +72,22 @@ repository. That is the one trust it is given that a contributor's branch is not
 `check` context is bound to the GitHub Actions app and no review is required, so "a person
 merges" rests on `automerge` staying off.
 
-Four moves stay manual and the how-to says why: lychee, whose `LYCHEE_VERSION` argument
+Three moves stay manual and the how-to says why: lychee, whose `LYCHEE_VERSION` argument
 must match its rev and whose tags carry a `lychee-v` prefix; the allium binary, which moves
-with the tooling tag; and the `pixi.lock` relock after a pixi pin moves, until the hosted
-app is shown to run `pixi lock`; and `requires-python` in `pyproject.toml`, which is
-disabled for Renovate's `pep621` manager because pixi owns Python, and moves by hand with
+with the tooling tag; and `requires-python` in `pyproject.toml`, which is disabled for Renovate's `pep621` manager because pixi owns Python, and moves by hand with
 the `python` pin. A toolchain pull request arrives red when the lint set moves, and a
 person finishes it with `just clippy`.
 
 Each regex manager is proved only by Renovate itself, from its dependency dashboard or a
 real pull request; the first dashboard, on 2026-10-24, listed every one (ticket T17's
-hand-back notes).
+hand-back notes). The Mend app relocks `pixi.lock` itself: on 2026-10-26 each of the five
+pull requests that moved a pixi pin carried the matching relock, and all passed `check`.
 
 ## What would reopen this
 
 The app's permissions changing, or Mend's hosted service ending. Dependabot gaining the
-one-line pins above, or a way to read a pixi manifest. Evidence that the hosted app
-relocks `pixi.lock`, which would move that relock out of the manual list, or that it
-cannot, which would turn the pixi rules into a notice for good. The `rust` image ceasing
+one-line pins above, or a way to read a pixi manifest. The hosted app ceasing to
+relock `pixi.lock`, which would put that relock back on the manual list. The `rust` image ceasing
 to publish `-slim-bookworm` tags for new releases, or to track Rust releases closely,
 which would stop the toolchain group moving.
 

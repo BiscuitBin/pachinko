@@ -59,20 +59,17 @@ than a `Justfile` recipe, and outside `just check`.
 | lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock` and `fuzz/Cargo.lock` together under the `crates` group, and `pixi.lock` |
 
 Major updates open in a pull request of their own beside their group's, because
-Renovate's `separateMajorMinor` is on and takes precedence over a group.
+Renovate's `separateMajorMinor` is on and takes precedence over a group. A branch that
+moves a pixi pin carries its own `pixi.lock` relock, which `just lock-check` and CI's
+setup verify like anyone's.
 
-Four moves stay with you:
+Three moves stay with you:
 
 - **lychee.** `LYCHEE_VERSION` in both of its argument lists must match its rev comment,
   and its tags are prefixed `lychee-v`, so `renovate.json` disables it. Move all three
   together, as [Hook pins](#hook-pins) describes.
 - **The allium binary.** Its version and checksums are inside `biscuit-games-tooling`;
   they move when that tag moves ([Moving the Allium binary](#moving-the-allium-binary)).
-- **`pixi.lock` after a `pyproject.toml` change.** Whether the hosted app may run
-  `pixi lock` is not documented. A Renovate branch that edits a pixi pin, the tooling tag
-  or `requires-pixi` may leave `pixi.lock` stale, which `just lock-check` and setup-pixi
-  refuse. Relock on that branch with `pixi update <name>`, or `pixi update` for lock-file
-  maintenance, and push the result under your own name.
 - **`requires-python`.** pixi owns Python, so `renovate.json` disables the `pep621`
   manager's reading of this floor in `pyproject.toml`; move it with the `python` pin.
 
