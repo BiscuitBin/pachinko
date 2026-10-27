@@ -448,8 +448,9 @@ None was listed at hand-back. Step 3 groups the toolchain with `rust-version` an
   cargo-nextest, prek, just, cargo-insta, cargo-binstall and both lock-file
   maintenances), each green on `check`. `python` 3.15 and editorconfig-checker v4 stay
   held by the maintainer's choice.
-- Whether the hosted app relocks `pixi.lock`: closed, it does. Each of the six pull
-  requests that touched it (#23, #24, #26, #27, #28, #32) carried the relock beside its
-  `pyproject.toml` change, #23 also moving `.config/nextest.toml`, and each passed
-  `check`, which runs `just lock-check`. The how-to, the maintenance page, decision 0018
+- Whether the hosted app relocks `pixi.lock`: closed, it does. The five pin updates
+  (#23, #24, #26, #27, #28) each changed a pin in `pyproject.toml` and carried the
+  matching `pixi.lock` relock, #23 also moving `.config/nextest.toml`; the pixi lock-file
+  maintenance (#32) changed `pixi.lock` alone. Each passed `check`, which runs
+  `just lock-check`. The how-to, the maintenance page, decision 0018
   and two `renovate.json` descriptions drop the relock from the manual list.

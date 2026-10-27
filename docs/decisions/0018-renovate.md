@@ -80,8 +80,8 @@ person finishes it with `just clippy`.
 
 Each regex manager is proved only by Renovate itself, from its dependency dashboard or a
 real pull request; the first dashboard, on 2026-10-24, listed every one (ticket T17's
-hand-back notes). The Mend app relocks `pixi.lock` itself: on 2026-10-26 each of the six
-pull requests that changed it carried the relock and passed `check`.
+hand-back notes). The Mend app relocks `pixi.lock` itself: on 2026-10-26 each of the five
+pull requests that moved a pixi pin carried the matching relock, and all passed `check`.
 
 ## What would reopen this
 
