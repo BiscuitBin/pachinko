@@ -41,6 +41,7 @@ yet and the ticket or event that will close it.
 | Path | Class | Content |
 | --- | --- | --- |
 | `tickets/T18-verification-gaps.md` | ticket | `status:` and hand-back notes |
+| `tickets/T11-integration.md` | shared, own lines | One Open points sentence on T18 item 4, added by item 4's closure on 2026-10-27 with the maintainer's approval |
 
 Scratch copies, scratch branches and logs live under `ai_tmp/` and are never committed.
 
@@ -846,29 +847,44 @@ Exit status: 0
 
 This is an HTTP-success read with a zero total, not an inaccessible-resource 404.
 There is no scheduled-run URL or conclusion to quote yet; no dispatch was substituted.
+The scheduled half stayed Open until the section below closed it.
 
 ### Item 4, schedule: first scheduled Audit run — commit `f080d62`
 
 Read on 2026-10-27 at 02:24 UTC, with the maintainer's authorization, from the worktree
 of `ticket/t18-scheduled-audit` at `83a2b9f`. GitHub runs a scheduled workflow on the
 default branch's latest commit, which was `f080d62` when the run was created; PR 21's
-merge, `83a2b9f`, came later the same day. That merge changes none of the lockfiles,
-`deny.toml`, `audit.yml` or the setup action. In the `Justfile` it changes only
-`check-toolchain` and two comments, and the Audit job runs `install-toolchain`,
-`install-tools`, `sync`, `install-hooks` and `audit`, none of which depends on
-`check-toolchain`. The first command is the positive control for the second.
+merge, `83a2b9f`, came later the same day. The Audit job runs the setup action's
+`install-toolchain`, `install-tools`, `sync` and `install-hooks`, then `audit`. Of the
+files those read, the merge changes four:
+
+- `Cargo.toml` and `tools-source.txt` change only in comments, and the pins are the same.
+- In `.pre-commit-fix.yaml`, markdownlint gains `pass_filenames: false`. That changes how
+  the hook runs, not the hook environment `prek prepare-hooks` installs.
+- In the `Justfile`, only `check-toolchain` and two comments change, and none of the
+  five recipes depends on `check-toolchain`.
+
+The three lockfiles, the other manifests and the tool lists do not change. Nor do
+`deny.toml`, `audit.yml`, the setup action, `.pre-commit-config.yaml` or the `README.md`
+that `install-hooks` lints. The first command is the positive control for the second.
 
 ```text
-$ git diff --stat f080d62 83a2b9f | tail -1
+$ git diff --shortstat f080d62 83a2b9f
  57 files changed, 918 insertions(+), 473 deletions(-)
-$ git diff --stat f080d62 83a2b9f -- Cargo.lock fuzz/Cargo.lock deny.toml .github/workflows/audit.yml .github/actions
-(stdout empty)
 Exit status: 0
-$ git diff --stat f080d62 83a2b9f -- Justfile
- Justfile | 13 ++++++++-----
- 1 file changed, 8 insertions(+), 5 deletions(-)
+$ git diff --stat f080d62 83a2b9f -- Cargo.lock fuzz/Cargo.lock pixi.lock pyproject.toml rust-toolchain.toml tools.txt tools-source.txt Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml fuzz/Cargo.toml deny.toml .github/workflows/audit.yml .github/actions .pre-commit-config.yaml .pre-commit-fix.yaml README.md Justfile
+ .pre-commit-fix.yaml |  4 ++++
+ Cargo.toml           |  3 ++-
+ Justfile             | 13 ++++++++-----
+ tools-source.txt     |  4 +++-
+ 4 files changed, 17 insertions(+), 7 deletions(-)
 Exit status: 0
 ```
+
+`git diff f080d62 83a2b9f -- Cargo.toml tools-source.txt` shows that both files change
+only in comments: the release profile's LTO note, and the note on how a
+`tools-source.txt` pin moves. `rustqual@1.8.3`, `lto = "fat"` and `codegen-units = 1`
+stand as they were.
 
 ```text
 $ gh run list --workflow audit.yml --branch main --event schedule --json url,headSha,event,conclusion,createdAt
@@ -2387,16 +2403,68 @@ Exit status: 0
 
 ### Item 4 closure review and final gate — commit `83a2b9f` with uncommitted ticket changes
 
-Three fresh-context reviewers, which edited nothing, read the closure. Each took one
-lens: the evidence against the GitHub API, consistency across the tickets, and these
-conventions. Each finding then went to a refuter. Eight findings survived and all were
-applied. The delay's cause is now sourced, not asserted. The empty diff is quoted with
-its command, a positive control and what the merge changed in the `Justfile`. The log excerpt is
-quoted with its command. The intro names `f080d62` and this branch. T11's Open points
-no longer say item 4 is open. This section was added. Four findings were refuted.
+The harness was Claude Code's Workflow tool, and every agent ran `claude-opus-5-5`. Three
+fresh-context reviewers, which edited nothing, read the closure's diff. Each took one
+lens: the evidence, checked against the GitHub API (E); consistency across the tickets
+(C); and these conventions (V). Each finding then went to one refuter, which re-checked
+it against the files and the API and refuted it when it was wrong, not a defect, or not
+caused by the diff. Twelve findings were raised. Eight survived and were applied, and
+four were refuted. No finding was high severity, so §14 needs no second round, and
+nothing was handed back. The PR 22 review below reversed one verdict, C-2, and corrected
+the reasons given for C-4 and V-4. The rows here record each verdict as it now stands.
+
+| Finding | Verdict and action |
+| --- | --- |
+| E-1 | Valid, minor: the delay's cause was stated as fact, but the run records none. The table row and the section now say the run records no reason and cite GitHub's documented delays under high load. |
+| E-2 | Valid, minor: the intro's source-commit sentence left out `f080d62`. It now names `f080d62` for item 4. |
+| C-1 (medium) | Valid: T11's Open points still said T18 items 2 and 4 stay open, and cited T18's Open points, which now say the opposite. The sentence now leaves only item 2 open and names run `40321188031`. The fix lies outside T18's original Files touched, so §14's scope guard would hand it back. The maintainer approved it on 2026-10-27, and Files touched lists T11 as `shared, own lines`. |
+| C-2 | Valid, minor, after PR 22's review: the `c1b4bcb` item 4 section ended on "nothing to quote yet" with no pointer to its closure. Its refuter had said that items 1, 3 and 7 need pointers only because their reruns sit far away, but item 1's rerun is its very next heading and still has one. That section now ends by pointing to the section after it. |
+| C-3 | Valid, minor, the same defect as E-2. The same edit also names `ticket/t18-scheduled-audit` beside the ticket branch. |
+| C-4 | Valid, minor: no `just check` was quoted for the new hand-back state. Its refuter judged the missing review record optional and the missing gate a real gap. This section quotes the gate after the fixes, and it also holds the record. |
+| V-1 (medium) | Valid: the empty `git diff` was offered without its command, status or a positive control. All three are now quoted. After PR 22's review, the control is unfiltered with its own status, and the path list covers the files the Audit job's recipes read. |
+| V-2 | Valid, minor: the log excerpt had no command or status. The full pipeline is quoted with its `pipefail` status. |
+| V-3 | Refuted: the intro made no false claim, because "those reruns" still meant only the 2026-10-24 reruns. E-2's edit makes the wording clearer anyway. |
+| V-4 | Refuted: the final gate and the record belong after the review (§14, Phase 3), and §11 makes a gate quoted before the review stale. This verdict conflicts with C-4's refuter, which held that the missing gate was a real gap. This section settles both, because it quotes the gate after the fixes. |
+| V-5 | Valid, minor, the same defect as E-1. The same edit closes it. |
+| V-6 | Refuted: "read back on 2026-10-27" and "the calendar event came on 2026-10-26" date two different events, the closure and the run, and are consistent. |
+
+The re-run after the fixes, before the commit:
 
 ```text
 $ just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
+### PR 22 review — commit `b2d8222` with uncommitted ticket changes
+
+GitHub Copilot's pull-request reviewer left one finding on PR 22. GitHub does not report
+its model. After P-1's fix, a second round ran over the whole PR diff, P-1's fix
+included. The harness was again Claude Code's Workflow tool, and every agent ran
+`claude-opus-5-5`. Three fresh-context reviewers, which edited nothing, each took one
+lens: the facts the PR adds, re-run against Git and the GitHub API (F); the record
+table against the first round's raw results (K); and a later reader of T18 and T11 (D).
+One refuter per finding re-checked it. Eight findings were raised: seven were valid
+and applied, and one was refuted. None was high severity, so §14's two rounds end here.
+Nothing was handed back. D-1's fix needed the maintainer's decision, given on
+2026-10-27.
+
+| Finding | Verdict and action |
+| --- | --- |
+| P-1 | Valid, minor: the record above gave counts and a summary of the edits. §14's Record rule asks for the harness and model and for each verdict with a one-line reason, refuted findings included, and the raw files stay uncommitted. The record above now gives all twelve findings, each with its verdict and reason. |
+| F-1 | Valid, minor: this section's first gate quote showed an `Exit status: 0` that its command never captured. The gate below was re-run with its status captured. |
+| K-1 (medium) | Valid: the V-4 row misstated C-4's refuter, and it hid that the two refuters disagreed about the missing gate. The C-4 and V-4 rows now give each refuter's actual ground. |
+| K-2 | Refuted: V-1's "(medium)" is the severity the finding was raised with, as §14's Phase 1 assigns it. The verdict itself carries no severity, so the row matches the journal. |
+| K-3 | Valid, minor: the V-1 row said the positive control's status was quoted, but the control was piped through `tail` and had no status. It is now `git diff --shortstat`, unfiltered, with its own `Exit status: 0`. |
+| D-1 (medium) | Valid: the T11 edit lay outside T18's Files touched, which §14's scope guard forbids, and nothing recorded why. With the maintainer's approval the edit stays, Files touched lists T11 as `shared, own lines`, and the C-1 row records the approval. |
+| D-2 | Valid, minor, the same defect as K-3. The same edit closes it. |
+| D-3 | Valid, minor: the claim that the merge changes nothing the Audit job reads checked too few paths, and left out `pixi.lock`, `Cargo.toml` and `tools-source.txt`. The path list now covers the files the five recipes read, including `.pre-commit-fix.yaml` and the `README.md` that `install-hooks` lints. The section says what changed in each of the four changed files and why none of it bears on the run. |
+| D-4 | Valid, minor: C-2's refutation rested on a false claim about item 1, whose rerun is its very next heading. C-2 is now valid, and the `c1b4bcb` item 4 section points to its closure. |
+
+The re-run after both rounds' fixes, with the status of `just check`, not of `tail`:
+
+```text
+$ just check 2>&1 | tail -1; echo "Exit status: ${pipestatus[1]}"
 All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
