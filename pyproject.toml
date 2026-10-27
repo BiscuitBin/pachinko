@@ -20,7 +20,7 @@ requires-pixi = ">=0.81.0"
 # Exact pins. An unqualified "3.14" would let the linux-64 solve pick 3.15.0rc2.
 python = "3.14.*"
 just = "==1.58.0"
-prek = "==0.5.3"
+prek = "==0.5.7"
 # For tools.txt and tools-source.txt only: cargo-hack and rustqual are not on conda-forge.
 cargo-binstall = "==1.23.0"
 cargo-nextest = "==0.9.150"
