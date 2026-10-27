@@ -147,10 +147,13 @@ git status --short
 
 ## Hand-back notes
 
-Executed on 2026-10-23, with items 1, 3 and 7 rerun on 2026-10-24 as described below.
+Executed on 2026-10-23, with items 1, 3 and 7 rerun on 2026-10-24 and item 4's
+schedule read back on 2026-10-27, as described below.
 Only this ticket is a deliverable. The source under test was `main` at `c1b4bcb`, and
-`7dbed57` for those reruns; the ticket branch is `ticket/t18-verification-gaps` (the
-Supacode-created uppercase branch name was normalized before committing). No product
+`7dbed57` for the item 1, 3 and 7 reruns; item 4's scheduled run tested `f080d62`. The
+ticket branch is `ticket/t18-verification-gaps` (the Supacode-created uppercase branch
+name was normalized before committing), and item 4's closure was committed on
+`ticket/t18-scheduled-audit`, because the ticket branch had already merged. No product
 behaviour, gate, recipe, handbook page or dependency changed. Outside the repository,
 item 1 leaves the primary checkout's pre-commit shim installed, as AGENTS.md intends.
 
@@ -163,15 +166,17 @@ editorial, not command output.
 On 2026-10-24 the maintainer authorized the remaining checks. Items 1, 3 and 7 were
 then run against `main` at `7dbed57` (T12's merge; it changes no crate source, recipe or gate configuration, but it does
 change `README.md`, which initialization's lychee hook and `just check` read, so the
-reruns are evidence at `7dbed57`, not at `c1b4bcb`), each in a section headed by that commit. Items 2 and 4 stay Open: they
-wait on a snapshot and on a calendar event, not on authorization.
+reruns are evidence at `7dbed57`, not at `c1b4bcb`), each in a section headed by that commit. Items 2 and 4 stayed Open: they
+waited on a snapshot and on a calendar event, not on authorization. The calendar event
+came on 2026-10-26: the first scheduled Audit run on `main` succeeded, which closed item 4
+in a section headed by the commit it tested, `f080d62`. Item 2 stays Open.
 
 | Item | Disposition | Evidence or reason; closing event for Open items |
 | --- | --- | --- |
 | 1. Primary hook shim | Closed | At `7dbed57`, after the maintainer's authorization: the primary checkout's `just initialize` installed the shim, and its hook refused a malformed specification with `Specification diagnostics ... Failed` and exit 1. The scratch branch was deleted and the primary checkout left clean. |
 | 2. Snapshot recipes | Open | There is still no snapshot or `insta` dependency, and authorization does not change that: the ticket names the first ticket that takes a snapshot as the closing event. It must quote accept writing it, check rejecting a change, and review listing it. No fixture or dependency was added here. |
 | 3. Empty caches | Closed | At `7dbed57`, in a new `linux/amd64` Ubuntu 24.04 container as a new user: `.cargo`, `.rustup`, `.pixi`, `.cache` and prek's directories were absent and no rustup, cargo, pixi, just, prek or cargo-binstall was on `PATH`. After the handbook's two installers, `just initialize` and `just check` both exit 0. The 2026-10-23 run with only named cache directories isolated is kept below as superseded. |
-| 4. Network recipes and scheduled Audit | Open | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The successful GitHub API read reports zero scheduled Audit runs on `main`. Re-read on 2026-10-24 at 03:13 UTC (`gh run list --workflow audit.yml --branch main --event schedule` printed `[]`): still zero `schedule` runs, the only Audit run on `main` being a `workflow_dispatch`. The first successful Monday 06:00 UTC scheduled Audit run on `main` (first due 2026-10-26), quoted by URL, tested commit and conclusion, closes the remaining part. |
+| 4. Network recipes and scheduled Audit | Closed | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The scheduled half was Open until the first scheduled run: the 2026-10-23 API read and the 2026-10-24 03:13 UTC re-read (`gh run list --workflow audit.yml --branch main --event schedule` printed `[]`) found no `schedule` run. Closed on 2026-10-27 by run `https://github.com/BiscuitBin/pachinko/actions/runs/40321188031`: event `schedule`, branch `main`, tested commit `f080d62`, conclusion `success`, with `just audit` printing `advisories ok`. It was created at 12:15 UTC on Monday 2026-10-26, about six hours after its `0 6 * * 1` slot; the run records no reason, and GitHub documents that scheduled runs can be delayed under high load. |
 | 5. Optional banned crate | Closed | The optional path dependency `rand`, behind `probe-rand`, is named by the effects rejection. |
 | 6. Every ban, both ways | Closed | At the T11 merge: all 373 required negative cases match their own exact diagnostics, covering eight crate bans and 121 API entries through 119 fixture functions. The restored effects control passes. |
 | 7. Linux network denial | Closed | At `7dbed57`, in the same `linux/amd64` container run with seccomp and AppArmor unconfined: `unshare -rn` held only `lo`, both §11 curl controls failed (exit 6 and 7), and `just check` exit 0 inside the denial. The 2026-10-23 ARM64 attempt is kept below as superseded. |
@@ -841,6 +846,57 @@ Exit status: 0
 
 This is an HTTP-success read with a zero total, not an inaccessible-resource 404.
 There is no scheduled-run URL or conclusion to quote yet; no dispatch was substituted.
+
+### Item 4, schedule: first scheduled Audit run — commit `f080d62`
+
+Read on 2026-10-27 at 02:24 UTC, with the maintainer's authorization, from the worktree
+of `ticket/t18-scheduled-audit` at `83a2b9f`. GitHub runs a scheduled workflow on the
+default branch's latest commit, which was `f080d62` when the run was created; PR 21's
+merge, `83a2b9f`, came later the same day. That merge changes none of the lockfiles,
+`deny.toml`, `audit.yml` or the setup action. In the `Justfile` it changes only
+`check-toolchain` and two comments, and the Audit job runs `install-toolchain`,
+`install-tools`, `sync`, `install-hooks` and `audit`, none of which depends on
+`check-toolchain`. The first command is the positive control for the second.
+
+```text
+$ git diff --stat f080d62 83a2b9f | tail -1
+ 57 files changed, 918 insertions(+), 473 deletions(-)
+$ git diff --stat f080d62 83a2b9f -- Cargo.lock fuzz/Cargo.lock deny.toml .github/workflows/audit.yml .github/actions
+(stdout empty)
+Exit status: 0
+$ git diff --stat f080d62 83a2b9f -- Justfile
+ Justfile | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+Exit status: 0
+```
+
+```text
+$ gh run list --workflow audit.yml --branch main --event schedule --json url,headSha,event,conclusion,createdAt
+[{"conclusion":"success","createdAt":"2026-10-26T12:15:50Z","event":"schedule","headSha":"f080d6212d64d1c0d0c684c3f84bc8acb18ffbd6","url":"https://github.com/BiscuitBin/pachinko/actions/runs/40321188031"}]
+Exit status: 0
+```
+
+```text
+$ gh run view 40321188031 --json jobs -q '.jobs[] | "\(.name) \(.conclusion)"'
+audit success
+Exit status: 0
+```
+
+The run's `just audit` step, with the log's job, step and timestamp columns and its
+colour codes removed, in zsh with `pipefail` set:
+
+```text
+$ gh run view 40321188031 --log | cut -f3 | sed -E 's/^[0-9T:.-]+Z //; s/\^\[\[[0-9;]*m//g' | grep -E '^(cargo deny|advisories )'
+cargo deny --locked check advisories
+advisories ok
+Exit status: 0
+```
+
+The cron is `0 6 * * 1` (`.github/workflows/audit.yml:13`). The run was created at
+12:15:50 UTC, about six hours after that slot. The run records no reason for the
+delay; GitHub documents that a `schedule` event can be delayed during periods of high
+load. The item asks for the first scheduled run on `main` by URL, tested commit and
+conclusion, not for its start time, so the delay does not reopen it.
 
 ### Item 5: optional banned dependency — commit `c1b4bcb` with uncommitted scratch changes
 
@@ -2329,10 +2385,26 @@ All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
 
+### Item 4 closure review and final gate — commit `83a2b9f` with uncommitted ticket changes
+
+Three fresh-context reviewers, which edited nothing, read the closure. Each took one
+lens: the evidence against the GitHub API, consistency across the tickets, and these
+conventions. Each finding then went to a refuter. Eight findings survived and all were
+applied. The delay's cause is now sourced, not asserted. The empty diff is quoted with
+its command, a positive control and what the merge changed in the `Justfile`. The log excerpt is
+quoted with its command. The intro names `f080d62` and this branch. T11's Open points
+no longer say item 4 is open. This section was added. Four findings were refuted.
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
 ## Open points
 
-Items 2 and 4 remain Open for the reasons and closing events in the disposition table:
-item 2 until the first ticket that takes a snapshot, item 4 until the first scheduled
-Audit run on `main`, due 2026-10-26 at 06:00 UTC. Items 1, 3 and 7 were closed on
-2026-10-24 under the maintainer's authorization. No other verification item was
-dropped.
+Item 2 remains Open for the reason and closing event in the disposition table: it
+stays open until the first ticket that takes a snapshot. Items 1, 3 and 7 were closed on
+2026-10-24 under the maintainer's authorization. Item 4 was closed on 2026-10-27 by the
+first scheduled Audit run on `main`, run `40321188031`, which tested `f080d62` and
+succeeded. No other verification item was dropped.

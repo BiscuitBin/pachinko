@@ -581,6 +581,7 @@ this disposition; a commit cited is on branch `review-and-finish-bootstrap`.
 | T07 sentences stale after T13, T14 or T17 | Closed (`e00bc3b`) |
 
 The newer action releases, owned by T17, wait for approval on Dependency Dashboard #19
-(T01's Open points). T18 items 2 and 4 stay open (T18's Open points). Step 6's lines
+(T01's Open points). T18 item 2 stays open (T18's Open points); item 4 closed on
+2026-10-27 with the first scheduled Audit run, `40321188031`. Step 6's lines
 that name the specifications close when the first specification that defines behaviour
 or names an effect lands and rewrites them.
