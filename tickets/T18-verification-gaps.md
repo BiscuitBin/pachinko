@@ -41,6 +41,7 @@ yet and the ticket or event that will close it.
 | Path | Class | Content |
 | --- | --- | --- |
 | `tickets/T18-verification-gaps.md` | ticket | `status:` and hand-back notes |
+| `tickets/T11-integration.md` | shared, own lines | One Open points sentence on T18 item 4, added by item 4's closure on 2026-10-27 with the maintainer's approval |
 
 Scratch copies, scratch branches and logs live under `ai_tmp/` and are never committed.
 
@@ -147,10 +148,13 @@ git status --short
 
 ## Hand-back notes
 
-Executed on 2026-10-23, with items 1, 3 and 7 rerun on 2026-10-24 as described below.
+Executed on 2026-10-23, with items 1, 3 and 7 rerun on 2026-10-24 and item 4's
+schedule read back on 2026-10-27, as described below.
 Only this ticket is a deliverable. The source under test was `main` at `c1b4bcb`, and
-`7dbed57` for those reruns; the ticket branch is `ticket/t18-verification-gaps` (the
-Supacode-created uppercase branch name was normalized before committing). No product
+`7dbed57` for the item 1, 3 and 7 reruns; item 4's scheduled run tested `f080d62`. The
+ticket branch is `ticket/t18-verification-gaps` (the Supacode-created uppercase branch
+name was normalized before committing), and item 4's closure was committed on
+`ticket/t18-scheduled-audit`, because the ticket branch had already merged. No product
 behaviour, gate, recipe, handbook page or dependency changed. Outside the repository,
 item 1 leaves the primary checkout's pre-commit shim installed, as AGENTS.md intends.
 
@@ -163,15 +167,17 @@ editorial, not command output.
 On 2026-10-24 the maintainer authorized the remaining checks. Items 1, 3 and 7 were
 then run against `main` at `7dbed57` (T12's merge; it changes no crate source, recipe or gate configuration, but it does
 change `README.md`, which initialization's lychee hook and `just check` read, so the
-reruns are evidence at `7dbed57`, not at `c1b4bcb`), each in a section headed by that commit. Items 2 and 4 stay Open: they
-wait on a snapshot and on a calendar event, not on authorization.
+reruns are evidence at `7dbed57`, not at `c1b4bcb`), each in a section headed by that commit. Items 2 and 4 stayed Open: they
+waited on a snapshot and on a calendar event, not on authorization. The calendar event
+came on 2026-10-26: the first scheduled Audit run on `main` succeeded, which closed item 4
+in a section headed by the commit it tested, `f080d62`. Item 2 stays Open.
 
 | Item | Disposition | Evidence or reason; closing event for Open items |
 | --- | --- | --- |
 | 1. Primary hook shim | Closed | At `7dbed57`, after the maintainer's authorization: the primary checkout's `just initialize` installed the shim, and its hook refused a malformed specification with `Specification diagnostics ... Failed` and exit 1. The scratch branch was deleted and the primary checkout left clean. |
 | 2. Snapshot recipes | Open | There is still no snapshot or `insta` dependency, and authorization does not change that: the ticket names the first ticket that takes a snapshot as the closing event. It must quote accept writing it, check rejecting a change, and review listing it. No fixture or dependency was added here. |
 | 3. Empty caches | Closed | At `7dbed57`, in a new `linux/amd64` Ubuntu 24.04 container as a new user: `.cargo`, `.rustup`, `.pixi`, `.cache` and prek's directories were absent and no rustup, cargo, pixi, just, prek or cargo-binstall was on `PATH`. After the handbook's two installers, `just initialize` and `just check` both exit 0. The 2026-10-23 run with only named cache directories isolated is kept below as superseded. |
-| 4. Network recipes and scheduled Audit | Open | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The successful GitHub API read reports zero scheduled Audit runs on `main`. Re-read on 2026-10-24 at 03:13 UTC (`gh run list --workflow audit.yml --branch main --event schedule` printed `[]`): still zero `schedule` runs, the only Audit run on `main` being a `workflow_dispatch`. The first successful Monday 06:00 UTC scheduled Audit run on `main` (first due 2026-10-26), quoted by URL, tested commit and conclusion, closes the remaining part. |
+| 4. Network recipes and scheduled Audit | Closed | `lock`, `lock-upgrade` and online links exit 0; the lockfile changes were restored. The scheduled half was Open until the first scheduled run: the 2026-10-23 API read and the 2026-10-24 03:13 UTC re-read (`gh run list --workflow audit.yml --branch main --event schedule` printed `[]`) found no `schedule` run. Closed on 2026-10-27 by run `https://github.com/BiscuitBin/pachinko/actions/runs/40321188031`: event `schedule`, branch `main`, tested commit `f080d62`, conclusion `success`, with `just audit` printing `advisories ok`. It was created at 12:15 UTC on Monday 2026-10-26, about six hours after its `0 6 * * 1` slot; the run records no reason, and GitHub documents that scheduled runs can be delayed under high load. |
 | 5. Optional banned crate | Closed | The optional path dependency `rand`, behind `probe-rand`, is named by the effects rejection. |
 | 6. Every ban, both ways | Closed | At the T11 merge: all 373 required negative cases match their own exact diagnostics, covering eight crate bans and 121 API entries through 119 fixture functions. The restored effects control passes. |
 | 7. Linux network denial | Closed | At `7dbed57`, in the same `linux/amd64` container run with seccomp and AppArmor unconfined: `unshare -rn` held only `lo`, both §11 curl controls failed (exit 6 and 7), and `just check` exit 0 inside the denial. The 2026-10-23 ARM64 attempt is kept below as superseded. |
@@ -841,6 +847,72 @@ Exit status: 0
 
 This is an HTTP-success read with a zero total, not an inaccessible-resource 404.
 There is no scheduled-run URL or conclusion to quote yet; no dispatch was substituted.
+The scheduled half stayed Open until the section below closed it.
+
+### Item 4, schedule: first scheduled Audit run — commit `f080d62`
+
+Read on 2026-10-27 at 02:24 UTC, with the maintainer's authorization, from the worktree
+of `ticket/t18-scheduled-audit` at `83a2b9f`. GitHub runs a scheduled workflow on the
+default branch's latest commit, which was `f080d62` when the run was created; PR 21's
+merge, `83a2b9f`, came later the same day. The Audit job runs the setup action's
+`install-toolchain`, `install-tools`, `sync` and `install-hooks`, then `audit`. Of the
+files those read, the merge changes four:
+
+- `Cargo.toml` and `tools-source.txt` change only in comments, and the pins are the same.
+- In `.pre-commit-fix.yaml`, markdownlint gains `pass_filenames: false`. That changes how
+  the hook runs, not the hook environment `prek prepare-hooks` installs.
+- In the `Justfile`, only `check-toolchain` and two comments change, and none of the
+  five recipes depends on `check-toolchain`.
+
+The three lockfiles, the other manifests and the tool lists do not change. Nor do
+`deny.toml`, `audit.yml`, the setup action, `.pre-commit-config.yaml` or the `README.md`
+that `install-hooks` lints. The first command is the positive control for the second.
+
+```text
+$ git diff --shortstat f080d62 83a2b9f
+ 57 files changed, 918 insertions(+), 473 deletions(-)
+Exit status: 0
+$ git diff --stat f080d62 83a2b9f -- Cargo.lock fuzz/Cargo.lock pixi.lock pyproject.toml rust-toolchain.toml tools.txt tools-source.txt Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml fuzz/Cargo.toml deny.toml .github/workflows/audit.yml .github/actions .pre-commit-config.yaml .pre-commit-fix.yaml README.md Justfile
+ .pre-commit-fix.yaml |  4 ++++
+ Cargo.toml           |  3 ++-
+ Justfile             | 13 ++++++++-----
+ tools-source.txt     |  4 +++-
+ 4 files changed, 17 insertions(+), 7 deletions(-)
+Exit status: 0
+```
+
+`git diff f080d62 83a2b9f -- Cargo.toml tools-source.txt` shows that both files change
+only in comments: the release profile's LTO note, and the note on how a
+`tools-source.txt` pin moves. `rustqual@1.8.3`, `lto = "fat"` and `codegen-units = 1`
+stand as they were.
+
+```text
+$ gh run list --workflow audit.yml --branch main --event schedule --json url,headSha,event,conclusion,createdAt
+[{"conclusion":"success","createdAt":"2026-10-26T12:15:50Z","event":"schedule","headSha":"f080d6212d64d1c0d0c684c3f84bc8acb18ffbd6","url":"https://github.com/BiscuitBin/pachinko/actions/runs/40321188031"}]
+Exit status: 0
+```
+
+```text
+$ gh run view 40321188031 --json jobs -q '.jobs[] | "\(.name) \(.conclusion)"'
+audit success
+Exit status: 0
+```
+
+The run's `just audit` step, with the log's job, step and timestamp columns and its
+colour codes removed, in zsh with `pipefail` set:
+
+```text
+$ gh run view 40321188031 --log | cut -f3 | sed -E 's/^[0-9T:.-]+Z //; s/\^\[\[[0-9;]*m//g' | grep -E '^(cargo deny|advisories )'
+cargo deny --locked check advisories
+advisories ok
+Exit status: 0
+```
+
+The cron is `0 6 * * 1` (`.github/workflows/audit.yml:13`). The run was created at
+12:15:50 UTC, about six hours after that slot. The run records no reason for the
+delay; GitHub documents that a `schedule` event can be delayed during periods of high
+load. The item asks for the first scheduled run on `main` by URL, tested commit and
+conclusion, not for its start time, so the delay does not reopen it.
 
 ### Item 5: optional banned dependency — commit `c1b4bcb` with uncommitted scratch changes
 
@@ -2329,10 +2401,78 @@ All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
 
+### Item 4 closure review and final gate — commit `83a2b9f` with uncommitted ticket changes
+
+The harness was Claude Code's Workflow tool, and every agent ran `claude-opus-5-5`. Three
+fresh-context reviewers, which edited nothing, read the closure's diff. Each took one
+lens: the evidence, checked against the GitHub API (E); consistency across the tickets
+(C); and these conventions (V). Each finding then went to one refuter, which re-checked
+it against the files and the API and refuted it when it was wrong, not a defect, or not
+caused by the diff. Twelve findings were raised. Eight survived and were applied, and
+four were refuted. No finding was high severity, so §14 needs no second round, and
+nothing was handed back. The PR 22 review below reversed one verdict, C-2, and corrected
+the reasons given for C-4 and V-4. The rows here record each verdict as it now stands.
+
+| Finding | Verdict and action |
+| --- | --- |
+| E-1 | Valid, minor: the delay's cause was stated as fact, but the run records none. The table row and the section now say the run records no reason and cite GitHub's documented delays under high load. |
+| E-2 | Valid, minor: the intro's source-commit sentence left out `f080d62`. It now names `f080d62` for item 4. |
+| C-1 (medium) | Valid: T11's Open points still said T18 items 2 and 4 stay open, and cited T18's Open points, which now say the opposite. The sentence now leaves only item 2 open and names run `40321188031`. The fix lies outside T18's original Files touched, so §14's scope guard would hand it back. The maintainer approved it on 2026-10-27, and Files touched lists T11 as `shared, own lines`. |
+| C-2 | Valid, minor, after PR 22's review: the `c1b4bcb` item 4 section ended on "nothing to quote yet" with no pointer to its closure. Its refuter had said that items 1, 3 and 7 need pointers only because their reruns sit far away, but item 1's rerun is its very next heading and still has one. That section now ends by pointing to the section after it. |
+| C-3 | Valid, minor, the same defect as E-2. The same edit also names `ticket/t18-scheduled-audit` beside the ticket branch. |
+| C-4 | Valid, minor: no `just check` was quoted for the new hand-back state. Its refuter judged the missing review record optional and the missing gate a real gap. This section quotes the gate after the fixes, and it also holds the record. |
+| V-1 (medium) | Valid: the empty `git diff` was offered without its command, status or a positive control. All three are now quoted. After PR 22's review, the control is unfiltered with its own status, and the path list covers the files the Audit job's recipes read. |
+| V-2 | Valid, minor: the log excerpt had no command or status. The full pipeline is quoted with its `pipefail` status. |
+| V-3 | Refuted: the intro made no false claim, because "those reruns" still meant only the 2026-10-24 reruns. E-2's edit makes the wording clearer anyway. |
+| V-4 | Refuted: the final gate and the record belong after the review (§14, Phase 3), and §11 makes a gate quoted before the review stale. This verdict conflicts with C-4's refuter, which held that the missing gate was a real gap. This section settles both, because it quotes the gate after the fixes. |
+| V-5 | Valid, minor, the same defect as E-1. The same edit closes it. |
+| V-6 | Refuted: "read back on 2026-10-27" and "the calendar event came on 2026-10-26" date two different events, the closure and the run, and are consistent. |
+
+The re-run after the fixes, before the commit:
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
+### PR 22 review — commit `b2d8222` with uncommitted ticket changes
+
+GitHub Copilot's pull-request reviewer left one finding on PR 22. GitHub does not report
+its model. After P-1's fix, a second round ran over the whole PR diff, P-1's fix
+included. The harness was again Claude Code's Workflow tool, and every agent ran
+`claude-opus-5-5`. Three fresh-context reviewers, which edited nothing, each took one
+lens: the facts the PR adds, re-run against Git and the GitHub API (F); the record
+table against the first round's raw results (K); and a later reader of T18 and T11 (D).
+One refuter per finding re-checked it. Eight findings were raised: seven were valid
+and applied, and one was refuted. None was high severity, so §14's two rounds end here.
+Nothing was handed back. D-1's fix needed the maintainer's decision, given on
+2026-10-27.
+
+| Finding | Verdict and action |
+| --- | --- |
+| P-1 | Valid, minor: the record above gave counts and a summary of the edits. §14's Record rule asks for the harness and model and for each verdict with a one-line reason, refuted findings included, and the raw files stay uncommitted. The record above now gives all twelve findings, each with its verdict and reason. |
+| F-1 | Valid, minor: this section's first gate quote showed an `Exit status: 0` that its command never captured. The gate below was re-run with its status captured. |
+| K-1 (medium) | Valid: the V-4 row misstated C-4's refuter, and it hid that the two refuters disagreed about the missing gate. The C-4 and V-4 rows now give each refuter's actual ground. |
+| K-2 | Refuted: V-1's "(medium)" is the severity the finding was raised with, as §14's Phase 1 assigns it. The verdict itself carries no severity, so the row matches the journal. |
+| K-3 | Valid, minor: the V-1 row said the positive control's status was quoted, but the control was piped through `tail` and had no status. It is now `git diff --shortstat`, unfiltered, with its own `Exit status: 0`. |
+| D-1 (medium) | Valid: the T11 edit lay outside T18's Files touched, which §14's scope guard forbids, and nothing recorded why. With the maintainer's approval the edit stays, Files touched lists T11 as `shared, own lines`, and the C-1 row records the approval. |
+| D-2 | Valid, minor, the same defect as K-3. The same edit closes it. |
+| D-3 | Valid, minor: the claim that the merge changes nothing the Audit job reads checked too few paths, and left out `pixi.lock`, `Cargo.toml` and `tools-source.txt`. The path list now covers the files the five recipes read, including `.pre-commit-fix.yaml` and the `README.md` that `install-hooks` lints. The section says what changed in each of the four changed files and why none of it bears on the run. |
+| D-4 | Valid, minor: C-2's refutation rested on a false claim about item 1, whose rerun is its very next heading. C-2 is now valid, and the `c1b4bcb` item 4 section points to its closure. |
+
+The re-run after both rounds' fixes, with the status of `just check`, not of `tail`:
+
+```text
+$ just check 2>&1 | tail -1; echo "Exit status: ${pipestatus[1]}"
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
 ## Open points
 
-Items 2 and 4 remain Open for the reasons and closing events in the disposition table:
-item 2 until the first ticket that takes a snapshot, item 4 until the first scheduled
-Audit run on `main`, due 2026-10-26 at 06:00 UTC. Items 1, 3 and 7 were closed on
-2026-10-24 under the maintainer's authorization. No other verification item was
-dropped.
+Item 2 remains Open for the reason and closing event in the disposition table: it
+stays open until the first ticket that takes a snapshot. Items 1, 3 and 7 were closed on
+2026-10-24 under the maintainer's authorization. Item 4 was closed on 2026-10-27 by the
+first scheduled Audit run on `main`, run `40321188031`, which tested `f080d62` and
+succeeded. No other verification item was dropped.
