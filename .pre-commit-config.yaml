@@ -114,7 +114,7 @@ repos:
   # A `rev` pins the checker the way every other third-party hook here is pinned,
   # and the build happens once, before any file is read.
   - repo: https://github.com/editorconfig-checker/editorconfig-checker
-    rev: 675b1261a4d9668c357fcd67deb87aed8b881b94 # v3.11.1
+    rev: 8d927e9944e58ac188c2d3a705a432157983113f # v3.11.3
     hooks:
       # Upstream declares no `types`, which would widen this to every file in the
       # repository. Text is what this gate has always read.
@@ -123,13 +123,13 @@ repos:
         types: [text]
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: b82a6c8896e491b9cb377a99ff3412131920681b # v0.23.2
+    rev: 341e2a331ba578029e66c2e01183e7a6b5ca9ab4 # v0.24.0
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
 
   - repo: https://github.com/crate-ci/typos
-    rev: 512fc24f32f44ab01972217aaaf3dc86ec234d53 # v1.50.2
+    rev: 7f9d0819ca1c008ade73f4b41fa9d258d48f605b # v1.51.1
     hooks:
       - id: typos
         # Upstream's hook passes --write-changes, so a misspelling found here would
