@@ -25,7 +25,7 @@ runs:
     # The environment holds no rust, so cargo stays the runner's rustup
     # proxy. The cache is keyed on pixi.lock's hash and written from main
     # only, for the reason rust-cache's save-if gives below.
-    - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+    - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
       with:
         pixi-version: v0.83.0
         manifest-path: pyproject.toml
@@ -45,7 +45,7 @@ runs:
     # governs ~/.cargo/bin, which holds nothing this gate installs: every
     # tool is in the pixi environment setup-pixi restored above, or in
     # .tools/bin, which actions/cache restores below.
-    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: ${{ inputs.cache-key }}
         save-if: ${{ github.ref == 'refs/heads/main' }}
