@@ -14,7 +14,7 @@ channels = ["conda-forge"]
 # CI is linux-64; the maintainer is osx-arm64. osx-64 joins when a claim verifies it;
 # win-64 never: bg-install-allium and the Justfile are POSIX-only.
 platforms = ["linux-64", "osx-arm64"]
-requires-pixi = ">=0.81.0"
+requires-pixi = ">=0.83.0"
 
 [tool.pixi.dependencies]
 # Exact pins. An unqualified "3.14" would let the linux-64 solve pick 3.15.0rc2.
