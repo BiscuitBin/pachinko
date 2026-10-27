@@ -37,7 +37,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "Tool pins in pyproject.toml. A notice until the hosted app is shown to relock pixi.lock; a stale pixi.lock fails lock-check. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "description": "Tool pins in pyproject.toml; the hosted app relocks pixi.lock on the same branch, and a stale pixi.lock fails lock-check. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchManagers": ["pixi"],
       "dependencyDashboardApproval": true
     },
@@ -71,7 +71,7 @@
       "enabled": false
     },
     {
-      "description": "Lock-file maintenance rewrites pixi.lock as well as Cargo.lock, and the pixi relock is unproven. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "description": "Lock-file maintenance rewrites pixi.lock as well as Cargo.lock. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "dependencyDashboardApproval": true
     },

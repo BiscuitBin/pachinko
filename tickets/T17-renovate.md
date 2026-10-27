@@ -443,7 +443,13 @@ None was listed at hand-back. Step 3 groups the toolchain with `rust-version` an
   records it (commit `e00bc3b`). Step 3 and Verification now give that form.
 - The crate READMEs and `Dockerfile:1` repeating the toolchain version: a settled
   record. The how-to tells the toolchain branch to update them by hand.
-- The dashboard entries under Pending Approval, the `github actions` group among them:
-  still open. Each closes when the maintainer approves it and merges its pull request.
-- Whether the hosted app relocks `pixi.lock`: still open. It closes when a pixi entry is
-  approved and its pull request's diff is read.
+- The dashboard entries under Pending Approval: ten approved and merged on 2026-10-26,
+  pull requests #23 to #32 (the `github actions` group, hook revs, pixi bootstrap,
+  cargo-nextest, prek, just, cargo-insta, cargo-binstall and both lock-file
+  maintenances), each green on `check`. `python` 3.15 and editorconfig-checker v4 stay
+  held by the maintainer's choice.
+- Whether the hosted app relocks `pixi.lock`: closed, it does. Each of the six pull
+  requests that touched it (#23, #24, #26, #27, #28, #32) carried the relock beside its
+  `pyproject.toml` change, #23 also moving `.config/nextest.toml`, and each passed
+  `check`, which runs `just lock-check`. The how-to, the maintenance page, decision 0018
+  and two `renovate.json` descriptions drop the relock from the manual list.

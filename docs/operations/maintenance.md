@@ -73,8 +73,7 @@ Renovate lists the pending moves for these pins on its dependency dashboard, and
 pull request opens only when it is approved there, except a vulnerability fix, which
 opens unasked once vulnerability alerts are enabled. Nothing merges on its own. What no
 rule moves, lychee's `LYCHEE_VERSION` beside its rev, the allium checksums inside the
-tooling package, `requires-python` beside the `python` pin, and `pixi.lock` until the
-hosted app's relock is proven, still moves by hand as
+tooling package and `requires-python` beside the `python` pin, still moves by hand as
 [Maintain dependencies](../how-to/maintain-dependencies.md#what-the-updater-proposes-and-what-stays-manual)
 describes.
 
