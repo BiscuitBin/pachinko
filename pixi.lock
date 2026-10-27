@@ -26,7 +26,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-insta-1.48.0-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-llvm-cov-0.9.1-h8569b68_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-mutants-27.1.0-hf19af3b_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-nextest-0.9.146-hf19af3b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-nextest-0.9.150-hf19af3b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-semver-checks-0.51.0-hf19af3b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-shear-1.13.4-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/just-1.58.0-hf19af3b_2.conda
@@ -64,7 +64,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-insta-1.48.0-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-llvm-cov-0.9.1-h14c297a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-mutants-27.1.0-hc2d82ec_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-nextest-0.9.146-hc2d82ec_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-nextest-0.9.150-ha19a7bb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-semver-checks-0.51.0-hc2d82ec_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-shear-1.13.4-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/just-1.58.0-hc2d82ec_2.conda
@@ -187,20 +187,19 @@ packages:
   run_exports: {}
   size: 2347122
   timestamp: 1792759447917
-- conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-nextest-0.9.146-hf19af3b_0.conda
-  sha256: 0df2554122bba71ba76d5d7dc40b778772ed167c93ca866667a682da4053bda2
-  md5: d28fa687593eb73ad26817683d137471
+- conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-nextest-0.9.150-hf19af3b_0.conda
+  sha256: 53c9fab72697fb1ca9fd472f394977e323d7465352dc3ec2bd5cfd94f43185e8
+  md5: b1da7554779ef5675ef0f033706b7a09
   depends:
   - libgcc >=15
   - __glibc >=2.17,<3.0.a0
   constrains:
   - __glibc >=2.17
   license: MIT
-  license_family: MIT
   purls: []
   run_exports: {}
-  size: 7141613
-  timestamp: 1790052195930
+  size: 7188357
+  timestamp: 1793063564722
 - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-semver-checks-0.51.0-hf19af3b_0.conda
   sha256: da55d14bd50c7aad5aeecd729af8fcd09d17527825cc89f38d2294322ae18c7a
   md5: eec712e5bf5bb5aa0000c70c40a55efa
@@ -656,19 +655,18 @@ packages:
   run_exports: {}
   size: 2148566
   timestamp: 1792759505288
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-nextest-0.9.146-hc2d82ec_0.conda
-  sha256: 0d8c0cc47163d9a6f30058cc9c3b8ce4ae6d6074239fe92a6d19cea853c37766
-  md5: bd3edb729a43061f505003594ac68ea2
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-nextest-0.9.150-ha19a7bb_0.conda
+  sha256: acce8be92b6b4fc9ee14ada2e48672a1817d535f3e933c08a3d34504af52bef8
+  md5: 2da0a4b0e31a0b1e3b6a377a855b64a9
   depends:
   - __osx >=11.0
   constrains:
   - __osx >=11.0
   license: MIT
-  license_family: MIT
   purls: []
   run_exports: {}
-  size: 6553222
-  timestamp: 1790052186280
+  size: 6556539
+  timestamp: 1793063599904
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-semver-checks-0.51.0-hc2d82ec_0.conda
   sha256: c50187545de0dbb484b1990ca8de9744837348dfdabc8a83ed5afcaf7b826b1c
   md5: 9eaf0eaabfbeaa08578aa33149695e6c
