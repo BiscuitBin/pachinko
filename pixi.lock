@@ -21,7 +21,7 @@ environments:
       linux-64:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-binstall-1.23.0-hf473dc7_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-binstall-1.26.1-hf473dc7_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-deny-0.20.2-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-insta-1.48.0-hb17b654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-llvm-cov-0.9.1-h8569b68_0.conda
@@ -59,7 +59,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.14-9_cp314.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/bzip2-1.0.8-h4e30115_10.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-binstall-1.23.0-h9d417a0_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-binstall-1.26.1-h050915a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-deny-0.20.2-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-insta-1.48.0-h6fdd925_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-llvm-cov-0.9.1-h14c297a_0.conda
@@ -117,21 +117,21 @@ packages:
     - bzip2 >=1.0.8,<2.0a0
   size: 257808
   timestamp: 1785906269155
-- conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-binstall-1.23.0-hf473dc7_0.conda
-  sha256: a87ff8ce9f2de8c0ab4e7aba89435380fca2789a64c49406b9679b39e264a618
-  md5: c06f7f3dffd5e7189376def79fbf11e6
+- conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-binstall-1.26.1-hf473dc7_0.conda
+  sha256: c809759ba5bc84fb72549b182c1d2efdb3b1291108c8bc5d087c8a4a1d31c71a
+  md5: 09fcf50ee328e2d9df177aa1bfc57b6b
   depends:
-  - libstdcxx >=15
   - libgcc >=15
   - __glibc >=2.17,<3.0.a0
+  - libstdcxx >=15
   constrains:
   - __glibc >=2.17
   license: GPL-3.0-only
   license_family: GPL
   purls: []
   run_exports: {}
-  size: 6955397
-  timestamp: 1788645390323
+  size: 6937547
+  timestamp: 1792870832437
 - conda: https://conda.anaconda.org/conda-forge/linux-64/cargo-deny-0.20.2-hb17b654_0.conda
   sha256: 98d4e0adbb07cff3891078d411c7b7871508c03c1830ba9be2e8c835529bc36a
   md5: 0b977c2b9739d1c0cc3e6b0621934191
@@ -590,20 +590,20 @@ packages:
     - bzip2 >=1.0.8,<2.0a0
   size: 124965
   timestamp: 1785906749812
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-binstall-1.23.0-h9d417a0_0.conda
-  sha256: a91930c2ce57169323234ec780a8f3b105f570175d59138ba576336a2d077669
-  md5: 206bea17e5400af450a36d0fc66570e0
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-binstall-1.26.1-h050915a_0.conda
+  sha256: 366e44cfb303b48bedccb62d8df7e5a082b58a13bb9afb99618f612b811c8973
+  md5: 2507ee928bea8523aa594c1b049c28b6
   depends:
-  - __osx >=11.0
   - libcxx >=21
+  - __osx >=11.0
   constrains:
   - __osx >=11.0
   license: GPL-3.0-only
   license_family: GPL
   purls: []
   run_exports: {}
-  size: 6125830
-  timestamp: 1788645442292
+  size: 6076375
+  timestamp: 1792870851990
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/cargo-deny-0.20.2-h6fdd925_0.conda
   sha256: a203c9ae4a5381a34ac3c49263e468eb8d74c76456d2fce82e5e5bc1b457b4a2
   md5: 871cae6343e8d8cede5914a3cd4939be
