@@ -1,6 +1,6 @@
 # Equal to the cargo-nextest pin in pyproject.toml, so an older nextest refuses to
 # run this configuration rather than misreading it.
-nextest-version = "0.9.146"
+nextest-version = "0.9.150"
 
 # Locally, stop at the first failure.
 [profile.default]
