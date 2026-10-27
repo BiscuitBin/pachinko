@@ -26,7 +26,7 @@ cargo-binstall = "==1.23.0"
 cargo-nextest = "==0.9.150"
 cargo-llvm-cov = "==0.9.1"
 cargo-deny = "==0.20.2"
-cargo-insta = "==1.48.0"
+cargo-insta = "==1.49.0"
 # A weekly report, never a gate (mutants.yml); decision 0017.
 # Verified 2026-10-23: neither conda-forge platform build depends on rust.
 cargo-mutants = "==27.1.0"
