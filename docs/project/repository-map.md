@@ -50,6 +50,8 @@ library and the library never on the service.
 │   ├── Cargo.lock          The pin for the fuzz crate's separate graph
 │   └── fuzz_targets/
 │       └── smoke.rs        The smoke target just fuzz runs
+├── spikes/                 Prototypes outside the workspace, each with its own lockfile
+│   └── worker-pool/        The execution-model spike (T20): machines, pool, tests, demo binary
 ├── tests/fixtures/
 │   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
@@ -86,6 +88,7 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
 | `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
+| `spikes/worker-pool/` | The execution-model spike ticket T20 built and measured: single-threaded machines running every rule of the module over partitions, on a bounded pool of worker threads, with its own `Cargo.lock`. A prototype the implementation learns from, never its first commit; `just spike` runs the measurement and `just spike-test` its tests, both outside `just check`, which lints it. |
 | `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |

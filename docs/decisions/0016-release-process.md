@@ -60,7 +60,7 @@ the workflow; its creation and every tag push are separately authorized actions.
 `just semver` compares libpachinko against its latest reachable release tag. Before
 the first tag it compares against the branch's merge base with `origin/main`, or local
 `main` when that remote branch is absent. An explicit revision overrides discovery.
-The recipe checks all three locks first and runs offline because cargo-semver-checks
+The recipe checks all four locks first and runs offline because cargo-semver-checks
 has no locked option. The pull-request job is advisory and outside the required aggregate.
 
 ## Consequences

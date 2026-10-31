@@ -188,7 +188,7 @@ outside the recipes are ignored.
 writing a snapshot or pending file. The snapshot gate also rejects a `.snap` file no
 test refers to. It runs the entire suite through cargo-insta with nextest and every
 feature, so every reference is seen. cargo-insta cannot pass `--locked` to nextest;
-the snapshot recipes validate all three locks first and run cargo-insta offline.
+the snapshot recipes validate all four locks first and run cargo-insta offline.
 
 A changed snapshot asks whether the change was intended. The person who changed it reads
 the diff, reviews pending snapshots through `just snapshots-review` at a terminal, and
