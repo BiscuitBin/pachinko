@@ -31,19 +31,20 @@ its tests and implementation with it.
 
 ## What exists today
 
-There is one module, `pachinko.allium`, the root of a domain that has not yet been
-defined. It imports nothing and declares no entities, rules, surfaces, invariants
-or config. Its header makes that absence explicit.
+There is one module, `pachinko.allium`, the root. It specifies the queue domain
+elicited from the maintainer on 2026-10-30: publishers publish records into pockets,
+one record per key, and a higher rank supersedes in place; a consumer leases one
+pocket at a time, pulls its oldest records in bounded batches, and acks, nacks,
+renews or releases; a lease that lapses frees the pocket's records, and consecutive
+lapses park the pocket until a publish revives it; superseded records and dead
+letters stay visible until they decay. It imports nothing, and
+[Terminology](../project/terminology.md) holds its words.
 
-The root exists so that the specification gate runs from the foundation onward.
-Empty diagnostics and findings say the placeholder is valid, not that any domain
-behaviour has been specified or implemented. Its empty test plan carries no
-behavioural obligations.
-
-The first specification change will define behaviour in the root or in a module
-it imports. That change will establish scope and vocabulary, derive tests from
-the new clauses and implement until those tests pass. New modules receive explicit
-boundaries so that each behaviour has an owner.
+None of it is implemented. Empty diagnostics and findings say the module is valid,
+not that the library does any of it. Its test plan carries obligations no test yet
+covers; the first implementation change derives those tests, confirms they fail,
+and builds until they pass. Behaviour that outgrows the root's Scope goes in a
+module it imports, with explicit boundaries so that each behaviour has an owner.
 
 ## Open questions are a feature
 
@@ -51,9 +52,17 @@ An `open question` records a product decision nobody has made yet. An unwritten
 gap is easily filled by whoever writes the code first; a written one stays visible
 until someone entitled to decide answers it.
 
-The placeholder has none today. As the domain is defined, a change that reaches
-an unanswered decision should add a question rather than guess. A low count is
-normal for a settled module, but it is not a reason to hide uncertainty.
+The root carries nine: equal-rank publishes, who reads the superseded and
+dead-letter queues, capacity beyond shedding the decaying queues, routing by pool
+or priority, an adaptive lease TTL, a pocket jumping the queue, reviving a parked
+pocket other than by a publish, a consumer's action that arrives after its lease's
+time has passed but before the lapse is processed, and a key published again under
+the lease that removed its record. Seven mark decisions the maintainer declined to
+make in the elicitation and the last two gaps that writing and reviewing the rules
+exposed; where the rules' reading matters meanwhile, the question says what it is,
+and no code answers one. A change that reaches an unanswered decision adds a
+question rather than guessing. A low count is normal for a settled module, but it
+is not a reason to hide uncertainty.
 
 ## What a specification is not
 

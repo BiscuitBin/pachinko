@@ -9,15 +9,15 @@ requires: []
 # Work with the specifications
 
 The Allium specifications under `docs/specs/` decide what libpachinko and pachinko
-do. Today the domain is undefined and the sole module declares no behaviour. This
-page is the procedure; [Specifications](../explanation/specifications.md) is the
-reasoning.
+do. Today the sole module, the root, specifies the queue domain, and nothing
+implements it yet. This page is the procedure;
+[Specifications](../explanation/specifications.md) is the reasoning.
 
 ## Find the module that owns the behaviour
 
 | Module | Owns |
 | --- | --- |
-| `pachinko.allium` | The root for a domain not yet defined. It declares no behaviour and imports nothing. |
+| `pachinko.allium` | The root, and the queue domain: publishers, consumers, pockets, records, leases, superseded records and dead letters; publish and supersede; pull, ack, nack, renew, release and lease expiry; parking after consecutive expiries; decay. It imports nothing. |
 
 Each module opens with Scope, Includes and Excludes. Read the whole module before
 editing it. A behaviour listed under its Excludes belongs outside that module;
@@ -41,10 +41,10 @@ separately. Treat the output as suggestions, outside the gate: an obligation for
 excluded storage or unobservable behaviour can be struck with a reason, but a
 clause the planner misses is still owed a test.
 
-## Add the first behavioural module
+## Add a module
 
 Use the `spec-change` skill to define the behaviour before implementing it, then
-`propagate` to derive its tests. If it belongs in the root, extend
+`propagate` to derive its tests. If it belongs in the root's Scope, extend
 `docs/specs/pachinko.allium`; otherwise add a module under `docs/specs/` with
 `-- allium: 3` and Scope, Includes, Excludes, Dependencies and Vocabulary comments.
 Import it from the root using `use "./<module>.allium" as <alias>`, replacing both
@@ -53,13 +53,14 @@ page's module table to reflect its new responsibility.
 
 Record domain terms in [Terminology](../project/terminology.md). Run both spec
 gates and plan the new module, then follow the test and implementation loop above.
-The placeholder currently yields no obligations because it states no behaviour;
-the first behavioural clauses must bring their tests with them.
+The root's obligations are not covered by any test yet: the first implementation
+change derives them with `propagate` and brings its tests with it.
 
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-has none today; an undefined domain is not permission to invent one.
+carries nine today, listed at its end; each marks a decision the maintainer has not
+made, and none is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.
 - If a new gap appears, add an `open question` rather than guess.
@@ -82,8 +83,8 @@ green `just analyse-specs` is not proof that every guard is satisfiable. Read th
 and its tests for that. Use these recipes so the project's pin and report checks apply.
 
 The following section is carried verbatim from libpawdoku at `ccdd001`. Its
-historical module examples describe that repository; this repository currently
-has only the placeholder listed above.
+historical module examples describe that repository; this repository has only the
+root module listed above.
 
 ### Diagnostics and waivers
 

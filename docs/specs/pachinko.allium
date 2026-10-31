@@ -3,19 +3,792 @@
 -- Pachinko — the root module
 --
 -- Scope
---   The domain of this repository is not yet defined. This module is where
---   it will be: the first specification change that names a behaviour
---   states it here, or in a module this one imports, before any code in
---   crates/libpachinko or crates/pachinko implements it.
+--   One deployment is one queue of pockets. Publishers publish records
+--   into pockets; a pocket keeps one record per record key and a higher
+--   rank supersedes in place; a consumer leases one pocket at a time,
+--   pulls its oldest records in bounded batches, and acks, nacks, renews
+--   or releases. Elicited from the maintainer on 2026-10-30.
 --
 -- Includes
---   Nothing yet. The module declares no entity, rule, surface, invariant or config.
+--   Publisher, Consumer, Pocket, Record, Lease, SupersededRecord,
+--   DeadLetter; publish and supersede; claim, pull, ack, nack, renew,
+--   release and lease expiry; parking after consecutive expiries;
+--   decay of superseded records and dead letters.
 --
 -- Excludes
---   - Every behaviour, until a specification change defines one.
+--   - Storage, snapshots, replication and recovery: implementation.
+--   - Transport, wire format and client authentication: the spike
+--     decision 0014 names, triggered by the surfaces below.
+--   - Memory bounds, disk spill and autoscaling: deployment; see the
+--     capacity open question.
+--   - Topics: a deployment is one queue; separate concerns run separate
+--     deployments.
+--   - Reading the superseded and dead-letter queues: open question.
 --
 -- Dependencies
---   None. No other module exists for this one to import.
+--   None.
 --
 -- Vocabulary
---   None yet. docs/project/terminology.md is the glossary.
+--   Pocket: one entry of the queue, named by a pocket key; owns its records.
+--   Record: the one slot a record key has in a pocket, carrying the latest
+--     rank and payload. Never message.
+--   Rank: the publisher-supplied order between the versions of one key;
+--     higher wins. A version is one publish of a key and its rank orders
+--     it; the rank itself is never called a version.
+--   Supersede: a higher rank replaces a record's rank and payload in place.
+--     Never duel.
+--   Superseded record: a payload that lost a supersede, or arrived with a
+--     lower rank than stored (stale), kept visible until it decays. Never
+--     dropped.
+--   Dead letter: a nacked payload, kept visible until it decays.
+--   Lease: a consumer's exclusive, renewable claim on one pocket.
+--   Consumer: the party that pulls, acks, nacks, renews and releases.
+--     Never holder, subscriber or worker.
+--   Publisher: the party that publishes. Never producer.
+--   Payload: the opaque bytes a record carries; pachinko never reads them.
+--     Typed String below because Allium 3 has no byte type; the
+--     implementation stores bytes.
+--   Batch: what a pull hands back, the pocket key and zero or more records.
+--   Queued, leased, idle, parked: a pocket's states. Idle has no records;
+--     parked was set aside after consecutive lease expiries.
+--   Queued, held, deferred: a record's states. Deferred means a newer
+--     version arrived while the key was held and the held version has been
+--     acked or nacked; it restarts at the back and is pullable again once
+--     the lease ends.
+--   Never primary queue or secondary queue: say the pocket order and the
+--     pocket's records.
+
+------------------------------------------------------------
+-- Entities
+------------------------------------------------------------
+
+entity Publisher {
+    id: String
+}
+
+entity Consumer {
+    id: String
+
+    leases: Lease with consumer = this
+    active_leases: leases where status = active
+}
+
+-- Queued pockets are ordered by enqueued_at, oldest first. That order is
+-- the queue; nothing else positions a pocket.
+entity Pocket {
+    key: String
+    status: queued | leased | idle | parked
+    enqueued_at: Timestamp
+    consecutive_expiries: Integer
+
+    records: Record with pocket = this
+    queued_records: records where status = queued
+    held_records: records where status = held
+    deferred_records: records where status = deferred
+    leases: Lease with pocket = this
+    active_leases: leases where status = active
+
+    transitions status {
+        queued -> leased
+        leased -> queued
+        leased -> idle
+        leased -> parked
+        idle -> queued
+        parked -> queued
+    }
+
+    invariant LeasedHasOneActiveLease {
+        status = leased implies active_leases.count = 1
+    }
+
+    invariant UnleasedHasNoActiveLease {
+        status != leased implies active_leases.count = 0
+    }
+
+    invariant IdleHasNoRecords {
+        status = idle implies records.count = 0
+    }
+
+    invariant ExpiriesWithinLimit {
+        consecutive_expiries <= config.max_consecutive_expiries
+    }
+}
+
+-- One record per key per pocket. Queued records are ordered by queued_at,
+-- oldest first. A supersede changes rank and payload and leaves queued_at
+-- alone; deferral sets queued_at to now, which is the back.
+entity Record {
+    pocket: Pocket
+    key: String
+    rank: Integer
+    payload: String
+    queued_at: Timestamp
+    status: queued | held | deferred
+    held_rank: Integer when status = held
+    held_payload: String when status = held
+
+    transitions status {
+        queued -> held
+        held -> queued
+        held -> deferred
+        deferred -> queued
+    }
+
+    invariant HeldVersionNotNewer {
+        status = held implies held_rank <= rank
+    }
+}
+
+entity SupersededRecord {
+    pocket: Pocket
+    key: String
+    rank: Integer
+    payload: String
+    reason: superseded | stale
+    shed_at: Timestamp
+    expires_at: Timestamp
+
+    invariant ShedBeforeExpiry {
+        shed_at <= expires_at
+    }
+}
+
+entity DeadLetter {
+    pocket: Pocket
+    key: String
+    rank: Integer
+    payload: String
+    nacked_by: Consumer
+    nacked_at: Timestamp
+    expires_at: Timestamp
+
+    invariant NackedBeforeExpiry {
+        nacked_at <= expires_at
+    }
+}
+
+entity Lease {
+    pocket: Pocket
+    consumer: Consumer
+    status: active | released | expired
+    granted_at: Timestamp
+    expires_at: Timestamp
+    ended_at: Timestamp when status = released | expired
+
+    transitions status {
+        active -> released
+        active -> expired
+        terminal: released, expired
+    }
+
+    invariant GrantedBeforeExpiry {
+        granted_at <= expires_at
+    }
+
+    invariant EndedAfterGrant {
+        status in {released, expired} implies ended_at >= granted_at
+    }
+}
+
+------------------------------------------------------------
+-- Config
+------------------------------------------------------------
+
+-- The defaults are the maintainer's sketch's, except max_pull_batch, a
+-- placeholder nobody has chosen; a deployment sets its own.
+config {
+    lease_ttl: Duration = 5.minutes
+    max_consecutive_expiries: Integer = 3
+    max_pull_batch: Integer = 100
+    superseded_ttl: Duration = 12.hours
+    dead_letter_ttl: Duration = 12.hours
+}
+
+------------------------------------------------------------
+-- Rules
+------------------------------------------------------------
+
+-- Identity -------------------------------------------------
+
+rule PublisherJoins {
+    when: PublisherJoins(publisher_id)
+    requires: not exists Publisher{id: publisher_id}
+    ensures: Publisher.created(id: publisher_id)
+}
+
+rule ConsumerJoins {
+    when: ConsumerJoins(consumer_id)
+    requires: not exists Consumer{id: consumer_id}
+    ensures: Consumer.created(id: consumer_id)
+}
+
+-- Publish --------------------------------------------------
+-- Four rules share the trigger with disjoint guards. No rule covers
+-- rank = stored rank: the checker treats that publish as rejected, which
+-- is a placeholder, not a decision; see the first open question.
+
+rule PublishIntoNewPocket {
+    when: Publish(publisher, pocket_key, record_key, rank, payload)
+    requires: not exists Pocket{key: pocket_key}
+    ensures: Pocket.created(
+        key: pocket_key,
+        status: queued,
+        enqueued_at: now,
+        consecutive_expiries: 0
+    )
+    ensures: Record.created(
+        pocket: Pocket{key: pocket_key},
+        key: record_key,
+        rank: rank,
+        payload: payload,
+        queued_at: now,
+        status: queued
+    )
+}
+
+-- Every publish into an existing pocket emits PocketTouched; the two
+-- revive rules below answer it only when the pocket is idle or parked.
+
+rule PublishNewKey {
+    when: Publish(publisher, pocket_key, record_key, rank, payload)
+    let pocket = Pocket{key: pocket_key}
+    requires: exists pocket
+    requires: not exists Record{pocket: pocket, key: record_key}
+    ensures: Record.created(
+        pocket: pocket,
+        key: record_key,
+        rank: rank,
+        payload: payload,
+        queued_at: now,
+        status: queued
+    )
+    ensures: PocketTouched(pocket_key: pocket_key)
+}
+
+rule Supersede {
+    when: Publish(publisher, pocket_key, record_key, rank, payload)
+    let pocket = Pocket{key: pocket_key}
+    requires: exists pocket
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: rank > record.rank
+    let old_rank = record.rank
+    let old_payload = record.payload
+    ensures: SupersededRecord.created(
+        pocket: pocket,
+        key: record_key,
+        rank: old_rank,
+        payload: old_payload,
+        reason: superseded,
+        shed_at: now,
+        expires_at: now + config.superseded_ttl
+    )
+    ensures: record.rank = rank
+    ensures: record.payload = payload
+    ensures: PocketTouched(pocket_key: pocket_key)
+}
+
+rule DropStalePublish {
+    when: Publish(publisher, pocket_key, record_key, rank, payload)
+    let pocket = Pocket{key: pocket_key}
+    requires: exists pocket
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: rank < record.rank
+    ensures: SupersededRecord.created(
+        pocket: pocket,
+        key: record_key,
+        rank: rank,
+        payload: payload,
+        reason: stale,
+        shed_at: now,
+        expires_at: now + config.superseded_ttl
+    )
+    ensures: PocketTouched(pocket_key: pocket_key)
+}
+
+rule ReviveIdlePocket {
+    when: PocketTouched(pocket_key)
+    let pocket = Pocket{key: pocket_key}
+    requires: exists pocket
+    requires: pocket.status = idle
+    ensures: pocket.status = queued
+    ensures: pocket.enqueued_at = now
+    ensures: pocket.consecutive_expiries = 0
+}
+
+rule ReviveParkedPocket {
+    when: PocketTouched(pocket_key)
+    let pocket = Pocket{key: pocket_key}
+    requires: exists pocket
+    requires: pocket.status = parked
+    ensures: pocket.status = queued
+    ensures: pocket.enqueued_at = now
+    ensures: pocket.consecutive_expiries = 0
+}
+
+-- Pull -----------------------------------------------------
+-- oldest(records, r => r.queued_at, n) is a black box: the n records with
+-- the smallest queued_at, in that order; all of them when n exceeds their
+-- count and none when n is not positive. min_by and min are black boxes:
+-- the element with the smallest key, and the smaller of two integers.
+--
+-- A pull emits Handed for each record of the batch and HoldRecord moves
+-- that record to held; the whole pull is one outcome, the chain is how a
+-- per-record transition is written. Release and expiry emit Freed the
+-- same way.
+
+rule PullWithinLease {
+    when: Pull(consumer, limit)
+    let lease = Lease{consumer: consumer, status: active}
+    requires: exists lease
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    let batch = oldest(pocket.queued_records, r => r.queued_at, min(limit, config.max_pull_batch))
+    ensures: lease.expires_at = now + config.lease_ttl
+    ensures:
+        for record in batch:
+            Handed(pocket: pocket, record_key: record.key)
+    ensures: Batch(consumer: consumer, pocket: pocket, records: batch)
+}
+
+rule PullClaimsFrontPocket {
+    when: Pull(consumer, limit)
+    requires: not exists Lease{consumer: consumer, status: active}
+    let free = Pockets where status = queued
+    requires: free.count > 0
+    let pocket = min_by(free, p => p.enqueued_at)
+    requires: pocket.status = queued
+    let batch = oldest(pocket.queued_records, r => r.queued_at, min(limit, config.max_pull_batch))
+    ensures: Lease.created(
+        pocket: pocket,
+        consumer: consumer,
+        status: active,
+        granted_at: now,
+        expires_at: now + config.lease_ttl
+    )
+    ensures: pocket.status = leased
+    ensures:
+        for record in batch:
+            Handed(pocket: pocket, record_key: record.key)
+    ensures: Batch(consumer: consumer, pocket: pocket, records: batch)
+}
+
+rule HoldRecord {
+    when: Handed(pocket, record_key)
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = queued
+    ensures: record.status = held
+    ensures: record.held_rank = record.rank
+    ensures: record.held_payload = record.payload
+}
+
+rule PullFindsNoPocket {
+    when: Pull(consumer, limit)
+    requires: not exists Lease{consumer: consumer, status: active}
+    let free = Pockets where status = queued
+    requires: free.count = 0
+    ensures: NoPocketAvailable(consumer: consumer)
+}
+
+-- Ack and nack ---------------------------------------------
+
+rule AckSettlesRecord {
+    when: Ack(consumer, pocket, record_key)
+    let lease = Lease{pocket: pocket, consumer: consumer, status: active}
+    requires: exists lease
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = held
+    requires: record.held_rank = record.rank
+    ensures: lease.expires_at = now + config.lease_ttl
+    ensures: not exists record
+}
+
+rule AckDefersNewerVersion {
+    when: Ack(consumer, pocket, record_key)
+    let lease = Lease{pocket: pocket, consumer: consumer, status: active}
+    requires: exists lease
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = held
+    requires: record.held_rank < record.rank
+    ensures: lease.expires_at = now + config.lease_ttl
+    ensures: record.status = deferred
+    ensures: record.queued_at = now
+    ensures: record.held_rank = null
+    ensures: record.held_payload = null
+}
+
+rule NackSettlesRecord {
+    when: Nack(consumer, pocket, record_key)
+    let lease = Lease{pocket: pocket, consumer: consumer, status: active}
+    requires: exists lease
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = held
+    requires: record.held_rank = record.rank
+    let held_rank = record.held_rank
+    let held_payload = record.held_payload
+    ensures: lease.expires_at = now + config.lease_ttl
+    ensures: DeadLetter.created(
+        pocket: pocket,
+        key: record_key,
+        rank: held_rank,
+        payload: held_payload,
+        nacked_by: consumer,
+        nacked_at: now,
+        expires_at: now + config.dead_letter_ttl
+    )
+    ensures: not exists record
+}
+
+rule NackDefersNewerVersion {
+    when: Nack(consumer, pocket, record_key)
+    let lease = Lease{pocket: pocket, consumer: consumer, status: active}
+    requires: exists lease
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = held
+    requires: record.held_rank < record.rank
+    let held_rank = record.held_rank
+    let held_payload = record.held_payload
+    ensures: lease.expires_at = now + config.lease_ttl
+    ensures: DeadLetter.created(
+        pocket: pocket,
+        key: record_key,
+        rank: held_rank,
+        payload: held_payload,
+        nacked_by: consumer,
+        nacked_at: now,
+        expires_at: now + config.dead_letter_ttl
+    )
+    ensures: record.status = deferred
+    ensures: record.queued_at = now
+    ensures: record.held_rank = null
+    ensures: record.held_payload = null
+}
+
+-- Renew and release ----------------------------------------
+
+rule Renew {
+    when: Renew(consumer)
+    let lease = Lease{consumer: consumer, status: active}
+    requires: exists lease
+    ensures: lease.expires_at = now + config.lease_ttl
+}
+
+rule ReleaseRequeuesPocket {
+    when: Release(consumer)
+    let lease = Lease{consumer: consumer, status: active}
+    requires: exists lease
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    requires: pocket.records.count > 0
+    ensures: lease.status = released
+    ensures: lease.ended_at = now
+    ensures:
+        for record in pocket.held_records:
+            Freed(pocket: pocket, record_key: record.key)
+        for record in pocket.deferred_records:
+            Freed(pocket: pocket, record_key: record.key)
+    ensures: pocket.status = queued
+    ensures: pocket.enqueued_at = now
+    ensures: pocket.consecutive_expiries = 0
+}
+
+rule RequeueHeldRecord {
+    when: Freed(pocket, record_key)
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = held
+    ensures: record.status = queued
+    ensures: record.held_rank = null
+    ensures: record.held_payload = null
+}
+
+rule RequeueDeferredRecord {
+    when: Freed(pocket, record_key)
+    let record = Record{pocket: pocket, key: record_key}
+    requires: exists record
+    requires: record.status = deferred
+    ensures: record.status = queued
+}
+
+rule ReleaseIdlesEmptyPocket {
+    when: Release(consumer)
+    let lease = Lease{consumer: consumer, status: active}
+    requires: exists lease
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    requires: pocket.records.count = 0
+    ensures: lease.status = released
+    ensures: lease.ended_at = now
+    ensures: pocket.status = idle
+    ensures: pocket.consecutive_expiries = 0
+}
+
+-- Lease expiry ---------------------------------------------
+-- The clock emits LeaseLapsed once per active lease whose expires_at has
+-- passed; the three rules below process it with disjoint guards. The
+-- lapse is handled in the same stream as the consumer's actions: a
+-- release processed first ends the lease, a renewal, ack, nack or pull
+-- processed first moves expires_at, and either way the lapse stops at
+-- its guards. Whether such a late action should succeed at all is the
+-- eighth open question. enqueued_at is untouched on the queued path, so
+-- the pocket keeps its place at the front.
+
+rule LeaseLapses {
+    when: lease: Lease.expires_at <= now
+    requires: lease.status = active
+    ensures: LeaseLapsed(lease: lease)
+}
+
+rule LeaseExpiryParksPocket {
+    when: LeaseLapsed(lease)
+    requires: lease.status = active
+    requires: lease.expires_at <= now
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    requires: pocket.consecutive_expiries + 1 >= config.max_consecutive_expiries
+    ensures: lease.status = expired
+    ensures: lease.ended_at = now
+    ensures:
+        for record in pocket.held_records:
+            Freed(pocket: pocket, record_key: record.key)
+        for record in pocket.deferred_records:
+            Freed(pocket: pocket, record_key: record.key)
+    ensures: pocket.consecutive_expiries = pocket.consecutive_expiries + 1
+    ensures: pocket.status = parked
+}
+
+rule LeaseExpiryKeepsPocketAtFront {
+    when: LeaseLapsed(lease)
+    requires: lease.status = active
+    requires: lease.expires_at <= now
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    requires: pocket.consecutive_expiries + 1 < config.max_consecutive_expiries
+    requires: pocket.records.count > 0
+    ensures: lease.status = expired
+    ensures: lease.ended_at = now
+    ensures:
+        for record in pocket.held_records:
+            Freed(pocket: pocket, record_key: record.key)
+        for record in pocket.deferred_records:
+            Freed(pocket: pocket, record_key: record.key)
+    ensures: pocket.consecutive_expiries = pocket.consecutive_expiries + 1
+    ensures: pocket.status = queued
+}
+
+-- The expiry decision was shown for a pocket with records. A pocket whose
+-- records were all acked or nacked before its lease lapses follows the
+-- release rule and goes idle, the state of a pocket with no records; at the
+-- parking threshold it parks instead, since parking has no records guard.
+rule LeaseExpiryIdlesEmptyPocket {
+    when: LeaseLapsed(lease)
+    requires: lease.status = active
+    requires: lease.expires_at <= now
+    let pocket = lease.pocket
+    requires: pocket.status = leased
+    requires: pocket.consecutive_expiries + 1 < config.max_consecutive_expiries
+    requires: pocket.records.count = 0
+    ensures: lease.status = expired
+    ensures: lease.ended_at = now
+    ensures: pocket.consecutive_expiries = pocket.consecutive_expiries + 1
+    ensures: pocket.status = idle
+}
+
+-- Decay ----------------------------------------------------
+
+rule SupersededRecordDecays {
+    when: shed: SupersededRecord.expires_at <= now
+    ensures: not exists shed
+}
+
+rule DeadLetterDecays {
+    when: letter: DeadLetter.expires_at <= now
+    ensures: not exists letter
+}
+
+------------------------------------------------------------
+-- Invariants
+------------------------------------------------------------
+
+-- The model is defined for max_consecutive_expiries >= 1: a pocket parks on
+-- its max_consecutive_expiries-th consecutive lapse, and at 0 the parking
+-- rule would raise consecutive_expiries above the limit.
+invariant ExpiryLimitPositive {
+    config.max_consecutive_expiries >= 1
+}
+
+-- The model is defined for max_pull_batch >= 1: below that no pull can
+-- hand out a record, so no record ever leaves queued. The figure itself
+-- is a deployment's to choose.
+invariant PullBatchPositive {
+    config.max_pull_batch >= 1
+}
+
+-- The model is defined for non-negative TTLs: each stamps an expires_at at
+-- or after the timestamp it is measured from, which GrantedBeforeExpiry,
+-- ShedBeforeExpiry and NackedBeforeExpiry assert. A zero TTL is admitted;
+-- expires_at then equals that timestamp and the three hold with equality.
+-- A positive floor is the maintainer's to set.
+invariant LeaseTtlNonNegative {
+    config.lease_ttl >= 0.seconds
+}
+
+invariant SupersededTtlNonNegative {
+    config.superseded_ttl >= 0.seconds
+}
+
+invariant DeadLetterTtlNonNegative {
+    config.dead_letter_ttl >= 0.seconds
+}
+
+invariant UniquePublisherId {
+    for a in Publishers:
+        for b in Publishers:
+            a != b implies a.id != b.id
+}
+
+invariant UniqueConsumerId {
+    for a in Consumers:
+        for b in Consumers:
+            a != b implies a.id != b.id
+}
+
+invariant OnePocketPerKey {
+    for a in Pockets:
+        for b in Pockets:
+            a != b implies a.key != b.key
+}
+
+invariant OneRecordPerKeyPerPocket {
+    for a in Records:
+        for b in Records:
+            a != b and a.pocket = b.pocket implies a.key != b.key
+}
+
+invariant OneActiveLeasePerPocket {
+    for a in Leases:
+        for b in Leases:
+            a != b and a.status = active and b.status = active
+                implies a.pocket != b.pocket
+}
+
+invariant OneActiveLeasePerConsumer {
+    for c in Consumers:
+        c.active_leases.count <= 1
+}
+
+invariant OutstandingOnlyWhileLeased {
+    for r in Records:
+        r.status in {held, deferred} implies r.pocket.status = leased
+}
+
+------------------------------------------------------------
+-- Surfaces
+------------------------------------------------------------
+
+surface Publishing {
+    facing publisher: Publisher
+
+    provides:
+        PublisherJoins(publisher_id)
+        Publish(publisher, pocket_key, record_key, rank, payload)
+
+    @guarantee NeverRefusedForCapacity
+        -- A publish is never rejected because the deployment is full.
+        -- When space must be reclaimed, SupersededRecords and DeadLetters
+        -- are removed before their expires_at; a Record is never removed
+        -- for capacity. Which of them go first is the capacity open question.
+
+    @guarantee EveryDropIsVisible
+        -- A payload that loses a supersede or arrives with a lower rank
+        -- than stored becomes a SupersededRecord before it is forgotten.
+        -- Nothing is dropped silently.
+
+    @guarantee OldestSlotNewestPayload
+        -- A key's unprocessed record keeps the queued_at of its first
+        -- publish however many times it is superseded; only its rank and
+        -- payload change.
+
+    @guidance
+        -- Throughput over latency. Batch and defer where it raises the
+        -- publish rate; tail latency is secondary.
+}
+
+surface Consuming {
+    facing consumer: Consumer
+
+    -- Zero or one lease by the invariant; iterating avoids a null read.
+    let leases = Leases where consumer = consumer and status = active
+
+    exposes:
+        for lease in leases:
+            lease.pocket.key
+            lease.expires_at
+            for record in lease.pocket.held_records:
+                record.key
+                record.held_rank
+                record.held_payload
+
+    provides:
+        ConsumerJoins(consumer_id)
+        Pull(consumer, limit)
+        for lease in leases:
+            Ack(consumer, lease.pocket, record_key)
+            Nack(consumer, lease.pocket, record_key)
+            Renew(consumer)
+            Release(consumer)
+
+    @guarantee ExclusivePocket
+        -- While a lease is active no other consumer is handed a record
+        -- from its pocket.
+
+    @guarantee OldestFirst
+        -- A batch holds the queued records with the smallest queued_at,
+        -- in that order, never more than max_pull_batch and never more
+        -- than limit when limit is positive; a limit that is not positive
+        -- yields an empty batch, not an error.
+
+    @guarantee OneVisitPerKeyPerLease
+        -- A record handed out under a lease is not handed out again under
+        -- that lease: a newer version that arrives while it is held is
+        -- deferred when the held version is acked or nacked, and pulled
+        -- only once the lease has ended. A key whose held version was acked
+        -- or nacked, its record removed, and then published afresh under the
+        -- same lease is a new record; see open question 9.
+
+    @guarantee NothingLostWhileHeld
+        -- A newer version published while a key is held is kept; acking
+        -- the held version settles only that version.
+
+    @guarantee ExpiryRecoversWithinTtl
+        -- A consumer whose pulls, acks, nacks and renewals all stop loses
+        -- its lease when expires_at passes, lease_ttl after the last of
+        -- them; its held and deferred records return to queued and, unless
+        -- that lapse parks the pocket, are pullable again at once. A pocket
+        -- with no records has nothing to recover; it parks at the threshold
+        -- like any other, and below it LeaseExpiryIdlesEmptyPocket says
+        -- where it goes.
+
+    timeout:
+        LeaseLapses
+}
+
+------------------------------------------------------------
+-- Open Questions
+------------------------------------------------------------
+
+open question "Equal rank, different payload for one key: reject the publish, last arrival wins, keep both for the consumer to reconcile, or make it configurable? Decide from the conflict-resolution literature and from what comparable queues and databases do and what their users expect. Until then no rule covers rank = stored rank, so the checker treats that publish as rejected; that is a placeholder, not a decision."
+open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
+open question "Capacity beyond shedding the decaying queues first: which superseded records and dead letters shed first, a bound on records, disk spill, a back-pressure signal to publishers, or none?"
+open question "Routing by worker pool or priority (standard against high-memory workers, newly onboarded tenants first, spot against reserved): separate deployments, or a property of pockets?"
+open question "Adaptive lease TTL: should lease_ttl be derived from observed lease durations to shorten recovery after a consumer dies?"
+open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
+open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"
+open question "A pull, ack, nack, renew or release that arrives after the lease's expires_at but before the lapse is processed: does it succeed and extend the lease, as the rules allow today because they guard on status alone, or is it rejected as if the lapse had been processed first? The processing order decides until then."
+open question "A key acked or nacked under a lease, its record removed, is published again before that lease ends: is the new record pullable in the same lease, as the rules allow today because publish creates it queued, or does one visit per key per lease hold for the key itself, so that it waits for the lease to end?"

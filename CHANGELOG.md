@@ -13,10 +13,14 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The first behavioural specification, `docs/specs/pachinko.allium`: pockets holding one
+  record per key, higher ranks superseding in place, exclusive renewable leases, parking
+  after consecutive lease expiries, and decaying superseded records and dead letters.
+  Specified, not yet implemented.
 - Manual divan benchmarks and stable byte fuzzing with a weekly crash-reporting job.
 - Workspace mutation testing through `just mutants` and a weekly report workflow.
 - An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
-  Allium specifications.
+  implementation.
 - A pinned toolchain and tools, the `just initialize` setup, and the read-only
   `just check` gate: linting, tests, coverage, API documentation, dependency checks,
   metrics and a probed effects boundary for the library.
