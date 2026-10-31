@@ -18,6 +18,7 @@ pub mod machine;
 pub mod order;
 pub mod partition;
 pub mod pocket;
+pub mod pool;
 pub mod protocol;
 pub mod state;
 pub mod time;
