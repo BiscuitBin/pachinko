@@ -280,9 +280,11 @@ impl FlightService for PachinkoFlight {
     ) -> Result<Response<Self::DoActionStream>, Status> {
         begin(begun_flag(&request));
         let action = request.into_inner();
-        let body = actions::perform(&self.queue, &action.r#type, &action.body).await?;
-        let reply = arrow_flight::Result { body };
-        Ok(Response::new(stream::iter([Ok(reply)]).boxed()))
+        let bodies = actions::perform(&self.queue, &action.r#type, &action.body).await?;
+        let replies = bodies
+            .into_iter()
+            .map(|body| Ok(arrow_flight::Result { body }));
+        Ok(Response::new(stream::iter(replies).boxed()))
     }
 
     async fn list_actions(
@@ -519,7 +521,7 @@ mod tests {
 
     #[test]
     fn a_stopped_owner_is_unavailable() {
-        let status = unavailable(Stopped);
+        let status = unavailable(Stopped::OwnerTask);
         assert_eq!(status.code(), Code::Unavailable);
         assert_eq!(status.message(), "the queue's owner task has stopped");
     }

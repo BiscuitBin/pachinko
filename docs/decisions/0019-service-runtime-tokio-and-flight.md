@@ -63,7 +63,8 @@ That shutdown waits for every open request, and tonic reads a unary request's me
 before it calls the handler, so when it starts every request is told: a request whose
 handler has not begun, or an upload still open, is answered `UNAVAILABLE` and sends the
 owner nothing rather than waiting for a client that may never finish it, and a handler
-that has begun runs to its end.
+that has begun runs to its end. A task that ends before `shutdown` resolves, which only a
+panic does, starts the same shutdown, and `serve` returns `ServeError::Task`.
 
 **The lease id is a fencing token.** `libpachinko::queue::LeaseId` is a `u64` taken from the
 queue's counter when a lease is granted, monotonic and never reused. Every ack, nack,

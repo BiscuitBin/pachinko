@@ -158,3 +158,24 @@ async fn a_malformed_body_or_an_unknown_action_type_is_an_invalid_argument() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn status_answers_when_the_held_records_exceed_one_grpc_message() {
+    with_server(config(), ServeOptions::default(), |mut client| async move {
+        client.join_publisher("p").await.unwrap();
+        client.join_consumer("c1").await.unwrap();
+        let payload = vec![7_u8; 64 * 1024];
+        let keys: Vec<String> = (0..100).map(|i| format!("k{i:03}")).collect();
+        let rows: Vec<_> = keys
+            .iter()
+            .map(|key| ("orders", key.as_str(), 1_i64, payload.as_slice()))
+            .collect();
+        let batches: Vec<&[_]> = rows.chunks(25).collect();
+        client.publish_batches("p", &batches).await.unwrap();
+        let pulled = client.pull("c1", 100).await.unwrap();
+        assert_eq!(pulled.records.len(), 100, "do_get hands out all 100");
+        let status = client.status("c1").await.unwrap();
+        assert_eq!(status.held.len(), 100);
+    })
+    .await;
+}

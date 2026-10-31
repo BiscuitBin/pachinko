@@ -146,15 +146,20 @@ fn status_mask(batch: &RecordBatch, status: u8) -> BooleanArray {
     mask_where(batch, STATUS, &Scalar::new(UInt8Array::from(vec![status])))
 }
 
-/// The row holding `key`, if any.
-fn row_of(batch: &RecordBatch, key: &str) -> Option<usize> {
-    key_mask(batch, key).values().set_indices().next()
+/// The first row under `mask`, if any.
+fn first_row(mask: &BooleanArray) -> Option<usize> {
+    mask.values().set_indices().next()
 }
 
-/// The row holding `key` while it is held, if any.
-fn held_row(batch: &RecordBatch, key: &str) -> Option<usize> {
+/// The row holding `key`, if any.
+fn row_of(batch: &RecordBatch, key: &str) -> Option<usize> {
+    first_row(&key_mask(batch, key))
+}
+
+/// The row under a key's `mask` while it is held, if any.
+fn held_in(batch: &RecordBatch, mask: &BooleanArray) -> Option<usize> {
     let statuses = batch.column(STATUS).as_primitive::<UInt8Type>();
-    row_of(batch, key).filter(|row| statuses.value(*row) == HELD)
+    first_row(mask).filter(|row| statuses.value(*row) == HELD)
 }
 
 /// The status a `status` code stands for.
@@ -340,9 +345,9 @@ impl PocketRecords for ArrowRecords {
     }
 
     fn supersede(&mut self, key: &str, version: Version) -> Option<Version> {
-        let row = row_of(&self.batch, key)?;
-        let old = latest_at(&self.batch, row);
         let mask = key_mask(&self.batch, key);
+        let row = first_row(&mask)?;
+        let old = latest_at(&self.batch, row);
         let rank = Scalar::new(Int64Array::from(vec![version.rank]));
         let payload = Scalar::new(LargeBinaryArray::from(vec![version.payload.as_slice()]));
         let ranks = zip_column(&self.batch, &mask, &rank, RANK);
@@ -361,20 +366,18 @@ impl PocketRecords for ArrowRecords {
     }
 
     fn settle(&mut self, key: &str) -> Option<Version> {
-        let row = held_row(&self.batch, key)?;
+        let mask = key_mask(&self.batch, key);
+        let row = held_in(&self.batch, &mask)?;
         let held = held_at(&self.batch, row);
-        let others = kernel(neq(
-            self.batch.column(RECORD_KEY),
-            &Scalar::new(LargeStringArray::from(vec![key])),
-        ));
+        let others = BooleanArray::from(!mask.values());
         self.batch = kernel(filter_record_batch(&self.batch, &others));
         held
     }
 
     fn defer(&mut self, key: &str, position: u64) -> Option<Version> {
-        let row = held_row(&self.batch, key)?;
-        let held = held_at(&self.batch, row);
         let mask = key_mask(&self.batch, key);
+        let row = held_in(&self.batch, &mask)?;
+        let held = held_at(&self.batch, row);
         let positions = zip_column(
             &self.batch,
             &mask,

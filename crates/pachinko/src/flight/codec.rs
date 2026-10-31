@@ -302,7 +302,7 @@ pub(super) fn release_reply(lease: &Lease) -> Result<Bytes, Status> {
 /// The reply to `status`: the `Consuming` surface's `exposes`. The schema's
 /// metadata says whether a lease is active and, when it is, its id, pocket key and
 /// expiry; the rows are its held records' `record_key`, `rank` and `payload`.
-pub(super) fn status_reply(view: Option<LeaseView>) -> Result<Bytes, Status> {
+pub(super) fn status_reply(view: Option<LeaseView>) -> Result<Vec<Bytes>, Status> {
     let (metadata, held) = view.map_or_else(
         || (vec![(LEASE, "none".to_owned())], Vec::new()),
         |view| {
@@ -316,7 +316,32 @@ pub(super) fn status_reply(view: Option<LeaseView>) -> Result<Bytes, Status> {
         },
     );
     let schema = schema_with(&batch_schema(), &metadata);
-    write_stream(&held_batch(schema, &held)?)
+    held_chunks(&held)
+        .into_iter()
+        .map(|chunk| write_stream(&held_batch(Arc::clone(&schema), chunk)?))
+        .collect()
+}
+
+/// The most key and payload bytes one `status` reply message carries before the
+/// next record starts another: arrow-flight's `do_get` target, so each message
+/// stays under a gRPC client's default 4 MiB limit.
+const STATUS_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
+
+/// `held` in runs of at most [`STATUS_MESSAGE_BYTES`], each at least one record;
+/// no records is one empty run.
+fn held_chunks(held: &[HeldRecord]) -> Vec<&[HeldRecord]> {
+    let mut chunks = Vec::new();
+    let (mut start, mut bytes) = (0, 0);
+    for (index, record) in held.iter().enumerate() {
+        let size = record.key.len() + record.payload.len();
+        if index > start && bytes + size > STATUS_MESSAGE_BYTES {
+            chunks.push(&held[start..index]);
+            (start, bytes) = (index, 0);
+        }
+        bytes += size;
+    }
+    chunks.push(&held[start..]);
+    chunks
 }
 
 /// `held` as a batch of `schema`.
@@ -378,8 +403,9 @@ fn internal(error: &ArrowError) -> Status {
 #[cfg(test)]
 mod tests {
     use super::{
-        lease_value, outcome_name, pull_reply, pull_ticket, put_input, put_result, read_one_row,
-        release_reply, renew_reply, settle_reply, status_reply, utf8_value, write_stream,
+        STATUS_MESSAGE_BYTES, held_chunks, lease_value, outcome_name, pull_reply, pull_ticket,
+        put_input, put_result, read_one_row, release_reply, renew_reply, settle_reply,
+        status_reply, utf8_value, write_stream,
     };
     use arrow_array::cast::AsArray;
     use arrow_array::types::UInt64Type;
@@ -395,7 +421,7 @@ mod tests {
     use libpachinko::queue::{
         LeaseId, Publication, PublishOutcome, PullOutcome, Queue, SettleOutcome,
     };
-    use libpachinko::records::MemoryRecords;
+    use libpachinko::records::{HeldRecord, MemoryRecords};
     use std::sync::Arc;
     use tonic::Code;
 
@@ -701,7 +727,7 @@ mod tests {
         let renewed = read(&renew_reply(Timestamp::from_millis(42)).unwrap());
         assert_eq!(renewed.column(0).as_primitive::<UInt64Type>().value(0), 42);
 
-        let status = read(&status_reply(queue.lease_view("c").unwrap()).unwrap());
+        let status = read(&status_reply(queue.lease_view("c").unwrap()).unwrap()[0]);
         let metadata = status.schema().metadata().clone();
         assert_eq!(metadata.get("lease").unwrap(), "active");
         assert_eq!(metadata.get("pocket_key").unwrap(), "pk");
@@ -723,7 +749,7 @@ mod tests {
         let ended_at = released.column_by_name("ended_at").unwrap();
         assert_eq!(ended_at.as_primitive::<UInt64Type>().value(0), 7);
 
-        let none = read(&status_reply(None).unwrap());
+        let none = read(&status_reply(None).unwrap()[0]);
         assert_eq!(none.schema().metadata().get("lease").unwrap(), "none");
         assert_eq!(none.num_rows(), 0);
     }
@@ -733,5 +759,27 @@ mod tests {
         let (schema, records) = pull_reply(PullOutcome::NoPocketAvailable).unwrap();
         assert_eq!(schema.metadata().get("outcome").unwrap(), "no_pocket");
         assert!(records.is_none());
+    }
+
+    #[test]
+    fn held_chunks_split_at_the_status_message_size() {
+        let record = |key: &str, size: usize| HeldRecord::new(key.to_owned(), 1, vec![0; size]);
+        let lens = |held: &[HeldRecord]| -> Vec<usize> {
+            held_chunks(held).iter().map(|chunk| chunk.len()).collect()
+        };
+        assert_eq!(lens(&[]), vec![0], "no records is one empty run");
+
+        let half = STATUS_MESSAGE_BYTES / 2 - 1;
+        let held = [
+            record("a", half),
+            record("b", half),
+            record("c", STATUS_MESSAGE_BYTES + 1),
+            record("d", 1),
+        ];
+        assert_eq!(
+            lens(&held),
+            vec![2, 1, 1],
+            "a and b fit together; c is over the limit alone"
+        );
     }
 }

@@ -72,14 +72,22 @@ pub(super) fn listing() -> Vec<ActionType> {
 }
 
 /// Performs the action `kind` with `body` and returns its reply.
-pub(super) async fn perform(queue: &QueueHandle, kind: &str, body: &[u8]) -> Result<Bytes, Status> {
+pub(super) async fn perform(
+    queue: &QueueHandle,
+    kind: &str,
+    body: &[u8],
+) -> Result<Vec<Bytes>, Status> {
     match kind {
-        PUBLISHER_JOINS => publisher_joins_action(queue, body).await,
-        CONSUMER_JOINS => consumer_joins_action(queue, body).await,
-        ACK => ack_action(queue, body).await,
-        NACK => nack_action(queue, body).await,
-        RENEW => renew_action(queue, body).await,
-        RELEASE => release_action(queue, body).await,
+        PUBLISHER_JOINS => publisher_joins_action(queue, body)
+            .await
+            .map(|reply| vec![reply]),
+        CONSUMER_JOINS => consumer_joins_action(queue, body)
+            .await
+            .map(|reply| vec![reply]),
+        ACK => ack_action(queue, body).await.map(|reply| vec![reply]),
+        NACK => nack_action(queue, body).await.map(|reply| vec![reply]),
+        RENEW => renew_action(queue, body).await.map(|reply| vec![reply]),
+        RELEASE => release_action(queue, body).await.map(|reply| vec![reply]),
         STATUS => status_action(queue, body).await,
         other => Err(Status::invalid_argument(format!(
             "unknown action type {other}"
@@ -166,7 +174,7 @@ async fn release_action(queue: &QueueHandle, body: &[u8]) -> Result<Bytes, Statu
 }
 
 /// `status`.
-async fn status_action(queue: &QueueHandle, body: &[u8]) -> Result<Bytes, Status> {
+async fn status_action(queue: &QueueHandle, body: &[u8]) -> Result<Vec<Bytes>, Status> {
     let request = codec::read_one_row(body)?;
     let consumer_id = codec::utf8_value(&request, CONSUMER_ID)?;
     let view = queue

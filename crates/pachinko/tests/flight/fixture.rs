@@ -113,6 +113,17 @@ impl Client {
 
     /// Performs action `kind` with `body` and reads its one-batch reply.
     pub(crate) async fn action(&mut self, kind: &str, body: Bytes) -> Result<RecordBatch, Status> {
+        let mut replies = self.action_replies(kind, body).await?;
+        assert_eq!(replies.len(), 1, "one reply per action");
+        Ok(replies.remove(0))
+    }
+
+    /// Performs the action `kind` with `body`, returning every reply message.
+    pub(crate) async fn action_replies(
+        &mut self,
+        kind: &str,
+        body: Bytes,
+    ) -> Result<Vec<RecordBatch>, Status> {
         let replies: Vec<Bytes> = self
             .flight
             .do_action(Action::new(kind, body))
@@ -121,8 +132,7 @@ impl Client {
             .try_collect()
             .await
             .map_err(status_of)?;
-        assert_eq!(replies.len(), 1, "one reply per action");
-        Ok(read_ipc(&replies[0]))
+        Ok(replies.iter().map(|reply| read_ipc(reply)).collect())
     }
 
     /// `publisher_joins`, returning the reply's outcome.
@@ -281,9 +291,10 @@ impl Client {
 
     /// `status` for `consumer_id`.
     pub(crate) async fn status(&mut self, consumer_id: &str) -> Result<LeaseStatus, Status> {
-        let reply = self
-            .action("status", body(vec![("consumer_id", utf8(consumer_id))]))
+        let replies = self
+            .action_replies("status", body(vec![("consumer_id", utf8(consumer_id))]))
             .await?;
+        let reply = &replies[0];
         let schema = reply.schema();
         let metadata = schema.metadata();
         Ok(LeaseStatus {
@@ -291,7 +302,7 @@ impl Client {
             lease_id: metadata.get("lease_id").map(|id| id.parse().unwrap()),
             pocket_key: metadata.get("pocket_key").cloned(),
             expires_at: metadata.get("expires_at").map(|at| at.parse().unwrap()),
-            held: records_of(&reply),
+            held: replies.iter().flat_map(records_of).collect(),
         })
     }
 }

@@ -108,8 +108,11 @@ enum Command {
 /// The owner task has stopped, so a command could not be sent or its answer never
 /// came back. The Flight handlers answer `UNAVAILABLE`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("the queue's owner task has stopped")]
-pub(crate) struct Stopped;
+pub(crate) enum Stopped {
+    /// The owner task has ended, so its inbox or a reply channel is closed.
+    #[error("the queue's owner task has stopped")]
+    OwnerTask,
+}
 
 /// A cloneable sender of commands to the queue's owner. Each method sends one
 /// command and waits for its answer.
@@ -136,8 +139,8 @@ impl QueueHandle {
         self.commands
             .send(command(reply))
             .await
-            .map_err(|_| Stopped)?;
-        answer.await.map_err(|_| Stopped)
+            .map_err(|_| Stopped::OwnerTask)?;
+        answer.await.map_err(|_| Stopped::OwnerTask)
     }
 
     /// `PublisherJoins` for `publisher_id`.
@@ -442,7 +445,10 @@ mod tests {
     #[tokio::test]
     async fn a_command_to_a_stopped_owner_is_refused() {
         let handle = QueueHandle::stopped();
-        assert_eq!(handle.join_consumer("c".to_owned()).await, Err(Stopped));
+        assert_eq!(
+            handle.join_consumer("c".to_owned()).await,
+            Err(Stopped::OwnerTask)
+        );
     }
 
     #[tokio::test]
@@ -452,7 +458,7 @@ mod tests {
         let (answered, ()) = tokio::join!(handle.join_publisher("p".to_owned()), async {
             drop(inbox.recv().await);
         });
-        assert_eq!(answered, Err(Stopped));
+        assert_eq!(answered, Err(Stopped::OwnerTask));
     }
 
     #[tokio::test]

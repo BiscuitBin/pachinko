@@ -137,7 +137,9 @@ pub enum ServeError {
 /// joined before this function returns. A request whose handler has not begun, or
 /// an upload still open, when `shutdown` resolves is answered `UNAVAILABLE` and
 /// sends the owner nothing, so it cannot hold the graceful shutdown open; a handler
-/// that has begun runs to its end.
+/// that has begun runs to its end. A task that ends before `shutdown` resolves,
+/// which only a panic does, starts the same shutdown, and `serve` returns
+/// [`ServeError::Task`].
 ///
 /// # Errors
 ///
@@ -166,10 +168,37 @@ pub async fn serve(
     let queue = Queue::new(config, SystemClock)?;
     let mut tasks = JoinSet::new();
     let started = actor::start(&mut tasks, queue, options.tick_interval);
-    let served = flight::serve_flight(started.queue, listener, shutdown).await;
+    supervise(tasks, started, listener, shutdown).await
+}
+
+/// Serves Flight until `shutdown` resolves or a task in `tasks` ends first, which
+/// before shutdown only a panic does; then stops the ticker and joins the set.
+async fn supervise(
+    mut tasks: JoinSet<()>,
+    started: actor::Started,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<(), ServeError> {
+    let (fail, failed) = tokio::sync::oneshot::channel::<()>();
+    let shutdown = async move {
+        tokio::select! {
+            () = shutdown => {}
+            _ = failed => {}
+        }
+    };
+    let flight = flight::serve_flight(started.queue, listener, shutdown);
+    let mut flight = std::pin::pin!(flight);
+    let (served, early) = tokio::select! {
+        served = &mut flight => (served, Ok(())),
+        Some(joined) = tasks.join_next() => {
+            drop(fail);
+            let early = joined.map_err(|error| ServeError::Task(error.to_string()));
+            (flight.await, early)
+        }
+    };
     drop(started.stop_ticker);
     let joined = actor::join_tasks(tasks).await;
-    served.and(joined)
+    early.and(served).and(joined)
 }
 
 /// Writes `pachinko <version>`.
@@ -268,6 +297,24 @@ mod tests {
             ServeOptions::default().tick_interval,
             Duration::from_secs(1)
         );
+    }
+
+    #[tokio::test]
+    async fn a_task_that_panics_ends_serve() {
+        use libpachinko::config::Config;
+        use libpachinko::queue::Queue;
+        let mut tasks = tokio::task::JoinSet::new();
+        let queue = Queue::new(Config::default(), super::SystemClock).unwrap();
+        let started = super::actor::start(&mut tasks, queue, Duration::from_secs(1));
+        tasks.spawn(async { panic!("the owner failed") });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let served = tokio::time::timeout(
+            Duration::from_secs(5),
+            super::supervise(tasks, started, listener, std::future::pending()),
+        )
+        .await
+        .expect("serve kept running after a task panicked");
+        assert!(matches!(served, Err(ServeError::Task(message)) if message.contains("panic")));
     }
 
     #[test]
