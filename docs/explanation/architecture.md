@@ -183,12 +183,13 @@ every trigger reaches it as a command on one bounded channel, with a one-shot re
 Flight handlers send the parties' commands, and a ticker task sends `Tick`, which
 processes lapses and decay, once a second. A lapse and a consumer's action on the same
 lease therefore meet in one stream, in arrival order, as the specification's expiry
-comment requires, and a lapse is processed up to one tick after its lease's expiry. Both
-tasks live in a `JoinSet` that `serve` owns and joins before it returns, so no task
-outlives it. On shutdown tonic finishes its graceful shutdown first, then the ticker
-stops and the owner drains the commands already sent and ends; a request whose handler
-has not begun, or an upload still open, is answered `UNAVAILABLE` rather than holding
-the shutdown open.
+comment requires, and a lapse is processed at the first `Tick` the owner reaches after
+its lease's expiry: about one tick interval later on an idle queue, later still when
+commands, such as a large publish, are queued ahead of that `Tick`. Both tasks live in a
+`JoinSet` that `serve` owns and joins before it returns, so no task outlives it. On
+shutdown tonic finishes its graceful shutdown first, then the ticker stops and the owner
+drains the commands already sent and ends; a request whose handler has not begun, or an
+upload still open, is answered `UNAVAILABLE` rather than holding the shutdown open.
 
 The Flight service carries the specification's two surfaces over gRPC: `do_put` is a
 publish, `do_get` a pull, and `do_action` carries the joins, the consumer's four lease

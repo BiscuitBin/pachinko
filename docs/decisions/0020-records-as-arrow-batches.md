@@ -54,8 +54,12 @@ the Arrow store alone.
 
 ## Consequences
 
-The effects ban stands with no gate, script, fixture or ban list changed, and `just
-effects` still fails if an Arrow crate reaches libpachinko's normal tree.
+The effects ban stands with no gate, script, fixture or ban list changed. `just effects`
+still fails if `arrow-array`, or any Arrow crate built on it such as `arrow-ord`,
+`arrow-select`, `arrow-ipc` or `arrow-flight`, reaches libpachinko's normal tree, because
+`arrow-array` brings in `getrandom`. The gate bans crates that perform effects, not Arrow
+itself: `arrow-schema`, `arrow-buffer` and `arrow-data` name no banned crate and would
+pass it.
 
 The trait is a second public contract in the library, and the queue cannot use anything
 Arrow offers that the trait does not name. A store that wanted to do more of a rule's

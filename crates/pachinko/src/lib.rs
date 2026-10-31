@@ -60,8 +60,10 @@ pub fn run(args: impl IntoIterator<Item = String>, out: &mut impl Write) -> Resu
 /// How [`serve`] runs, beyond the queue's [`Config`]: today, how often the ticker
 /// processes lapses and decay.
 ///
-/// A lapse is processed up to one tick after its lease's expiry. The default is
-/// one second; a zero interval ticks every millisecond.
+/// The interval is how often lapses are checked, not a deadline: a `Tick` waits
+/// behind commands already queued, so a lapse can be processed later than one
+/// interval after its lease's expiry. The default is one second; a zero interval
+/// ticks every millisecond.
 ///
 /// ```
 /// use pachinko::ServeOptions;

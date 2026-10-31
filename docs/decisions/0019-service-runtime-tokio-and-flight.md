@@ -90,10 +90,12 @@ A fencing token protects the queue only from actions that reach it. A consumer t
 work outside the queue, such as writing to another store, needs that store to check the
 token too, which nothing here provides.
 
-The ticker reads the wall clock through `SystemClock`, and a lapse is processed up to one
-tick interval after `expires_at` passes. A clock that jumps forward ends leases early; one
-that jumps back extends them. The module's eighth open question decides whether an action
-that arrives after `expires_at` but before the lapse is processed should succeed.
+The ticker reads the wall clock through `SystemClock`, and a lapse is processed at the
+first `Tick` the owner reaches after `expires_at` passes, which is one tick interval later
+only when no commands are queued ahead of it. A clock that jumps forward ends leases
+early; one that jumps back extends them. The module's eighth open question decides
+whether an action that arrives after `expires_at` but before the lapse is processed
+should succeed.
 
 ## What would reopen this
 

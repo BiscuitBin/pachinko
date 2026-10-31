@@ -49,10 +49,15 @@ async fn status_exposes_the_pocket_key_the_expiry_and_the_held_records() {
 async fn a_renewal_moves_the_expiry() {
     with_server(config(), ServeOptions::default(), |mut client| async move {
         let (lease, expires_at) = c1_holding(&mut client).await;
-        // Let the wall clock pass the grant's millisecond, so the renewal's
-        // expiry is later; no deadline is being approached.
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        let renewed = client.renew("c1", lease).await.unwrap();
+        // The queue never reads a time before the latest it has read, so a
+        // renewal in the grant's millisecond, or after the wall clock steps back,
+        // keeps the expiry; renew until the wall clock has passed the grant. A
+        // renewal that never moves the expiry runs into the scenario deadline.
+        let mut renewed = client.renew("c1", lease).await.unwrap();
+        while renewed == expires_at {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            renewed = client.renew("c1", lease).await.unwrap();
+        }
         assert!(renewed > expires_at, "{renewed} > {expires_at}");
         assert_eq!(client.status("c1").await.unwrap().expires_at, Some(renewed));
     })
