@@ -8,6 +8,8 @@ requires: []
 
 # Decision 0014: The service runtime waits for the specifications
 
+*Superseded by [decision 0019](0019-service-runtime-tokio-and-flight.md).*
+
 ## Context
 
 The workspace holds a library and a service

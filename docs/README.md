@@ -69,3 +69,5 @@ Specifications, under Understand, to see how the two relate.
 - [Decision 0016: The release process](decisions/0016-release-process.md)
 - [Decision 0017: Mutation testing, benchmarks and fuzzing](decisions/0017-mutation-bench-and-fuzz.md)
 - [Decision 0018: Dependency updates through Renovate](decisions/0018-renovate.md)
+- [Decision 0019: The service runs on tokio and speaks Arrow Flight](decisions/0019-service-runtime-tokio-and-flight.md)
+- [Decision 0020: Records as Arrow batches in the service](decisions/0020-records-as-arrow-batches.md)
