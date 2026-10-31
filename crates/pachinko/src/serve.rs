@@ -65,7 +65,10 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Erro
 ///
 /// The first error of the listener, the sweep or the signal handling, or
 /// [`Error::Task`] when a task panicked or did not finish within the grace period, in
-/// which case the connections still open were cut before `serve` returned.
+/// which case the connections still open were cut before `serve` returned. Errors
+/// keep the order they happened in: one that ended a task within the grace period is
+/// returned rather than the grace period's, and a task that fails after the cut is
+/// logged, not returned.
 ///
 /// ```no_run
 /// # async fn example() -> Result<(), pachinko::Error> {
@@ -133,34 +136,51 @@ fn task_result(joined: Result<TaskResult, JoinError>) -> TaskResult {
     joined.unwrap_or_else(|error| Err(Error::Task(error.to_string())))
 }
 
-/// Joins every remaining task. Past the grace period every open connection is cut,
-/// which ends the listener's wait for them at their next read or write, and the tasks
-/// are joined again, without a bound: nothing is aborted, so a connection busy in
-/// code that never reads or writes holds `serve` until it finishes, rather than
-/// outliving it.
+/// Joins every remaining task, keeping the first error. Past the grace period every
+/// open connection is cut, which ends the listener's wait for them at their next read
+/// or write, and the tasks are joined again, without a bound: nothing is aborted, so a
+/// connection busy in code that never reads or writes holds `serve` until it finishes,
+/// rather than outliving it. Errors keep the order they happened in: one a task ended
+/// with inside the grace period is returned; failing that, the grace period's own
+/// error. The cut, and any task that fails after it, is logged.
 async fn drain(
     tasks: &mut JoinSet<TaskResult>,
     cut: &watch::Sender<bool>,
     grace: Duration,
 ) -> TaskResult {
-    if let Ok(joined) = timeout(grace, join_all(tasks)).await {
-        return joined;
+    let mut first = Ok(());
+    if timeout(grace, join_into(tasks, &mut first)).await.is_ok() {
+        return first;
     }
-    cut.send_replace(true);
-    join_all(tasks).await.ok();
-    Err(Error::Task(format!(
+    let overran = Error::Task(format!(
         "shutdown took longer than {}ms; open connections were cut",
         grace.as_millis()
-    )))
+    ));
+    tracing::warn!(error = %overran, "cutting open connections");
+    cut.send_replace(true);
+    join_logging(tasks).await;
+    first.and(Err(overran))
 }
 
-/// Joins every task in `tasks`, keeping the first error.
-async fn join_all(tasks: &mut JoinSet<TaskResult>) -> TaskResult {
-    let mut first = Ok(());
+/// Joins every task in `tasks`, logging each failure: those of the tasks still
+/// running when the connections were cut, which come after the grace period's error.
+async fn join_logging(tasks: &mut JoinSet<TaskResult>) {
     while let Some(joined) = tasks.join_next().await {
-        first = first.and(task_result(joined));
+        if let Err(error) = task_result(joined) {
+            tracing::warn!(%error, "a task failed after its connections were cut");
+        }
     }
-    first
+}
+
+/// Joins every task in `tasks`, keeping the first error in `first`. `first` is the
+/// caller's, so the error survives this future being dropped part way: `join_next`
+/// is cancel-safe, so nothing else is lost either.
+async fn join_into(tasks: &mut JoinSet<TaskResult>, first: &mut TaskResult) {
+    while let Some(joined) = tasks.join_next().await {
+        if first.is_ok() {
+            *first = task_result(joined);
+        }
+    }
 }
 
 /// The HTTP listener, until shutdown starts; in-flight requests finish first, unless
@@ -363,10 +383,11 @@ mod tests {
 
     use tokio::net::TcpListener;
     use tokio::sync::watch;
+    use tokio::task::JoinSet;
 
     use tokio::time::timeout;
 
-    use super::scope;
+    use super::{drain, scope};
     use crate::{Error, ServeConfig};
 
     /// A publish whose head promises a 2-byte body, asking to be told when the handler
@@ -557,5 +578,39 @@ mod tests {
         );
         assert!(matches!(served, Some(Err(Error::Task(_)))), "{served:?}");
         drop((stream, runtime));
+    }
+
+    /// Drains a task that fails at once, if `early` is set, beside one that waits for
+    /// the cut and then fails with `late`, over a 50 ms grace period. Returns what
+    /// `drain` returned and how many tasks it left unjoined.
+    async fn drain_a_late_task(early: bool, late: &'static str) -> (Result<(), Error>, usize) {
+        let (cut, mut cutting) = watch::channel(false);
+        let mut tasks = JoinSet::new();
+        if early {
+            tasks.spawn(async { Err(Error::Task(String::from("early"))) });
+        }
+        tasks.spawn(async move {
+            drop(cutting.wait_for(|cut| *cut).await);
+            Err(Error::Task(String::from(late)))
+        });
+        let drained = drain(&mut tasks, &cut, Duration::from_millis(50)).await;
+        (drained, tasks.len())
+    }
+
+    #[tokio::test]
+    async fn a_failure_inside_the_grace_period_outlives_its_timeout() {
+        let (drained, left) = drain_a_late_task(true, "late").await;
+        assert_eq!(drained, Err(Error::Task(String::from("early"))));
+        assert_eq!(left, 0, "every task is joined");
+    }
+
+    #[tokio::test]
+    async fn a_failure_after_the_cut_comes_after_the_grace_periods_error() {
+        let (drained, left) = drain_a_late_task(false, "late").await;
+        assert!(
+            matches!(&drained, Err(Error::Task(message)) if message.starts_with("shutdown took longer")),
+            "{drained:?}"
+        );
+        assert_eq!(left, 0, "every task is joined");
     }
 }
