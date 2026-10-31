@@ -65,3 +65,6 @@ mutants.out*/
 /fuzz/corpus/
 /fuzz/artifacts/
 /fuzz/coverage/
+
+# The spikes' build products (each lockfile is committed).
+/spikes/*/target/

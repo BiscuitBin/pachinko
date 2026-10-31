@@ -33,9 +33,9 @@ fifteen minutes, raise the workflow's thirty-minute timeout before it becomes a 
 
 **Monthly.** Move the dependency pins, one kind at a time, as
 [Maintain dependencies](../how-to/maintain-dependencies.md) describes. `just lock-upgrade`
-moves all three lockfiles within the manifests' constraints — `Cargo.lock` and
-`fuzz/Cargo.lock` within the caret ranges, `pixi.lock` beneath the exact tool pins; run
-`just check` and commit all three. A tool pin itself moves in `pyproject.toml`, then
+moves all four lockfiles within the manifests' constraints — `Cargo.lock`,
+`fuzz/Cargo.lock` and `spikes/worker-pool/Cargo.lock` within the caret ranges, `pixi.lock`
+beneath the exact tool pins; run `just check` and commit all four. A tool pin itself moves in `pyproject.toml`, then
 `pixi update <name>`, then `pixi.lock` is committed. A line in `tools.txt` or
 `tools-source.txt` moves in Renovate's pull request once approved on the dashboard, and
 takes effect at the next `just install-tools`; a `tools-source.txt` line moves one release
@@ -49,7 +49,7 @@ the network, so external links rot silently until someone looks.
 
 **Per toolchain release.** Renovate's `rust toolchain` pull request moves `channel` in
 `rust-toolchain.toml`, the `Dockerfile`'s build-stage `rust` tag and, on a minor release
-only, `rust-version` in the root and fuzz `Cargo.toml`; all three take their versions
+only, `rust-version` in the root, fuzz and spike `Cargo.toml`; all five take their versions
 from the `rust` image's `-slim-bookworm` tags, so the toolchain waits for its image. On
 that branch run `just install-toolchain`, then `just clippy` before anything else:
 clippy's lint set moves with the release, and a lint that is new under `-D warnings`

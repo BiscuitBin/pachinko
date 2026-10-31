@@ -1,0 +1,82 @@
+# The execution-model spike (T20): bounded worker threads running single-threaded
+# state machines over partitions. A prototype the implementation ticket learns from,
+# never its first commit; its findings are the ticket's hand-back notes. It is not a
+# member of the repository's workspace: the empty [workspace] table makes it its own
+# root, so the lock, format, clippy and deny recipes reach it with `--manifest-path`
+# against its own committed Cargo.lock, and the root Cargo.toml is untouched.
+[package]
+name = "worker-pool"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.99"
+
+[workspace]
+
+# No dependency: std's sync_channel and thread::scope carry the first cut (ticket
+# T20, step 2). A crate enters only with a measurement that shows what it buys, and
+# with its decision-0007 note beside its range.
+[dependencies]
+
+# An excluded crate inherits nothing, so the three lint tables below copy the root
+# Cargo.toml's [workspace.lints.*] in full, rust and rustdoc included (the fuzz crate
+# copies only the forbids and the clippy table). Keep them aligned by hand.
+[lints.rust]
+unsafe_code = "forbid"
+non_ascii_idents = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+unnameable_types = "warn"
+unused_qualifications = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+missing_crate_level_docs = "warn"
+unescaped_backticks = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+missing_const_for_fn = "warn"
+use_self = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+tests_outside_test_module = "warn"
+mod_module_files = "warn"
+iter_over_hash_type = "warn"
+str_to_string = "warn"
+lossy_float_literal = "warn"
+float_cmp_const = "warn"
+same_name_method = "warn"
+cognitive_complexity = "warn"
+multiple_crate_versions = "allow"
+
+[[bin]]
+name = "worker-pool"
+path = "src/main.rs"
+
+# The root's profiles, copied because a separate root inherits none: the demo
+# binary measures in release mode, and the tests' light optimisation keeps the
+# capacity-1 flood test's wall-time bound honest under `just spike-test`.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.test]
+opt-level = 1

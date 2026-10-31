@@ -67,6 +67,9 @@ fuzz/corpus/
 fuzz/artifacts/
 fuzz/coverage/
 
+# The spikes' build products (each lockfile is committed).
+spikes/*/target/
+
 # Git metadata and ticket evidence are not build inputs.
 **/.git
 tickets/

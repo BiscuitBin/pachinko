@@ -85,7 +85,7 @@ just initialize
 This installs the pixi environment from `pixi.lock`, installs the pinned toolchain,
 refuses a cargo that is not rustup's, installs cargo-hack, cargo-release and cargo-fuzz
 from `tools.txt` and rustqual from `tools-source.txt` into `.tools/bin`, then the Allium
-checker, syncs all three lockfiles, and installs the pre-commit hook with every hook
+checker, syncs all four lockfiles, and installs the pre-commit hook with every hook
 environment. Run it once per clone. It needs the network for the pixi environment, the
 toolchain, the `tools.txt` binaries, rustqual (a signed build if one exists, otherwise a
 build from its crates.io source),
@@ -144,8 +144,8 @@ After pulling, re-sync so the installed dependencies match the lockfiles:
 just sync
 ```
 
-It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.lock` and
-`fuzz/Cargo.lock` name.
+It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.lock`,
+`fuzz/Cargo.lock` and `spikes/worker-pool/Cargo.lock` name.
 After `tools.txt` or `tools-source.txt` has moved, run `just install-tools` as well; it
 skips a version that is already there.
 

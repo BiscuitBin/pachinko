@@ -17,18 +17,18 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
-| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and over `spikes/worker-pool/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `spikes/worker-pool/Cargo.toml` with its `Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
 | 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
-| 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` | Every Rust file, the fuzz crate's included, is as rustfmt would write it. |
+| 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` and `spikes/worker-pool/Cargo.toml` | Every Rust file, the fuzz and spike crates' included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
-| 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz crate's copy of it over the fuzz targets, for the host platform, with warnings as errors. |
+| 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` and `spikes/worker-pool/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, every lint in the fuzz crate's copy of it over the fuzz targets, and every lint in the spike crate's copy over its library, binary and tests, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
 | 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API in what clippy compiles for the host with every feature, with none, and with every feature in the release profile; and the probe fixture trips every ban once while pachinko trips none. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
 | 10 | `test-doc` | `cargo test --doc` | Every doc example compiles and passes. |
 | 11 | `coverage` | `cargo llvm-cov nextest` | Every unit and integration test passes, and line coverage over `crates/*/src/**` is at or above the floor of 90%. Doctests are gate 10's. |
 | 12 | `doc` | `cargo doc` with `-D warnings --cfg docsrs` | rustdoc is warning-free under `--cfg docsrs`, intra-doc links and missing docs included. |
-| 13 | `deny` | `cargo deny check licenses bans sources` | Every dependency that ships has an allowed licence, no banned crate is in that graph, and every source is crates.io. Development dependencies are outside the graph. |
+| 13 | `deny` | `cargo deny check licenses bans sources`, then the same over `spikes/worker-pool/Cargo.toml` | Every dependency that ships has an allowed licence, no banned crate is in that graph, and every source is crates.io, for the workspace's graph and for the spike's. Development dependencies are outside the graph. |
 | 14 | `deps-unused` | `cargo shear` | No crate declares a dependency it does not use. |
 | 15 | `check-docs` | markdownlint, typos, lychee, `bg-validate-docs` | The documentation contract holds. |
 | 16 | `check-agents` | `bg-validate-agents` | The agent contract holds. |
@@ -44,7 +44,10 @@ not, and `snapshots-check` cannot pass it through cargo-insta, which is why it r
 
 `fuzz/` is a workspace of its own, so gates 2, 4 and 6 name its manifest beside the
 root one. Its clippy pass stays inside `just check` by the maintainer's choice on
-2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s warm.
+2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s warm. The execution-model
+spike under `spikes/worker-pool/` is a workspace of its own too, and gates 2, 4, 6 and 13
+name its manifest; its tests run through `just spike-test`, outside the gate, so `clippy`
+compiles them and rot shows as a build failure (ticket T20).
 
 Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
 The duplication is deliberate: a regression names itself in the list of gates rather than
@@ -132,8 +135,9 @@ choice on 2026-10-24, so a test that needs a real effect belongs under
 
 ## Outside the gate
 
-`test`, `build`, `audit`, `mutants`, `bench`, `fuzz`, `semver`, `image`, `site`, `plan-spec`
-and `check-links-online` are recipes that `just check` does not run. `test` runs nextest
+`test`, `build`, `audit`, `mutants`, `bench`, `fuzz`, `spike`, `spike-test`, `semver`,
+`image`, `site`, `plan-spec` and `check-links-online` are recipes that `just check` does
+not run. `test` runs nextest
 and the doctests in one go, which `coverage` and `test-doc` already cover between them;
 `build` compiles what `clippy` and `features` already compile; `site` builds the API
 reference that `doc` has proved, for
@@ -147,7 +151,10 @@ by hand, because machine load makes a timing no gate, and fuzzing runs weekly in
 workflow of its own ([decision 0017](../decisions/0017-mutation-bench-and-fuzz.md));
 `semver` is advisory before 1.0 ([decision 0016](../decisions/0016-release-process.md));
 and `image` needs Docker, which the source gate does not, so CI's `image` job builds the
-image instead ([decision 0015](../decisions/0015-container-image.md)).
+image instead ([decision 0015](../decisions/0015-container-image.md)). `spike` and
+`spike-test` run and test the execution-model spike, a measurement and a prototype whose
+findings are ticket T20's hand-back notes rather than a gate's verdict; `check` lints the
+crate and leaves running it to the ticket.
 [Commands](commands.md) lists every recipe.
 
 ## When a gate fails

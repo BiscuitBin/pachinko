@@ -165,6 +165,20 @@ then compares the options and a decision record supersedes
 `run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md) records the
 rest of what this repository deliberately does not do.
 
+The root module names two surfaces, so the first half of that spike has run, as ticket
+T20, under `spikes/worker-pool/`: every rule of the module as single-threaded state
+machines, one for the pocket order and the lease routing and one per partition of
+pockets, on a bounded pool of long-lived worker threads under `std::thread::scope`. It
+showed that the machines need no effect trait at all, because a machine takes `now` as
+a value and never reads a clock, spawns, sleeps or locks, so they would be library code
+under this boundary, and that the pool, which owns every effect, would be service code;
+that one machine on one thread is a baseline the partitioned pool beats by a modest
+factor on the maintainer's host, with the pool's own plumbing rather than the machines
+as the cost; and that the window between a pocket machine's decision and the order
+machine's hearing of it is real and visible as retried pulls. The ticket's hand-back
+notes hold the measurements, the hop table and a drafted recommendation. Decision 0014
+stands until its successor is taken; the transport half of the spike has not run.
+
 ## What wave 2 added
 
 The container image's entrypoint is the `pachinko` binary, built in CI on every pull
