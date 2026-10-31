@@ -79,16 +79,18 @@ fn publish_rule(state: &State, publication: &Publication) -> Result<PublishRule,
 /// `PublishIntoNewPocket`: the pocket takes `next_position`, its record the one after.
 fn publish_into_new_pocket(state: &mut State, publication: Publication) -> PublishOutcome {
     let pocket_position = take_position(&mut state.next_position);
+    let record_position = take_position(&mut state.next_position);
     let record = Record {
         rank: publication.rank,
         payload: publication.payload,
-        position: take_position(&mut state.next_position),
+        position: record_position,
         status: RecordStatus::Queued,
     };
     let pocket = Pocket {
         status: PocketStatus::Queued,
         position: pocket_position,
         consecutive_expiries: 0,
+        queued: BTreeMap::from([(record_position, publication.record_key.clone())]),
         records: BTreeMap::from([(publication.record_key, record)]),
     };
     state
@@ -100,13 +102,17 @@ fn publish_into_new_pocket(state: &mut State, publication: Publication) -> Publi
 
 /// `PublishNewKey`, then `PocketTouched`.
 fn publish_new_key(state: &mut State, publication: Publication) -> PublishOutcome {
+    let position = take_position(&mut state.next_position);
     let record = Record {
         rank: publication.rank,
         payload: publication.payload,
-        position: take_position(&mut state.next_position),
+        position,
         status: RecordStatus::Queued,
     };
     if let Some(pocket) = state.pockets.get_mut(&publication.pocket_key) {
+        pocket
+            .queued
+            .insert(position, publication.record_key.clone());
         pocket.records.insert(publication.record_key, record);
     }
     pocket_touched(state, &publication.pocket_key);

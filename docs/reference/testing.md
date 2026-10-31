@@ -255,7 +255,7 @@ be promoted to regression tests when domain targets arrive. See
 
 | Suite | Covers |
 | --- | --- |
-| In-module tests, `crates/libpachinko/src/` | `the_version_is_the_manifests`: `version` returns the version the manifest states; and, module by module, the config defaults and invariants, the identifiers, the refusals' messages, the lease-id format and the fakes. |
+| In-module tests, `crates/libpachinko/src/` | `the_version_is_the_manifests`: `version` returns the version the manifest states; and, module by module, the config defaults and invariants, the identifiers, the refusals' messages, the lease-id format, the fakes, and each pocket's index of queued records, matched against the records' statuses after each rule that touches a record and checked by a pull that pops an entry naming no queued record. |
 | `crates/libpachinko/tests/`, one file per group of rules | Each rule of `docs/specs/pachinko.allium` on its success path and on each guard that refuses it, through the public API over the fakes. |
 | `crates/libpachinko/tests/invariants.rs` | `every_invariant_holds_after_every_step_of_any_walk` and `the_walk_reaches_every_state_and_every_outcome`: the seeded property walk; T19's trace replayed through the queue; and the entities' fields, relationships and projections read back. |
 | Doctests | The example on every public item of both crates, among them the queue round trip in libpachinko's crate docs and `run`'s version line. |
