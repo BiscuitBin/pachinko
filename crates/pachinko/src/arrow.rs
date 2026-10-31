@@ -21,8 +21,8 @@ use std::sync::Arc;
 use arrow_array::cast::AsArray;
 use arrow_array::types::{Int64Type, UInt8Type, UInt32Type, UInt64Type};
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, BooleanArray, Datum, Int64Array, RecordBatch, Scalar,
-    StringArray, UInt8Array, UInt32Array, UInt64Array,
+    Array, ArrayRef, BooleanArray, Datum, Int64Array, LargeBinaryArray, LargeStringArray,
+    RecordBatch, Scalar, UInt8Array, UInt32Array, UInt64Array,
 };
 use arrow_ord::cmp::{eq, neq};
 use arrow_ord::sort::sort_to_indices;
@@ -71,8 +71,8 @@ impl Default for ArrowRecords {
     }
 }
 
-/// The schema of the batches a pull hands out: `record_key: Utf8`, `rank: Int64`
-/// and `payload: Binary`.
+/// The schema of the batches a pull hands out: `record_key: LargeUtf8`, `rank: Int64`
+/// and `payload: LargeBinary`.
 ///
 /// ```
 /// use pachinko::arrow::batch_schema;
@@ -103,9 +103,9 @@ pub fn batch_schema() -> SchemaRef {
 /// ```
 #[must_use]
 pub fn held_records(batch: &RecordBatch) -> Vec<HeldRecord> {
-    let keys = batch.column(RECORD_KEY).as_string::<i32>();
+    let keys = batch.column(RECORD_KEY).as_string::<i64>();
     let ranks = batch.column(RANK).as_primitive::<Int64Type>();
-    let payloads = batch.column(PAYLOAD).as_binary::<i32>();
+    let payloads = batch.column(PAYLOAD).as_binary::<i64>();
     (0..batch.num_rows())
         .map(|row| {
             HeldRecord::new(
@@ -137,7 +137,7 @@ fn key_mask(batch: &RecordBatch, key: &str) -> BooleanArray {
     mask_where(
         batch,
         RECORD_KEY,
-        &Scalar::new(StringArray::from(vec![key])),
+        &Scalar::new(LargeStringArray::from(vec![key])),
     )
 }
 
@@ -180,14 +180,14 @@ fn state_at(batch: &RecordBatch, row: usize) -> RecordState {
 fn latest_at(batch: &RecordBatch, row: usize) -> Version {
     Version::new(
         batch.column(RANK).as_primitive::<Int64Type>().value(row),
-        batch.column(PAYLOAD).as_binary::<i32>().value(row).to_vec(),
+        batch.column(PAYLOAD).as_binary::<i64>().value(row).to_vec(),
     )
 }
 
 /// The held version at `row`, if the row is held.
 fn held_at(batch: &RecordBatch, row: usize) -> Option<Version> {
     let ranks = batch.column(HELD_RANK).as_primitive::<Int64Type>();
-    let payloads = batch.column(HELD_PAYLOAD).as_binary::<i32>();
+    let payloads = batch.column(HELD_PAYLOAD).as_binary::<i64>();
     ranks
         .is_valid(row)
         .then(|| Version::new(ranks.value(row), payloads.value(row).to_vec()))
@@ -230,10 +230,10 @@ fn status_scalar(status: u8) -> Scalar<UInt8Array> {
 }
 
 /// A null `held_rank` and a null `held_payload`, as scalars.
-fn no_held_version() -> (Scalar<Int64Array>, Scalar<BinaryArray>) {
+fn no_held_version() -> (Scalar<Int64Array>, Scalar<LargeBinaryArray>) {
     (
         Scalar::new(Int64Array::new_null(1)),
-        Scalar::new(BinaryArray::new_null(1)),
+        Scalar::new(LargeBinaryArray::new_null(1)),
     )
 }
 
@@ -301,7 +301,7 @@ fn sorted_by(batch: &RecordBatch, column: usize) -> RecordBatch {
 
 /// Every row of `batch`, as views.
 fn views(batch: &RecordBatch) -> Vec<RecordView> {
-    let keys = batch.column(RECORD_KEY).as_string::<i32>();
+    let keys = batch.column(RECORD_KEY).as_string::<i64>();
     let positions = batch.column(POSITION).as_primitive::<UInt64Type>();
     (0..batch.num_rows())
         .map(|row| {
@@ -327,13 +327,13 @@ impl PocketRecords for ArrowRecords {
         let row = kernel(RecordBatch::try_new(
             Arc::clone(&RECORDS),
             vec![
-                Arc::new(StringArray::from(vec![key])),
+                Arc::new(LargeStringArray::from(vec![key])),
                 Arc::new(Int64Array::from(vec![version.rank])),
-                Arc::new(BinaryArray::from(vec![version.payload.as_slice()])),
+                Arc::new(LargeBinaryArray::from(vec![version.payload.as_slice()])),
                 Arc::new(UInt64Array::from(vec![position])),
                 Arc::new(UInt8Array::from(vec![QUEUED])),
                 Arc::new(Int64Array::new_null(1)),
-                Arc::new(BinaryArray::new_null(1)),
+                Arc::new(LargeBinaryArray::new_null(1)),
             ],
         ));
         self.batch = kernel(concat_batches(&RECORDS, [&self.batch, &row]));
@@ -344,7 +344,7 @@ impl PocketRecords for ArrowRecords {
         let old = latest_at(&self.batch, row);
         let mask = key_mask(&self.batch, key);
         let rank = Scalar::new(Int64Array::from(vec![version.rank]));
-        let payload = Scalar::new(BinaryArray::from(vec![version.payload.as_slice()]));
+        let payload = Scalar::new(LargeBinaryArray::from(vec![version.payload.as_slice()]));
         let ranks = zip_column(&self.batch, &mask, &rank, RANK);
         let payloads = zip_column(&self.batch, &mask, &payload, PAYLOAD);
         self.batch = with_columns(&self.batch, [(RANK, ranks), (PAYLOAD, payloads)]);
@@ -365,7 +365,7 @@ impl PocketRecords for ArrowRecords {
         let held = held_at(&self.batch, row);
         let others = kernel(neq(
             self.batch.column(RECORD_KEY),
-            &Scalar::new(StringArray::from(vec![key])),
+            &Scalar::new(LargeStringArray::from(vec![key])),
         ));
         self.batch = kernel(filter_record_batch(&self.batch, &others));
         held
@@ -407,5 +407,35 @@ impl PocketRecords for ArrowRecords {
 
     fn snapshot(&self) -> Vec<RecordView> {
         views(&sorted_by(&self.batch, RECORD_KEY))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ArrowRecords;
+    use super::schema::{BATCH, RECORDS};
+    use arrow_schema::{DataType, Schema};
+    use libpachinko::records::{PocketRecords, Version};
+
+    fn type_of<'schema>(schema: &'schema Schema, name: &str) -> &'schema DataType {
+        schema.field_with_name(name).unwrap().data_type()
+    }
+
+    #[test]
+    fn the_variable_length_columns_have_64_bit_offsets() {
+        assert_eq!(type_of(&RECORDS, "record_key"), &DataType::LargeUtf8);
+        assert_eq!(type_of(&RECORDS, "payload"), &DataType::LargeBinary);
+        assert_eq!(type_of(&RECORDS, "held_payload"), &DataType::LargeBinary);
+        assert_eq!(type_of(&BATCH, "record_key"), &DataType::LargeUtf8);
+        assert_eq!(type_of(&BATCH, "payload"), &DataType::LargeBinary);
+    }
+
+    #[test]
+    #[ignore = "allocates over 2 GiB"]
+    fn a_pocket_holds_more_than_2_gib_of_payload() {
+        let mut records = ArrowRecords::default();
+        records.insert_queued("a", Version::new(1, vec![0; 1 << 30]), 1);
+        records.insert_queued("b", Version::new(1, vec![0; 1 << 30]), 2);
+        assert_eq!(records.record_count(), 2);
     }
 }

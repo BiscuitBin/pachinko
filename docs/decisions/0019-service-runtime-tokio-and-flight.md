@@ -59,6 +59,9 @@ a `JoinSet` it owns, and joins the set before it returns. On shutdown the ticker
 the last sender is dropped, the owner task drains the commands already sent and ends, and
 `serve` joins both. tonic's per-connection tasks are tonic's own, outside the set, and
 end with its graceful shutdown, which `serve` awaits before it closes the channel.
+That shutdown waits for every open request, so when it starts the handlers are told,
+and an upload still open is answered `UNAVAILABLE` and publishes nothing rather than
+waiting for a client that may never end it.
 
 **The lease id is a fencing token.** `libpachinko::queue::LeaseId` is a `u64` taken from the
 queue's counter when a lease is granted, monotonic and never reused. Every ack, nack,

@@ -369,12 +369,12 @@ fn records_of(batch: &RecordBatch) -> Vec<Record> {
     let keys = batch
         .column_by_name("record_key")
         .unwrap()
-        .as_string::<i32>();
+        .as_string::<i64>();
     let ranks = batch
         .column_by_name("rank")
         .unwrap()
         .as_primitive::<Int64Type>();
-    let payloads = batch.column_by_name("payload").unwrap().as_binary::<i32>();
+    let payloads = batch.column_by_name("payload").unwrap().as_binary::<i64>();
     (0..batch.num_rows())
         .map(|row| {
             (

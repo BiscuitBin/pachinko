@@ -5,11 +5,11 @@ use std::sync::{Arc, LazyLock};
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
-/// The record key, `Utf8`.
+/// The record key, `LargeUtf8`.
 pub(super) const RECORD_KEY: usize = 0;
 /// The latest rank, `Int64`.
 pub(super) const RANK: usize = 1;
-/// The latest payload, `Binary`.
+/// The latest payload, `LargeBinary`.
 pub(super) const PAYLOAD: usize = 2;
 /// The record's position, `UInt64`.
 pub(super) const POSITION: usize = 3;
@@ -17,7 +17,7 @@ pub(super) const POSITION: usize = 3;
 pub(super) const STATUS: usize = 4;
 /// The held version's rank, `Int64`, null unless held.
 pub(super) const HELD_RANK: usize = 5;
-/// The held version's payload, `Binary`, null unless held.
+/// The held version's payload, `LargeBinary`, null unless held.
 pub(super) const HELD_PAYLOAD: usize = 6;
 
 /// `status` of a queued record.
@@ -31,13 +31,13 @@ pub(super) const DEFERRED: u8 = 2;
 /// `held_rank` and `held_payload`, in that order.
 pub(super) static RECORDS: LazyLock<SchemaRef> = LazyLock::new(|| {
     Arc::new(Schema::new(vec![
-        Field::new("record_key", DataType::Utf8, false),
+        Field::new("record_key", DataType::LargeUtf8, false),
         Field::new("rank", DataType::Int64, false),
-        Field::new("payload", DataType::Binary, false),
+        Field::new("payload", DataType::LargeBinary, false),
         Field::new("position", DataType::UInt64, false),
         Field::new("status", DataType::UInt8, false),
         Field::new("held_rank", DataType::Int64, true),
-        Field::new("held_payload", DataType::Binary, true),
+        Field::new("held_payload", DataType::LargeBinary, true),
     ]))
 });
 
@@ -46,8 +46,8 @@ pub(super) static RECORDS: LazyLock<SchemaRef> = LazyLock::new(|| {
 /// starts with.
 pub(super) static BATCH: LazyLock<SchemaRef> = LazyLock::new(|| {
     Arc::new(Schema::new(vec![
-        Field::new("record_key", DataType::Utf8, false),
+        Field::new("record_key", DataType::LargeUtf8, false),
         Field::new("rank", DataType::Int64, false),
-        Field::new("payload", DataType::Binary, false),
+        Field::new("payload", DataType::LargeBinary, false),
     ]))
 });

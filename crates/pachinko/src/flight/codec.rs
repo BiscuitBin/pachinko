@@ -1,9 +1,10 @@
 //! The wire's Arrow IPC: reading an action body, a pull ticket and the publish
 //! batches, and writing every reply.
 //!
-//! A body or ticket is an IPC stream of one batch with one row, whose columns are
-//! read by name and type, so a missing column, a wrong type or a null is
-//! `INVALID_ARGUMENT`, never a panic. A reply that cannot be written is
+//! A body or ticket is an IPC stream of one batch with one row and nothing after
+//! it, whose columns are read by name and type, so a second batch, trailing
+//! bytes, a missing column, a wrong type or a null is `INVALID_ARGUMENT`, never a
+//! panic. A reply that cannot be written is
 //! `INTERNAL`: its schema is this module's, so that is a programming error.
 
 use std::sync::Arc;
@@ -11,7 +12,8 @@ use std::sync::Arc;
 use arrow_array::cast::AsArray;
 use arrow_array::types::{Int64Type, UInt64Type};
 use arrow_array::{
-    Array, ArrayRef, BinaryArray, Int64Array, RecordBatch, StringArray, UInt64Array,
+    Array, ArrayRef, Int64Array, LargeBinaryArray, LargeStringArray, RecordBatch, StringArray,
+    UInt64Array,
 };
 use arrow_flight::decode::{DecodedFlightData, DecodedPayload};
 use arrow_flight::flight_descriptor::DescriptorType;
@@ -62,7 +64,21 @@ pub(super) fn read_one_row(body: &[u8]) -> Result<RecordBatch, Status> {
         .next()
         .ok_or_else(|| Status::invalid_argument("the body holds no batch"))?
         .map_err(|error| invalid(&error))?;
+    end_of_body(reader)?;
     exactly_one_row(batch)
+}
+
+/// `Ok` when the stream ends after the batch `reader` has read, and the body
+/// holds no bytes after its end of stream.
+fn end_of_body(mut reader: StreamReader<&[u8]>) -> Result<(), Status> {
+    match reader.next() {
+        None if reader.get_ref().is_empty() => Ok(()),
+        None => Err(Status::invalid_argument(
+            "the body holds bytes after its end of stream",
+        )),
+        Some(Ok(_)) => Err(Status::invalid_argument("the body must hold one batch")),
+        Some(Err(error)) => Err(invalid(&error)),
+    }
 }
 
 /// `batch` when it has one row.
@@ -299,13 +315,13 @@ pub(super) fn status_reply(view: Option<LeaseView>) -> Result<Bytes, Status> {
 
 /// `held` as a batch of `schema`.
 fn held_batch(schema: SchemaRef, held: &[HeldRecord]) -> Result<RecordBatch, Status> {
-    let keys: ArrayRef = Arc::new(StringArray::from_iter_values(
+    let keys: ArrayRef = Arc::new(LargeStringArray::from_iter_values(
         held.iter().map(|record| record.key.as_str()),
     ));
     let ranks: ArrayRef = Arc::new(Int64Array::from_iter_values(
         held.iter().map(|record| record.rank),
     ));
-    let payloads: ArrayRef = Arc::new(BinaryArray::from_iter_values(
+    let payloads: ArrayRef = Arc::new(LargeBinaryArray::from_iter_values(
         held.iter().map(|record| record.payload.as_slice()),
     ));
     RecordBatch::try_new(schema, vec![keys, ranks, payloads]).map_err(|error| internal(&error))
@@ -488,6 +504,37 @@ mod tests {
     fn a_body_of_two_rows_is_an_invalid_argument() {
         let body = ipc(&batch(vec![("consumer_id", strings(&["c", "d"]))]));
         assert_invalid(read_one_row(&body), "one row, not 2");
+    }
+
+    #[test]
+    fn a_second_batch_or_trailing_bytes_are_an_invalid_argument() {
+        let request = batch(vec![("consumer_id", strings(&["c"]))]);
+        let mut writer = StreamWriter::try_new(Vec::new(), &request.schema()).unwrap();
+        writer.write(&request).unwrap();
+        writer.write(&request).unwrap();
+        let two_batches = writer.into_inner().unwrap();
+        assert_invalid(read_one_row(&two_batches), "must hold one batch");
+
+        let complete = ipc(&request);
+        let mut malformed = complete[..complete.len() - 8].to_vec();
+        malformed.extend_from_slice(b"not ipc");
+        assert_invalid(read_one_row(&malformed), "not an Arrow IPC stream");
+
+        let mut trailing = complete.to_vec();
+        trailing.extend_from_slice(b"not ipc");
+        assert_invalid(read_one_row(&trailing), "bytes after its end of stream");
+
+        let ticket = batch(vec![
+            ("consumer_id", strings(&["c"])),
+            ("limit", int64s(vec![Some(1)])),
+        ]);
+        let mut writer = StreamWriter::try_new(Vec::new(), &ticket.schema()).unwrap();
+        writer.write(&ticket).unwrap();
+        writer.write(&ticket).unwrap();
+        assert_invalid(
+            pull_ticket(&writer.into_inner().unwrap()),
+            "must hold one batch",
+        );
     }
 
     #[test]

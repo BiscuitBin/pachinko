@@ -1,12 +1,15 @@
 //! The service as a whole: `list_actions`, a lapse the ticker processes, and
 //! shutdown.
 
+use std::task::Poll;
 use std::time::Duration;
 
+use arrow_flight::FlightData;
 use futures::TryStreamExt;
 use pachinko::{ServeOptions, serve};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+use tonic::Code;
 
 use crate::fixture::{Client, SCENARIO_DEADLINE, config, status_of, with_server};
 
@@ -100,4 +103,44 @@ async fn shutdown_returns_ok_while_a_client_is_still_connected() {
     .expect("serve returns within the deadline");
     assert_eq!(outcome, Ok(()));
     assert!(client.join_consumer("d").await.is_err());
+}
+
+#[tokio::test]
+async fn shutdown_answers_an_upload_still_open_unavailable_and_returns_ok() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let shutdown = async move {
+        stopped.await.unwrap();
+    };
+    let serving = serve(config(), listener, ServeOptions::default(), shutdown);
+    let mut client = Client::connect(&address).await;
+    let mut raw = client.flight().inner().clone();
+    // An upload that never ends. hyper polls a request's body only after it has
+    // sent the headers, so the first poll says the upload is on the connection.
+    let (sent, on_the_wire) = oneshot::channel::<()>();
+    let mut sent = Some(sent);
+    let input = futures::stream::poll_fn(move |_| {
+        if let Some(sent) = sent.take() {
+            sent.send(()).unwrap();
+        }
+        Poll::<Option<FlightData>>::Pending
+    });
+    let uploading = async move { raw.do_put(input).await };
+    let stopping = async move {
+        on_the_wire.await.unwrap();
+        // The join goes out on the same connection after the upload's headers, so
+        // its reply means the server has taken the upload before shutdown starts.
+        client.join_consumer("c").await.unwrap();
+        stop.send(()).unwrap();
+    };
+    let (outcome, uploaded, ()) = tokio::time::timeout(SCENARIO_DEADLINE, async {
+        tokio::join!(serving, uploading, stopping)
+    })
+    .await
+    .expect("serve returns within the deadline while an upload is open");
+    assert_eq!(outcome, Ok(()));
+    let status = uploaded.unwrap_err();
+    assert_eq!(status.code(), Code::Unavailable);
+    assert_eq!(status.message(), "the service is shutting down");
 }

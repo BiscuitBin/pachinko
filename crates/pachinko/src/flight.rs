@@ -10,8 +10,9 @@
 //! The status codes: an unknown party is `NOT_FOUND`; an action the rules reject,
 //! or a join of an id that has joined, is `FAILED_PRECONDITION` with the error's
 //! text; a malformed body, descriptor or ticket, or an unknown action type, is
-//! `INVALID_ARGUMENT`; an owner that has stopped is `UNAVAILABLE`. A pull that
-//! finds no pocket is a reply, never an error.
+//! `INVALID_ARGUMENT`; an owner that has stopped, or an upload still open when
+//! shutdown starts, is `UNAVAILABLE`. A pull that finds no pocket is a reply,
+//! never an error.
 
 mod actions;
 mod codec;
@@ -29,6 +30,7 @@ use futures::{StreamExt, TryStreamExt};
 use libpachinko::error::{ActionError, ConsumerError, JoinError, PublishError};
 use libpachinko::queue::Publication;
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tonic::transport::Server;
 use tonic::transport::server::TcpIncoming;
 use tonic::{Code, Request, Response, Status, Streaming};
@@ -43,10 +45,15 @@ type Replies<T> = BoxStream<'static, Result<T, Status>>;
 #[derive(Clone, Debug)]
 struct PachinkoFlight {
     queue: QueueHandle,
+    /// Turns `true` when shutdown starts, so an upload that is still open stops
+    /// waiting for its client.
+    stopping: watch::Receiver<bool>,
 }
 
 /// Serves Flight over `queue` on `listener` until `shutdown` resolves and tonic's
-/// graceful shutdown has finished.
+/// graceful shutdown has finished. When `shutdown` resolves the handlers are told,
+/// so an upload still open then is answered `UNAVAILABLE` rather than holding the
+/// graceful shutdown open until its client ends it.
 ///
 /// # Errors
 ///
@@ -56,8 +63,13 @@ pub(crate) async fn serve_flight(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<(), ServeError> {
+    let (stop, stopping) = watch::channel(false);
+    let shutdown = async move {
+        shutdown.await;
+        stop.send_replace(true);
+    };
     Server::builder()
-        .add_service(FlightServiceServer::new(PachinkoFlight { queue }))
+        .add_service(FlightServiceServer::new(PachinkoFlight { queue, stopping }))
         .serve_with_incoming_shutdown(TcpIncoming::from(listener), shutdown)
         .await
         .map_err(|error| ServeError::Transport(error.to_string()))
@@ -131,16 +143,21 @@ impl FlightService for PachinkoFlight {
 
     /// `Publish`: the descriptor's command names the publisher, and each input
     /// batch is published as one command and answered by one `PutResult`. Every
-    /// batch is read before any is published, so a malformed one publishes nothing.
+    /// batch is read before any is published, so a malformed one, or one still open
+    /// when shutdown starts and answered `UNAVAILABLE`, publishes nothing.
     async fn do_put(
         &self,
         request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoPutStream>, Status> {
         let input = request.into_inner().map_err(FlightError::from);
-        let decoded: Vec<DecodedFlightData> = FlightDataDecoder::new(input)
-            .try_collect()
-            .await
-            .map_err(malformed)?;
+        let mut stopping = self.stopping.clone();
+        let decoded: Vec<DecodedFlightData> = tokio::select! {
+            biased;
+            decoded = FlightDataDecoder::new(input).try_collect() => decoded.map_err(malformed)?,
+            _ = stopping.wait_for(|stopped| *stopped) => {
+                return Err(Status::unavailable("the service is shutting down"));
+            }
+        };
         let (publisher_id, batches) = codec::put_input(&decoded)?;
         let results: Vec<PutResult> = stream::iter(batches)
             .then(|publications| self.publish_put(&publisher_id, publications))
@@ -260,6 +277,7 @@ mod tests {
     use arrow_flight::{Criteria, FlightDescriptor};
     use libpachinko::error::{ActionError, ConsumerError, JoinError, PublishError};
     use libpachinko::queue::LeaseId;
+    use tokio::sync::watch;
     use tonic::codec::{DecodeBuf, Decoder};
     use tonic::{Code, Request, Status, Streaming};
 
@@ -285,6 +303,7 @@ mod tests {
     fn service() -> PachinkoFlight {
         PachinkoFlight {
             queue: QueueHandle::stopped(),
+            stopping: watch::channel(false).1,
         }
     }
 
