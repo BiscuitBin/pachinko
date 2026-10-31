@@ -1007,6 +1007,40 @@ Exit status: 0
 `just check` and `git status --short` at the commit that carries this section remain to be
 run.
 
+### Pull request review: `15b87d2`
+
+GitHub Copilot reviewed pull request #38 and made two findings. Two fresh Claude
+subagents checked each one independently, one trying to reproduce it and one trying to
+refute it, and both found each valid (`ai_tmp/pr38/verify-*.md`):
+
+- `status` sized its messages by key and payload bytes alone, so 150,000 seven-byte keys
+  encoded one message of about 4.65 MB, above a default client's 4 MiB limit. Valid,
+  medium; reproduced. Applied: runs are sized by the whole IPC stream, its schema,
+  metadata, offsets, ranks and padding counted.
+- `serve_writes_the_address_it_listens_on` read the `listening on` line with no deadline,
+  so a service that never wrote it hung the gate. Valid, medium. Applied: the read waits
+  at most 30 seconds, and the child is killed and reaped on every path before asserting.
+
+Codex (`gpt-6-astra`) then reviewed the uncommitted fixes, and a subagent checked each of
+its three findings. One was valid: `do_get` had the same exposure, because arrow-flight
+splits a batch evenly by average row size, so two adjacent 3 MiB records encoded one
+message of about 6 MiB. Applied: the pulled batch goes to the encoder as zero-copy slices
+sized by the same `row_runs`. The other two were judged invalid: the reader thread's join
+can block only if the service spawns a process that inherits standard output, which it
+does not; and the binary test's two `.output()` calls predate this change. A single
+record larger than about 4 MiB still cannot reach a default client, as `api.md` says.
+
+The fixes landed as `bc78c32` and `15b87d2`. `just check` at `15b87d2`, on a clean tree
+(`ai_tmp/pr38/just-check-15b87d2.log`):
+
+```text
+just check
+     Summary [   3.558s] 195 tests run: 195 passed, 1 skipped
+TOTAL                                      6219               254    95.92%         609                32    94.75%        3575               134    96.25%           0                 0         -
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
 ## Open points
 
 - The comparison baseline is deferred by the maintainer's choice: `MemoryRecords` is the
