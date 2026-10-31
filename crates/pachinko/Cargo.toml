@@ -28,6 +28,14 @@ arrow-array = { workspace = true }
 arrow-ord = { workspace = true }
 arrow-schema = { workspace = true }
 arrow-select = { workspace = true }
+# The Flight API and its runtime (decision 0019; notes in the workspace manifest).
+arrow-flight = { workspace = true }
+arrow-ipc = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
 
 [dev-dependencies]
 # The records contract the Arrow store's test runs, from libpachinko's `testing`

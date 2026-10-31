@@ -9,7 +9,8 @@ exclude = ["fuzz"]
 # and cargo-deny graphs; MSRV 1.80 is below our pin.
 divan = "0.1.21"
 # Decision 0007: thiserror derives libpachinko's error enums (AGENTS.md invariant
-# 10). A proc macro that adds no runtime code; MIT or Apache-2.0; MSRV 1.77.
+# 10) and the service's `ServeError` and `CliError`. A proc macro that adds no
+# runtime code; MIT or Apache-2.0; MSRV 1.77.
 thiserror = "2.0.21"
 # Decision 0007: proptest drives libpachinko's property tests, the framework the
 # propagate skill names for Rust; development only, so outside consumer graphs and
@@ -25,6 +26,39 @@ arrow-array = "60.1.0"
 arrow-ord = "60.1.0"
 arrow-schema = "60.1.0"
 arrow-select = "60.1.0"
+# Decision 0007: the service's wire is Arrow Flight over gRPC (decision 0019).
+# arrow-flight implements the Flight service and client with its protobuf code
+# pre-generated, so no `protoc`; arrow-ipc writes and reads the IPC streams every
+# action body and reply is. Apache Software Foundation, Apache-2.0; MSRV 1.88. The
+# default features are empty, and `cli` and every `tls-*` feature stay off, so no
+# TLS stack reaches the graph and deny.toml's openssl-sys ban holds.
+arrow-flight = "60.1.0"
+arrow-ipc = "60.1.0"
+# Decision 0007: tonic is the gRPC server under arrow-flight (decision 0019), with
+# the three features arrow-flight itself turns on and no TLS or compression. MIT;
+# MSRV 1.88.
+tonic = { version = "0.14.9", default-features = false, features = [
+  "transport",
+  "router",
+  "codegen",
+] }
+# Decision 0007: tokio is the service's runtime (decision 0019): one owner task,
+# a ticker and tonic's connections, with the six features the service uses. MIT;
+# MSRV 1.85. Never a libpachinko dependency: `just effects` bans it there.
+tokio = { version = "1.54.1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "sync",
+  "time",
+  "signal",
+] }
+# Decision 0007: futures supplies the stream combinators the Flight handlers
+# build their replies with. MIT or Apache-2.0; MSRV 1.71.
+futures = "0.3.34"
+# Decision 0007: bytes is the buffer type Flight's messages carry; the handlers
+# name it directly for action bodies and replies. MIT; MSRV 1.57.
+bytes = "1.12.1"
 
 [workspace.package]
 edition = "2024"
