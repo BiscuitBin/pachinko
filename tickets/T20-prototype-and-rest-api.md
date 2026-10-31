@@ -909,6 +909,34 @@ or the Design's text needed a file it did not name:
   helpers then count as test code, so `clippy.toml`'s test allowances for `unwrap`,
   `expect` and `panic` cover the helpers as they cover the tests.
 
+### PR #39 review: `6cc1f9e`
+
+`copilot-pull-request-reviewer` left three inline findings. Two independent read-only
+checks, one trying to refute each finding and one judging its impact and the proposed fix,
+found all three valid and low in severity (`ai_tmp/review/pr39/validation.md`). Each fix
+landed with a test that fails without it:
+
+| Finding | Fix | Commit | Evidence |
+| --- | --- | --- | --- |
+| `FakeClock::advance` read and then stored, so clones advancing at once could lose time | one `AtomicU64::update` | `2b66c7c` | saturating-edge unit test; no race test, since libpachinko's `clippy.toml` bans `std::thread::{spawn, scope, Scope::spawn, Builder}` (decision 0008) |
+| `hand_out` collected and sorted every queued record on every pull | `Pocket.queued`, the queued records by position; a pull pops from its front | `be4af75` | in-module index checks; with `free_records`' insert dropped, 9 of 109 tests fail, the seeded walk among them; with `publish_new_key`'s dropped, 16 of 109 (`ai_tmp/review/pr39/mutation.txt`) |
+| `drain` lost an error collected within the grace period when the grace ran out | the first-error accumulator belongs to `drain`; the cut and post-cut failures are logged | `c6618d0`, `6cc1f9e` | three drain unit tests; the first fails against the old behaviour, the third with the first-error guard removed |
+
+An adversarial review of the fixes (index consistency, shutdown semantics, gates and docs;
+each finding checked by an agent trying to refute it) confirmed two low findings, both
+fixed in `6cc1f9e`: the first-error guard was not pinned by a test, and
+`docs/reference/testing.md` claimed a log line it does not assert. One finding was
+refuted (`ai_tmp/review/pr39/review-round1.json`). `lease_of` still scans and sorts the
+pocket's records on each read of a lease; it changes nothing, its cost grows with the
+pocket rather than the batch, and it is outside the finding.
+
+```text
+$ just check                       # at 6cc1f9e
+All checks passed and the worktree is unchanged.
+$ just test                        # 110 tests run: 110 passed
+$ just coverage                    # TOTAL lines 94.26%
+```
+
 ## Open points
 
 Prewritten for the maintainer; the executing agent adds to them and strikes none.
