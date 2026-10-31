@@ -58,15 +58,17 @@ install-tools:
 install-allium:
     bg-install-allium
 
-# All three lockfiles, exactly as committed. Never rewrites any.
+# All four lockfiles, exactly as committed. Never rewrites any.
 sync:
     cargo fetch --locked
     cargo fetch --locked --manifest-path fuzz/Cargo.toml
+    cargo fetch --locked --manifest-path spikes/worker-pool/Cargo.toml
     pixi install --frozen
 
 lock:
     cargo update --workspace
     cargo update --workspace --manifest-path fuzz/Cargo.toml
+    cargo update --workspace --manifest-path spikes/worker-pool/Cargo.toml
     pixi lock
 
 # Within the manifest's constraints only; every direct pin is exact, so this
@@ -75,6 +77,7 @@ lock:
 lock-upgrade:
     cargo update
     cargo update --manifest-path fuzz/Cargo.toml
+    cargo update --manifest-path spikes/worker-pool/Cargo.toml
     pixi update
 
 # Offline, like every gate recipe: a cold Cargo cache fails rather than
@@ -84,6 +87,7 @@ lock-upgrade:
 lock-check:
     cargo update --workspace --locked --offline
     cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
+    cargo update --workspace --locked --offline --manifest-path spikes/worker-pool/Cargo.toml
     pixi lock --check --offline --dry-run
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
@@ -111,6 +115,16 @@ bench *args:
 # Stable with no sanitizer; seconds bounds fuzzing time, excluding compilation.
 fuzz target="smoke" seconds="300": lock-check
     CARGO_NET_OFFLINE=true cargo fuzz run "$1" --sanitizer none --target "$(rustc -vV | sed -n 's/^host: //p')" -- -max_total_time="$2"
+
+# The execution-model spike (T20): the demo binary, release mode, arguments
+# through. Outside `just check`; its findings are the ticket's hand-back notes.
+spike *args:
+    cargo run --manifest-path spikes/worker-pool/Cargo.toml --locked --release -- "$@"
+
+# The spike's unit, integration and doc tests. Outside `just check`, which lints the
+# crate but does not run it; a second spike generalises both recipes over a name.
+spike-test:
+    cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked
 
 build:
     cargo build --workspace --all-features --locked
@@ -178,6 +192,7 @@ snapshots-accept: lock-check
 format:
     cargo fmt --all
     cargo fmt --manifest-path fuzz/Cargo.toml
+    cargo fmt --manifest-path spikes/worker-pool/Cargo.toml
     taplo fmt
 
 # Automatic repairs. The fix config is run twice because a
@@ -186,8 +201,10 @@ fix:
     -prek run --all-files --config .pre-commit-fix.yaml
     prek run --all-files --config .pre-commit-fix.yaml
     cargo fmt --manifest-path fuzz/Cargo.toml
+    cargo fmt --manifest-path spikes/worker-pool/Cargo.toml
     cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged
     cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
+    cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
     just lint
 
 # ------------------------------------------------------------------ check ---
@@ -198,6 +215,7 @@ lint:
 fmt-check:
     cargo fmt --all --check
     cargo fmt --manifest-path fuzz/Cargo.toml --check
+    cargo fmt --manifest-path spikes/worker-pool/Cargo.toml --check
 
 toml-check:
     taplo fmt --check
@@ -208,6 +226,7 @@ toml-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked -- -D warnings
+    cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
 
 # Gate 7: complexity, cohesion and coupling, through rustqual against
 # rustqual.toml, once per crate. The version check comes first: rustqual's
@@ -266,9 +285,12 @@ site:
     just doc
     printf '%s\n' '<!doctype html>' '<html lang="en">' '<meta charset="utf-8">' '<title>pachinko: API reference</title>' '<p><a href="libpachinko/index.html">The libpachinko API reference</a></p>' '<p><a href="pachinko/index.html">The pachinko API reference</a></p>' '</html>' > target/doc/index.html
 
-# Licences, bans and sources are answerable offline once `just sync` has run.
+# Licences, bans and sources are answerable offline once `just sync` has run. The
+# spike's graph is checked against the same policy, named by its manifest; the fuzz
+# crate's is not (T16's choice).
 deny:
     cargo deny --locked check licenses bans sources
+    cargo deny --manifest-path spikes/worker-pool/Cargo.toml --config deny.toml --locked check licenses bans sources
 
 # Advisories need the RustSec database over the network, so this sits outside
 # `just check` for the same reason check-links-online does.
