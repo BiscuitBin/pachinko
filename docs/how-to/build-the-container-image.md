@@ -39,8 +39,11 @@ its digest, `rust-toolchain.toml` and `rust-version` together.
 CI builds this Dockerfile, loads the image locally and runs it on every pull
 request. Its `image` job joins the required `check` aggregate. Nothing pushes an
 image to a registry. [Decision 0015](../decisions/0015-container-image.md) explains
-why this foundation includes an image and why it uses distroless. Ports, health
-checks and configuration await the service's specifications and runtime decision.
+why this foundation includes an image and why it uses distroless. The image declares
+no port, no health check and no default command: with no arguments its entrypoint prints
+the version line, and arguments after the image name reach the binary, so `serve` runs
+the service. `serve` listens on loopback unless `--listen` names another address, and the
+[security model](../explanation/security-model.md) explains why.
 
 ## Related pages
 

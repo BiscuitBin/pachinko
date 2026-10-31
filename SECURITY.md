@@ -39,5 +39,6 @@ Advisory audits run weekly and on pull requests. Remote hooks and GitHub Actions
 pinned to commit SHAs, and the pre-commit gate scans for secrets with redacted output.
 
 The [security model](docs/explanation/security-model.md) explains these controls, tool
-provenance, workflow permissions and the limits of the effects checks. Today the service
-only writes its name and the library version; it has no network listener.
+provenance, workflow permissions and the limits of the effects checks. `pachinko serve`
+runs an Arrow Flight listener with no authentication and no TLS, bound to loopback
+unless `--listen` names another address; the security model describes that surface.

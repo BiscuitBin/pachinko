@@ -74,19 +74,16 @@ exit status and output, and because `just coverage` instruments that run, `main`
 covered by the test that proves it works rather than by an exemption that proves nothing.
 
 The corollary: do not chase the last few percent. The floor is 90 per cent of lines over
-`crates/*/src/**`, and while the code is small so is the denominator. Two crates hold a
-handful of items between them, so one untested branch can breach the floor on its own:
-keep each item trivially and fully tested until the specifications bring code. Doctests
-are not counted, so an example is documentation and a test of its contract, but not
-evidence for the floor.
+`crates/*/src/**`. Doctests are not counted, so an example is documentation and a test of
+its contract, but not evidence for the floor.
 
 ## Tests inject, they do not stub
 
-A fake is not a mock. No effect trait exists yet, but the fake that
-[decision 0003](../decisions/0003-effects-behind-traits.md) puts beside each one must
-behave: it gives the values the test chose, in the order the test chose, and reports when
-the test asks for more than it supplied. Tests that assert a function was called are not
-evidence that anything works.
+A fake is not a mock. The fake that
+[decision 0003](../decisions/0003-effects-behind-traits.md) puts beside each effect trait
+must behave: it gives the values the test chose, in the order the test chose, and reports
+when the test asks for more than it supplied. Tests that assert a function was called
+are not evidence that anything works.
 
 ## The specification is the arbiter
 

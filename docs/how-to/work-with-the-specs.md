@@ -9,8 +9,9 @@ requires: []
 # Work with the specifications
 
 The Allium specifications under `docs/specs/` decide what libpachinko and pachinko
-do. Today the sole module, the root, specifies the queue domain, and nothing
-implements it yet. This page is the procedure;
+do. Today the sole module, the root, specifies the queue domain: libpachinko
+implements its rules, and pachinko serves its surfaces over Arrow Flight, as
+[Architecture](../explanation/architecture.md) describes. This page is the procedure;
 [Specifications](../explanation/specifications.md) is the reasoning.
 
 ## Find the module that owns the behaviour
@@ -53,8 +54,12 @@ page's module table to reflect its new responsibility.
 
 Record domain terms in [Terminology](../project/terminology.md). Run both spec
 gates and plan the new module, then follow the test and implementation loop above.
-The root's obligations are not covered by any test yet: the first implementation
-change derives them with `propagate` and brings its tests with it.
+The root's tests show the shape a new module's tests take: they sit in
+`crates/libpachinko/tests/queue/`, one Rust module per rule family, and each names what
+it proves: the obligations it covers, by the ids `just plan-spec pachinko` prints, in an
+`// obligation:` comment, or a surface's guarantee in a `// @guarantee` comment.
+[Testing](../reference/testing.md#tests-from-the-specifications)
+holds the rules those tests follow.
 
 ## Handle an open question
 

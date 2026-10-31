@@ -48,44 +48,51 @@ just doc
 ```
 
 Open `target/doc/pachinko/index.html` and follow `run`. Its source is
-`crates/pachinko/src/lib.rs`. `run` writes the service's one line, `pachinko <version>`,
-to whatever writer it is given; the version is `libpachinko::version()`, the library's
-manifest version. The binary's `main`, in `crates/pachinko/src/main.rs`, calls `run` on
-standard output and nothing else. The library's `version` carries an example, and
-`just test-doc` runs every such example as a test. Your exercise changes the
-line `run` writes.
+`crates/pachinko/src/lib.rs`. With no arguments, `run` writes the service's version
+line, `pachinko <version>`, to whatever writer it is given, through the private function
+`write_version` further down the file; the version is `libpachinko::version()`, the
+library's manifest version. With `serve` it runs the queue instead, which this exercise
+leaves alone. The binary's `main`, in `crates/pachinko/src/main.rs`, calls `run` with
+the arguments and standard output, and turns an error into one line on standard error
+and exit code 1. `run`'s doc comment carries an example, as the library's `version`
+does, and `just test-doc` runs every such example as a test. Your exercise changes the
+line `write_version` writes.
 
 ## 3. Read what decides the behaviour
 
-Open `docs/specs/pachinko.allium`. It is the root module, and today it declares no
-entity, rule, surface or invariant: the domain is not defined yet, and the first change
-that names a behaviour states it there before any code implements it. So no clause
-decides the line `run` writes. Two tests state it instead:
+Open `docs/specs/pachinko.allium`. It is the root module, and it defines the queue:
+the pockets, records and leases libpachinko implements and the service serves. The
+version line is not part of that domain, so no clause decides the line `write_version`
+writes. Three tests state it instead:
 
 - `run_writes_the_name_and_the_library_version`, the unit test at the foot of
-  `crates/pachinko/src/lib.rs`, calls `run` on a `Vec<u8>` and compares what it wrote.
+  `crates/pachinko/src/lib.rs`, calls `run` with no arguments on a `Vec<u8>` and
+  compares what it wrote.
+- The example in `run`'s doc comment, in the same file, does the same as a doctest.
 - `the_binary_prints_its_line_and_exits_zero`, in `crates/pachinko/tests/binary.rs`,
   runs the built binary as a user would and compares its standard output, its standard
   error and its exit status.
 
-Read both expected lines now. Each builds the line from `libpachinko::version()`,
+Read the three expected lines now. Each builds the line from `libpachinko::version()`,
 `format!("pachinko {}\n", libpachinko::version())`, so the tests hold whatever version
 the manifest states and the exercise works the same on any `main`.
 
 ## 4. Change something
 
-In `crates/pachinko/src/lib.rs`, change the format string in `run` so the line reads
-`pachinko version <version>`:
+In `crates/pachinko/src/lib.rs`, change the format string in `write_version` so the line
+reads `pachinko version <version>`:
 
 ```diff
- pub fn run(out: &mut impl Write) -> io::Result<()> {
+ fn write_version(out: &mut impl Write) -> Result<(), CliError> {
 -    writeln!(out, "pachinko {}", libpachinko::version())
 +    writeln!(out, "pachinko version {}", libpachinko::version())
+         .map_err(|error| CliError::Output(error.to_string()))
  }
 ```
 
-Leave the tests alone and run the suite. It should fail in two places, because two tests
-state the old line.
+Leave the tests alone and run the suite. It should fail in two places, the two tests
+nextest runs. The doctest waits for step 5: `just test` runs the doctests only once
+nextest passes.
 
 ```console
 just test
@@ -97,7 +104,7 @@ the bytes' values; 32 is a space and 10 the newline. When this page was written,
 version 0.1.0, the unit test reported:
 
 ```text
-thread 'tests::run_writes_the_name_and_the_library_version' (316050970) panicked at crates/pachinko/src/lib.rs:26:9:
+thread 'tests::run_writes_the_name_and_the_library_version' (354330136) panicked at crates/pachinko/src/lib.rs:235:9:
 assertion `left == right` failed
   left: [112, 97, 99, 104, 105, 110, 107, 111, 32, 118, 101, 114, 115, 105, 111, 110, 32, 48, 46, 49, 46, 48, 10]
  right: [112, 97, 99, 104, 105, 110, 107, 111, 32, 48, 46, 49, 46, 48, 10]
@@ -108,17 +115,19 @@ space. The binary test fails with the same two lists at
 `crates/pachinko/tests/binary.rs`, and nextest's summary names both:
 
 ```text
-     Summary [   0.205s] 3 tests run: 1 passed, 2 failed, 0 skipped
-        FAIL [   0.010s] (2/3) pachinko tests::run_writes_the_name_and_the_library_version
-        FAIL [   0.205s] (3/3) pachinko::binary the_binary_prints_its_line_and_exits_zero
+     Summary [   0.694s] 175/188 tests run: 173 passed, 2 failed, 1 skipped
+        FAIL [   0.010s] (158/188) pachinko tests::run_writes_the_name_and_the_library_version
+        FAIL [   0.611s] (174/188) pachinko::binary the_binary_prints_its_line_and_exits_zero
+warning: 13/188 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
 error: test run failed
 ```
 
 You may see only one failure. `.config/nextest.toml` sets `fail-fast = true` for the
 default profile, so nextest stops starting tests after the first failure. Both ran here
-because they had already started together, and the output between them says so:
-`Cancelling due to test failure: 1 test still running`. On a machine with fewer cores the
-second may never start. To see every failure at once, run nextest without fail-fast;
+because the binary test had already started when the unit test failed, and the output
+between them says so: `Cancelling due to test failure: 17 tests still running`. The
+summary's warning counts the tests that never started. On a machine with fewer cores the
+second failure may never start. To see every failure at once, run nextest without fail-fast;
 `pixi run` puts the pinned nextest on `PATH` as the `Justfile` does:
 
 ```console
@@ -129,7 +138,7 @@ pixi run --frozen cargo nextest run --workspace --all-features --locked --no-fai
 run `just test` again, and the second appears.
 
 A change that no test notices is either already covered or untested. Here the failures
-are the point: they show the line is stated in two places, and where.
+are the point: they show where the line is stated, and step 5 finds the third place.
 
 ## 5. Change the tests to match
 
@@ -148,10 +157,29 @@ In `crates/pachinko/tests/binary.rs`:
 +        format!("pachinko version {}\n", libpachinko::version()).as_bytes()
 ```
 
-Run `just test` again. Every nextest test passes, then the doctests. In a real change,
-`run`'s doc comment, which names the line, would change in the same commit too: the
-behaviour, its tests and its documentation land together. Once the specifications define
-a behaviour, the clause moves first and the test is named for the clause it proves.
+Run `just test` again. Every nextest test passes, then the doctests run, and the example
+in `run`'s doc comment fails with the same two lists. Its panic names a file rustdoc
+generated, not `lib.rs`; the failure list names the example by its file and line:
+
+```text
+failures:
+    crates/pachinko/src/lib.rs - run (line 47)
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+Update the example's expected line in `crates/pachinko/src/lib.rs` too:
+
+```diff
+-/// assert_eq!(out, format!("pachinko {}\n", libpachinko::version()).as_bytes());
++/// assert_eq!(out, format!("pachinko version {}\n", libpachinko::version()).as_bytes());
+```
+
+Run `just test` a third time. Every nextest test passes, then every doctest. In a real
+change, the prose of `run`'s doc comment, which names the line too, would change in the
+same commit: the behaviour, its tests and its documentation land together. For a
+behaviour the specification decides, the clause moves first and the test is named for
+the clause it proves.
 
 ## 6. Run the whole gate
 
@@ -186,9 +214,9 @@ why `just check` comes first. Nothing is pushed until you ask for it.
 
 ## What you just touched
 
-An item, the two tests that state its output, and the gate. That is the whole loop;
-every change after this one is the same shape, and the first real one starts by adding a
-rule to a specification module rather than finding none.
+An item, the three tests that state its output, and the gate. That is the whole loop;
+every change after this one is the same shape, and one that changes the queue starts with
+the clause in `docs/specs/pachinko.allium` that decides it.
 
 ## Related pages
 

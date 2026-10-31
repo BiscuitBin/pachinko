@@ -24,12 +24,12 @@ itself, whoever wrote the crate that does it.
 
 ## Decision
 
-**The library owns a record-store trait.** `libpachinko::PocketRecords` is the
+**The library owns a record-store trait.** `libpachinko::records::PocketRecords` is the
 record-level steps the module's rules take and nothing more: look a key up, insert a
 queued record at a position, supersede in place, hold the oldest queued records as a
 batch, settle a held key, defer a key at a fresh position, free every held and deferred
 record, count the records and list the held ones. Each pocket owns one instance. The
-queue, `libpachinko::Queue`, is generic over it and decides every rule; the store only
+queue, `libpachinko::queue::Queue`, is generic over it and decides every rule; the store only
 carries out a step the queue has already decided.
 
 **`MemoryRecords` is the trait's reference.** It sits beside the trait in libpachinko, a

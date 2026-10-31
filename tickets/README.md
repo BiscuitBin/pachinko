@@ -89,7 +89,8 @@ The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
   specification; the implementation tickets that follow depend on it.
 - **T20** is the first implementation ticket. It depends on T19 because it implements
   that module, and it carries the spike decision 0014 asked for: the runtime and the
-  transport are chosen in it, by the maintainer, and recorded in decisions 0019 and 0020.
+  transport are chosen in it, by the maintainer, and recorded in decision 0019; decision
+  0020 records the service's records as Arrow batches.
 
 ## How to pick up a ticket
 

@@ -13,15 +13,15 @@ reachable from here. That is the whole of the arrangement; the rules behind it a
 the documentation contract, listed under Look up.
 
 This repository is a Cargo workspace of two crates: `crates/libpachinko`, a std library,
-and `crates/pachinko`, a minimal service binary built around it. What their domain is,
-the specifications will define; the handbook describes the machinery that is already
-here.
+and `crates/pachinko`, a service binary built around it. Their domain is a queue of
+pockets, which the library implements and the service serves; the handbook describes the
+machinery around them.
 
-Behaviour is specified separately, in Allium, under `docs/specs/`. There is one module
-so far, the placeholder root [`pachinko.allium`](specs/pachinko.allium), and it states
-no behaviour yet; each behaviour arrives there as a specification change before any code
-implements it. That file is not part of this handbook; it is its subject. Start at
-Specifications, under Understand, to see how the two relate.
+Behaviour is specified separately, in Allium, under `docs/specs/`. There is one module,
+the root [`pachinko.allium`](specs/pachinko.allium), which defines the queue; each
+behaviour arrives there as a specification change before any code implements it. That
+file is not part of this handbook; it is its subject. Start at Specifications, under
+Understand, to see how the two relate.
 
 ## Start here
 
@@ -44,7 +44,7 @@ Specifications, under Understand, to see how the two relate.
 - [Architecture](explanation/architecture.md) — how a library and the service around it are put together, and where effects live.
 - [Layering and dependency direction](explanation/layering.md) — which crate and module may depend on which.
 - [Specifications](explanation/specifications.md) — why behaviour is written down before it is built.
-- [Security model](explanation/security-model.md) — what a library and a minimal service binary do and do not defend.
+- [Security model](explanation/security-model.md) — what the library and the service do and do not defend.
 - [Quality philosophy](explanation/quality-philosophy.md) — why each gate exists.
 
 ## Look up

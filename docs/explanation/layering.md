@@ -17,18 +17,20 @@ nothing in the workspace ([decision 0001](../decisions/0001-library-and-service.
 | `libpachinko` | nothing in the workspace | `pachinko` |
 | `pachinko` | `libpachinko` | nothing |
 
-`libpachinko` holds the domain once the specifications define one, and performs no
-effect itself. `pachinko` is a minimal binary that supplies the real implementations of
-the library's effect traits, and nothing imports it: it is the leaf where the library
-meets the outside.
+`libpachinko` holds the domain the specification defines, and performs no effect itself.
+`pachinko` is the binary that supplies the real implementations of the library's effect
+trait and its record store and runs the queue behind a Flight service, and nothing
+imports it: it is the leaf where the library meets the outside.
 
-Inside `libpachinko` the module graph will be the specification import graph. Each
+Inside `libpachinko` the module graph follows the specification import graph. Each
 specification module under `docs/specs/` names the modules it imports, and the Rust
-module that implements it may use what its specification imports and nothing above it.
+code that implements it may use what its specification imports and nothing above it.
 Today there is one specification module, `pachinko.allium`, which specifies the domain
-and imports nothing, and one Rust module, `crates/libpachinko/src/lib.rs`, so there is
-nothing to order. When a specification change splits the domain into modules, the
-code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
+and imports nothing, and five Rust modules implement it: `clock`, `config`, `error`,
+`records` and `queue`. They are one specification module's code split by concern, so no
+specification edge orders them; `queue` uses the other four and `config` uses `error`,
+and that order is the code's own. When a specification change splits the domain into
+modules, the code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
 shows how a module states its imports.
 
 ## Why the direction matters
@@ -41,9 +43,11 @@ could only be tested with the service's real implementations in the way, and a m
 that reached for an effect of its own could only be tested against whatever that effect
 produced. Because nothing in `libpachinko` names `pachinko`, and because the only thing
 that reaches outside the library is the effects boundary, a test of any part of it
-supplies the fakes and the inputs it chose, and the real code path still runs. The same
-argument will hold between the library's modules: a module that imports only what its
-specification imports can be tested with only those in the way.
+supplies the fakes and the inputs it chose, and the real code path still runs. The
+queue's tests do exactly that: they build a `Queue` over `MemoryRecords` and a
+`FakeClock` and move the time by hand. The same argument will hold between specification
+modules once there are several: a module that imports only what its specification
+imports can be tested with only those in the way.
 
 ## Where a side effect goes
 
@@ -68,14 +72,15 @@ dependency to close a cycle; invariant 5 in `AGENTS.md`, that `pachinko` depends
 
 rustc will not enforce the module direction: it allows a cycle between modules of the
 same crate. Gate 7, `just metrics`, will. It runs rustqual over each crate against
-`rustqual.toml`, whose architecture section is on, and once there are modules that file
-gains one `[[architecture.pattern]]` rule per module, each listing every `crate::` path
-its module may not name, with the specification's imports as its reason
-([decision 0012](../decisions/0012-metrics-gate.md)). Today it holds no pattern rule,
-because there is no module to bound. A rule will cover the file named after its module
-and everything under the directory of the same name, so a child is held to its parent's
-row, and it will catch both a `use crate::…` line and an inline `crate::…` path in a
-function body.
+`rustqual.toml`, whose architecture section is on, and once there are specification
+modules to order that file gains one `[[architecture.pattern]]` rule per module, each
+listing every `crate::` path its module may not name, with the specification's imports
+as its reason ([decision 0012](../decisions/0012-metrics-gate.md)). Today it holds no
+pattern rule: the five Rust modules implement one specification module, which imports
+nothing, so there is no specification edge to bound. A rule will cover the file named
+after its module and everything under the directory of the same name, so a child is
+held to its parent's row, and it will catch both a `use crate::…` line and an inline
+`crate::…` path in a function body.
 
 Three paths will be out of the rules' sight. A path written relative to the module, such
 as `super::super::…`, names no `crate::` prefix. An alias of the crate, `use crate as

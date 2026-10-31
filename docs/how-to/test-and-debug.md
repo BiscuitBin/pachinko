@@ -44,21 +44,64 @@ Framework configuration and conventions are described in
 ## Run the binary test
 
 `crates/pachinko/tests/binary.rs` runs the built service as a user would. Cargo builds
-the `pachinko` binary before it runs that crate's integration tests and hands the test
-its path as `CARGO_BIN_EXE_pachinko`; the test asserts that the binary exits zero, prints
-`pachinko`, a space, `libpachinko::version()` and one newline on standard output and
-writes nothing to standard error. Run it alone with:
+the `pachinko` binary before it runs that crate's integration tests and hands the tests
+its path as `CARGO_BIN_EXE_pachinko`. It has three:
+
+- With no arguments the binary exits zero, prints `pachinko`, a space,
+  `libpachinko::version()` and one newline on standard output and writes nothing to
+  standard error.
+- `serve --listen 127.0.0.1:0` writes `listening on <address>`, a loopback address on a
+  port other than 0. The test reads that one line, then kills and waits for the child
+  before it asserts anything, so a failure never leaves a process running.
+- With a value `serve` cannot read, the binary exits 1, writes nothing on standard
+  output and writes one `pachinko: <error>` line on standard error.
+
+Run them alone with:
 
 ```console
 INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test binary
 ```
 
-The line has two tests: the unit test beside `run` in `crates/pachinko/src/lib.rs`
-writes into a buffer, and the binary test reads the real standard output. A change to
-the line fails both, and both are updated together, as
+The version line is stated three times: the unit test beside `run` in
+`crates/pachinko/src/lib.rs` writes into a buffer, the example in `run`'s doc comment
+does the same as a doctest, and the binary test reads the real standard output. A change
+to the line fails all three, and all three are updated together, as
 [Make your first change](../tutorials/first-change.md) walks through. When only the
-binary test fails, the fault is between `run` and the process: `main.rs`, its exit
-status, or something written to standard error.
+binary tests fail, the fault is between `run` and the process: `main.rs`, which passes
+the arguments and turns an error into the standard-error line and exit code 1, or
+something else written to standard error.
+
+## Run the service and its Flight tests
+
+To watch the service by hand, build it and run `serve`:
+
+```console
+just build
+./target/debug/pachinko serve --listen 127.0.0.1:50051
+```
+
+It writes `listening on 127.0.0.1:50051` and serves until Ctrl-C. Without `--listen` it
+picks a free loopback port and the line names it.
+[Configuration](../reference/configuration.md) lists the options, and the
+[API reference](../reference/api.md) the Flight calls a client makes.
+
+`crates/pachinko/tests/flight.rs` drives the Flight API over loopback, one module per
+area under `crates/pachinko/tests/flight/`. Each test calls `serve` in-process on its
+own `127.0.0.1:0` listener, so no two tests share a port and the tests need no order.
+They talk to it with `arrow_flight::FlightClient`, and the fixture then resolves the
+shutdown and asserts `serve` returned `Ok`. A scenario that runs past the fixture's
+`SCENARIO_DEADLINE`, 30 seconds, fails rather than hangs. Run them alone with:
+
+```console
+INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test flight
+```
+
+A rule of the specification that fails here but passes in
+`crates/libpachinko/tests/queue/` is a fault in the service's mapping: the codec, the
+action, or the status code it answers. The expiry rules are proved in libpachinko, where
+`FakeClock` moves the time. The one lapse test here proves only that the ticker reaches
+the queue's `tick`: it polls `status` once a tick, under a deadline of a hundred ticks,
+and never sleeps to land on a lease's expiry.
 
 ## Narrow down a failing test
 
@@ -116,8 +159,7 @@ lines in the terminal instead. From cold,
 does both at once.
 
 The binary's lines count: cargo-llvm-cov instruments a binary an integration test runs,
-so `crates/pachinko/src/main.rs` is covered by the binary test. The denominator is small
-today, so one untested line moves the percentage by several points.
+so `crates/pachinko/src/main.rs` is covered by the binary tests.
 Two cases look alike and are not:
 
 - **Untested behaviour.** Add the test. This is the common case.

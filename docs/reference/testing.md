@@ -15,10 +15,10 @@ runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests 
 `.config/nextest.toml` names the minimum nextest version it needs (the pin itself is in
 `pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
-report, is there for a job that wants one; no recipe selects it today. Divan is the
-library’s development dependency for benchmarks. A property-test crate and insta, the
-snapshot crate, each arrive with the first test that needs it, as a development
-dependency only, with the note that
+report, is there for a job that wants one; no recipe selects it today. Divan is both
+crates’ development dependency for benchmarks, and proptest the library’s for its
+property test. insta, the snapshot crate, arrives with the first test that needs it, as
+a development dependency only, with the note that
 [decision 0007](../decisions/0007-dependency-policy.md) asks for beside its range.
 
 ## Layout
@@ -28,7 +28,7 @@ Tests live in three places, and each is deliberate.
 | Where | What |
 | --- | --- |
 | `#[cfg(test)] mod tests` at the foot of a module | Unit tests of that module, with access to its private items. |
-| `crates/libpachinko/tests/*.rs` and `crates/pachinko/tests/*.rs` | Integration tests: the crate as a consumer sees it, through its public API only. |
+| `crates/libpachinko/tests/` and `crates/pachinko/tests/` | Integration tests: the crate as a caller sees it, through its public API only. |
 | `///` examples on public items | Doctests: each example compiles and runs as a test. |
 
 Unit tests live in the module they test. This departs from the games' rule that tests are
@@ -36,22 +36,48 @@ never colocated with the code: in Rust a unit test can reach a private item only
 inside its module, and [Decision 0009](../decisions/0009-rust-quality-gate.md) records
 the deviation.
 
-One integration test file exists, and libpachinko has none yet.
+Each crate has its integration tests, five targets in all:
+
+| Target | What it runs |
+| --- | --- |
+| `crates/libpachinko/tests/queue/` | The tests derived from `docs/specs/pachinko.allium`, one target whose `main.rs` names a module per rule family and the property test in `invariants.rs`, all over `MemoryRecords` and `FakeClock` from one `fixture.rs`. |
+| `crates/libpachinko/tests/records_contract.rs` | The records contract over `MemoryRecords`, the record-store trait's reference. |
+| `crates/pachinko/tests/arrow_records.rs` | The same contract over the service's `ArrowRecords`. |
+| `crates/pachinko/tests/flight.rs` | The Flight API over loopback: each test starts `serve` in-process on `127.0.0.1:0` and drives it with `arrow_flight::FlightClient`. Its modules sit under `tests/flight/` and share one fixture. |
+| `crates/pachinko/tests/binary.rs` | The binary test, below. |
+
+The two libpachinko targets read the queue through the `testing` feature and declare
+`required-features = ["testing"]`, so a build without the feature skips them; `test` and
+`coverage` build with `--all-features`, so both run there. The records contract,
+`libpachinko::records::contract::check_contract`, is written once, behind that feature,
+and each record store runs it; the service reaches it through a development dependency
+on libpachinko with `testing` on.
+
 `crates/pachinko/tests/binary.rs` is the binary test: it runs the built service as a user
-would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that the
+would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`. With no arguments the
 process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
-and writes nothing to standard error. The file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its
-reason, because an integration test file is its own test module.
+and writes nothing to standard error. `serve --listen 127.0.0.1:0` writes a
+`listening on` line naming a loopback address with a port the system chose, and the test
+kills the child before it asserts. A bad argument exits 1 with the error on standard
+error and nothing on standard output. The file opens with an `#![expect]` of
+`clippy::tests_outside_test_module` and its reason, because an integration test file is
+its own test module.
 [Run the binary test](../how-to/test-and-debug.md#run-the-binary-test) says how to run it
-and how it divides from the unit test beside `run`.
+and how it divides from the unit tests beside `run`.
 
-A helper shared between two files under `tests/` would be compiled into each, and each
-would report the functions it does not call as dead code. So each file carries the few
-helpers and fixtures it uses, and the snapshot tests, once there are any, share one file.
+A helper shared between two targets under `tests/` would be compiled into each, and each
+would report the functions it does not call as dead code. So a suite that shares a
+fixture is one target with a module per file: `tests/queue/main.rs` names its modules
+beside it, and `tests/flight.rs` names its modules under `tests/flight/` by `#[path]`,
+since a test target's root resolves modules beside itself. Each module is
+`#[cfg(test)]`, which is what clippy reads as test code. A target of one file carries the
+few helpers it uses, and the snapshot tests, once there are any, share one file.
 
-Once a property test exists, a failing case is written to a `proptest-regressions/` file
-beside the test that produced it. That file is committed, so the case is replayed first
-on every later run.
+The property test is the proptest state machine in `tests/queue/invariants.rs`, 256
+cases a run. A failing case is written to
+`crates/libpachinko/tests/proptest-regressions/invariants.txt`, where proptest puts it by
+default for a module of the target whose root is `tests/queue/main.rs`. That file is
+committed, so the case is replayed first on every later run; none has been written yet.
 
 ## Conventions
 
@@ -62,9 +88,15 @@ test named after the function it calls does not.
 **A doc example is a test.** It runs under `just test-doc`, so an example that stops
 being true stops the gate. Every public item is to carry one.
 
-**Reach an effect through the fake beside its trait; never through the real thing.** The
-effect traits arrive with the specifications that need them, each with a fake beside it,
-and a test drives the library through that fake and gets exactly the behaviour it chose.
+**Reach an effect through the fake beside its trait; never through the real thing.** Each
+effect trait has a fake beside it, and a test drives the library through that fake and
+gets exactly the behaviour it chose. Today there is one, the clock:
+`libpachinko::clock::Clock`, with `FakeClock`, which a test sets and advances, so a
+temporal test moves the fake and never reads the wall clock. The service's tests run its
+real clock, as the service does, so the Flight lapse test proves only that the ticker
+reaches the queue, polling under a deadline rather than sleeping to a lease's expiry; the
+expiry rules themselves are proved in libpachinko through `FakeClock`. Another effect
+trait arrives with the specification that names its effect.
 [Architecture](../explanation/architecture.md) explains the boundary, and decisions
 [0003](../decisions/0003-effects-behind-traits.md) and
 [0008](../decisions/0008-std-library.md) record it.
@@ -80,9 +112,20 @@ A specification's clauses are what the tests prove.
 derives from one module under `docs/specs/`: what each rule, invariant, transition and
 surface clause would have a test for. It plans that one file and reads no import. The
 list is a suggestion for a ticket's test list, not a gate: nothing asserts on it and it
-sits outside `just check`. Today the only module is `pachinko`, a placeholder that
-states no behaviour, so `just plan-spec pachinko` has nothing to ask for.
+sits outside `just check`.
 [Work with the specifications](../how-to/work-with-the-specs.md) covers the workflow.
+
+Today the only module is `pachinko`, and `just plan-spec pachinko` lists 190 obligations.
+`crates/libpachinko/tests/queue/` accounts for every one. Each test names the obligations
+it covers by their ids in an `// obligation:` comment, which 184 of the ids appear in. The
+other six are rule-failure guards no direct test can make fail, because an invariant
+implies each; the head of `invariants.rs` names them and the invariants that imply them,
+and the state machine holds those invariants. The state machine runs random sequences of
+publishes, pulls, acks, nacks, renewals, releases and clock advances, refused ones
+included, and after every step checks the twenty invariants on the queue's state and the
+module's transition graphs; the five config invariants are tested directly, in
+`identity.rs`. It reads the queue through `Queue::snapshot`, the inspection seam the
+`testing` feature adds.
 
 These rules hold for every module the specifications add.
 
@@ -116,8 +159,8 @@ when line coverage over `crates/*/src/**` falls below 90 per cent. The floor is 
 llvm-cov's doctest support needs a nightly toolchain, so `test-doc` runs them uncovered
 and the floor is a statement about unit and integration tests. A binary an integration
 test runs is instrumented too, so the binary test counts towards the service's lines.
-While the crates are small the denominator is too: one untested line moves the
-percentage by several points. The recipe also writes `target/llvm-cov/lcov.info`, which
+The denominator is a few thousand lines now, so one untested line no longer moves the
+percentage by much. The recipe also writes `target/llvm-cov/lcov.info`, which
 CI keeps as an artifact once the floor has passed.
 
 Coverage counts a snapshot test like any other test. That count proves no specification
@@ -200,12 +243,24 @@ explains the commands in order.
 
 ## Benchmarks
 
-`just bench` runs the divan smoke benchmark over `libpachinko::version()`, passing
-its function pointer and result through `divan::black_box` to retain a runtime call.
-The measurement includes indirect-call overhead. Extra Cargo options may follow the
-recipe. This establishes the harness; real workloads arrive with their specifications.
-Timings depend on the machine and its load, so benchmarks run manually and never in CI
-or `just check`. Clippy still compiles the bench target in the gate.
+`just bench` runs every bench target in the workspace, each a divan harness, with every
+feature on. Extra Cargo options may follow the recipe.
+
+- `crates/libpachinko/benches/version.rs` is the smoke benchmark over
+  `libpachinko::version()`, passing its function pointer and result through
+  `divan::black_box` to retain a runtime call. The measurement includes indirect-call
+  overhead.
+- `crates/pachinko/benches/arrow.rs` measures the service's Arrow record store under the
+  queue. The queue runs on `FakeClock`, so the timings are the queue's and the store's.
+  `publish` publishes N records round-robin into M pockets and `pull_and_ack` drains a
+  filled queue by pull and ack, each over three shapes: 1,000 records in 10 pockets,
+  10,000 in 10 and 10,000 in 100. `store_insert_then_hold` inserts 100, 1,000 or 10,000
+  records into one pocket's store and holds them in batches of 100.
+
+There is no comparative baseline: `MemoryRecords` is the record-store trait's reference
+for tests, not a benchmark subject. Timings depend on the machine and its load, so
+benchmarks run manually and never in CI or `just check`. Clippy still compiles the bench
+targets in the gate.
 
 ## Fuzzing
 
@@ -237,10 +292,13 @@ be promoted to regression tests when domain targets arrive. See
 
 | Suite | Covers |
 | --- | --- |
-| In-module tests, `crates/libpachinko/src/lib.rs` | `the_version_is_the_manifests`: `version` returns the version the manifest states. |
-| Doctests | The example on `libpachinko::version`, which asserts the same value from outside the crate. |
-| In-module tests, `crates/pachinko/src/lib.rs` | `run_writes_the_name_and_the_library_version`: `run` writes `pachinko`, the library's version and a newline into a buffer. |
-| `crates/pachinko/tests/binary.rs` | `the_binary_prints_its_line_and_exits_zero`: the built binary exits zero, prints that line on standard output and writes nothing to standard error. |
+| In-module tests, `crates/libpachinko/src/` | What the integration tests cannot reach through the public API: `version` returns the manifest's, `FakeClock` moves both ways and its clones share one instant, `Config` admits zero durations, a lease id round-trips its number, the lease-id counter stops rather than wrap, and every `Queue` is `Clone`, `Debug`, `Send`, `Sync` and `'static`. |
+| `crates/libpachinko/tests/queue/` | Every obligation of the module, as [Tests from the specifications](#tests-from-the-specifications) describes: each rule's success and failure, the config defaults and invariants, the surfaces, and the invariants and transition graphs by property. |
+| `crates/libpachinko/tests/records_contract.rs`, `crates/pachinko/tests/arrow_records.rs` | Each record store keeps the records contract: lookup, insert, supersede in place, holding the oldest by position, settling, deferring and freeing. |
+| In-module tests, `crates/pachinko/src/` | The service's parts alone: the command line's options and refusals, the owner task's replies and shutdown, the system clock, the Arrow store's 64-bit offsets, the Flight codec's reading of each body and the status code each refusal maps to, and `run`'s version line and its errors. |
+| `crates/pachinko/tests/flight.rs` | The two surfaces over a real Flight connection: each trigger's outcome on the wire, two consumers never handed one pocket, each refusal's status code (`NOT_FOUND`, `INVALID_ARGUMENT` or `FAILED_PRECONDITION`), a lapse the ticker processes, and a shutdown that answers stalled requests `UNAVAILABLE` and returns. |
+| `crates/pachinko/tests/binary.rs` | The built binary: its version line, its `listening on` line on loopback, and a bad argument's exit code and message. |
+| Doctests | The examples on both crates' public items, each asserting from outside its crate. |
 
 ## Related pages
 

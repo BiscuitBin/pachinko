@@ -1,8 +1,8 @@
 //! The pachinko service, built around `libpachinko`.
 //!
-//! It supplies the real implementations of the library's effect traits: the system
-//! clock in [`clock`], and an Arrow record store in [`arrow`], where each pocket's
-//! records are one `RecordBatch` (decision 0020). [`serve`] runs the queue behind an
+//! It supplies the real implementation of the library's effect trait, the system
+//! clock in [`clock`], and the service's record store in [`arrow`], where each
+//! pocket's records are one Arrow `RecordBatch` (decision 0020). [`serve`] runs the queue behind an
 //! Arrow Flight API on tokio (decision 0019): one task owns the queue, a ticker
 //! processes lapses and decay, and both live in a `JoinSet` that `serve` joins
 //! before it returns. The binary's `main` calls [`run`] and nothing else.

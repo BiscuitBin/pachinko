@@ -47,7 +47,7 @@ TLS feature of `tonic` or `arrow-flight` is enabled, so `deny.toml`'s `openssl-s
 holds unchanged, and the service listens on loopback unless `--listen` says otherwise.
 [API reference](../reference/api.md) lists the mapping.
 
-**One owner task holds the queue.** `libpachinko::Queue` is plain data with `&mut self`
+**One owner task holds the queue.** `libpachinko::queue::Queue` is plain data with `&mut self`
 methods. One tokio task owns the service's `Queue`, and every command reaches it through
 one bounded `mpsc` channel with a `oneshot` reply: the Flight handlers send the parties'
 commands, and a ticker task on a fixed interval sends `Tick`, which processes lapses and

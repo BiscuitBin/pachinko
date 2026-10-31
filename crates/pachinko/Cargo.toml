@@ -4,7 +4,7 @@ version = "0.1.0"
 # description, keywords, categories and readme are the metadata the clippy cargo
 # group's cargo_common_metadata names. It skips a `publish = false` package, so they
 # are kept for the docs and for the day publishing is decided.
-description = "The pachinko service: a minimal binary that supplies libpachinko's effects."
+description = "The pachinko service: libpachinko's queue over Arrow Flight, with the system clock and an Arrow record store."
 keywords = ["pachinko", "service", "binary"]
 categories = ["command-line-utilities"]
 readme = "README.md"

@@ -126,11 +126,16 @@ move. Both recipes reach the network. Read every lockfile diff before accepting 
 
 ## Adding or upgrading a crate
 
-The one normal workspace dependency is still the service's path dependency on
-`libpachinko`, and libpachinko gains its first when the specifications define a domain
-that needs one. The first external dependencies are harnesses: divan, libpachinko's
-development dependency for its benchmark, and libfuzzer-sys in the excluded `fuzz/`
-crate ([decision 0007](../decisions/0007-dependency-policy.md)).
+libpachinko's one normal dependency is `thiserror`, for its error enums. The service
+uses `thiserror` too, beside its path dependency on `libpachinko`, the Arrow crates its
+record store uses ([decision 0020](../decisions/0020-records-as-arrow-batches.md)) and
+the Flight, tonic and tokio stack it serves on
+([decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)). The harnesses
+are divan, a development dependency of both crates for their benchmarks, proptest,
+libpachinko's for its property tests, and libfuzzer-sys, the excluded `fuzz/` crate's
+own. A decision-0007 note sits above each external dependency or group of them, in the
+root `Cargo.toml` or, for libfuzzer-sys, in `fuzz/Cargo.toml`
+([decision 0007](../decisions/0007-dependency-policy.md)).
 
 1. A version lives in one place: the root `Cargo.toml`'s `[workspace.dependencies]`
    table, and a member crate names the dependency with `workspace = true`. Edit the range
