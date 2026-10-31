@@ -1,7 +1,7 @@
 ---
 id: T20
 title: "Execution-model spike: bounded worker threads running single-threaded state machines over partitions"
-status: todo
+status: done
 depends_on: [T19]
 parallel_with: []
 branch: ticket/t20-worker-pool-spike
@@ -183,11 +183,11 @@ drained between inputs, and a test provokes the case with the smallest capacity.
 
 | # | Claim | Check | Outcome |
 | --- | --- | --- | --- |
-| 1 | A crate under `spikes/` with an empty `[workspace]` table is its own root, so every `--manifest-path` line reaches it and the root `Cargo.toml` is untouched; `tests/fixtures/effects-violation/Cargo.toml` is the precedent. | Step 3 | |
-| 2 | `cargo deny --manifest-path spikes/worker-pool/Cargo.toml --config deny.toml --locked check licenses bans sources` applies the root policy to the spike's graph. | Step 3 | |
-| 3 | Renovate's cargo manager finds `spikes/worker-pool/Cargo.toml` by its default file pattern, so only the `rust-version` regex manager in `renovate.json` needs the path; the manager's documentation (`https://docs.renovatebot.com/modules/manager/cargo/`) is read on the day, because the dashboard shows it only after the merge. | Step 7 | |
-| 4 | `std::sync::mpmc` is unstable on 1.99.1 and `std::sync::mpsc::sync_channel` and `std::thread::scope` are stable, so the first cut needs no dependency. Verified 2026-10-31 while writing this ticket, with a one-line probe. | Step 2 | |
-| 5 | The clippy pass over the spike inside `just check` costs an acceptable time; T16's precedent for `fuzz/` was 7.87 s cold and 0.06 s warm. | Step 9 | |
+| 1 | A crate under `spikes/` with an empty `[workspace]` table is its own root, so every `--manifest-path` line reaches it and the root `Cargo.toml` is untouched; `tests/fixtures/effects-violation/Cargo.toml` is the precedent. | Step 3 | Holds. At 364d921 with uncommitted changes, committed as 952295a, all four gates reach `spikes/worker-pool/Cargo.toml` and the root `Cargo.toml` is untouched; see "Worktree and baseline". |
+| 2 | `cargo deny --manifest-path spikes/worker-pool/Cargo.toml --config deny.toml --locked check licenses bans sources` applies the root policy to the spike's graph. | Step 3 | Holds. The same run prints `bans ok, licenses ok, sources ok` for the spike's graph, with the eleven license-not-encountered warnings an empty graph gives. |
+| 3 | Renovate's cargo manager finds `spikes/worker-pool/Cargo.toml` by its default file pattern, so only the `rust-version` regex manager in `renovate.json` needs the path; the manager's documentation (`https://docs.renovatebot.com/modules/manager/cargo/`) is read on the day, because the dashboard shows it only after the merge. | Step 7 | Holds, per the Renovate page read on 2026-10-31; quoted under "Claims" in the hand-back notes. The dashboard check waits for the merge. |
+| 4 | `std::sync::mpmc` is unstable on 1.99.1 and `std::sync::mpsc::sync_channel` and `std::thread::scope` are stable, so the first cut needs no dependency. Verified 2026-10-31 while writing this ticket, with a one-line probe. | Step 2 | Holds. E0658 on `std::sync::mpmc` and the `sync_channel` plus `thread::scope` probe compiles and runs; quoted under "Survey". No dependency was added. |
+| 5 | The clippy pass over the spike inside `just check` costs an acceptable time; T16's precedent for `fuzz/` was 7.87 s cold and 0.06 s warm. | Step 9 | Holds. At ce593ec the spike adds 0.76 s to a cold `just clippy` (1.229 s total) and nothing measurable to a warm one (0.181 s total); quoted under "Claims" in the hand-back notes. |
 
 Risks from `CONVENTIONS.md` §13 that apply: the toolchain pin, which moves the lint set
 the spike is linted with; the network at first run and none in `check`; a gate that
@@ -449,8 +449,950 @@ git status --short
 
 ## Hand-back notes
 
-Written by the executing agent, in the sections step 8 names, each quoted output headed
-by the commit it ran at and showing its exit status (`CONVENTIONS.md` §11).
+Written on 2026-10-31. Every number below was measured on one host, "the host" from
+here on: macOS 26.4, Apple M5 Pro, 18 cores (6 performance and 12 efficiency), 64 GiB.
+The numbers compare configurations on that host on that day and claim nothing else; no
+capacity claim is made anywhere in these notes. Every quoted output is headed by the
+commit it ran at, with "with uncommitted changes" where that was true, and shows its exit
+status where the recording file holds one; where a file holds no exit status the notes
+say so. The commit that carries the checkpoint 3 round 2 fixes is ce593ec, the final
+commit before these notes; the quotable sweep and the clippy timing were taken at it.
+
+### Worktree and baseline
+
+The worktree is on branch `tickets/t20-worker-pool-spike-complete`, not the ticket's
+`ticket/t20-worker-pool-spike`: it was prepared under that name and kept as prepared, as
+T16's merges were (Open points). `just initialize` was not run: `.pixi/` and `.tools/bin`
+(allium, cargo-fuzz, cargo-hack, cargo-qual, cargo-release, rustqual) were present from
+the worktree's preparation, so no network recipe ran for the baseline.
+
+Baseline on the untouched worktree, at 364d921, last lines of `just check`
+(`ai_tmp/t20-baseline-check.log`, 24.6 s wall):
+
+```text
+All checks passed and the worktree is unchanged.
+just check  55.75s user 14.02s system 283% cpu 24.616 total
+exit=0
+```
+
+Step 3 built the empty crate and wired its gates. The gate runs were recorded at 364d921
+with uncommitted changes, which became commit 952295a. Green, decisive lines
+(`ai_tmp/gates/green-empty.log`; the cargo-deny warning boxes and colour codes are
+omitted):
+
+```text
+commit 364d921 with uncommitted changes
+$ just lock-check
+cargo update --workspace --locked --offline --manifest-path spikes/worker-pool/Cargo.toml
+     Locking 0 packages to highest Rust 1.99 compatible versions
+exit=0
+$ just fmt-check
+cargo fmt --manifest-path spikes/worker-pool/Cargo.toml --check
+exit=0
+$ just clippy
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
+    Checking worker-pool v0.0.0 (.../spikes/worker-pool)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+exit=0
+$ just deny
+cargo deny --manifest-path spikes/worker-pool/Cargo.toml --config deny.toml --locked check licenses bans sources
+bans ok, licenses ok, sources ok
+exit=0
+```
+
+Each of the three gates was then broken once in the worktree and restored before the
+next (`ai_tmp/gates/breaks-empty.log`, same commit heading; colour codes stripped):
+
+```text
+### break 1: fmt-check, an unformatted line in src/main.rs
+Diff in .../spikes/worker-pool/src/main.rs:13:
+-fn   unformatted( ) { }
++fn unformatted() {}
+error: recipe `fmt-check` failed on line 218 with exit code 1
+exit=1
+
+### break 2: clippy, a `let x = 1;` nobody reads in src/main.rs
+error: unused variable: `x`
+  --> src/main.rs:14:9
+   = note: `-D unused-variables` implied by `-D warnings`
+error: could not compile `worker-pool` (bin "worker-pool") due to 1 previous error
+error: recipe `clippy` failed on line 229 with exit code 101
+exit=101
+
+### break 3: lock-check, the version in Cargo.lock edited by hand
+-version = "0.0.0"
++version = "0.0.1"
+ Downgrading worker-pool v0.0.1 (.../spikes/worker-pool) -> v0.0.0
+error: cannot update the lock file .../spikes/worker-pool/Cargo.lock because --locked was passed to prevent this
+error: recipe `lock-check` failed on line 90 with exit code 101
+exit=101
+
+### restored
+$ just lock-check && just fmt-check
+exit=0
+```
+
+The spike's lockfile holds one package and was generated with
+`cargo generate-lockfile --offline`: with no dependency, step 3 needed no network after
+all. `git diff --stat main -- crates docs/specs Cargo.toml Cargo.lock deny.toml` at
+3de4bc1 with uncommitted changes prints nothing (exit 0), and
+`git diff --stat main -- docs/decisions` lists only
+`docs/decisions/0016-release-process.md | 2 +-`, the lockfile count.
+
+### Survey
+
+Re-verified on 2026-10-31 against the crates.io API (fourteen reads) and the GitHub
+repository API (six reads), every response HTTP 200, no token sent
+(`ai_tmp/t20-survey.md`). All seven rows are unchanged on version, licence and MSRV; no
+version is yanked; no repository is archived; every licence is in `deny.toml`'s allow
+list, flume's legacy `Apache-2.0/MIT` read as an OR. Last pushes: crossbeam 2026-10-01,
+disruptor 2026-08-08, rtrb 2026-10-30, flume 2026-10-15, parking_lot 2026-10-21,
+foldhash 2026-07-03. One note: crates.io reports rtrb's `newest_version` as 0.3.6 because
+a 0.3.x backport was published seven minutes after 0.4.1; the table uses 0.4.1, the
+highest non-yanked version, which matches the ticket row.
+
+The `std::sync::mpmc` probe, rerun while writing these notes at 3de4bc1 with uncommitted
+changes, `rustc 1.99.1 (58cf8f9c3 2026-10-13)`:
+
+```text
+$ rustc --edition 2024 -o ai_tmp/probe/mpmc ai_tmp/probe/mpmc.rs
+error[E0658]: use of unstable library feature `mpmc_channel`
+ --> ai_tmp/probe/mpmc.rs:2:20
+  |
+2 |     let (tx, rx) = std::sync::mpmc::channel::<u8>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: see issue #126840 <https://github.com/rust-lang/rust/issues/126840> for more information
+error: aborting due to 3 previous errors
+exit 1
+```
+
+The companion probe `ai_tmp/probe/stable.rs` (`sync_channel` plus `thread::scope`)
+compiled and ran during step 2; its binary is beside it. Claim 4 holds.
+
+Decided and written down in step 2: the first cut uses std alone. `sync_channel` for
+the bounded inbound lanes, `std::thread::scope` for the pool, `BTreeMap` and `BTreeSet`
+throughout (the root `clippy.toml` bans the hash containers and reaches the spike), and
+an inline 64-bit FNV-1a in `src/partition.rs` for the pocket key to partition function,
+tested against the reference vectors. No crate entered later either (Crates).
+
+### The decomposition and the hop table
+
+B was built, leases with their pocket, and the evidence did not turn the reading over.
+A hop is one bounded-queue traversal on the path from the client to its reply, the
+client's own entry counted; "messages crossed" counts every message between machines,
+the notifications after the reply included. The rule names are the module's.
+
+| Trigger | Machines touched | Messages crossed | Hops to reply |
+| --- | --- | --- | --- |
+| `PublisherJoins`, `ConsumerJoins` | order | none | 1 |
+| Publish, new pocket (`PublishIntoNewPocket`) | pocket, order | `Enqueue` | 1 |
+| Publish, queued or leased pocket (`PublishNewKey`, `Supersede`, `DropStalePublish`) | pocket | none | 1 |
+| Publish, idle pocket (`ReviveIdlePocket`) | pocket, order | `Enqueue` | 1 |
+| Publish, parked pocket (`ReviveParkedPocket`) | pocket, order | `Enqueue` | 1 |
+| Pull, no active lease, a pocket queued (`PullClaimsFrontPocket` and `HoldRecord`) | order, pocket | `Claim` | 2 |
+| Pull, no active lease, none queued (`PullFindsNoPocket`) | order | none | 1 |
+| Pull, active lease (`PullWithinLease`) | order, pocket | `PullUnderLease` | 2, or 3 with `RetryPull` in the window |
+| Ack (`AckSettlesRecord`, `AckDefersNewerVersion`) | pocket | none | 1 |
+| Nack (`NackSettlesRecord`, `NackDefersNewerVersion`) | pocket | none | 1 |
+| Renew (`Renew`) | pocket | none | 1 |
+| Release (`ReleaseRequeuesPocket` with the two requeues, `ReleaseIdlesEmptyPocket`) | pocket, order | `PocketBecame` | 1 |
+| Lapse (`LeaseLapses`, then `LeaseExpiryParksPocket`, `LeaseExpiryKeepsPocketAtFront` or `LeaseExpiryIdlesEmptyPocket`, with the two requeues) | pocket, order | `PocketBecame` | none: the tick is the input |
+| `SupersededRecordDecays` (tick) | pocket | none | none |
+| `DeadLetterDecays` (tick) | pocket | none | none |
+
+A, leases central, from the rules alone, since nothing of A was built: the publish rows
+as B; a claiming pull is order to pocket for the batch and back for the lease, 2 hops; a
+pull within a lease is order (extend `expires_at`) then pocket (batch), 2; ack, nack and
+renew are pocket (the record) plus order (extend `expires_at`), 2 hops or 1 plus a
+message; release is order (end the lease) then pocket (free the records), 2; the lapse is
+detected in the order machine and frees records in the pocket machine, 1 message. Under
+A every consumer action reaches the order machine; under B only pulls and lease ends do.
+
+The window the Context names, between a pocket machine's decision and the order
+machine's hearing of it, was shown and guarded. A `Claim` always finds its pocket queued:
+a publish into a queued pocket emits no `Enqueue`, so a publish overtaking a `Claim`
+changes nothing the claim reads. A `RetryPull` is handled after the `PocketBecame` that
+ended the lease: the pocket machine answers a `PullUnderLease` under an ended lease with
+`RetryPull` to the order machine, and because everything one machine sends another
+travels through one outbox into one inbound lane, that retry cannot overtake the
+`PocketBecame` sent before it. `tests/window.rs` steps the order machine and one pocket
+machine by hand through four windows (a second pull before its `Claim` is delivered; a
+pull racing a lapse; a release followed at once by a pull; a publish overtaking a
+`Claim`), each ending at quiescence with zero violations, every record handed, one active
+lease and the order view consistent. The fifth hand-stepped probe
+(`ai_tmp/probe-1/tests/window.rs`, checkpoint 1) shows what the FIFO rule protects:
+with `RetryPull` delivered before `PocketBecame` the order machine routes the retry
+under the ended lease again and the pair loops. The flood test exercises the window
+under load with capacity 1: in one `--nocapture` run after the two-lane split, before
+the pool's commit 110e006 and from the pool agent's report (`ai_tmp/t20-agent-pool.md`),
+worker thread 0 stepped 94,504 inputs and crossed 35,157 messages (31,558 local, 3,599
+over the channel, outbox high water 13) and worker thread 1 stepped 32,198 and crossed
+30,365 (high water 272), in 307 ms, with every invariant holding at the end.
+
+### The counter and positions
+
+`Queue.next_position` need not be one writer, but each of its two halves must be, and
+the spike gives it two single writers: the order machine's `next_pocket_position` for
+pockets and each pocket machine's `next_record_serial` for records, a record's position
+being `serial * partitions + partition` so that no two records anywhere share one. A
+publish therefore takes its record position inside the pocket machine with no hop; a
+pocket position is taken by the order machine when it hears the `Enqueue`, which is a
+message the publish sends anyway, after its reply. The concurrent-sequencing row's
+argument holds for each counter: one writer, no shared atomic. This is Representation
+item 1, and `UniqueRecordPosition`, `UniquePocketPosition` and the two `BelowNext`
+invariants are checked over the split counters at every step of the scripted test.
+
+### The lapse and the token
+
+The clock enters a machine only as `Input::Tick` and as the `now` stamped on every
+input: the pocket machine expires leases from the ticks it receives, in the same stream
+as the consumer's actions, so a lapse and an action are ordered by one machine. The
+lease identifier is `LeaseId { partition, serial }`, minted by the order machine with a
+strictly increasing serial, kept by the pocket machine after the lease ends; it routes
+the action to its pocket machine with no table and is the fencing token. The guard
+shared by ack, nack, renew and release checks `UnknownLease`, then `LeaseNotActive`,
+then `NotYourLease`, before any record is read, so an action naming an ended lease is
+`Rejected(LeaseNotActive)` and never reaches a record under a successor lease, even when
+the same consumer holds the same pocket again. Expiry fires only on a tick and includes
+equality (`expires_at <= now`).
+
+The fencing case is tested in three places: the pocket machine's unit test
+`ack_naming_an_ended_lease_is_rejected_despite_a_successor_lease`
+(`src/pocket/tests.rs`), the single-threaded
+`an_action_naming_an_ended_lease_is_rejected_under_the_successor_lease_and_records_are_unchanged`
+(`tests/invariants.rs`) and the pool's
+`an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease` (`tests/pool.rs`),
+which expires the first lease by the clock, lets the same consumer claim the same pocket
+again, replays the old lease's ack and asserts the refusal, the record still held with
+its rank, held rank, position, payload and held payload unchanged, the first lease
+`Expired` and the successor `Active`. The both-orders test runs twice:
+`a_lapse_and_a_late_renewal_are_ordered_by_the_pocket_machine_either_way` through
+`Direct`, and `a_lapse_and_a_late_renewal_are_ordered_by_one_machine_either_way` through
+the pool, whose lapse half (TTL 30 ms, 5 ms tick, 100 ms sleep) sees the renewal
+`Rejected(LeaseNotActive)` and whose renewal half (TTL 30 ms, 2 s tick, 100 ms sleep)
+sees a renewal stamped at least 70 ms after the lease expired by the clock accepted,
+with zero ticks run, because no lapse had been processed. Both orders occur and each is
+handled as the rules say for that order; open question 8 stays open.
+
+### Ordering
+
+Preserved: a publisher's publishes into one pocket (one lane, one machine, FIFO); a
+consumer's actions under one lease (one pocket machine; a `Pull` goes through the order
+machine first, and a consumer acts after each reply); the clock's ticks against both
+within one machine (one stream). Not preserved, said plainly: a `Published` reply can
+arrive before the pocket is pullable, its `Enqueue` still in flight; pockets created in
+different partitions enter the pocket order in the order the order machine hears their
+`Enqueue`s, not in publish order, even from one publisher; a `Pull` may answer
+`NoPocketAvailable` while a just-released pocket's `PocketBecame` is in flight; a `Pull`
+processed before a lapse's `PocketBecame { RequeuedKeepingPosition }` claims the next
+queued pocket rather than the one the module puts at the front (checkpoint 1, C1); two
+consumers' actions on different pockets are unordered.
+
+`Direct`, the single-threaded router the replay and invariant tests drive, cannot
+interleave a client input with the messages chained from an earlier one: `submit` and
+`tick` each run the machines to quiescence before returning, so no test through it
+reaches the window and its retry counter is always 0. `tests/window.rs` covers the
+windows by hand (above), and the pool exhibits them under load.
+
+The load made the Release-then-Pull window visible. Before the checkpoint 2 fix B8,
+at 110e006, the order machine's retry counter was 43,154 over a 4.26 s pool life on one
+worker thread, about a third of all pulls, and 72,233 with six worker threads, about
+half: the consumer's `Released` reply reached it before the order machine had stepped
+the `PocketBecame`, so the next `Pull` went out under the ended lease, came back as
+`RetryPull`, and only then claimed, two extra hops. After B8 (a client-lane burst ends
+as soon as a step has queued a message for one of the worker thread's own machines) the
+counter is 0 on one worker thread in every run since, and roughly halved across worker
+threads: at ce593ec, 24,054 to 25,815 with six and 16,790 to 19,032 with eighteen. What
+remains is the cross-worker-thread case, a `PocketBecame` on the peer lane overtaken by
+the next `Pull` on the client lane, which the protocol tolerates.
+
+### Bounded and structured
+
+The pool as built: the caller's number of worker threads, started under
+`std::thread::scope` and joined when it stops; partition `p` on worker thread `p mod N`
+and the order machine on worker thread 0, statically; two bounded `sync_channel` lanes
+per worker thread, a client lane that clients block on and a peer lane that worker
+threads `try_send` into; a message whose lane is full waits in the sender's outbox,
+drained between inputs, so no worker thread ever blocks on a send; the monotonic clock
+read once per input as it is dequeued; a tick into every machine on a fixed interval;
+`park_timeout` and `unpark` for idling, since std has no select over two receivers;
+stop is a signal and then the scope's join, and a panic in a worker thread or the body
+surfaces at the join.
+
+The six integration tests, with their wall times run alone from the pool agent's report:
+
+| Test | Time |
+| --- | --- |
+| `each_partition_is_stepped_by_one_thread_and_never_more_than_the_pool_has` | 0.20 s |
+| `stopping_joins_every_worker_thread_and_a_panic_reaches_the_caller` | 0.00 s |
+| `an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease` | 0.26 s |
+| `two_machines_flooding_each_other_through_full_queues_make_progress` | 0.37 s |
+| `a_publisher_s_publishes_into_one_pocket_arrive_in_order` | 0.00 s |
+| `a_lapse_and_a_late_renewal_are_ordered_by_one_machine_either_way` | 0.14 s |
+
+Every test ends with the invariant check empty and every machine's violation counter 0;
+the stop test's panic half asserts the payload, that `thread::scope` returned, and that
+no worker thread is live. `just spike-test` at 3de4bc1 with uncommitted changes (the
+checkpoint 3 round 2 fixes, landing in ce593ec;
+`ai_tmp/review/T20-3b/spike-test.log`, exit 0 per the apply report beside it) names
+every test the acceptance criteria ask for:
+
+```text
+     Running tests/invariants.rs
+test consecutive_pulls_under_one_lease_yield_exactly_one_reply_each ... ok
+test an_action_naming_an_ended_lease_is_rejected_under_the_successor_lease_and_records_are_unchanged ... ok
+test one_pocket_became_per_lease_end_over_all_four_paths ... ok
+test a_lapse_and_a_late_renewal_are_ordered_by_the_pocket_machine_either_way ... ok
+test every_invariant_holds_after_every_step_of_a_scripted_sequence_with_refusals ... ok
+     Running tests/pool.rs
+test stopping_joins_every_worker_thread_and_a_panic_reaches_the_caller ... ok
+test a_publisher_s_publishes_into_one_pocket_arrive_in_order ... ok
+test each_partition_is_stepped_by_one_thread_and_never_more_than_the_pool_has ... ok
+test a_lapse_and_a_late_renewal_are_ordered_by_one_machine_either_way ... ok
+test an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease ... ok
+test two_machines_flooding_each_other_through_full_queues_make_progress ... ok
+     Running tests/replay.rs
+test each_machine_replayed_from_its_input_log_equals_itself ... ok
+     Running tests/window.rs
+test a_publish_overtaking_a_claim_leaves_the_pocket_claimable ... ok
+test a_second_pull_before_the_first_claim_is_processed_is_forwarded_behind_it ... ok
+test a_release_followed_at_once_by_a_pull_is_retried_and_claims_the_pocket_at_the_back ... ok
+test a_pull_racing_a_lapse_is_retried_after_the_pocket_became_is_heard ... ok
+```
+
+**The two-lane finding.** The first cut gave each worker thread one inbound channel, and
+the flood test starved machine-to-machine traffic: a client blocked in `send` on a full
+`sync_channel` wins the freed slot from a peer's `try_send` nearly every time. Measured
+on the first cut of the flood test (capacity 1, two worker threads, four publishers and
+four consumers, 300 ms; from the pool agent's report, before 110e006): worker thread 0
+delivered 49 messages to worker thread 1 in the whole run, worker thread 1's outbox
+reached 22,150 waiting `Enqueue`s, a consumer's `Pull` got no reply in 5 s, and the test
+took 27.06 s to drain the backlog at stop. After the split into a client lane and a peer
+lane: 3,599 deliveries from worker thread 0 to 1, high water 272, 307 ms. FIFO per
+destination survives the split, because everything one machine sends another travels
+through the same outbox into the same peer lane.
+
+**Deadlock freedom.** No worker thread ever blocks on a send: a message whose
+destination lane is full waits in the sender's outbox, and the sender goes on to drain
+its own lanes every iteration whatever its peers are doing. So every full lane is always
+being emptied by a worker thread that is never itself waiting, every pending `try_send`
+eventually succeeds, and the one blocking send in the pool, a client's, blocks on a lane
+a live worker thread drains. The flood test provokes the case at capacity 1 and asserts
+that both peer lanes did fill (a `lane_full` counter on both worker threads, added at
+checkpoint 2), that messages crossed both ways, one reply per request, and a 10 s bound
+enforced by a watchdog thread.
+
+**The fairness bound.** Two things stay unfair. Client against client on the client lane
+is unordered, since `mpsc` promises no order among blocked senders. An outbox is
+unbounded while a peer takes less than the worker thread produces; the flood test's high
+water after the split was 272, and a worker thread with a pending outbox yields rather
+than parks, so a saturated pool burns CPU on that thread. A throttle that skips the
+client lane while a remote outbox is deep would bound it without touching the deadlock
+argument; not built, because nothing asked for it.
+
+**The B8 reorder.** At 110e006 the pool suite failed 3 of 70 runs with
+`expected a batch, got NoPocketAvailable`: a publish into a pocket on the order
+machine's own worker thread queues its `Enqueue` locally, and a `Pull` already waiting on
+the client lane was stepped before it. The fix ends a client-lane burst as soon as a
+step has queued a local message, so the local queue is drained before any later lane
+item; 70 of 70 after, and 110 of 110 over the probe copies. The guarantee is complete for
+a sequential client; a local queue deeper than the burst limit of 64 can still be
+overtaken under load, which the protocol tolerates.
+
+**Shown to bite.** For the invariant, fencing and one-thread tests the code was broken
+on purpose at 109ddb0, each break restored with `git checkout --` and `git status --short`
+empty after the last (`ai_tmp/t20-breaks.md`).
+
+Break 1, the invariant test: `RequeueHeldRecord` in `src/pocket.rs` no longer sets the
+record back to `Queued`, so a held record stays held after a release or a lapse.
+`cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked --test invariants`:
+
+```text
+109ddb0 with uncommitted changes
+test every_invariant_holds_after_every_step_of_a_scripted_sequence_with_refusals ... FAILED
+thread 'every_invariant_holds_after_every_step_of_a_scripted_sequence_with_refusals' panicked at tests/invariants.rs:233:5:
+assertion `left == right` failed: after (45, Tick(Timestamp(13000000)))
+  left: [... Violation { invariant: "OutstandingOnlyWhileLeased", detail: "record RecordKey(\"s1\") is Held in pocket PocketKey(\"B\"), which is Queued" } ...]
+ right: []
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Break 2, the fencing tests: the `LeaseNotActive` guard dropped from the shared lease
+guard in `src/pocket.rs`. `--test pool` and `--test invariants`:
+
+```text
+109ddb0 with uncommitted changes
+test an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease ... FAILED
+thread 'an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease' panicked at tests/pool.rs:402:52:
+called `Result::unwrap()` on an `Err` value: "Ack { consumer: ConsumerId(\"c\"), lease: LeaseId { partition: Partition(0), serial: 0 }, record_key: RecordKey(\"r\") } replied Acked, wanted Rejected(LeaseNotActive)"
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+test an_action_naming_an_ended_lease_is_rejected_under_the_successor_lease_and_records_are_unchanged ... FAILED
+  left: Acked
+ right: Rejected(LeaseNotActive)
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Break 3, the one-thread test: the static assignment in `src/pool.rs` gives partition
+`p` to worker thread `p mod N` and also to the next worker thread, so two worker
+threads each own and tick a machine for the same partition. A literal "two threads step
+one instance" is unreachable without surgery, since a machine is owned by value in one
+worker thread's map and stepped through its `&mut`. `--test pool`:
+
+```text
+109ddb0 with uncommitted changes
+test each_partition_is_stepped_by_one_thread_and_never_more_than_the_pool_has ... FAILED
+thread 'each_partition_is_stepped_by_one_thread_and_never_more_than_the_pool_has' panicked at tests/pool.rs:267:9:
+assertion `left == right` failed: Partition(Partition(0))
+  left: Some(2)
+ right: Some(0)
+test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+```
+
+After each restore, at 109ddb0 clean, the same targets:
+
+```text
+109ddb0
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+### Measurement
+
+`just spike` with no arguments sweeps (1,1), (1,18), (6,18) and (18,18), worker threads
+and partitions, with 18 publishers and 18 consumers (twice the host's
+`available_parallelism`, shared by every row so the rows compare), 256 pockets, lease
+TTL 200 ms, decay TTLs 1000 ms (the module's 12 h would decay nothing in a 4 s run),
+tick 10 ms, queue capacity 1024, 3 s measured after 1 s warm-up, three repeats, the
+whole report of the median repeat by publishes a second, or of the first unhealthy
+repeat ahead of it, with every row counting its unhealthy repeats and the binary exiting
+1 when any row has one. The publishers publish with repeated keys so that supersedes and
+stale drops happen; the consumers pull, ack seven of eight, nack one of eight, release
+three of four pulls, and consumer 0 sleeps three TTLs after every batch so that lapses
+happen. The quotable table, taken at the final commit ce593ec on a clean worktree
+(`ai_tmp/t20-sweep-ce593ec.txt`, 11:55:55 PDT), 20 columns with release latency. The
+binary exits 1 when any row has an unhealthy repeat, so the exit code 0 recorded on the
+file's last line is itself evidence that every repeat of every row was healthy; the
+stderr file holds cargo's three lines and no panic. The note, thresholds and invariants
+preamble lines are in the file; the host line, the load line, the column header and the
+rows:
+
+```text
+commit ce593ec, worktree clean
+worker-pool spike on macOS 26.4; Apple M5 Pro; hw.ncpu 18; perf cores 6; efficiency cores 12; available_parallelism 18; commit ce593ec
+load: 256 pockets, lease_ttl 200 ms, superseded/dead-letter ttl 1000 ms, tick 10 ms, queue capacity 1024, 3.0 s measured after 1.0 s warm-up, median of 3 run(s) by pub/s; clients = publishers+consumers, closed loop
+N,P   | clients |    pub/s |   pull/s | ack+nack/s | release/s | p50/p99 pub (us) | p50/p99 pull (us) | p50/p99 ack+nack (us) | p50/p99 release (us) | send-wait p99 pub (us) | retry pulls | msgs local | msgs channel | outbox hwm |   ticks | busy % (max/mean) | lapses | parks | invariants
+1,1   | 18+18   |   230122 |    39419 |     148555 |     29565 |           68/196 |            69/219 |                68/192 |               68/193 |                      1 |           0 |     374349 |            0 |          6 |     422 |             20/20 |     13 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 20 %): the pool's loop or the clients, not told apart
+    requests 1829961 replies 1829961 timed out: 0; publishes new-pocket 0 new-key 439235 superseded 117815 stale 132015 rejected 148; lease-not-active 40; empty pulls 0; unhealthy repeats 0 of 3; wall 4.22 s
+1,18  | 18+18   |   237535 |    40694 |     153331 |     30520 |           68/131 |            68/136 |                68/129 |               68/132 |                      1 |           0 |     380052 |            0 |          8 |     422 |             19/19 |     15 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 19 %): the pool's loop or the clients, not told apart
+    requests 1856858 replies 1856858 timed out: 0; publishes new-pocket 0 new-key 453601 superseded 121381 stale 136577 rejected 164; lease-not-active 34; empty pulls 0; unhealthy repeats 0 of 3; wall 4.23 s
+6,18  | 18+18   |   345524 |    40128 |     185291 |     30096 |           38/199 |           127/540 |                36/185 |               35/187 |                      8 |       24054 |      67316 |       362538 |          2 |    2527 |             15/10 |     11 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 15 %): the pool's loop or the clients, not told apart
+    requests 2441040 replies 2441040 timed out: 0; publishes new-pocket 0 new-key 548946 superseded 218193 stale 268807 rejected 274; lease-not-active 45; empty pulls 0; unhealthy repeats 0 of 3; wall 4.22 s
+18,18 | 18+18   |   244361 |    32472 |     139998 |     24354 |           55/292 |           194/561 |                45/249 |               44/253 |                     13 |       19032 |      15955 |       328166 |          2 |    7614 |               7/2 |     13 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 7 %): the pool's loop or the clients, not told apart
+    requests 1749044 replies 1749044 timed out: 0; publishes new-pocket 0 new-key 414519 superseded 145133 stale 171878 rejected 209; lease-not-active 42; empty pulls 0; unhealthy repeats 0 of 3; wall 4.23 s
+exit code 0
+```
+
+A second sweep at ce593ec (`ai_tmp/t20-sweep-ce593ec-2.txt`, 11:56:47 PDT, exit code 0
+on its last line) agrees: every rate within 3.3 % on every row and column (the worst is
+(6,18) publishes, 345,524 against 356,902), every p50 within 8 % (the worst is (6,18)
+pull, 127 against 118 us), every p99 within 22 % except (1,1) run 1's publish and pull
+p99 (196 and 219 us against 134 and 142 in run 2), a tail of one three-second window.
+Every row of both runs: `ok` over the 23 invariants named in the preamble, violations
+0, `timed out: 0`, requests equal to replies, `unhealthy repeats 0 of 3`, parks 0,
+lapses 11 to 15. The (1,18) outlier of the earlier 3de4bc1 sweeps
+(`ai_tmp/t20-sweep-final.txt`, `t20-sweep-final-2.txt`, whose run 1 had (1,18) 23 %
+low) did not recur: (1,18) equals (1,1) within 3 %, so partitions cost nothing on one
+worker thread.
+
+What is fastest, per column, both runs agreeing on every ordering: publishes a second,
+(6,18) at 346k to 357k, then (18,18) at 242k to 244k, then (1,18) at 233k to 238k and
+(1,1) at 230k to 233k; six worker threads buy 1.5 times one, eighteen buy 4 to 6 %,
+within noise of one. Pulls a second do not rise with worker threads: (1,1), (1,18) and
+(6,18) all at 39k to 41k, and 18 % lower at (18,18), 32k to 33k. Publish p50 is best at
+(6,18), 36 to 38 us, against 53 to 55 at (18,18) and 68 to 69 on one worker thread; pull
+p50 is best on one worker thread, 68 to 69 us, against 118 to 127 at (6,18) and 194 to
+204 at (18,18), the retry round trips. Release p50 is best at (6,18), 34 to 35 us,
+against 68 to 69 on one worker thread, where a release queues behind the publishes.
+Retry pulls are 0 on one worker thread in both rows of both runs, 24k to 26k with six
+and 17k to 19k with eighteen. The picture at 3de4bc1 was the same on every point; no
+number moved by more than 5 %.
+
+**The bottleneck, as the fixed binary names it.** Every row's bottleneck line reads
+"outside the machines' steps (no worker thread above 60 % in step; max N %): the pool's
+loop or the clients, not told apart", with N at 19 to 20 on one worker thread, 14 to 15
+with six and 7 with eighteen at ce593ec. The caveat is in the preamble: `busy %` is step time only, time
+inside `Machine::step` over the pool's wall, so routing, replies, channel operations,
+allocation and wake-ups are outside it, and the pool exposes no per-thread CPU time. The
+line therefore cannot by itself tell "the pool's loop is the cost" from "the clients
+offer too little", which is why checkpoint 3 renamed it from the earlier "clients" and
+why the client-scaling run below exists. No row names the channels: the outbox high
+water never exceeded 8 against a capacity of 1024 in any sweep, and send-wait p99 for a
+publish never exceeded 14 us, so step 6's clause "only if the table names the channels"
+did not fire.
+
+**Client scaling**, eight single-repeat runs of 2 s after 1 s warm-up at 3de4bc1 on a
+clean worktree (`ai_tmp/t20-scaling.txt`, 10:44:36 PDT; no exit status in the file; the
+stderr file holds cargo's lines only). The header and the eight rows, verbatim:
+
+```text
+commit 3de4bc1, worktree clean
+N,P   | clients |    pub/s |   pull/s | ack+nack/s | release/s | p50/p99 pub (us) | p50/p99 pull (us) | p50/p99 ack+nack (us) | send-wait p99 pub (us) | retry pulls | msgs local | msgs channel | outbox hwm |   ticks | busy % (max/mean) | lapses | parks | invariants
+1,1   | 8+8     |   245767 |    37286 |     150033 |     27963 |            29/55 |             29/56 |                 29/55 |                      1 |           0 |     271226 |            0 |          2 |     304 |             18/18 |      5 |     0 |         ok
+1,1   | 16+16   |   242644 |    41048 |     155760 |     30784 |           59/114 |            60/118 |                59/113 |                      1 |           0 |     285688 |            0 |          2 |     303 |             19/19 |      5 |     0 |         ok
+1,1   | 32+32   |   240908 |    42852 |     158468 |     32139 |          122/434 |           122/439 |               122/433 |                      1 |           0 |     283703 |            0 |          2 |     303 |             20/20 |      5 |     0 |         ok
+1,1   | 72+72   |   224791 |    41047 |     149923 |     30782 |          283/753 |           284/758 |               283/753 |                      1 |           0 |     257755 |            0 |          2 |     303 |             22/22 |      5 |     0 |         ok
+6,18  | 8+8     |   268442 |    35399 |     153432 |     26549 |            24/68 |            41/163 |                 23/65 |                     12 |       11290 |      46988 |       232046 |          2 |    1818 |              13/9 |      5 |     0 |         ok
+6,18  | 16+16   |   364970 |    41950 |     194945 |     31461 |           34/147 |            94/521 |                33/142 |                      9 |       20817 |      51451 |       275254 |          2 |    1819 |             14/10 |      5 |     0 |         ok
+6,18  | 32+32   |   347201 |    37792 |     181329 |     28346 |           47/429 |           312/809 |                44/426 |                      8 |        5243 |      38626 |       228800 |          2 |    1812 |             16/11 |      5 |     0 |         ok
+6,18  | 72+72   |   318458 |    47357 |     189014 |     35518 |          73/1161 |          567/1339 |               63/1135 |                      8 |         578 |      46043 |       274259 |          2 |    1818 |             15/10 |      5 |     0 |         ok
+```
+
+All eight runs `ok`, violations 0, `timed out: 0`, requests equal to replies, parks 0,
+lapses 5 (the stalled consumer's). The table resolves the "not told apart" label. At
+(1,1) publishes a second are flat, 246k, 243k, 241k, 225k from 8+8 to 72+72 clients,
+while publish p50 grows linearly with the client count, 29, 59, 122, 283 us: a closed
+loop whose throughput stays put while its latency scales with the offered concurrency is
+served by a saturated server, so on this host on this day one worker thread saturates at
+about 450k client inputs a second (publishes, pulls, settles and releases summed) with
+step time one fifth of it, and the other four fifths is the pool's loop: the lane
+`try_recv` bursts, the envelope and reply-channel allocation, the reply `send`, the
+wake-ups. Not the clients, and not the machines. At (6,18) publishes a second rise from
+268k at 8+8 to 365k at 16+16 and then fall, 347k and 318k, as 32+32 and 72+72 client
+threads oversubscribe the 18 cores beside the six worker threads, pull p99 reaching
+1.3 ms; the sweep's 18+18 point sits on that plateau. So the clients cap no row of the
+sweep, and with six worker threads the limit is the loop plus the cross-worker-thread
+retry round trips and the host's oversubscription. The machines are nowhere near a limit
+in any row. The scaling runs were taken at 3de4bc1 and not re-measured at ce593ec; the
+round 2 fixes between the two commits changed the health reporting and the columns, not
+the measurement path, and the ce593ec sweep moved no number by more than 5 % from
+3de4bc1, so the conclusion stands as taken at 3de4bc1.
+
+Two more caveats. Every sweep row runs N worker threads plus 36 client threads on 18
+cores, so (18,18) is oversubscribed by construction and its numbers say what that
+costs, not what eighteen worker threads would do alone. And the warm-up is at full
+load, so `busy %`, which divides by the whole pool wall including warm-up and the stop
+drain, is slightly diluted, equally for every row. Why no crate was tried: the channels
+were never near capacity in any run, the limit is the pool's own loop and the
+closed-loop clients, and step 6 puts a crate behind the interface only when the table
+names the channels. The numbers compare configurations on this host on this day and
+claim nothing else.
+
+Before the B8 fix the (1,1) and (1,18) rows looked worse on the pull side for a reason
+that was a defect, not a property of one worker thread. Pre-fix at 110e006 against
+post-fix at 110e006 with uncommitted changes, run 1 of each from the load agent's report:
+
+| N,P | pull/s before / after | retry pulls before / after | p50/p99 pull (us) before / after |
+| --- | --- | --- | --- |
+| 1,1 | 30,478 / 40,068 | 43,154 / 0 | 151/649 and 69/148 |
+| 1,18 | 29,856 / 41,172 | 42,653 / 0 | 154/657 and 68/133 |
+| 6,18 | 35,080 / 42,246 | 72,233 / 27,443 | 171/762 and 117/529 |
+| 18,18 | 32,433 / 32,650 | 31,774 / 17,143 | 183/637 and 201/604 |
+
+Publishes a second were unchanged within 3 % on every row. On one worker thread the pull
+path now costs the same as the publish path.
+
+### The boundary
+
+The machines are library-shaped and need no effect trait: nothing in a machine needed a
+thread or the clock otherwise than as an input, and `now` reaches a machine only as the
+argument of `step`. The order machine, the pocket machine, the protocol, the state, the
+partition function, `Direct` and the invariant check would be libpachinko under decision
+0003; the pool, which owns the threads, the channels, the clock and the ticks, and the
+load generator and the demo binary, would be `pachinko` under decision 0008, behind
+effect traits for the clock and threads that need their own decision records first
+(Recommendation). Checkpoint 1's reviewer answered "none found" to the question whether
+`now` enters a machine any other way than as an input, after searching the machine
+sources for clock reads, thread operations, locks, randomness, atomics, sleeps and
+spawns.
+
+The grep the brief asked for, at 3de4bc1 with uncommitted changes, lists more files than
+the brief predicted, because doc comments say "single-threaded" and the partition module
+names `RandomState` to say why it is not used:
+
+```text
+$ grep -rln 'Instant\|thread\|Mutex\|RandomState' spikes/worker-pool/src/
+spikes/worker-pool/src/pool.rs
+spikes/worker-pool/src/partition.rs
+spikes/worker-pool/src/machine.rs
+spikes/worker-pool/src/protocol.rs
+spikes/worker-pool/src/load.rs
+spikes/worker-pool/src/load/host.rs
+spikes/worker-pool/src/main.rs
+spikes/worker-pool/src/load/clients.rs
+spikes/worker-pool/src/lib.rs
+spikes/worker-pool/src/direct.rs
+spikes/worker-pool/src/load/report.rs
+spikes/worker-pool/src/pool/worker.rs
+exit 0
+```
+
+Restricted to lines that are not comments, the hits are only the pool and the load:
+
+```text
+$ grep -rn 'Instant\|thread::\|Mutex\|RandomState\|std::thread' spikes/worker-pool/src/ | grep -v '^\S*:[0-9]*:\s*//' | cut -d: -f1 | sort | uniq -c
+   2 spikes/worker-pool/src/load.rs
+  13 spikes/worker-pool/src/load/clients.rs
+   1 spikes/worker-pool/src/load/host.rs
+  15 spikes/worker-pool/src/pool.rs
+  16 spikes/worker-pool/src/pool/worker.rs
+exit 0
+```
+
+`src/main.rs` reaches the clock and threads only through `load`. Every hit in `lib.rs`,
+`machine.rs`, `protocol.rs`, `direct.rs` and `partition.rs` is a doc comment.
+
+### Crates
+
+None added: the spike's `[dependencies]` table is empty and its lockfile holds one
+package. The seven surveyed crates were re-verified on the day (Survey) and none earned
+a place, because no measurement named the channels (Measurement). What
+`crossbeam-channel` would have bought is its `select!` over several receivers: std has
+none, so the pool's two inbound lanes are drained with `try_recv` bursts and the idle
+wait is `park_timeout` with `unpark` from every sender, written by hand with a park
+token against the check-then-park race and a `OnceLock` per worker thread's `Thread`.
+That is the second lane and the wake-up protocol, about sixty lines, and it is the one
+place a crate would have shortened the code rather than sped it up. `disruptor` was not
+tried: it would change the architecture rather than the plumbing, and nothing in the
+tables says the plumbing is the limit, so a before-and-after would have measured a
+change the evidence does not ask for. `crossbeam-utils`' `CachePadded` and `Backoff`,
+`rtrb` and `flume` fall with the same reasoning. `parking_lot` was never a candidate: no
+machine holds a lock, and the non-comment grep above shows none outside the pool and the
+load. `foldhash` was replaced by the inline FNV-1a, which the ticket allowed.
+
+### Representation
+
+Every place where the prototype's representation departs from the module's literal
+model, each with its argument that no surface can tell, or the statement that one can.
+The spike resolves none of them and touches no file under `docs/specs/`; they go to a
+`spec-change` ticket (Open points). The list is as revised by checkpoint 1.
+
+1. Two position counters instead of one `queue.next_position`: no surface exposes a
+   position; records order only within a pocket, pockets only among pockets.
+2. Pocket status held twice: authoritative in the pocket machine, a lagging view in the
+   order machine, which answers `Pull` from its view. This departure is observable and
+   has no unobservability argument; it is the window the Context names. Two
+   observables, both through `Pull`'s response: (a) `NoPocketAvailable` while a pocket
+   is queued in its pocket machine and its `Enqueue` (new, revived) or `PocketBecame`
+   (released at the back) is in flight, after the client already holds the `Published`
+   or `Released` reply; (b) after `LeaseExpiryKeepsPocketAtFront`, a `Pull` processed
+   before the `PocketBecame { RequeuedKeepingPosition }` claims the next queued pocket
+   instead of the front one, so the batch's pocket key names B where the module's
+   `min_by(free, position)` names A. Neither loses a pocket or double-claims
+   (`spike:OrderViewConsistent` and `spike:OrderMatchesViews` hold at quiescence); the
+   front pocket is served by the next pull. Shown by hand-stepping the machines at
+   checkpoint 1 (`ai_tmp/review/T20-1/probe-conformance/`); `tests/window.rs` covers a
+   different window, the same consumer's pull racing its own lapse or release, and
+   `tests/invariants.rs` cannot reach either observable because `Direct` runs each
+   submit to quiescence and the oracle's `free` is built from the same lagging view. The
+   pool-level test that exhibits (a) or (b) and asserts that the next pull claims the
+   front pocket is still owed (Open points). Closing the window costs one hop per publish
+   and release (the reply via the order machine) or a different decomposition.
+3. The clock is a tick: a lapse is detected at the first tick after `expires_at`; the
+   surface exposes `expires_at`, not the lapse instant; `LeaseLapses`'
+   `expires_at <= now` holds at it. Timestamps are `u64` nanoseconds since the pool
+   started and `plus` and `since` saturate rather than wrap, so `expires_at = now + ttl`
+   is exact until about 584 years after start, which no run reaches; at the edge a TTL
+   is shortened, which the surface would show as an early lapse.
+4. `Lease` has an identity, `LeaseId { partition, serial }`; the module's lease has none.
+5. Publishers are recorded only in the order machine, and no publish checks that the
+   publisher joined, as in the module.
+6. A publish with `rank` equal to the stored rank is `Rejected(EqualRank)`, the
+   checker's placeholder for open question 1.
+7. Actions from parties that never joined are accepted: no rule requires the join, and
+   the surfaces' `facing` implies it.
+8. Ended leases are kept forever in the pocket, so memory grows per lease; an
+   implementation prunes once nothing can name them. Unobservable.
+9. `limit` is `u64`; 0 stands for the module's "not positive".
+10. `Rank`, positions and the two counters are unsigned 64-bit and `consecutive_expiries`
+    is `u32`, where the module's `Integer` is unbounded and admits negatives. A negative
+    rank is an input the spike cannot be given; over every input it accepts the
+    comparisons `rank > record.rank` and `held_rank < rank` are the module's, so no
+    response or exposed `held_rank` differs. An implementation chooses its rank type;
+    `propagate` on the module would generate a negative-rank case that a `u64` rejects at
+    the type.
+11. An idle or parked pocket has no position in the order machine's view, where the
+    module keeps its last one. No rule reads it in those states (`min_by` ranges over
+    queued pockets; revival assigns a fresh position), positions are never reused, so no
+    surface can tell, and `UniquePocketPosition` and `PocketPositionsBelowNext` are
+    checked over the queued and leased views, the only ones that carry a position.
+
+### Recommendation
+
+A proposal. The maintainer takes the decision; nothing here is taken. After each
+sentence of the drafted record the measurement that supports it is named in brackets.
+
+Drafted record text, status "proposed, the maintainer's to take":
+
+> **Decision 00NN: Single-threaded machines over partitions on a bounded pool of worker
+> threads**
+>
+> **Context.** Decision 0014 deferred the service's runtime until a specification named a
+> surface and a spike compared the options. The root module names two surfaces, and
+> ticket T20 built and measured the execution model the maintainer proposed: every rule
+> of the module as a branch of a single-threaded state machine that takes `now` as a
+> value, the pockets' records and leases in pocket machines over partitions of pockets
+> and the pocket order and the lease routing in one order machine (decomposition B), on
+> a bounded pool of long-lived worker threads under `std::thread::scope` with bounded
+> lanes, outboxes and a tick. The spike's machines needed no effect trait [the boundary
+> grep and checkpoint 1's "none found"], every rule ran as a branch with the module's
+> invariants checked after every step [the scripted invariants test; 23 invariants `ok`
+> in every measured row], the lease identifier acted as the fencing token [the three
+> fencing tests and break 2], and the pool never blocked a worker thread on a send
+> [the flood test at capacity 1 with both lanes full]. On the host the pool stepped the
+> machines in a fifth of a worker thread's time and spent the rest in its own loop [the
+> client-scaling table at (1,1): flat throughput, latency linear in the clients]; six
+> worker threads bought 1.4 to 1.5 times one for publishes and nothing for pulls, and
+> eighteen bought nothing [the two sweeps at ce593ec, and the two at 3de4bc1]; one worker
+> thread gave the lowest pull latency by two times [the same sweeps, pull p50].
+>
+> **Decision.** The service runs the domain as single-threaded machines over partitions
+> of pockets, decomposition B, on a bounded pool of long-lived worker threads whose
+> count is configuration, with the pocket order and the lease routing in one order
+> machine; the machines are library code with `now` as a value and the pool is service
+> code behind effect traits for the clock and threads. The pool's loop, not the machines,
+> is where the next effort goes if more throughput is wanted [the scaling table].
+>
+> **Consequences.** The window between a pocket machine's decision and the order
+> machine's hearing of it is observable through `Pull` [Representation item 2], and the
+> specification must say which reading of `free` it means before the implementation
+> ticket starts [Open points, the C1 question]. Positions come from two single-writer
+> counters, which the specification must either adopt or rule out [Representation item
+> 1]. Partitions cost nothing on one worker thread and the thread count is a deployment
+> choice, so the first deployment may run one worker thread and lose nothing but
+> publish throughput on a loaded host [the (1,1) against (1,18) rows and the pub/s
+> column]. The transport half of the spike has not run; this record settles the
+> execution model alone, or waits for it (Open points).
+
+Implementation-ticket outline, as a proposal:
+
+- Start from the module and `just plan-spec pachinko`, not from this code; the spike's
+  README says it is a prototype the implementation learns from, never its first commit.
+- The machines go into libpachinko as plain values with `now` as a value, in the shape
+  the spike found (a step function per machine, one enum of inputs and one of outputs,
+  a lease identifier that carries its partition), with the tests `propagate` derives
+  from the module; the spike's invariant oracle is the pattern for the test that asserts
+  every invariant after every step.
+- The pool goes into `pachinko` behind effect traits for the clock and for threads,
+  which are new kinds of effect and need decision records first under decisions 0003 and
+  0008; the fakes beside them make the pool's tests deterministic where the spike's rely
+  on sleeps.
+- Open questions to settle before the ticket is written: the Release-then-Pull window
+  (close it with the extra hop, or specify the stream-order reading); A versus B
+  revisited with the retry numbers in hand (B's extra hop on a pull after a release or a
+  lapse against A's hop on every consumer action); and whether the superseding record
+  waits for the transport half.
+
+### Claims
+
+The table's Outcome column is filled above. Claim 3, read on 2026-10-31 from
+`https://docs.renovatebot.com/modules/manager/cargo/`: "By default, Renovate will check
+any files matching the following regular expression: `/(^|/)Cargo\.toml$/`" and
+"Extracts dependencies from `Cargo.toml` files, and also updates `Cargo.lock` files too
+if found." `spikes/worker-pool/Cargo.toml` matches, so only the `rust-version` regex
+manager needed the path (`renovate.json` line 109). Holds; the dashboard shows it only
+after the merge.
+
+Claim 5 holds. Timed at ce593ec (`ai_tmp/t20-clippy-timing.txt`, 11:58:01 PDT, the
+file headed "1 uncommitted paths", this ticket's notes) on the host, with the workspace
+and fuzz targets already warm, so "cold" means the spike's own target only, removed
+before each cold run; all four exit 0. The zsh time lines as the file holds them:
+
+```text
+commit ce593ec, 1 uncommitted paths
+$ rm -rf spikes/worker-pool/target; time just clippy   (cold)
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
+    Checking worker-pool v0.0.0 (.../spikes/worker-pool)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.76s
+just clippy  1.24s user 0.44s system 136% cpu 1.229 total
+exit=0
+
+$ time just clippy   (warm)
+just clippy  0.09s user 0.06s system 83% cpu 0.181 total
+exit=0
+
+$ rm -rf spikes/worker-pool/target; time cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings   (spike line alone, cold)
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   1.06s user 0.23s system 222% cpu 0.579 total
+exit=0
+
+$ time cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings   (spike line alone, warm)
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   0.03s user 0.02s system 80% cpu 0.054 total
+exit=0
+```
+
+The spike adds under a second to a cold `just clippy` and about nothing to a warm one,
+against T16's 7.87 s cold and 0.06 s warm for `fuzz/`.
+
+### Adversarial reviews
+
+Harness at every checkpoint: Codex (codex-cli 0.165.0) with model gpt-6-astra, read-only
+and ephemeral, the harness the executing agent is not. Codex's sandbox had rustc 1.96 and
+could not build the crate (`worker-pool@0.0.0 requires rustc 1.99`), so every review is
+source inspection; the harness reran the test and clippy commands on the pinned 1.99.1
+where a brief asked for them and appended the output unaltered. Triage and apply were
+separate Claude Fable 5.1 subagents, neither the author nor the reviewer, each with a
+fresh context; every "the test survives mutation X" claim was reproduced in a scratch
+copy of the crate under `ai_tmp/` before a verdict. Files: `ai_tmp/review/T20-<n>/`
+with the briefs, `findings-*.md`, `verdicts*.md` and `applied.md`.
+
+**Checkpoint 1, the machines** (ticket step 4), over e4f9393 plus the uncommitted pool
+files, two lenses.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| C1 | high | VALID-DOC, re-rated medium, plus a VALID-HANDBACK question | Pull reads the lagging view: both window scenarios reproduced in a probe; Representation item 2 rewritten to say it is observable; the linearizable-versus-stream-order question handed back. |
+| C2 | medium | VALID-DOC, re-rated low | `Rank(u64)` narrows the module's `Integer`: Representation item 10. |
+| C3 | low | VALID-DOC | Saturating `u64` timestamps: Representation item 3 extended. |
+| C4 | low | VALID-DOC | Idle and parked views drop the position: Representation item 11 and a doc comment on `view_position`. |
+| B1 | medium | VALID | The "pipelined" test never pipelined, since `Direct` drains to quiescence: `tests/window.rs` added with four hand-stepped windows; the test renamed and its vacuous assertion dropped. |
+| B2 | medium | VALID | The consistency check never read the pocket order a pull pops: `spike:OrderMatchesViews` added to `invariants::check`, two negative unit tests; the mutation that dropped position 6 passed before and fails now. |
+| B3 | low | VALID | Outcome coverage was not guard coverage: refusals tallied per action and reason, seven missing refusals added to the script, the floor raised from 14 to 21 (the run tallies 23). |
+| B4 | high | VALID-DOC, re-rated low | e4f9393 declares `pub mod pool;` one commit before 110e006 adds it, a bisect hazard, not a defect at HEAD; the environment leg (rustc 1.96) INVALID. Commit discipline recorded under Open points. |
+
+Nothing handed back needed a code change inside the machines. The apply report's gates,
+at 110e006 with uncommitted changes; the fixes landed in 109ddb0:
+
+```text
+110e006 with uncommitted changes
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+clippy exit 0
+cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked --lib --test invariants --test replay --test window
+test result: ok. 149 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test exit 0
+```
+
+**Checkpoint 2, the pool** (ticket step 5, the maintainer's added checkpoint), over
+110e006, two lenses.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| C1 | medium | VALID | The renewal half never sent a late renewal (TTL 200 ms, renewals at 1 and 31 ms): rewritten with TTL 30 ms, a 2 s tick, a 100 ms sleep, the late renewal accepted and zero ticks asserted. |
+| C2 | medium | VALID, re-rated low | `double_replies` counted only a full channel: the reply handle now carries an answered flag shared across forwards, with a unit test. |
+| C3 | low | VALID-DOC | 73 prose lines said bare "worker" for the thread: every one now says "worker thread"; identifiers stay. |
+| B1 | medium | VALID | A send admitted between a worker thread's exit decision and its receiver drop was lost and leaked its token (probe: a hang with two worker threads): `send` re-reads `stop` after the increment and refuses with `PoolStopped`. |
+| B2 | medium | VALID, re-rated low | Quiescence did not wake worker threads waiting to stop (probe: 2.01 s against 19 ms): the last token's release after stop wakes everyone. |
+| B3 | medium | VALID-DOC, re-rated low | The thread id is the worker thread's self-report taken outside `step`; the single-stepper guarantee is structural and the docs now say so. |
+| B4 | low | VALID | The fencing test did not check payloads: two assertions added. |
+| B5 | medium | VALID | The flood test passed at capacity 100,000: a `lane_full` counter on both `Full` arms, asserted positive on every worker thread. |
+| B6 | medium | VALID, adapted | The 10 s bound could not end a deadlock (probe: a hang): a watchdog thread around `Pool::start` in the flood test and the panic half. |
+| B7 | medium | VALID, re-rated low, subsumed by C1 | "Late renewal wins" was not exercised. |
+| B8 | medium | VALID, re-rated high | Not the listed sleep margins but a reorder: 3 of 70 runs failed at tests/pool.rs:554 with `expected a batch, got NoPocketAvailable`; the client-lane burst now ends when a step queued a local message, with a unit test; 70 of 70 after. |
+| B9 | medium | VALID, re-rated low | Same defect as C2, same fix. |
+
+Handed back: none. No fix touched the protocol or a machine. The apply report's result
+lines, at 110e006 with uncommitted changes, after 30 of 30 runs of the pool target
+passed; the fixes landed in 109ddb0:
+
+```text
+110e006 with uncommitted changes
+cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked
+test result: ok. 147 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+**Checkpoint 2, round 2** (T20-2b), over the uncommitted fix diff on 110e006, because
+B8 was high; both lenses.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| C1 | low | VALID-DOC | Five bare "worker" remained in a `Display` string, two docs and two assertion messages: five word edits. |
+| B10 | low | VALID | The stop refusal in `send` released its token without a wake, so a stop could wait out a tick (probe: 0.51 s against at once): the refusal wakes everyone when it released the last token, with a unit test. |
+| B11 | low | VALID | No test told fullness from counting attempts: `only_a_full_lane_counts_as_fullness` added (three `try_send`s, one `Full`). |
+| B12 | low | VALID | The double-reply test cloned the handle by hand: it now obtains the forwarded handle through a real `Forward`. |
+| B13 | low | INVALID | Moving the local drain after the client drain does not break the property, because the loop is a cycle; the burst-break is the fix and the existing test catches its removal. |
+
+Handed back: none. The harness's five reruns of the pool target on 1.99.1 all passed
+(0.35 to 0.36 s); its `--all-targets` clippy run failed only on the then-untracked
+`tests/window.rs`, another agent's in-progress file, fixed by its owner before the apply
+phase, whose every gate was green after each of the four fixes (pool unit tests 12, pool
+target 6, ten runs of ten). The fixes landed in 109ddb0.
+
+**Checkpoint 3, the measurement and the handbook** (ticket steps 6 and 7, the
+maintainer's added checkpoint), over 109ddb0 and the post-fix sweeps, two lenses.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| C1 | medium | VALID | Ack, nack and release had no latency and release no rate: `release/s` and ack+nack percentiles added; the sweep re-run. |
+| C2 | low | VALID, adapted | A passing row named no invariant: the preamble now lists the 23 names, with a unit test that reads `invariants.rs` and asserts set equality. |
+| C3 | medium | VALID, raised to high, same defect as B1 | The bottleneck line said "clients" whenever step-busy was under 60 %; the probe refuted it (flat throughput, latency linear in the clients). |
+| C4 | low | VALID-HANDBACK | `docs/reference/configuration.md` rows 166 and 167 omit the spike's `rust-version` and lockfile; outside Files touched (Open points). |
+| C5 | low | INVALID | The index row says done one commit before the frontmatter, which is the ordering the ticket prescribes; resolved by `status: done` in this commit. |
+| C6 | low | VALID | Output strings said bare "worker": every printed string and doc comment now says "worker thread"; the `--workers` flag stays. |
+| B1 | medium | VALID, raised to high | The bottleneck label; the line now reads "outside the machines' steps ... not told apart" and the preamble defines `busy %` as step time only. |
+| B2 | high | VALID, re-rated medium | A client panic was swallowed by `unwrap_or_default` at the join (probe: exit 0 and `ok`): the panic is re-raised at the join and unwinds through `Pool::start`; the quoted runs' stderr files hold only cargo's lines, which is the evidence no client panicked. |
+| B3 | medium | VALID, re-rated low | The window divisor was the configured duration, not the measured window (1.4 to 10 ms short of 1 s): the tally records the real window. |
+| B4 | medium | VALID-DOC | "Twice the parallelism cannot be what caps the throughput" was an overclaim: reworded; the client-scaling run is the evidence. |
+| B5 | low | VALID-DOC | "Same ranking in every column" was false for pull/s between the two post-fix runs: the Measurement section states agreement per column. |
+| B6 | high | VALID | The median dropped a failed repeat (probe: exit 0 and `ok` with a failed invariant in repeat one): the first unhealthy repeat is kept ahead of the median, with unit tests. |
+| B7 | low | VALID-HANDBACK | Same omission as C4, row 167. |
+
+Handed back: C4 and B7 (the configuration page), and the re-run of the sweep at the
+final commit, which the triage required regardless. The apply report's result lines, at
+109ddb0 with uncommitted changes; the fixes landed in 3de4bc1:
+
+```text
+109ddb0 with uncommitted changes
+cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked
+test result: ok. 153 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+No `cargo test` output was recorded at 3de4bc1 on a clean worktree; the two sweeps and
+the scaling runs at 3de4bc1 clean are the evidence at that commit.
+
+**Checkpoint 3, round 2** (T20-3b), over the 3de4bc1 fix diff, both lenses in one brief,
+because B6 and B1/C3 were high.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| B1 | medium | VALID | A second unhealthy repeat stayed hidden and the binary exited 0: every row counts its unhealthy repeats (`unhealthy repeats K of R`), and the binary exits 1 after the table when any row has one. |
+| B2 | low | VALID | `measuring` was set before the window's start timestamp: `opened` is taken first. |
+| C1 | medium | VALID | Release latency was still unreported: a `p50/p99 release (us)` column, 20 columns now. |
+
+No high finding, so no third round. All three were applied in the load files and the
+README only (`ai_tmp/review/T20-3b/apply-report.md`), which records exit 0 for
+`just spike-test`, `just fmt-check`, `just clippy`, `just deny`, `just lock-check` and
+`just lint`, and states B1's limitation: a row still prints one run's details, a second
+unhealthy repeat is counted on the row's line and fails the binary with exit 1, and its
+own invariant names are seen only by a `--repeats 1` rerun. The binary's exit code is
+now evidence: 0 means every repeat of every row was healthy. The gate logs beside the
+report ran at 3de4bc1 with uncommitted changes, landing in ce593ec:
+
+```text
+3de4bc1 with uncommitted changes
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s
+cargo test --manifest-path spikes/worker-pool/Cargo.toml --locked
+test result: ok. 155 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+**Checkpoint 4, the whole diff and these notes** (ticket step 8's marked checkpoint 2):
+
+<!-- checkpoint 4 -->
 
 ## Open points
 
@@ -471,3 +1413,68 @@ For the maintainer, carried from the writing of this ticket on 2026-10-31:
   comparison the surfaces trigger.
 - The "Representation" questions go to a `spec-change` ticket once the maintainer has read
   them; this ticket neither answers them nor edits the module.
+
+Added at hand-back on 2026-10-31:
+
+- The branch name. The worktree ran on `tickets/t20-worker-pool-spike-complete`, not the
+  `ticket/t20-worker-pool-spike` the frontmatter names; kept as prepared. The maintainer
+  renames the branch before the pull request or accepts the deviation, as for T16.
+- The spike's tests outside `check`, restated with the numbers: `just spike-test` runs in
+  about a second of test time on the host and the clippy line of `check` compiles every
+  test target, so rot shows as a build failure; the ticket's default stands unless the
+  maintainer wants the tests in CI.
+- Proposed terminology rows for `docs/project/terminology.md`, repository words, for the
+  maintainer to accept or rename:
+  - Worker thread: one of a fixed number of threads a pool starts and joins, never
+    spawned per request, each stepping the machines of its partitions. Always "worker
+    thread", never a bare "worker", which the Consumer row forbids.
+  - Partition: a disjoint set of pockets chosen by a stable function of the pocket key,
+    whose state is touched by exactly one worker thread. Never a pocket, and a pocket is
+    never a partition; a partition holds many pockets.
+  - Machine: a single-threaded state machine, a value and a step function that takes one
+    input and the current time as a value and returns outputs, with no clock read, thread,
+    lock or randomness inside. Library code under decision 0003.
+  - Pool: the worker threads, the bounded lanes between them, the clock that stamps each
+    input, the tick and the start and stop: everything the machines leave outside
+    themselves. Service code under decision 0008.
+- The spike's lifetime: deleted when the implementation lands, or kept under `spikes/` as
+  the reference the implementation ticket cites. The notes above cite it by path, so a
+  deletion would need the hand-back to stand on its own, which it does.
+- Whether the record that supersedes 0014 settles the execution model alone or waits for
+  the transport half of the spike. The drafted record under Recommendation is written to
+  settle the execution model alone and says so.
+- The Representation items go to a `spec-change` ticket: item 1 (two counters), item 2
+  (the observable window), item 4 (a lease identity), item 6 (equal rank, open question
+  1), item 7 (unjoined parties), item 10 (bounded integers) and item 11 (positions of
+  idle and parked pockets) each want a sentence in the module or a ruling that the
+  implementation may differ.
+- Stale handbook text outside Files touched, found by the reviews and not edited:
+  `docs/reference/configuration.md` rows 51 and 74 (the fuzz crate's description and the
+  `.gitattributes` row name the fuzz lockfile and not the spike's) and rows 166 and 167
+  (the toolchain row lists `rust-version` in the root and fuzz manifests only; the Rust
+  dependencies row lists `Cargo.lock` and `fuzz/Cargo.lock` only, where
+  `spikes/worker-pool/Cargo.toml` and `spikes/worker-pool/Cargo.lock` now carry a pin
+  each); decision 0007's sentences that count the lockfiles and name `fuzz/Cargo.lock` as
+  the only separate graph; and decision 0014's Context, which says the repository has "no
+  domain" and one placeholder module, which T19 made untrue. The maintainer authorises
+  those edits or leaves the records as history.
+- `.markdownlint-cli2.jsonc`'s ignores list names `target` and so matches only the root
+  `target/`: a `cargo doc` run in the spike generated
+  `spikes/worker-pool/target/doc/static.files/*.md` and made `just check-docs` fail until
+  that directory was removed. An ignore for `spikes/*/target` is a gate fix for the
+  maintainer.
+- The C1 question from checkpoint 1, for the `spec-change` ticket: the module evaluates
+  `free` and `min_by` over the whole state in one step and does not say whether a `Pull`
+  must see every publish and release whose reply has already been delivered (a
+  linearizable reading) or only those the queue has processed (a stream-order reading).
+  The spike implements the second (Representation item 2); the first costs the Pull path
+  an extra hop or a different decomposition.
+- The pool-level test that exhibits Representation item 2's observable (a) or (b) through
+  the pool and asserts that the next pull claims the front pocket, asked for by checkpoint
+  1's verdict, was not written; `tests/window.rs` shows the mechanism by hand and the load
+  shows the retry path under load, but no pool test asserts the front-pocket recovery.
+- Commit discipline: e4f9393 does not build on its own, because `lib.rs` declared
+  `pub mod pool;` one commit before 110e006 added the pool module; a bisect hazard, not a
+  defect at HEAD. Each step's commit must carry every module its `lib.rs` declares; the
+  check is `git ls-tree -r --name-only HEAD spikes/worker-pool/src` against the
+  `pub mod` lines.
