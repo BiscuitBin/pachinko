@@ -1,7 +1,7 @@
 ---
 id: T20
 title: "Pachinko prototype: the domain in libpachinko, a tokio service with a REST API"
-status: open
+status: done
 depends_on: [T19]
 parallel_with: []
 branch: ticket/t20-prototype-and-rest-api
@@ -485,6 +485,430 @@ The last line must answer 409 `lease_not_active`.
 Written by the executing agent, each quoted output headed by the commit it ran at
 (`CONVENTIONS.md` §11).
 
+### Branch and baseline: `0dcd9f3`
+
+The work is committed on `tickets/T20-prototype-and-rest-api`, the worktree's branch, not
+on the frontmatter's `ticket/t20-prototype-and-rest-api`: the maintainer said to commit to
+the current branch. The implementation is `a0723cc`, one commit on `0dcd9f3`; `main` is at
+`611a86e`. `just check` on the untouched worktree, before any edit (log kept in
+`ai_tmp/baseline-check.log`):
+
+```text
+At 0dcd9f3:
+bg-project-check run
+...
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+Every command below ran with `.pixi/envs/default/bin`, `.tools/bin` and `~/.cargo/bin`
+first on `PATH`, so `cargo` was rustup's proxy and the toolchain the `rust-toolchain.toml`
+pin (1.99.1). Without `~/.cargo/bin` ahead, another `cargo` on this machine's `PATH`
+selected rustc 1.96.0 and the build failed on the workspace's `rust-version`; those runs
+were discarded and rerun.
+
+### Dependencies
+
+Each crate enters through `[workspace.dependencies]` with its decision-0007 note, at the
+version `Cargo.lock` holds. Departures from the Design's table:
+
+- `base64` 0.23.1, not 0.22.x.
+- `getrandom` 0.4.3 in place of `rand`: one call for 128 bits, a smaller tree.
+- `serde_json` is a development dependency only (`tests/http.rs` reads replies with it);
+  the service reaches JSON through axum's `Json`.
+- `tracing` and `tracing-subscriber` without default features (`std`, and `fmt` for the
+  subscriber); no `#[instrument]`, whose syn 2 would duplicate serde's syn 3.
+- `proptest` without default features (`std` only); `ureq` without default features
+  (plain HTTP to localhost, no TLS); `axum` without default features (`http1`, `json`,
+  `tokio`).
+- No crate beyond the table. `thiserror` is also a normal dependency of the service, whose
+  own `Error` (`crates/pachinko/src/error.rs`) invariant 10 makes a thiserror enum.
+
+### The failing run before the implementation: `0dcd9f3` with uncommitted changes
+
+The derived tests and the leaf modules, before `Queue` implemented any rule (full output
+in `ai_tmp/failing-run-all.txt`, headed there). The 16 that passed are the leaf modules'
+unit tests (`clock`, `ids`, `config`, `error`, `lease_ids`) and `lib.rs`'s version test;
+every rule test and the walk failed.
+
+```text
+At 0dcd9f3 with uncommitted changes:
+$ cargo nextest run -p libpachinko --all-features --locked --no-fail-fast
+     Summary [   0.048s] 80 tests run: 16 passed, 64 failed, 0 skipped
+error: test run failed
+exit 100
+```
+
+### Reconciliation and the mutation check: `0dcd9f3` with uncommitted changes
+
+The `propagate` reconciliation, regenerated after the last review fix, 50 seconds before
+`a0723cc` was committed (`ai_tmp/reconciliation.txt`, one `obligation -> file:line` per
+line):
+
+```text
+At 0dcd9f3 with uncommitted changes:
+190 obligations, 190 covered, 0 uncovered
+```
+
+Thirteen obligations are failure cases whose guard cannot fail through the public API, so
+no test can drive the refusal. The walk in `tests/invariants.rs` covers six of them by
+asserting the invariant that keeps the guard true after every step:
+`rule-failure.PullWithinLease.2`, `rule-failure.ReleaseRequeuesPocket.3`,
+`rule-failure.ReleaseIdlesEmptyPocket.3` and the `.3` of the three `LeaseExpiry*` rules,
+each guard being that the lease's pocket is leased (`LeasedHasOneActiveLease`). The other
+excluded cases are driven directly and the test asserts nothing happens to them:
+`rule-failure.PullClaimsFrontPocket.3` (a parked pocket is never claimed,
+`tests/expiry.rs`), `rule-failure.HoldRecord.1` and `.2` (a settled or already held record
+is not handed out again, `tests/pull.rs`), and the `.1` and `.2` of `RequeueHeldRecord`
+and `RequeueDeferredRecord` (a settled record is not requeued and a queued one is left as
+it was, `tests/lease.rs`). The three TTL invariants, `LeaseTtlNonNegative`,
+`SupersededTtlNonNegative` and `DeadLetterTtlNonNegative`, hold by type: a
+`std::time::Duration` cannot be negative; `config.rs` carries their ids.
+
+At the commit, every obligation id is still named under `crates/libpachinko/`
+(`ai_tmp/handback/obligation-ids.txt`):
+
+```text
+At a0723cc:
+$ every obligation id of just plan-spec pachinko, searched as a fixed string under crates/libpachinko/{src,tests}
+190 obligations, 190 found, 0 missing:
+Exit status: 0
+```
+
+The mutation check of the walk (`ai_tmp/mutation-check.txt`, which carries no commit
+header; its file time is after `0dcd9f3` and before `a0723cc`), each mutant applied alone
+and restored:
+
+```text
+At 0dcd9f3 with uncommitted changes:
+- state.rs free_records leaves status unchanged (no requeue on release/lapse): caught, invariants.rs:488 (OutstandingOnlyWhileLeased)
+- publish.rs pocket_touched keeps consecutive_expiries: caught, invariants.rs:223 (revive expectations)
+- pull.rs hand_out does not extend the lease: caught, invariants.rs:251 (expires_at from this pull)
+- settle.rs defers when held_rank == rank: caught, invariants.rs:320 (settle outcome against guards)
+Restored: 80 tests run, 80 passed.
+```
+
+### Verification: `a0723cc`
+
+Run on the committed implementation with a clean worktree; raw output in
+`ai_tmp/handback/`. `just check` and `git status --short` are in the hand-over.
+
+```text
+At a0723cc:
+$ just plan-spec pachinko
+(the JSON plan; saved as ai_tmp/handback/plan.json)
+Exit status: 0
+$ jq -c '{obligations: (.obligations|length), diagnostics: (.diagnostics|length)}' ai_tmp/handback/plan.json
+{"obligations":190,"diagnostics":0}
+Exit status: 0
+
+$ just effects
+sh scripts/check-effects.sh
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+Exit status: 0
+
+$ cargo tree -p pachinko -e normal --depth 1 --locked --offline
+pachinko v0.1.0 (crates/pachinko)
+├── axum v0.8.9
+├── base64 v0.23.1
+├── getrandom v0.4.3
+├── libpachinko v0.1.0 (crates/libpachinko)
+├── serde v1.0.229
+├── thiserror v2.0.21
+├── tokio v1.54.1
+├── tracing v0.1.44
+└── tracing-subscriber v0.3.23
+Exit status: 0
+
+$ cargo tree -p libpachinko -e normal --prefix none --all-features --target all --locked --offline
+libpachinko v0.1.0 (crates/libpachinko)
+thiserror v2.0.21
+thiserror-impl v2.0.21 (proc-macro)
+proc-macro2 v1.0.107
+unicode-ident v1.0.27
+quote v1.0.47
+proc-macro2 v1.0.107 (*)
+syn v3.0.9
+proc-macro2 v1.0.107 (*)
+quote v1.0.47 (*)
+unicode-ident v1.0.27
+Exit status: 0
+$ grep -c tokio ai_tmp/handback/tree-lib.txt
+0
+Exit status: 1
+$ grep -c tokio ai_tmp/handback/tree-pachinko.txt
+1
+Exit status: 0
+
+$ just test
+     Summary [   2.573s] 101 tests run: 101 passed, 0 skipped
+   Doc-tests libpachinko
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+   Doc-tests pachinko
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+Exit status: 0
+
+$ just coverage
+Filename Regions Missed Regions Cover Functions Missed Functions Executed Lines Missed Lines Cover Branches Missed Branches Cover
+TOTAL 2794 188 93.27% 321 20 93.77% 1936 120 93.80% 0 0 -
+Exit status: 0
+
+$ just metrics
+::notice::Quality score: 100.0% (250 functions analyzed)
+::notice::Quality score: 100.0% (110 functions analyzed)
+Exit status: 0
+
+$ just check-docs
+markdownlint.............................................................Passed
+typos....................................................................Passed
+lychee...................................................................Passed
+bg-validate-docs
+Validated 46 pages and 47 canonical topics.
+Exit status: 0
+
+$ just check-agents
+bg-validate-agents
+Validated AGENTS.md, 2 adapters, and 14 skills.
+Exit status: 0
+
+$ git diff main -- docs/specs/pachinko.allium | wc -c
+       0
+$ git diff --exit-code main -- docs/specs/pachinko.allium
+Exit status: 0
+$ git diff --stat main | tail -1
+ 70 files changed, 9635 insertions(+), 244 deletions(-)
+Exit status: 0
+
+$ just deps-unused
+cargo shear
+shear/summary
+
+  ✓ no issues found
+Exit status: 0
+
+$ just deny
+cargo deny --locked check licenses bans sources
+bans ok, licenses ok, sources ok
+Exit status: 0
+```
+
+Coverage is 93.80% of lines against the floor of 90; the 1 libpachinko doctest after the
+84 is `Queue::new`'s `compile_fail`. `just deny` also printed six
+`license-not-encountered` warnings for allowances no crate in the tree uses. The last
+`git diff --stat` is the positive control for the empty module diff. Absolute paths in the
+trees are shortened to the crate directory, and the coverage table's runs of spaces to
+one.
+
+`grep -rn spawn crates/` (full output in `ai_tmp/handback/grep-spawn.txt`); the 19 lines
+left out below are all in `crates/libpachinko/clippy.toml`, ban entries and a comment
+(`std::process::*` and `std::thread::spawn`), not calls:
+
+```text
+At a0723cc:
+$ grep -rn spawn crates/
+crates/pachinko/tests/binary.rs:45:        .spawn()
+crates/pachinko/src/serve.rs:9://! aborted. No task is spawned anywhere else, and none outlives `serve`.
+crates/pachinko/src/serve.rs:118:    tasks.spawn(listen(
+crates/pachinko/src/serve.rs:123:    tasks.spawn(sweep(queue, config.sweep(), shutting_down.clone()));
+crates/pachinko/src/serve.rs:124:    tasks.spawn(signal(signals, stop, shutting_down));
+Exit status: 0
+```
+
+The three `JoinSet::spawn` calls in `crates/pachinko/src/serve.rs` are the listener, the
+sweep and the signal, all in one scope and all joined before `serve` returns. The
+`.spawn()` in `crates/pachinko/tests/binary.rs` is `std::process::Command::spawn`, the
+child process the SIGTERM case starts. No `tokio::spawn` or `std::thread::spawn` call
+exists in either crate.
+
+### Smoke test by hand: `a0723cc`
+
+Port 8080 on this machine was held by an unrelated process, so both runs used
+`--listen 127.0.0.1:18080`. The first attempt on 8080, during the implementation, exited 1
+with `binding the listener: Address already in use`, as the executing agent reports; its
+output was not kept, and the same error on a taken port is recorded in
+`ai_tmp/docs-ripple.md`. The first full run,
+`ai_tmp/smoke/smoke.txt`, ran at `0dcd9f3` with uncommitted changes before checkpoint 2's
+fixes, so it was rerun at the commit (`ai_tmp/handback/smoke/smoke.txt`):
+
+```text
+At a0723cc:
+$ cargo run -p pachinko --locked -- serve --listen 127.0.0.1:18080
+listening on 127.0.0.1:18080
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/publishers/p1
+ [201]
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/consumers/c1
+ [201]
+$ curl -s -w ' [%{http_code}]' -X PUT localhost:18080/pockets/tenant-a/records/k1 -H content-type: application/json -d {"publisher_id":"p1","rank":1,"payload":"aGVsbG8="}
+{"outcome":"created"} [200]
+$ curl -s -w ' [%{http_code}]' -X PUT localhost:18080/pockets/tenant-a/records/k1 -H content-type: application/json -d {"publisher_id":"p1","rank":2,"payload":"d29ybGQ="}
+{"outcome":"superseded"} [200]
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/consumers/c1/pull -H 'content-type: application/json' -d '{"limit":10}'
+{"lease_id":"a583bd5fa35efbc18c3b07745d9a7d0e","pocket_key":"tenant-a","expires_at":1793448387196,"records":[{"record_key":"k1","rank":2,"payload":"d29ybGQ="}]} [200]
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/leases/a583bd5fa35efbc18c3b07745d9a7d0e/ack -H content-type: application/json -d {"consumer_id":"c1","record_key":"k1"}
+{"outcome":"settled"} [200]
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/leases/a583bd5fa35efbc18c3b07745d9a7d0e/release -H content-type: application/json -d {"consumer_id":"c1"}
+{"pocket":"idle"} [200]
+$ curl -s -w ' [%{http_code}]' -X POST localhost:18080/leases/a583bd5fa35efbc18c3b07745d9a7d0e/ack -H content-type: application/json -d {"consumer_id":"c1","record_key":"k1"}
+{"error":"lease_not_active","message":"lease a583bd5fa35efbc18c3b07745d9a7d0e is not active"} [409]
+serve exit 0 after SIGTERM
+```
+
+The last line answers 409 `lease_not_active`, as Verification requires. The earlier run's
+replies are the same apart from the lease id and `expires_at`.
+
+### Adversarial review, checkpoint 1: `0dcd9f3` with uncommitted changes
+
+Harness and model: Codex CLI 0.165.0 (`codex exec`) with `gpt-6-astra`, the harness the
+executing agent is not, read-only sandbox, two reviewers in parallel with fresh contexts,
+one per lens, over the library diff. Triage and the apply ran as a fresh-context Claude
+subagent on `claude-opus-5-5`, neither a reviewer nor the author, one fix at a time. Raw
+files under `ai_tmp/review/T20-1/` (`findings-conformance.md`, `findings-breakage.md`,
+`verdicts.md`), not committed. Findings and verdicts (C- conformance, B- breakage):
+
+- C-F1 and B-F1 (medium): a clock that steps back puts a lease's `expires_at` or
+  `ended_at` before its `granted_at`; the walk only advanced the clock. Valid. Applied:
+  the queue's time never goes back (`State::now` returns the latest reading), a regression
+  test in `tests/lease.rs`, and a signed `Advance` in the walk with two reachability
+  markers for actions with the clock behind. Failing before the fix:
+  `ai_tmp/review/T20-1/fail-f1-final.txt`.
+- C-F2 (medium): the public `snapshot()` exposes the superseded and dead-letter queues
+  against the non-goal. Invalid: the non-goal's surface is what the deployment exposes,
+  and no route reads the snapshot; the walk and the doctests need it. Recorded in Open
+  points.
+- C-F3 (medium): `Queue<C, L>` does not guarantee invariant 3 for any `C` and `L`. Valid.
+  Applied: `Clone + Debug + 'static` bounds on the impl block, with a `compile_fail`
+  doctest (`fail-f3.txt` shows it compiling before the fix).
+- C-F4 (low): 23 public items without an asserting doctest. Valid. Applied: a doctest on
+  each (`f4-before.txt`, `f4-after.txt`).
+- B-F2 (medium): a sub-millisecond TTL truncates to whole milliseconds, so a 999 µs lease
+  lapses at its grant. Valid as a behaviour, handed back: truncating, rounding up and
+  rejecting each takes a side the module does not decide. The service's flags are whole
+  milliseconds, so only a library caller reaches it. In Open points.
+
+No valid finding was high, so no second round ran. The rerun after the fixes, from the
+gate logs the triage kept (`gate-*.txt`, which record no exit status; the verification at
+`a0723cc` above supersedes them):
+
+```text
+At 0dcd9f3 with uncommitted changes:
+$ cargo nextest run -p libpachinko --all-features --locked --offline
+     Summary [   0.090s] 83 tests run: 83 passed, 0 skipped
+$ cargo test --doc -p libpachinko --locked --offline
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+$ sh scripts/check-effects.sh
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+$ rustqual crates/libpachinko --config rustqual.toml --findings
+No findings.
+```
+
+### Adversarial review, checkpoint 2: `0dcd9f3` with uncommitted changes
+
+Same harness, model, sandbox and triage arrangement, over the whole uncommitted diff
+against `main`, both crates and the handbook. Raw files under `ai_tmp/review/T20-2/`
+(`findings-conformance.md`, `findings-breakage.md`, `verdicts.md`). Findings and verdicts:
+
+- C-F1 and B-F1 (high): connection tasks can outlive `serve`, because axum 0.8.9 spawns
+  each connection detached and aborting the listener abandons axum's wait for them. Valid.
+  Applied: a listener wrapper whose connections fail their next read or write once a cut
+  is set after the grace period, and a regression test
+  (`a_connection_open_past_the_grace_period_is_cut_before_serve_returns`; `f1-failing.txt`,
+  `f1-passing.txt`). The abort kept as a last resort was the subject of round 2.
+- C-F2 and B-F2 (medium): a well-formed pull over axum's 2 MiB body limit answers 400.
+  Valid, low in effect; documentation only: `docs/reference/http-api.md` states 2 MiB for
+  every body and its `bad_request` row names it. In Open points.
+- C-F3 (medium): when the OS random source fails, lease ids fall back to a counter from 0,
+  which keeps fencing but is guessable. Valid, handed back: making `LeaseIds::next`
+  fallible, aborting, or keeping the logged degradation is the maintainer's choice. In Open
+  points.
+- B-F3 (medium): `tests/http.rs` ran its whole scenario under a 1.5 s lease, so a stalled
+  runner failed it. Valid. Applied: the scenario runs on the default lease and the lapse is
+  its own test on a 100 ms lease (`bf3-failing.txt`, `bf3-passing.txt`).
+- C-F4 (medium): the change exceeds Files touched. Valid as bookkeeping; nothing reverted.
+  The departures are listed under the handbook ripple below.
+- C-F5 and B-F4 (low): pages outside Files touched now say something false. Valid. Applied
+  to `docs/explanation/quality-philosophy.md`, `docs/reference/api.md`,
+  `docs/reference/quality-gates.md`, `docs/how-to/build-the-container-image.md` and the
+  `rustqual.toml` comment; `docs/how-to/work-with-the-specs.md:13,56` handed back, since
+  this ticket's Open points keep that page unedited. In Open points.
+- C-F6 (low): `ParseLeaseIdError` was a struct, against invariant 10. Valid. Applied: a
+  one-variant enum (`cf6-failing.txt`).
+
+Outside the findings, the first `just check` of the triage failed in `just test-doc`:
+`crates/pachinko/src/clock.rs:14` named a `#[non_exhaustive]` unit struct as a value
+outside its crate. Applied: the doctest builds it with `SystemClock::default()`.
+
+C-F1 was valid at high, so a second round ran.
+
+### Adversarial review, checkpoint 2, second round: `0dcd9f3` with uncommitted changes
+
+The same two Codex reviewers, fresh contexts, over the round-1 fix diff; triage as before.
+Raw files `findings-conformance-2.md`, `findings-breakage-2.md` and the "Round 2" section
+of `verdicts.md`, under `ai_tmp/review/T20-2/`.
+
+- C2-F1 and B2-1 (high): the abort after a second grace period still let a connection busy
+  in synchronous code outlive `serve`. Valid. Applied: no abort; after the cut, `serve`
+  joins its tasks without a bound, so axum's own wait returns only once every connection
+  task has finished. Regression test
+  `serve_does_not_return_while_a_connection_ignoring_the_cut_still_runs`
+  (`r2-join-failing.txt`, `r2-passing.txt`). The cost is in Open points.
+- C2-F2 and B2-3 (medium): the cut test read a read timeout as a closed connection. Valid.
+  Applied: only end of file or a reset counts as closed (`r2-read-old.txt`,
+  `r2-read-new.txt`).
+- B2-2 (medium): a connection task's panic does not reach the scope. Invalid: the scope's
+  rule covers its three tasks; one request's panic stopping the service for every client
+  would be a design change. The panicked connection is still joined. In Open points.
+
+Two rounds is the cap; nothing valid is left unapplied except what is handed back. The
+rerun after round 2, the full gate (`ai_tmp/review/T20-2/check-2.log`), and the
+reconciliation regenerated after it, `190 obligations, 190 covered, 0 uncovered`:
+
+```text
+At 0dcd9f3 with uncommitted changes:
+just check
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
+
+### Alignment: `0dcd9f3` with uncommitted changes
+
+The `weed` skill in check mode over `docs/specs/pachinko.allium` against both crates
+(`ai_tmp/weed.md`): no code bug, no spec bug, and no open question silently resolved; every
+`provides` action has one route and every `exposes` item is in the `GET` lease body. Of
+five divergences, D1 (the clock-triggered rules fire on the sweep, so a lease can outlive
+its `expires_at` by up to one `--sweep-ms`) and D2 (axum's 2 MiB body limit) are now
+stated in `docs/reference/http-api.md`; D3 (ack, nack, renew and release do not check that
+the consumer joined) is recorded as a reading in Open points; D4 (no authentication behind
+`facing`) and D5 (keys travel as path segments) are the module's Excludes and need nothing.
+
+### Handbook ripple and departures from Files touched
+
+The ripple (`ai_tmp/docs-ripple.md`) covered every page Design names and `CHANGELOG.md`.
+Paths changed that Files touched does not list, each because the change made a line false
+or the Design's text needed a file it did not name:
+
+- `docs/reference/agent-contract.md` and `.agents/skills/review-change/SKILL.md` (body):
+  nine invariants became ten with invariant 10.
+- `.agents/skills/spec-change/SKILL.md` (body): "the placeholder module", false since T19.
+- `docs/explanation/specifications.md`: "None of it is implemented".
+- `docs/explanation/quality-philosophy.md`, `docs/reference/api.md`,
+  `docs/reference/quality-gates.md` and `docs/how-to/build-the-container-image.md`: the
+  checkpoint 2 C-F5 fixes above.
+- `rustqual.toml`: a comment only, "no modules to bound yet".
+- `crates/pachinko/src/error.rs`: the service's thiserror `Error`, which `run` and `serve`
+  return; the Design names no file for it.
+- `crates/pachinko/tests/binary.rs` gained a second case beyond the ticket's text,
+  `a_command_line_it_does_not_read_exits_non_zero_with_the_reason_on_stderr`, for the new
+  argument parsing; its first case is unchanged.
+- The libpachinko integration tests open with `#![cfg(test)]` rather than the
+  `#![expect(clippy::tests_outside_test_module, ...)]` `binary.rs` uses: their shared
+  helpers then count as test code, so `clippy.toml`'s test allowances for `unwrap`,
+  `expect` and `panic` cover the helpers as they cover the tests.
+
 ## Open points
 
 Prewritten for the maintainer; the executing agent adds to them and strikes none.
@@ -514,3 +938,80 @@ Prewritten for the maintainer; the executing agent adds to them and strikes none
   not this ticket's: it rewords only the pages Design names.
 - **The six checker limits** T19 handed back for `docs/how-to/work-with-the-specs.md` are
   still handed back; this ticket does not edit that page.
+
+Added by the executing agent. Each is a reading the prototype took or a hand-back; none
+answers one of the module's open questions.
+
+- **`publish` takes a `Publication`.** The Design's five-argument signature became
+  `publish(Publication)`, a struct of the publisher, pocket key, record key, rank and
+  payload, because five arguments and `self` exceed the limit of five that `clippy.toml`
+  and `rustqual.toml` set.
+- **Lease ids the queue does not know.** An unknown or ended lease id answers
+  `LeaseNotActive` (409): an id that names no lease names no active one. A lease id that
+  is not 32 hexadecimal digits is a malformed request, 400 `bad_request`.
+- **Check order.** Ack and nack check the lease is active, then that it is the consumer's,
+  then that the record is held (409, 403, 404), in the order of the rules' `requires`;
+  renew and release stop after the second.
+- **Ack, nack, renew and release do not check that the consumer joined** (weed D3). An
+  unjoined consumer gets 409 or 403 from them, not the 404 `unknown_consumer` that pull and
+  `GET .../lease` give; the state outcome is the same. A uniform 404 is one call in code if
+  wanted.
+- **`snapshot()` is a library read model, not a surface** (checkpoint 1 C-F2, judged
+  invalid). It exposes the superseded and dead-letter queues to library callers for the
+  walk and the doctests; no route reads it. Open question 2 is untouched.
+- **Ended leases are kept forever.** No rule removes a released or expired lease, and
+  keeping them is what stops a lease id from being reissued, so memory grows by one lease
+  per claim. A decay rule for ended leases would be a spec change.
+- **A pull limit of zero or below** yields an empty batch, and the pull still claims the
+  front pocket under a new lease, or extends the consumer's lease, as the pull rules do.
+- **Positions start at 0.** `next_position` starts at 0; the module states no start value.
+- **Lapse order.** `lapse()` processes due leases in (`expires_at`, lease id) order. The
+  module gives no order and no outcome depends on it, since each active lease has its own
+  pocket.
+- **Open question 8 in the running service.** The mutex orders a late action against the
+  sweep, as the existing point says, and the sweep runs every `--sweep-ms`, so a lease can
+  stay active for up to one sweep period past its `expires_at`; an action in that window
+  succeeds and extends it. `docs/reference/http-api.md` states the bound.
+- **Queue time never goes backwards** (checkpoint 1 C-F1). Each operation reads the
+  maximum of the clock and the queue's last reading, which keeps `GrantedBeforeExpiry` and
+  `EndedAfterGrant` under a wall clock that steps back. After a backward step of D, the
+  queue's time stays frozen for D: no lease lapses and nothing decays until the clock
+  passes its last reading.
+- **Sub-millisecond TTLs truncate to whole milliseconds** (checkpoint 1 B-F2, handed
+  back). A positive `lease_ttl` under 1 ms behaves as zero. The service's flags are whole
+  milliseconds; a library caller can reach it. The maintainer chooses: keep truncation and
+  document it, round up (never early, up to 1 ms late), or reject sub-millisecond TTLs in
+  `Config::new`.
+- **The lease-id source when the OS random source fails** (checkpoint 2 C-F3, handed
+  back). `RandomLeaseIds` falls back to a counter from 0 and logs it: fencing still holds,
+  since the queue never reissues an id, but the ids are guessable. The maintainer chooses:
+  make `LeaseIds::next` fallible and give pull a new failure (503), abort the process, or
+  keep the logged degradation.
+- **Shutdown has no upper bound** (checkpoint 2 round 2). After the 10-second grace period
+  open connections are cut at their next read or write, then `serve` waits without a limit
+  for every connection task, so a handler stuck in work that never touches its connection
+  holds shutdown open. That is the structured-concurrency rule the Design sets; a bound
+  would need an owned connection loop in place of axum's.
+- **A request handler's panic does not stop the service** (checkpoint 2 B2-2, judged
+  invalid as a defect). The connection ends and is still joined at shutdown; the scope's
+  first-error rule covers the listener, the sweep and the signal. If the maintainer wants
+  a request panic to stop the service, that is a design change.
+- **`docs/how-to/work-with-the-specs.md:13` and `:56`** are stale and handed back, since
+  this ticket does not edit that page (checkpoint 2 C-F5). Proposed text: line 13
+  "specifies the queue domain, and libpachinko implements it."; lines 56-57 "The root's
+  obligations are covered by the tests under `crates/libpachinko/tests/`; a new module
+  derives its own with `propagate` and brings its tests with it."
+- **`docs/specs/pachinko.allium` lines 20-21** still say the wire format is "the spike
+  decision 0014 names". Decision 0019 supersedes 0014, but the module is untouched by
+  non-goal; the line is a `spec-change` for the maintainer.
+- **Decision 0014's superseded line** reads 2026-10-31, the commit date, not a merge date,
+  which the Design asks for; it needs correcting if the merge falls on another day. The other
+  historical decision records are left as written, including their "consumer" in the
+  caller's sense.
+- **The 2 MiB request body limit** is axum's default, applied to every JSON body (weed D2,
+  checkpoint 2 C-F2), so a payload over about 1.5 MiB before base64 is refused with 400.
+  It bounds a request, not the queue; raising or removing it is open question 3's
+  territory.
+- **Landing.** Nothing is pushed and no pull request is open; both are separately
+  authorised (`CONVENTIONS.md` §11), and `git fetch origin` with a rerun at the merged
+  commit comes before them.
