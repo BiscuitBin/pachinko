@@ -2,9 +2,12 @@
 //! machine and every pocket machine, as far as that state shows them.
 //!
 //! One function per invariant, named after it; [`check`] runs them all and returns
-//! every failure. Two checks of the spike's own, prefixed `spike:`, assert what the
+//! every failure. Three checks of the spike's own, prefixed `spike:`, assert what the
 //! protocol promises at quiescence: the order machine's view of every pocket agrees
-//! with the pocket machine that owns it, and no machine saw a protocol violation.
+//! with the pocket machine that owns it (`spike:OrderViewConsistent`), the pocket
+//! order a pull pops holds exactly the queued views at their positions
+//! (`spike:OrderMatchesViews`), and no machine saw a protocol violation
+//! (`spike:NoProtocolViolations`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -58,6 +61,7 @@ pub fn check(order: &OrderMachine, pockets: &[PocketMachine]) -> Vec<Violation> 
     found.extend(unique_record_position(pockets));
     found.extend(pocket_positions_below_next(order));
     found.extend(order_view_consistent(order, pockets));
+    found.extend(order_matches_views(order));
     found.extend(no_protocol_violations(order, pockets));
     found
 }
@@ -373,6 +377,9 @@ fn one_active_lease_per_consumer(pockets: &[PocketMachine]) -> Vec<Violation> {
 }
 
 /// The position of a view that has one: queued, or leased and keeping its place.
+/// Idle and parked views carry none (the module keeps the last position there;
+/// nothing reads it, and the order machine never reuses one), so the two position
+/// invariants range over queued and leased pockets.
 const fn view_position(status: &OrderStatus) -> Option<u64> {
     match status {
         OrderStatus::Queued { position } | OrderStatus::Leased { position, .. } => Some(*position),
@@ -503,6 +510,53 @@ fn view_matches_pocket(
     Some(Violation::new("spike:OrderViewConsistent", detail))
 }
 
+/// `spike:OrderMatchesViews`: the pocket order, which a pull pops, holds exactly the
+/// pockets whose view is queued, each at the position its view names. The views alone
+/// cannot show an order entry that was dropped or misplaced, and `pull` reads only the
+/// order, so this is what makes a queued view claimable.
+fn order_matches_views(order: &OrderMachine) -> Vec<Violation> {
+    let queued_views: BTreeMap<u64, &PocketKey> = order
+        .views()
+        .filter_map(|(key, view)| match view.status {
+            OrderStatus::Queued { position } => Some((position, key)),
+            _ => None,
+        })
+        .collect();
+    let in_order: BTreeMap<u64, &PocketKey> = order.queued().collect();
+    order_entries_match_views(&queued_views, &in_order)
+}
+
+/// The pure half of `spike:OrderMatchesViews`, over the queued views by position and
+/// the order entries by position: every queued view has its entry, every entry has its
+/// queued view.
+fn order_entries_match_views(
+    queued_views: &BTreeMap<u64, &PocketKey>,
+    in_order: &BTreeMap<u64, &PocketKey>,
+) -> Vec<Violation> {
+    const NAME: &str = "spike:OrderMatchesViews";
+    let mut found = Vec::new();
+    for (position, key) in queued_views {
+        if in_order.get(position) != Some(key) {
+            found.push(Violation::new(
+                NAME,
+                format!(
+                    "pocket {key:?} is viewed queued at {position} but the order has {:?} there",
+                    in_order.get(position)
+                ),
+            ));
+        }
+    }
+    for (position, key) in in_order {
+        if queued_views.get(position) != Some(key) {
+            found.push(Violation::new(
+                NAME,
+                format!("the order holds {key:?} at {position} with no queued view there"),
+            ));
+        }
+    }
+    found
+}
+
 /// `spike:NoProtocolViolations`: no machine counted an input the protocol never sends it.
 fn no_protocol_violations(order: &OrderMachine, pockets: &[PocketMachine]) -> Vec<Violation> {
     let machines: Vec<&dyn Machine> = std::iter::once::<&dyn Machine>(order)
@@ -526,12 +580,14 @@ fn no_protocol_violations(order: &OrderMachine, pockets: &[PocketMachine]) -> Ve
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::{
         check, check_pocket, ended_after_grant, expiry_limit_positive, granted_before_expiry,
         held_version_not_newer, idle_has_no_records, leased_has_one_active_lease,
         nacked_before_expiry, one_active_lease_per_pocket, one_record_per_key_per_pocket,
-        outstanding_only_while_leased, pull_batch_positive, shed_before_expiry,
-        unleased_has_no_active_lease, view_matches_pocket,
+        order_entries_match_views, outstanding_only_while_leased, pull_batch_positive,
+        shed_before_expiry, unleased_has_no_active_lease, view_matches_pocket,
     };
     use crate::direct::Direct;
     use crate::pocket::PocketMachine;
@@ -824,6 +880,43 @@ mod tests {
         assert_eq!(
             view_matches_pocket(&key, &OrderStatus::Idle, &pocket).map(|v| v.invariant),
             Some("spike:OrderViewConsistent")
+        );
+    }
+
+    #[test]
+    fn a_queued_view_without_its_order_entry_breaks_order_matches_views() {
+        let (a, b) = (PocketKey::new("a"), PocketKey::new("b"));
+        let queued_views: BTreeMap<u64, &PocketKey> = [(0, &a), (6, &b)].into_iter().collect();
+        let in_order: BTreeMap<u64, &PocketKey> = [(0, &a)].into_iter().collect();
+        let found = order_entries_match_views(&queued_views, &in_order);
+        assert_eq!(names(&found), vec!["spike:OrderMatchesViews"]);
+        assert!(
+            found[0]
+                .detail
+                .contains("PocketKey(\"b\") is viewed queued at 6 but the order has None there"),
+            "{found:?}"
+        );
+        assert_eq!(order_entries_match_views(&in_order, &in_order), Vec::new());
+    }
+
+    #[test]
+    fn an_order_entry_whose_view_is_not_queued_there_breaks_order_matches_views() {
+        let (a, b) = (PocketKey::new("a"), PocketKey::new("b"));
+        let queued_views: BTreeMap<u64, &PocketKey> = [(0, &a)].into_iter().collect();
+        let in_order: BTreeMap<u64, &PocketKey> = [(0, &b), (3, &a)].into_iter().collect();
+        let found = order_entries_match_views(&queued_views, &in_order);
+        assert_eq!(names(&found), vec!["spike:OrderMatchesViews"; 3]);
+        assert!(
+            found.iter().any(|v| v.detail.contains(
+                "PocketKey(\"a\") is viewed queued at 0 but the order has Some(PocketKey(\"b\")) there"
+            )),
+            "{found:?}"
+        );
+        assert!(
+            found.iter().any(|v| v
+                .detail
+                .contains("the order holds PocketKey(\"a\") at 3 with no queued view there")),
+            "{found:?}"
         );
     }
 }

@@ -85,8 +85,10 @@ fn phase_publishes() -> Vec<Step> {
 }
 
 /// `c1` claims `A` as lease 0: a pull within the lease, an ack that settles, a
-/// supersede while held, an ack that defers, then every ack and nack guard, a renewal
-/// and its wrong-consumer refusal, and `c2` claiming `B` as lease 1 with limit 0.
+/// supersede while held, an ack that defers, then the record guards of ack and nack
+/// (a record not held, no such record) and the nack lease guards for another
+/// consumer's lease and an unknown one, a renewal and its wrong-consumer refusal, and
+/// `c2` claiming `B` as lease 1 with limit 0.
 fn phase_first_lease() -> Vec<Step> {
     let l0 = lease_on("A", 0);
     at(
@@ -99,6 +101,8 @@ fn phase_first_lease() -> Vec<Step> {
             ack("c1", l0, "r2"),
             ack("c1", l0, "r2"),
             ack("c1", l0, "r9"),
+            nack("c1", l0, "r9"),
+            nack("c1", l0, "r2"),
             nack("c2", l0, "r2"),
             nack("c1", lease_on("A", 77), "r2"),
             renew("c1", l0),
@@ -110,8 +114,9 @@ fn phase_first_lease() -> Vec<Step> {
 
 /// Releases that requeue, actions under released leases, a claim of `B` by `c2` who
 /// then stalls (lease 2), a nack that settles, a release that idles the empty pocket
-/// and more actions under ended leases, one by the wrong consumer, which the ended
-/// lease refuses first.
+/// and more actions under ended leases (a nack, two acks, one by the wrong consumer,
+/// which the ended lease refuses first), and a renewal and a release naming a lease
+/// nobody minted.
 fn phase_releases() -> Vec<Step> {
     let (l0, l1, l3) = (lease_on("A", 0), lease_on("B", 1), lease_on("A", 3));
     let mut steps = at(
@@ -126,6 +131,9 @@ fn phase_releases() -> Vec<Step> {
             nack("c1", l3, "r2"),
             release("c1", l3),
             release("c1", l3),
+            nack("c1", l3, "r2"),
+            renew("c1", lease_on("A", 77)),
+            release("c1", lease_on("A", 77)),
             ack("c1", l3, "r2"),
             ack("c2", l3, "r2"),
             release("c1", l0),
@@ -156,7 +164,8 @@ fn phase_lapses() -> Vec<Step> {
 
 /// A publish revives the parked pocket; `c1` pulls it in two batches with an empty
 /// limit-0 pull between, supersedes a held key, nacks it so it defers, acks another,
-/// is refused a renewal by the wrong consumer, and releases it to the back.
+/// while the wrong consumer is refused an ack, a renewal and a release under the live
+/// lease, and `c1` releases it to the back.
 fn phase_revival() -> Vec<Step> {
     let l7 = lease_on("B", 7);
     let mut steps = at(
@@ -169,7 +178,9 @@ fn phase_revival() -> Vec<Step> {
             publish("p1", "B", "s1", 3),
             nack("c1", l7, "s1"),
             ack("c1", l7, "s2"),
+            ack("c2", l7, "s3"),
             renew("c2", l7),
+            release("c2", l7),
         ],
     );
     steps.extend(at(45, vec![release("c1", l7)]));
@@ -203,8 +214,18 @@ fn scripted_config() -> Config {
 struct Tally {
     accepted: usize,
     refused: usize,
-    /// Every reply shape and refusal reason, by its debug name.
+    /// Every accepted reply shape by its debug name, and every refusal as
+    /// `action/reason`, so the tally tells which action a guard refused.
     seen: BTreeSet<String>,
+}
+
+/// The input's variant name: `Ack`, `Nack`, `Renew`, `Release`, and so on.
+fn action_of(input: &Input) -> String {
+    format!("{input:?}")
+        .split(['{', '(', ' '])
+        .next()
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn invariants_hold(direct: &Direct, context: &dyn std::fmt::Debug) {
@@ -233,7 +254,9 @@ fn drive(direct: &mut Direct, index: usize, step: &Step, tally: &mut Tally) -> R
             match (&predicted, &response) {
                 (Prediction::Reject(reason), _) => {
                     tally.refused += 1;
-                    tally.seen.insert(format!("{reason:?}"));
+                    tally
+                        .seen
+                        .insert(format!("{}/{reason:?}", action_of(input)));
                 }
                 (Prediction::Accept(_), Response::Published(published)) => {
                     tally.accepted += 1;
@@ -265,9 +288,12 @@ fn became_in_order_log(direct: &Direct) -> Vec<Became> {
         .collect()
 }
 
-/// Every reply shape and refusal reason the script must have produced, by its debug
-/// name; `Protocol` and `PocketNotLeased` are unreachable by the invariants.
-const EVERY_OUTCOME: [&str; 19] = [
+/// Every accepted reply shape the script must have produced, by its debug name, and
+/// every refusal as `action/reason`: the three guards of the join and publish rules,
+/// then each of the four lease actions refused by each guard it has, so that coverage
+/// is per guard and not per reason. `Protocol` and `PocketNotLeased` are unreachable
+/// by the invariants.
+const EVERY_OUTCOME: [&str; 30] = [
     "Joined",
     "NewPocket",
     "NewKey",
@@ -279,14 +305,25 @@ const EVERY_OUTCOME: [&str; 19] = [
     "Nacked",
     "Renewed",
     "Released",
-    "DuplicatePublisher",
-    "DuplicateConsumer",
-    "EqualRank",
-    "UnknownLease",
-    "LeaseNotActive",
-    "NotYourLease",
-    "NoSuchRecord",
-    "RecordNotHeld",
+    "PublisherJoins/DuplicatePublisher",
+    "ConsumerJoins/DuplicateConsumer",
+    "Publish/EqualRank",
+    "Ack/UnknownLease",
+    "Ack/LeaseNotActive",
+    "Ack/NotYourLease",
+    "Ack/NoSuchRecord",
+    "Ack/RecordNotHeld",
+    "Nack/UnknownLease",
+    "Nack/LeaseNotActive",
+    "Nack/NotYourLease",
+    "Nack/NoSuchRecord",
+    "Nack/RecordNotHeld",
+    "Renew/UnknownLease",
+    "Renew/LeaseNotActive",
+    "Renew/NotYourLease",
+    "Release/UnknownLease",
+    "Release/LeaseNotActive",
+    "Release/NotYourLease",
 ];
 
 const EVERY_BECAME: [Became; 4] = [
@@ -304,7 +341,7 @@ fn every_invariant_holds_after_every_step_of_a_scripted_sequence_with_refusals()
         drive(&mut direct, index, step, &mut tally).unwrap();
     }
     assert!(tally.accepted >= 30, "{tally:?}");
-    assert!(tally.refused >= 14, "{tally:?}");
+    assert!(tally.refused >= 21, "{tally:?}");
     for expected in EVERY_OUTCOME {
         assert!(
             tally.seen.contains(expected),
@@ -480,8 +517,11 @@ fn one_pocket_became_per_lease_end_over_all_four_paths() {
     invariants_hold(&direct, &"the end");
 }
 
+/// Three pulls under one lease, each run to quiescence before the next: `Direct`
+/// cannot put the second pull inside the first `Claim`'s window, so the retry path is
+/// unreachable here and `tests/window.rs` owns it.
 #[test]
-fn pipelined_pulls_yield_exactly_one_reply_each() {
+fn consecutive_pulls_under_one_lease_yield_exactly_one_reply_each() {
     let config = Config::default().with_max_pull_batch(1);
     let mut direct = Direct::new(config, PARTITIONS);
     reply(&mut direct, &publish("p1", "A", "r1", 1), ms(0)).unwrap();
@@ -494,6 +534,5 @@ fn pipelined_pulls_yield_exactly_one_reply_each() {
     assert_eq!(handed(&third), Some(Vec::new()));
     assert_eq!(lease_of(&first), lease_of(&second));
     assert_eq!(lease_of(&first), lease_of(&third));
-    assert_eq!(direct.order().retry_pulls(), 0);
     invariants_hold(&direct, &"the end");
 }

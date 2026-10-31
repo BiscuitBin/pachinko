@@ -14,6 +14,7 @@
 
 pub mod direct;
 pub mod invariants;
+pub mod load;
 pub mod machine;
 pub mod order;
 pub mod partition;

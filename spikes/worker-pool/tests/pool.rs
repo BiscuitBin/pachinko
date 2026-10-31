@@ -13,6 +13,7 @@
 )]
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::mpsc::RecvTimeoutError;
 use std::thread::ThreadId;
 use std::time::{Duration as StdDuration, Instant};
 
@@ -116,6 +117,32 @@ fn machine_of<'a, R>(outcome: &'a Outcome<R>, key: &PocketKey) -> &'a PocketMach
     let partitions = outcome.stats().partitions;
     let index = partition_of(key, partitions).index();
     &outcome.pockets()[index as usize]
+}
+
+/// Runs `run` on its own thread and hands back its result, or the timeout when it has
+/// not returned by `limit`: a pool that stops making progress blocks its clients in
+/// `Handle::send`, which has no timeout, so an elapsed-time assertion after
+/// `Pool::start` would never be reached. The stuck threads leak, but the test fails
+/// instead of hanging.
+fn bounded<R: Send + 'static>(
+    limit: StdDuration,
+    run: impl FnOnce() -> R + Send + 'static,
+) -> Result<R, RecvTimeoutError> {
+    let (done, finished) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(run());
+    });
+    finished.recv_timeout(limit)
+}
+
+/// Publishes into the first four pockets of partition 1 and counts the calls that got
+/// no reply.
+fn publish_into_partition_one(handle: &Handle) -> usize {
+    (0..4)
+        .filter_map(|seed| key_in(1, 2, seed))
+        .map(|key| handle.call(publish("p", key.as_str(), "r", 1), REPLY))
+        .filter(Result::is_err)
+        .count()
 }
 
 /// Every machine settled as the rules leave it, and no machine saw a protocol violation.
@@ -222,8 +249,11 @@ fn clients(
     })
 }
 
-/// Every machine was stepped by exactly one worker, the one the static assignment
-/// names, on exactly one thread; returns the distinct threads seen.
+/// Every machine was stepped by exactly one worker thread, the one the static
+/// assignment names, on exactly one thread id; returns the distinct threads seen. The
+/// thread id is the worker thread's own report, taken outside `step`: the guarantee
+/// that no other thread steps a machine is structural, since a machine is owned by
+/// value in one worker thread's map and stepped through that worker thread's `&mut`.
 fn one_thread_each(stats: &PoolStats) -> Vec<ThreadId> {
     let mut threads: Vec<ThreadId> = Vec::new();
     for (id, machine) in &stats.machines {
@@ -277,7 +307,8 @@ fn each_partition_is_stepped_by_one_thread_and_never_more_than_the_pool_has() {
 
 #[test]
 fn stopping_joins_every_worker_thread_and_a_panic_reaches_the_caller() {
-    // (a) A normal stop: every worker's join returned and none is alive afterwards.
+    // (a) A normal stop: every worker thread's join returned and none is alive
+    // afterwards.
     let pool = PoolConfig::default()
         .with_worker_threads(3)
         .with_partitions(2)
@@ -299,39 +330,38 @@ fn stopping_joins_every_worker_thread_and_a_panic_reaches_the_caller() {
     assert!(!handle.aborted());
     settled(&outcome);
 
-    // (b) A poisoned worker: the third input into partition 1 panics. The panic reaches
-    // this thread with its own payload; that `catch_unwind` returns at all is the proof
-    // that every worker was joined, since `std::thread::scope` cannot return or unwind
-    // before its threads have, and the handle's live count says the same. The panic
-    // prints to stderr on the way; no silent hook is installed, because a hook is
-    // process-wide and would mute the other tests running beside this one.
+    // (b) A poisoned worker thread: the third input into partition 1 panics. The panic
+    // reaches this thread with its own payload; that `catch_unwind` returns at all is the
+    // proof that every worker thread was joined, since `std::thread::scope` cannot return
+    // or unwind before its threads have, and the handle's live count says the same. The
+    // panic prints to stderr on the way; no silent hook is installed, because a hook is
+    // process-wide and would mute the other tests running beside this one. The run is
+    // bounded so that a join that never returns fails the test instead of hanging it.
     let started = Instant::now();
     let pool = PoolConfig::default()
         .with_worker_threads(2)
         .with_partitions(2)
         .with_tick_interval(Duration::from_millis(5))
         .with_panic_on(MachineId::Partition(Partition::new(1)), 3);
-    let mut stash: Option<Handle> = None;
-    let run = catch_unwind(AssertUnwindSafe(|| {
-        Pool::start(Config::default(), pool, |handle| {
-            stash = Some(handle.clone());
-            let mut failed = 0;
-            for seed in 0..4 {
-                let key = key_in(1, 2, seed).unwrap();
-                let sent = handle.call(publish("p", key.as_str(), "r", 1), REPLY);
-                failed += usize::from(sent.is_err());
-            }
-            failed
-        })
-    }));
-    let payload = run.expect_err("the worker's panic reaches the caller");
+    let (run, stash) = bounded(StdDuration::from_secs(10), move || {
+        let mut stash: Option<Handle> = None;
+        let run = catch_unwind(AssertUnwindSafe(|| {
+            Pool::start(Config::default(), pool, |handle| {
+                stash = Some(handle.clone());
+                publish_into_partition_one(handle)
+            })
+        }));
+        (run, stash)
+    })
+    .expect("the pool made no progress within 10 s");
+    let payload = run.expect_err("the worker thread's panic reaches the caller");
     let message = payload
         .downcast_ref::<&str>()
         .map(ToString::to_string)
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap();
     assert_eq!(message, "poisoned by PoolConfig::panic_on");
-    let handle = stash.take().unwrap();
+    let handle = stash.unwrap();
     assert_eq!(handle.live_workers(), 0);
     assert!(handle.aborted());
     assert!(started.elapsed() < StdDuration::from_secs(10));
@@ -377,6 +407,8 @@ fn an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease() {
     assert_eq!(record.rank, Rank::new(2));
     assert_eq!(record.status, RecordStatus::Held);
     assert_eq!(record.held_rank, Some(Rank::new(1)));
+    assert_eq!(record.payload, Payload::new("k/r/2"));
+    assert_eq!(record.held_payload, Some(Payload::new("k/r/1")));
     assert_eq!(record.position, u64::from(machine.partition().index()));
     let status = |lease: LeaseId| pocket.lease(lease).map(|lease| lease.status);
     assert_eq!(status(first), Some(LeaseStatus::Expired));
@@ -384,23 +416,27 @@ fn an_action_naming_an_ended_lease_is_rejected_under_a_successor_lease() {
     settled(&outcome);
 }
 
-/// Messages crossed in both directions, a queue filled at some point, and no reply was
-/// doubled or lost.
+/// Messages crossed in both directions, each peer lane was found full at some point, a
+/// message waited in an outbox, and no reply was doubled or lost.
 fn crossed_both_ways(workers: &[WorkerStats]) {
     assert_eq!(workers.len(), 2);
     assert!(
         workers[0].channel_deliveries > 0,
-        "worker 0 sent nothing to worker 1: {:?}",
+        "worker thread 0 sent nothing to worker thread 1: {:?}",
         workers[0]
     );
     assert!(
         workers[1].channel_deliveries > 0,
-        "worker 1 sent nothing to worker 0: {:?}",
+        "worker thread 1 sent nothing to worker thread 0: {:?}",
         workers[1]
     );
     assert!(
         workers.iter().any(|worker| worker.outbox_high_water > 0),
-        "no queue ever filled: {workers:?}"
+        "nothing ever waited in an outbox: {workers:?}"
+    );
+    assert!(
+        workers.iter().all(|worker| worker.lane_full > 0),
+        "a peer lane never filled: {workers:?}"
     );
     assert!(workers.iter().all(|worker| worker.double_replies == 0));
     assert!(
@@ -412,20 +448,24 @@ fn crossed_both_ways(workers: &[WorkerStats]) {
 
 #[test]
 fn two_machines_flooding_each_other_through_full_queues_make_progress() {
-    // Capacity 1 and two workers: the order machine and partition 0 on worker 0,
-    // partition 1 on worker 1. Every publish into partition 1 sends an `Enqueue` back
-    // to worker 0, every pull of such a pocket sends a `Claim` to worker 1, every
-    // release sends a `PocketBecame` back: both directions through queues of one.
+    // Capacity 1 and two worker threads: the order machine and partition 0 on worker
+    // thread 0, partition 1 on worker thread 1. Every publish into partition 1 sends an
+    // `Enqueue` back to worker thread 0, every pull of such a pocket sends a `Claim` to
+    // worker thread 1, every release sends a `PocketBecame` back: both directions
+    // through queues of one.
     let started = Instant::now();
     let pool = PoolConfig::default()
         .with_worker_threads(2)
         .with_partitions(2)
         .with_queue_capacity(1)
         .with_tick_interval(Duration::from_millis(5));
-    let outcome = Pool::start(Config::default(), pool, |handle| {
-        let deadline = Instant::now() + StdDuration::from_millis(300);
-        clients(handle, (4, 4), deadline, (true, false))
+    let outcome = bounded(StdDuration::from_secs(10), move || {
+        Pool::start(Config::default(), pool, |handle| {
+            let deadline = Instant::now() + StdDuration::from_millis(300);
+            clients(handle, (4, 4), deadline, (true, false))
+        })
     })
+    .expect("the pool made no progress within 10 s")
     .unwrap();
 
     let (requests, replies) = outcome.result().clone().unwrap();
@@ -495,27 +535,34 @@ fn lapse_wins(pool: PoolConfig) -> Result<RaceOutcome, String> {
     .map_err(|error| error.to_string())
 }
 
-/// The renewal wins: it arrives before the lapse and pushes the expiry out, so the ticks
-/// that follow leave the lease active. A longer TTL than the lapse half's keeps the
-/// ordering certain while this thread shares the machine with the other tests; the race
-/// the pool resolves is the same.
+/// The renewal wins: it is late by the clock, stamped after the lease's `expires_at`,
+/// yet it reaches the pocket machine before any lapse, because the lapse fires only on
+/// a tick (`LeaseLapses`) and the tick is 2 s away; so it is judged by status alone and
+/// moves the expiry. The property the old half proved, that a renewed lease survives
+/// the following ticks, is proven deterministically by the `renew_first` branch of
+/// `a_lapse_and_a_late_renewal_are_ordered_by_the_pocket_machine_either_way` in
+/// tests/invariants.rs.
 fn renewal_wins(pool: PoolConfig) -> Result<RaceOutcome, String> {
-    let config = Config::default().with_lease_ttl(Duration::from_millis(200));
+    let config = Config::default().with_lease_ttl(Duration::from_millis(30));
+    let pool = pool.with_tick_interval(Duration::from_secs(2));
     Pool::start(config, pool, |handle| {
         let published = Response::Published(Published::NewPocket);
         expect(handle, publish("p", "k", "r", 1), &published)?;
         let (lease, _, _) = batch(&call(handle, pull("c", 10))?)?;
+        // Renewed at once only to make the lease's expiry observable: the lease expires
+        // no later than `first`, which is this renewal's stamp plus the 30 ms TTL.
         let Response::Renewed { expires_at: first } = call(handle, renew("c", lease))? else {
-            return Err("the renewal lost".to_owned());
+            return Err("the first renewal was refused".to_owned());
         };
-        // Several ticks later the lease is still active, and renews again, later.
-        std::thread::sleep(StdDuration::from_millis(30));
+        std::thread::sleep(StdDuration::from_millis(100));
         let Response::Renewed { expires_at: again } = call(handle, renew("c", lease))? else {
-            return Err("the lease did not survive the ticks".to_owned());
+            return Err("the late renewal was refused".to_owned());
         };
-        if again <= first {
+        // Stamped at least 100 ms after the first renewal, so at least 70 ms after the
+        // lease had expired by the clock: late, and still accepted.
+        if again <= first.plus(Duration::from_millis(70)) {
             return Err(format!(
-                "the second renewal did not move the expiry: {again:?} <= {first:?}"
+                "the second renewal was not late: {again:?} <= {first:?} + 70 ms"
             ));
         }
         Ok(lease)
@@ -536,8 +583,10 @@ fn lease_and_record(outcome: &RaceOutcome) -> Option<(LeaseStatus, RecordStatus)
 #[test]
 fn a_lapse_and_a_late_renewal_are_ordered_by_one_machine_either_way() {
     // Through the real pool both orders occur and each is handled as the rules say for
-    // that order; the deterministic proof of both orders, with `now` chosen outright,
-    // lives in tests/invariants.rs through `Direct`.
+    // that order: the lapse half ticks every 5 ms so a tick lapses the lease before the
+    // late renewal, the renewal half ticks every 2 s so the late renewal is stepped
+    // before any tick. The deterministic proof of both orders, with `now` chosen
+    // outright, lives in tests/invariants.rs through `Direct`.
     let pool = PoolConfig::default()
         .with_worker_threads(2)
         .with_partitions(2)
@@ -552,6 +601,8 @@ fn a_lapse_and_a_late_renewal_are_ordered_by_one_machine_either_way() {
 
     let outcome = renewal_wins(pool).unwrap();
     outcome.result().clone().unwrap();
+    let ticks: u64 = outcome.stats().workers.iter().map(|w| w.ticks).sum();
+    assert_eq!(ticks, 0, "a tick ran before the late renewal was stepped");
     assert_eq!(
         lease_and_record(&outcome),
         Some((LeaseStatus::Active, RecordStatus::Held))

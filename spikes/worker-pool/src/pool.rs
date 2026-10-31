@@ -5,14 +5,15 @@
 //! [`Pool::start`] spawns a fixed number of worker threads under
 //! [`std::thread::scope`], gives each one two bounded inbound lanes (one clients block
 //! on, one its peers `try_send` into) and a static share of the machines (the order
-//! machine on worker 0, partition `p` on worker `p % N`), runs the caller's body with
-//! a [`Handle`], and when the body returns stops the workers once nothing is in
-//! flight, joins them and hands back the settled machines and the [`PoolStats`].
+//! machine on worker thread 0, partition `p` on worker thread `p % N`), runs the
+//! caller's body with a [`Handle`], and when the body returns stops the worker threads
+//! once nothing is in flight, joins them and hands back the settled machines and the
+//! [`PoolStats`].
 //!
-//! A worker never blocks on a send: a message whose destination lane is full waits in
-//! the sender's outbox, so two full queues cannot deadlock (the argument is on the
-//! worker loop in the `worker` module). A worker's panic reaches the caller of
-//! [`Pool::start`] as the original payload, after every other worker has exited.
+//! A worker thread never blocks on a send: a message whose destination lane is full
+//! waits in the sender's outbox, so two full queues cannot deadlock (the argument is on
+//! the loop in the `worker` module). A worker thread's panic reaches the caller of
+//! [`Pool::start`] as the original payload, after every other worker thread has exited.
 
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,7 +33,9 @@ use crate::time::{Config, Duration};
 
 mod worker;
 
-use worker::{Envelope, Lanes, MachineSlot, Settings, Worker, WorkerReport, worker_of};
+use worker::{
+    Envelope, Lanes, MachineSlot, ReplyHandle, Settings, Worker, WorkerReport, worker_of,
+};
 
 type Payload = Box<dyn Any + Send + 'static>;
 
@@ -51,7 +54,7 @@ pub struct PoolConfig {
     pub worker_threads: usize,
     /// How many partitions, each with one pocket machine; at least 1.
     pub partitions: u32,
-    /// The depth of each worker's inbound queue; at least 1.
+    /// The depth of each worker thread's inbound queues; at least 1.
     pub queue_capacity: usize,
     /// How often every machine receives [`Input::Tick`].
     pub tick_interval: Duration,
@@ -123,7 +126,8 @@ impl PoolConfig {
 pub enum SendError {
     /// The input is one the machines send each other, or the tick; a client never sends it.
     NotAClientInput,
-    /// The owning worker is gone: the pool stopped or a worker panicked.
+    /// The pool stopped (the body returned) or a worker thread panicked: no worker
+    /// thread will step the input.
     PoolStopped,
 }
 
@@ -175,7 +179,7 @@ impl From<SendError> for CallError {
 pub enum PoolError {
     /// The operating system refused a worker thread.
     Spawn(String),
-    /// A worker came back without a machine it was given; the pool's own defect.
+    /// A worker thread came back without a machine it was given; the pool's own defect.
     MachineLost(MachineId),
 }
 
@@ -183,7 +187,7 @@ impl fmt::Display for PoolError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Spawn(error) => write!(f, "a worker thread could not be spawned: {error}"),
-            Self::MachineLost(id) => write!(f, "a worker lost its machine {id:?}"),
+            Self::MachineLost(id) => write!(f, "a worker thread lost its machine {id:?}"),
         }
     }
 }
@@ -196,23 +200,27 @@ impl std::error::Error for PoolError {}
 pub struct WorkerStats {
     /// Enveloped inputs stepped (ticks not included).
     pub inputs_stepped: u64,
-    /// Messages one machine sent another through this worker, local or not.
+    /// Messages one machine sent another through this worker thread, local or not.
     pub messages_crossed: u64,
-    /// Of those, the ones for a machine on this same worker.
+    /// Of those, the ones for a machine on this same worker thread.
     pub local_deliveries: u64,
-    /// Of those, the ones handed to another worker's queue.
+    /// Of those, the ones handed to another worker thread's queue.
     pub channel_deliveries: u64,
-    /// The most messages ever waiting in this worker's outboxes at once.
+    /// The most messages ever waiting in this worker thread's outboxes at once.
     pub outbox_high_water: u64,
-    /// Ticks stepped into this worker's machines.
+    /// Times a `try_send` found a peer's lane full; positive means that lane did fill.
+    pub lane_full: u64,
+    /// Ticks stepped into this worker thread's machines.
     pub ticks: u64,
     /// Nanoseconds spent inside `Machine::step`.
     pub busy_nanos: u64,
-    /// Replies a machine produced for an input that was already answered.
+    /// Replies a machine produced for an input that was already answered, whichever
+    /// hop of a forwarded request produced them; zero in every correct run.
     pub double_replies: u64,
     /// Replies a machine produced for an input that carried no reply handle.
     pub replies_without_request: u64,
-    /// Envelopes for a machine this worker does not own; zero in every correct run.
+    /// Envelopes for a machine this worker thread does not own; zero in every correct
+    /// run.
     pub misrouted: u64,
 }
 
@@ -224,13 +232,17 @@ impl WorkerStats {
     }
 }
 
-/// Which worker and which thread stepped one machine.
+/// Which worker thread, by index and by thread id, stepped one machine.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct MachineStats {
-    /// The worker indices that stepped the machine; one in every correct run.
+    /// The worker thread indices that stepped the machine; one in every correct run.
     pub stepped_by: BTreeSet<usize>,
     /// The threads that stepped the machine, deduplicated; one in every correct run.
+    /// Each is the thread the worker thread reported when it stepped the machine, taken
+    /// outside `step`, so it is a self-report: the guarantee that no other thread steps
+    /// the machine is structural, since a machine is owned by value in one worker
+    /// thread's map and stepped through that worker thread's `&mut`.
     pub thread_ids: Vec<ThreadId>,
     /// Enveloped inputs stepped into the machine.
     pub inputs_stepped: u64,
@@ -243,7 +255,7 @@ impl MachineStats {
         Self::default()
     }
 
-    /// Records one step by this worker on this thread.
+    /// Records one step by this worker thread, by index and thread id.
     pub fn record(&mut self, worker: usize, thread: ThreadId) {
         self.stepped_by.insert(worker);
         if !self.thread_ids.contains(&thread) {
@@ -260,11 +272,12 @@ pub struct PoolStats {
     pub worker_threads: usize,
     /// The partitions.
     pub partitions: u32,
-    /// The workers whose join returned; equals `worker_threads` after a normal stop.
+    /// The worker threads whose join returned; equals `worker_threads` after a normal
+    /// stop.
     pub joined_workers: usize,
-    /// Whether a worker saw a peer gone, or a panic set the flag.
+    /// Whether a worker thread saw a peer gone, or a panic set the flag.
     pub aborted: bool,
-    /// Every worker's counters, by worker index.
+    /// Every worker thread's counters, by worker thread index.
     pub workers: Vec<WorkerStats>,
     /// Every machine's record of who stepped it.
     pub machines: BTreeMap<MachineId, MachineStats>,
@@ -321,20 +334,23 @@ impl<R> Outcome<R> {
     }
 }
 
-/// What the handle and every worker share: the lane senders, the worker threads to
-/// wake, and the flags.
+/// What the handle and every worker thread share: the lane senders, the worker
+/// threads to wake, and the flags.
 #[derive(Debug)]
 pub(crate) struct Shared {
     pub(crate) pool: PoolConfig,
-    /// Each worker's client lane: clients block on it; no worker sends into it.
+    /// Each worker thread's client lane: clients block on it; no worker thread sends
+    /// into it.
     pub(crate) client_lane: Vec<SyncSender<Envelope>>,
-    /// Each worker's peer lane: workers `try_send` into it; no client touches it.
+    /// Each worker thread's peer lane: worker threads `try_send` into it; no client
+    /// touches it.
     pub(crate) peer_lane: Vec<SyncSender<Envelope>>,
-    /// Each worker's thread, set by the worker before its first park.
+    /// Each worker thread's handle, set by the worker thread before its first park.
     pub(crate) threads: Vec<OnceLock<Thread>>,
-    /// Set when the body has returned: workers exit once nothing is in flight.
+    /// Set when the body has returned: worker threads exit once nothing is in flight.
     pub(crate) stop: AtomicBool,
-    /// Set when a worker panicked or saw a peer gone: workers exit at once.
+    /// Set when a worker thread panicked or saw a peer gone: worker threads exit at
+    /// once.
     pub(crate) aborted: AtomicBool,
     /// Every envelope anywhere (a queue, an outbox, or being stepped) plus every tick in
     /// progress: zero means nothing can produce another message.
@@ -368,36 +384,37 @@ impl Shared {
         (shared, lanes)
     }
 
-    /// Wakes one parked worker; a worker not yet registered has not parked.
+    /// Wakes one parked worker thread; one not yet registered has not parked.
     pub(crate) fn wake(&self, worker: usize) {
         if let Some(thread) = self.threads.get(worker).and_then(OnceLock::get) {
             thread.unpark();
         }
     }
 
-    /// Wakes every worker, so that a stop or an abort is seen at once.
+    /// Wakes every worker thread, so that a stop or an abort is seen at once.
     pub(crate) fn wake_all(&self) {
         for worker in 0..self.threads.len() {
             self.wake(worker);
         }
     }
 
-    /// Asks every worker to exit at once.
+    /// Asks every worker thread to exit at once.
     pub(crate) fn abort(&self) {
         self.aborted.store(true, Ordering::SeqCst);
         self.stop.store(true, Ordering::SeqCst);
         self.wake_all();
     }
 
-    /// Asks every worker to exit once nothing is in flight.
+    /// Asks every worker thread to exit once nothing is in flight.
     pub(crate) fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
         self.wake_all();
     }
 }
 
-/// A client's way into the pool: routes an input to the worker that owns its machine and
-/// hands back the reply handle. Clone it into client threads spawned inside the body.
+/// A client's way into the pool: routes an input to the worker thread that owns its
+/// machine and hands back the reply handle. Clone it into client threads spawned inside
+/// the body.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Handle {
@@ -405,13 +422,14 @@ pub struct Handle {
 }
 
 impl Handle {
-    /// Sends one client input, blocking while the owning worker's queue is full, and
-    /// returns the receiver its one reply arrives on.
+    /// Sends one client input, blocking while the owning worker thread's queue is full,
+    /// and returns the receiver its one reply arrives on.
     ///
     /// # Errors
     ///
     /// `NotAClientInput` when the input is one the machines send each other or the
-    /// tick; `PoolStopped` when the owning worker is gone.
+    /// tick; `PoolStopped` when the pool has stopped or the owning worker thread is
+    /// gone, so that no input is admitted after the worker threads decided to exit.
     pub fn send(&self, input: Input) -> Result<Receiver<Response>, SendError> {
         let partitions = self.shared.pool.partitions;
         let to = route(&input, partitions).ok_or(SendError::NotAClientInput)?;
@@ -419,11 +437,25 @@ impl Handle {
             return Err(SendError::PoolStopped);
         }
         let (reply, receiver) = sync_channel::<Response>(1);
-        let envelope = Envelope::new(to, input, Some(reply));
+        let envelope = Envelope::new(to, input, Some(ReplyHandle::new(reply)));
         let worker = worker_of(to, self.shared.pool.worker_threads);
-        // Counted before it exists anywhere, so no worker sees zero in flight while
-        // this envelope is about to enter a queue.
+        // Counted before it exists anywhere, so no worker thread sees zero in flight
+        // while this envelope is about to enter a queue.
         self.shared.in_flight.fetch_add(1, Ordering::SeqCst);
+        // A worker thread reads `stop` then `in_flight` before it exits; this reads
+        // `in_flight` (the increment) then `stop`. Under SeqCst one side always sees the
+        // other: either the worker thread sees the token and keeps draining, or this
+        // sees the stop and refuses, so no envelope dies in a dropped receiver with its
+        // token held.
+        if self.shared.stop.load(Ordering::SeqCst) {
+            // The refusal releases the token; when it was the last one, the worker
+            // threads that parked on seeing it are woken, as a worker thread's own
+            // last release wakes them, so the stop does not wait out a tick.
+            if self.shared.in_flight.fetch_sub(1, Ordering::SeqCst) == 1 {
+                self.shared.wake_all();
+            }
+            return Err(SendError::PoolStopped);
+        }
         if self.shared.client_lane[worker].send(envelope).is_ok() {
             self.shared.wake(worker);
             Ok(receiver)
@@ -466,7 +498,7 @@ impl Handle {
         self.shared.live_workers.load(Ordering::SeqCst)
     }
 
-    /// Whether a worker panicked or saw a peer gone.
+    /// Whether a worker thread panicked or saw a peer gone.
     #[must_use]
     pub fn aborted(&self) -> bool {
         self.shared.aborted.load(Ordering::SeqCst)
@@ -479,9 +511,10 @@ impl Handle {
 pub struct Pool;
 
 impl Pool {
-    /// Runs the pool around `body`: spawns the workers, runs the body on the calling
-    /// thread with a [`Handle`], then stops the workers once nothing is in flight,
-    /// joins them and returns the settled machines, the body's result and the stats.
+    /// Runs the pool around `body`: spawns the worker threads, runs the body on the
+    /// calling thread with a [`Handle`], then stops the worker threads once nothing is
+    /// in flight, joins them and returns the settled machines, the body's result and
+    /// the stats.
     ///
     /// ```
     /// use worker_pool::pool::{Pool, PoolConfig};
@@ -498,12 +531,12 @@ impl Pool {
     /// # Errors
     ///
     /// `Spawn` when a worker thread could not be started; `MachineLost` when a worker
-    /// came back without one of its machines, which is the pool's own defect.
+    /// thread came back without one of its machines, which is the pool's own defect.
     ///
     /// # Panics
     ///
-    /// Re-raises, with its original payload, the panic of a worker or of the body,
-    /// after every worker thread has exited.
+    /// Re-raises, with its original payload, the panic of a worker thread or of the
+    /// body, after every worker thread has exited.
     pub fn start<R>(
         config: Config,
         pool: PoolConfig,
@@ -530,8 +563,9 @@ impl Pool {
             shared.stop();
             Ok((result, join_all(joins)))
         });
-        // Every worker is joined by now, so re-raising cannot collide with a join. A
-        // worker's panic is re-raised ahead of the body's: it is the likelier cause.
+        // Every worker thread is joined by now, so re-raising cannot collide with a
+        // join. A worker thread's panic is re-raised ahead of the body's: it is the
+        // likelier cause.
         match run {
             Err((_, Err(payload))) | Ok((_, Err(payload)) | (Err(payload), Ok(_))) => {
                 resume_unwind(payload)
@@ -544,8 +578,9 @@ impl Pool {
 
 type Spawned<'scope> = Vec<ScopedJoinHandle<'scope, WorkerReport>>;
 
-/// Spawns one worker per pair of lanes, giving worker 0 the order machine and worker
-/// `p % N` partition `p`. On a spawn failure, hands back the handles already running.
+/// Spawns one worker thread per pair of lanes, giving worker thread 0 the order machine
+/// and worker thread `p % N` partition `p`. On a spawn failure, hands back the handles
+/// already running.
 fn spawn_workers<'scope, 'env>(
     scope: &'scope Scope<'scope, 'env>,
     shared: &'env Arc<Shared>,
@@ -570,7 +605,7 @@ fn spawn_workers<'scope, 'env>(
     Ok(joins)
 }
 
-/// The machines worker `index` owns for the pool's whole life.
+/// The machines worker thread `index` owns for the pool's whole life.
 fn machines_for(index: usize, config: &Config, pool: PoolConfig) -> Vec<MachineSlot> {
     let mut machines = Vec::new();
     if index == 0 {
@@ -589,7 +624,7 @@ fn machines_for(index: usize, config: &Config, pool: PoolConfig) -> Vec<MachineS
     machines
 }
 
-/// Joins every worker, then reports the first panic payload if any worker panicked.
+/// Joins every worker thread, then reports the first panic payload if any panicked.
 fn join_all(joins: Spawned<'_>) -> Result<Vec<WorkerReport>, Payload> {
     let mut reports = Vec::with_capacity(joins.len());
     let mut first_panic = None;
@@ -606,7 +641,7 @@ fn join_all(joins: Spawned<'_>) -> Result<Vec<WorkerReport>, Payload> {
     first_panic.map_or(Ok(reports), Err)
 }
 
-/// Builds the outcome from the workers' reports.
+/// Builds the outcome from the worker threads' reports.
 fn assemble<R>(
     result: R,
     shared: &Shared,
@@ -651,9 +686,43 @@ fn assemble<R>(
 
 #[cfg(test)]
 mod tests {
-    use super::{CallError, MachineStats, PoolConfig, SendError};
-    use crate::protocol::{MachineId, Partition};
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    use std::time::Instant;
+
+    use super::{CallError, Handle, MachineStats, PoolConfig, SendError, Shared};
+    use crate::protocol::{ConsumerId, Input, MachineId, Partition};
     use crate::time::Duration;
+
+    /// A send that finds the stop flag already set is refused and leaves nothing in
+    /// flight, so that no envelope can enter a lane a worker thread is about to drop;
+    /// and the refusal wakes the worker threads, which may have parked on the token.
+    #[test]
+    fn a_send_after_stop_is_refused_and_holds_no_token() {
+        let (shared, _lanes) = Shared::new(PoolConfig::default());
+        let handle = Handle {
+            shared: Arc::new(shared),
+        };
+        // Worker thread 0 is this thread: the wake-up lands here as an unpark token,
+        // so the park below returns at once instead of running out its timeout.
+        handle.shared.threads[0]
+            .set(std::thread::current())
+            .unwrap();
+        std::thread::park_timeout(std::time::Duration::ZERO);
+        handle.shared.stop.store(true, Ordering::SeqCst);
+        let pull = Input::Pull {
+            consumer: ConsumerId::new("c"),
+            limit: 1,
+        };
+        assert!(matches!(handle.send(pull), Err(SendError::PoolStopped)));
+        assert_eq!(handle.shared.in_flight.load(Ordering::SeqCst), 0);
+        let parked = Instant::now();
+        std::thread::park_timeout(std::time::Duration::from_millis(500));
+        assert!(
+            parked.elapsed() < std::time::Duration::from_millis(500),
+            "the refused send did not wake the worker thread"
+        );
+    }
 
     #[test]
     fn the_builders_clamp_to_at_least_one() {
