@@ -251,7 +251,7 @@ structured task scope as a rule; the lease id as a fencing token; the wire shape
 `docs/reference/http-api.md`); Consequences (the service's tree is now the audit surface,
 no native TLS, the bare binary and the image unchanged, the library still synchronous);
 What would reopen this; Related pages. Decision 0014 gains one line under its title,
-"Superseded by decision 0019 on <date>", and nothing else changes in it;
+"Superseded by decision 0019 on YYYY-MM-DD" (the merge date), and nothing else changes in it;
 `docs/decisions/README.md` gets 0019's row, marks 0014 superseded in the paragraph that
 already marks 0004, and moves "The next decision is" to 0020. `docs/manifest.yml` registers
 the record and the new page `docs/reference/http-api.md` (kind `reference`, slug
