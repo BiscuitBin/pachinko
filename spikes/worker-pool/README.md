@@ -36,3 +36,11 @@ depends on it.
 Both sit outside `just check`, which lints the crate (lock, format, clippy and deny) but
 does not run it. The crate is its own Cargo root with its own `Cargo.lock`, so the root
 workspace is untouched.
+
+The table's preamble defines its thresholds, its `busy %` (step time only) and the
+invariants checked at the end. Each row is one whole run: the median of the repeats by
+`pub/s`, or the first repeat that failed an invariant, timed out or lost a reply, so no
+repeat's failure is dropped; a client thread's panic fails the run. Rates divide by the
+window the clients measured over. Run-to-run noise is a few per cent, so a ranking
+within that is not stable between runs; `--publishers` and `--consumers` give a
+client-scaling run that shows whether the client count moves the numbers.

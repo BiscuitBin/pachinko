@@ -26,9 +26,10 @@ with N = available_parallelism, Nperf = the performance cores (N when unknown) a
 P = max(16, N); publishers and consumers are each raised to N when together they
 are below 2N. With either: one row; a missing count is 1.
 Defaults: publishers 8, consumers 8, pockets 256, lease-ttl-ms 200, duration-s 3
-(plus a 1 s warm-up excluded from the numbers), repeats 3 (the median by pub/s),
-tick-ms 10, queue-capacity 1024, seed 1. --smoke: 1 worker, 1 partition, 2+2
-clients, 100 ms after a 50 ms warm-up, lease 50 ms, 1 repeat.";
+(plus a 1 s warm-up excluded from the numbers), repeats 3 (the median by pub/s, or
+the first repeat that failed an invariant, timed out or lost a reply), tick-ms 10,
+queue-capacity 1024, seed 1. --smoke: 1 worker thread, 1 partition, 2+2 clients,
+100 ms after a 50 ms warm-up, lease 50 ms, 1 repeat.";
 
 /// Why the binary could not run.
 #[derive(Debug)]

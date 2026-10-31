@@ -3,9 +3,10 @@
 //! release, and one consumer that stalls past the lease so that lapses happen.
 //!
 //! Every client keeps its own tally and returns it when the deadline passes; the
-//! driver sums them. Latency is a client-side `Instant` split in two: the time blocked
-//! in `Handle::send` (back-pressure) and the time from the send's return to the reply
-//! (service).
+//! driver sums them, and a client's panic is re-raised at its join (never swallowed as
+//! an empty tally), so it unwinds through the pool's body and fails the run. Latency
+//! is a client-side `Instant` split in two: the time blocked in `Handle::send`
+//! (back-pressure) and the time from the send's return to the reply (service).
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -95,6 +96,8 @@ pub(super) struct Tally {
     pub(super) pulls: u64,
     /// Acks and nacks started in the window.
     pub(super) settles: u64,
+    /// Releases started in the window.
+    pub(super) releases: u64,
     /// Pulls in the window answered `NoPocketAvailable`.
     pub(super) empty_pulls: u64,
     /// Publish replies in the window by kind: new pocket, new key, superseded, stale.
@@ -117,6 +120,11 @@ pub(super) struct Tally {
     pub(super) pull_wait: Vec<u64>,
     /// Pull service samples.
     pub(super) pull_service: Vec<u64>,
+    /// Ack and nack service samples, window only.
+    pub(super) settle_service: Vec<u64>,
+    /// The real measured window: the deadline minus when `measuring` opened. The
+    /// driver's, kept by `merge`; zero in a single client's tally.
+    pub(super) window: Duration,
 }
 
 impl Tally {
@@ -125,6 +133,7 @@ impl Tally {
         self.publishes += other.publishes;
         self.pulls += other.pulls;
         self.settles += other.settles;
+        self.releases += other.releases;
         self.empty_pulls += other.empty_pulls;
         self.published.0 += other.published.0;
         self.published.1 += other.published.1;
@@ -139,6 +148,8 @@ impl Tally {
         self.pub_service.extend(other.pub_service);
         self.pull_wait.extend(other.pull_wait);
         self.pull_service.extend(other.pull_service);
+        self.settle_service.extend(other.settle_service);
+        // `window` is the driver's and is kept.
     }
 
     /// Counts a reply, or its absence, whole run.
@@ -317,7 +328,8 @@ impl Consumer<'_> {
         outcome.reply
     }
 
-    /// Acks seven handed records in eight and nacks the eighth.
+    /// Acks seven handed records in eight and nacks the eighth, recording each
+    /// settle's service latency when it counts.
     fn settle(&mut self, lease: LeaseId, records: &[HandedRecord]) {
         for record in records {
             let input = if self.lcg.below(NACK_EVERY) == 0 {
@@ -338,22 +350,30 @@ impl Consumer<'_> {
             self.tally.account(outcome.reply.as_ref());
             if counting {
                 self.tally.settles += 1;
+                self.tally.settle_service.push(outcome.service);
             }
         }
     }
 
+    /// One release, counted when it starts inside the window.
     fn release(&mut self, lease: LeaseId) {
         let input = Input::Release {
             consumer: self.id.clone(),
             lease,
         };
+        let counting = self.clock.counting();
         let outcome = call(self.handle, input);
         self.tally.account(outcome.reply.as_ref());
+        if counting {
+            self.tally.releases += 1;
+        }
     }
 }
 
 /// Runs the publishers and consumers against the handle under a nested scope, opens
-/// the counting window after the warm-up, and sums their tallies when they return.
+/// the counting window after the warm-up, and sums their tallies when they return. A
+/// client's panic is re-raised at its join: the nested scope joins the remaining
+/// clients, the body unwinds into `Pool::start`, which aborts the pool and re-raises.
 pub(super) fn drive(handle: &Handle, load: &LoadConfig) -> Tally {
     let clock = &Clock::new(Instant::now() + load.warm_up + load.duration);
     std::thread::scope(|scope| {
@@ -366,10 +386,16 @@ pub(super) fn drive(handle: &Handle, load: &LoadConfig) -> Tally {
         }
         std::thread::sleep(load.warm_up);
         clock.measuring.store(true, Ordering::SeqCst);
+        let opened = Instant::now();
         let mut total = Tally::default();
         for thread in threads {
-            total.merge(thread.join().unwrap_or_default());
+            total.merge(
+                thread
+                    .join()
+                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload)),
+            );
         }
+        total.window = clock.deadline.saturating_duration_since(opened);
         total
     })
 }
@@ -402,11 +428,17 @@ mod tests {
         a.account(Some(&Response::Rejected(Reason::LeaseNotActive)));
         assert_eq!((a.requests, a.replies, a.timed_out), (3, 2, 1));
         assert_eq!(a.lease_not_active, 1);
+        a.window = std::time::Duration::from_secs(1);
         let mut b = Tally::default();
         b.account(Some(&Response::Acked));
         b.pub_wait.push(9);
+        b.window = std::time::Duration::from_secs(2);
+        a.releases = 2;
+        a.settle_service.push(11);
         b.merge(a);
         assert_eq!((b.requests, b.replies, b.timed_out), (4, 3, 1));
         assert_eq!(b.pub_wait, vec![9]);
+        assert_eq!((b.releases, b.settle_service), (2, vec![11]));
+        assert_eq!(b.window, std::time::Duration::from_secs(2));
     }
 }

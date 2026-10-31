@@ -24,7 +24,7 @@ mod host;
 mod report;
 
 pub use host::Host;
-pub use report::{RunReport, format_table, percentile};
+pub use report::{INVARIANTS_CHECKED, RunReport, format_table, percentile};
 
 /// The load's shape: how many clients, how many pockets, the lease, and how long.
 ///
@@ -130,7 +130,10 @@ impl LoadConfig {
 
     /// The same load with at least `parallelism` publishers and as many consumers, so
     /// that the closed-loop clients, each waiting on one reply at a time, number at
-    /// least twice the host's parallelism and cannot be what caps the throughput.
+    /// least twice the host's parallelism and the count is not what the comparison
+    /// turns on. A closed loop's throughput is its clients over their round trip, so
+    /// the count alone caps nothing; the hand-back's client-scaling run shows whether
+    /// more clients move the numbers.
     ///
     /// ```
     /// use worker_pool::load::LoadConfig;
@@ -199,7 +202,9 @@ pub fn run_once(
 
 /// `repeats` runs (at least one), keeping the whole report of the run whose publishes
 /// a second are the median (the upper one of an even count), so that every column of
-/// a row comes from one run.
+/// a row comes from one run. A run that failed an invariant, saw a protocol violation,
+/// timed out or lost a reply is kept ahead of the median, so no repeat's failure is
+/// dropped.
 ///
 /// # Errors
 ///
@@ -215,10 +220,27 @@ pub fn measure(
     for _ in 0..repeats {
         reports.push(run_once(load, pool, config)?);
     }
+    Ok(select(reports, repeats))
+}
+
+/// Whether a run ended unhealthy: an invariant failed, a machine saw a protocol
+/// violation, a call timed out, or a request went without a reply.
+const fn unhealthy(report: &RunReport) -> bool {
+    !report.invariants_hold() || report.timed_out > 0 || report.requests != report.replies
+}
+
+/// The one report a row prints: the first [`unhealthy`] one by publishes when there is
+/// one, else the median by publishes (the upper one of an even count). `repeats` is
+/// written into it. Empty input yields an empty report.
+fn select(mut reports: Vec<RunReport>, repeats: usize) -> RunReport {
+    if reports.is_empty() {
+        return RunReport::new();
+    }
     reports.sort_by_key(|report| report.publishes);
-    let mut median = reports.swap_remove(reports.len() / 2);
-    median.repeats = repeats;
-    Ok(median)
+    let failing = reports.iter().position(unhealthy);
+    let mut chosen = reports.swap_remove(failing.unwrap_or(reports.len() / 2));
+    chosen.repeats = repeats;
+    chosen
 }
 
 /// The sweep for a host: `(1, 1)`, `(1, P)`, `(Nperf, P)` and `(N, P)` with `N` the
@@ -246,7 +268,7 @@ pub fn sweep_plan(host: &Host) -> Vec<(usize, u32)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Host, LoadConfig, measure, run_once, sweep_plan};
+    use super::{Host, LoadConfig, RunReport, measure, run_once, select, sweep_plan};
     use crate::pool::PoolConfig;
     use crate::time::{Config, Duration};
     use std::time::Duration as StdDuration;
@@ -285,7 +307,14 @@ mod tests {
     #[test]
     fn a_short_run_keeps_the_invariants_and_answers_every_request() {
         let pool = PoolConfig::default().with_tick_interval(Duration::from_millis(5));
-        let report = run_once(&short_load(), pool, Config::default()).unwrap();
+        let load = short_load();
+        let report = run_once(&load, pool, Config::default()).unwrap();
+        assert!(
+            report.window > StdDuration::ZERO && report.window <= load.duration,
+            "the measured window {:?} is at most the configured {:?}",
+            report.window,
+            load.duration
+        );
         assert!(report.invariants_hold(), "{:?}", report.failed_invariants);
         assert_eq!(report.violations, 0);
         assert!(report.publishes > 0);
@@ -307,5 +336,49 @@ mod tests {
         let report = measure(&load, pool, Config::default(), 2).unwrap();
         assert_eq!(report.repeats, 2);
         assert!(report.invariants_hold());
+    }
+
+    fn healthy(publishes: u64) -> RunReport {
+        RunReport {
+            publishes,
+            requests: 10,
+            replies: 10,
+            ..RunReport::new()
+        }
+    }
+
+    #[test]
+    fn select_takes_the_median_when_every_repeat_is_healthy() {
+        let reports = vec![healthy(30), healthy(10), healthy(20)];
+        let chosen = select(reports, 3);
+        assert_eq!((chosen.publishes, chosen.repeats), (20, 3));
+        let even = vec![healthy(10), healthy(40), healthy(20), healthy(30)];
+        assert_eq!(select(even, 4).publishes, 30);
+        assert_eq!(select(Vec::new(), 1), RunReport::new());
+    }
+
+    #[test]
+    fn select_keeps_a_failed_repeat_ahead_of_the_median() {
+        let mut timed_out = healthy(0);
+        timed_out.timed_out = 1;
+        timed_out.replies = 9;
+        let chosen = select(vec![healthy(20), timed_out.clone(), healthy(30)], 3);
+        assert_eq!((chosen.timed_out, chosen.repeats), (1, 3));
+        let mut failed = healthy(40);
+        failed.failed_invariants = vec!["OnePocketPerKey: x".to_owned()];
+        let chosen = select(vec![healthy(20), healthy(30), failed], 3);
+        assert_eq!(chosen.failed_invariants.len(), 1);
+        let mut violated = healthy(25);
+        violated.violations = 2;
+        let chosen = select(vec![healthy(20), violated, healthy(30)], 3);
+        assert_eq!(chosen.violations, 2);
+        let chosen = select(vec![timed_out, failed_first_by_publishes()], 2);
+        assert_eq!(chosen.publishes, 0, "the lowest failing run by publishes");
+    }
+
+    fn failed_first_by_publishes() -> RunReport {
+        let mut failed = healthy(5);
+        failed.violations = 1;
+        failed
     }
 }

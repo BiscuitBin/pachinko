@@ -15,10 +15,49 @@ use super::LoadConfig;
 use super::clients::Tally;
 use super::host::Host;
 
-/// A worker at or above this share of the wall time is named the bottleneck.
+/// A worker thread at or above this share of the wall time in step is named the
+/// bottleneck.
 const WORKER_BUSY: u64 = 80;
-/// No worker above this share means the clients could not offer more load.
-const CLIENTS_BUSY: u64 = 60;
+/// No worker thread at or above this share of the wall time in step means the limit
+/// is outside the machines' steps: the pool's loop (routing, replies, channel
+/// operations, allocation) or the clients, which step time alone cannot tell apart.
+const OUTSIDE_STEPS_BUSY: u64 = 60;
+
+/// Every invariant [`invariants::check`] evaluates over the settled machines, as the
+/// preamble names them: the module's twenty by their names in
+/// `docs/specs/pachinko.allium` and the spike's three `spike:` consistency checks.
+/// Maintained by hand beside `invariants.rs`; a unit test holds the two equal.
+///
+/// ```
+/// use worker_pool::load::INVARIANTS_CHECKED;
+/// assert_eq!(INVARIANTS_CHECKED.len(), 23);
+/// assert!(INVARIANTS_CHECKED.contains(&"OneActiveLeasePerPocket"));
+/// ```
+pub const INVARIANTS_CHECKED: [&str; 23] = [
+    "EndedAfterGrant",
+    "ExpiriesWithinLimit",
+    "ExpiryLimitPositive",
+    "GrantedBeforeExpiry",
+    "HeldVersionNotNewer",
+    "IdleHasNoRecords",
+    "LeasedHasOneActiveLease",
+    "NackedBeforeExpiry",
+    "OneActiveLeasePerConsumer",
+    "OneActiveLeasePerPocket",
+    "OnePocketPerKey",
+    "OneRecordPerKeyPerPocket",
+    "OutstandingOnlyWhileLeased",
+    "PocketPositionsBelowNext",
+    "PullBatchPositive",
+    "RecordPositionsBelowNext",
+    "ShedBeforeExpiry",
+    "UniquePocketPosition",
+    "UniqueRecordPosition",
+    "UnleasedHasNoActiveLease",
+    "spike:NoProtocolViolations",
+    "spike:OrderMatchesViews",
+    "spike:OrderViewConsistent",
+];
 
 /// One run as the table prints it: a median of repeats, or the run itself.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -42,7 +81,9 @@ pub struct RunReport {
     pub tick_ms: u64,
     /// Each lane's depth.
     pub queue_capacity: usize,
-    /// The measured window, after the warm-up.
+    /// The window the clients measured over: from when the counting opened after the
+    /// warm-up to the deadline, so at most the configured duration. The rates divide
+    /// by it.
     pub window: StdDuration,
     /// The warm-up excluded from the counts.
     pub warm_up: StdDuration,
@@ -56,27 +97,31 @@ pub struct RunReport {
     pub pulls: u64,
     /// Acks and nacks in the window.
     pub settles: u64,
+    /// Releases in the window.
+    pub releases: u64,
     /// Pulls answered `NoPocketAvailable` in the window.
     pub empty_pulls: u64,
     /// Publish service latency, send returned to reply: p50 and p99 in microseconds.
     pub pub_service: (u64, u64),
     /// Pull service latency: p50 and p99 in microseconds.
     pub pull_service: (u64, u64),
+    /// Ack and nack service latency: p50 and p99 in microseconds.
+    pub settle_service: (u64, u64),
     /// Publish send-wait, the time blocked in `Handle::send`: p50 and p99 in microseconds.
     pub pub_wait: (u64, u64),
     /// Pull send-wait: p50 and p99 in microseconds.
     pub pull_wait: (u64, u64),
     /// The order machine's `RetryPull` count over the pool's life.
     pub retry_pulls: u64,
-    /// Messages delivered to a machine on the same worker, summed over workers.
+    /// Messages delivered to a machine on the same worker thread, summed over them.
     pub msgs_local: u64,
-    /// Messages handed to another worker's lane, summed over workers.
+    /// Messages handed to another worker thread's lane, summed over the threads.
     pub msgs_channel: u64,
-    /// The highest outbox high-water mark of any worker.
+    /// The highest outbox high-water mark of any worker thread.
     pub outbox_hwm: u64,
-    /// Ticks stepped, summed over workers.
+    /// Ticks stepped, summed over the worker threads.
     pub ticks: u64,
-    /// Each worker's time inside `step` as a percentage of the pool's wall time.
+    /// Each worker thread's time inside `step` as a percentage of the pool's wall time.
     pub busy: Vec<u64>,
     /// Leases with status `Expired` in the settled pocket machines.
     pub lapses: u64,
@@ -107,7 +152,7 @@ impl RunReport {
         Self::default()
     }
 
-    /// The highest busy percentage and the worker that has it.
+    /// The highest busy percentage and the worker thread that has it.
     #[must_use]
     pub fn busiest(&self) -> (usize, u64) {
         self.busy
@@ -118,7 +163,7 @@ impl RunReport {
             .unwrap_or((0, 0))
     }
 
-    /// The mean busy percentage over the workers.
+    /// The mean busy percentage over the worker threads.
     #[must_use]
     pub fn mean_busy(&self) -> u64 {
         if self.busy.is_empty() {
@@ -144,7 +189,7 @@ impl RunReport {
     /// report.busy = vec![97, 40];
     /// assert_eq!(
     ///     report.bottleneck(),
-    ///     "worker 0 (order machine + 2 partitions) at 97 % busy"
+    ///     "worker thread 0 (order machine + 2 partitions) at 97 % busy"
     /// );
     /// ```
     #[must_use]
@@ -158,18 +203,21 @@ impl RunReport {
         }
         if max >= WORKER_BUSY {
             return format!(
-                "worker {worker} ({}) at {max} % busy",
+                "worker thread {worker} ({}) at {max} % busy",
                 self.machines_of(worker)
             );
         }
-        if max < CLIENTS_BUSY {
-            return format!("clients (no worker above {CLIENTS_BUSY} %; max {max} %)");
+        if max < OUTSIDE_STEPS_BUSY {
+            return format!(
+                "outside the machines' steps (no worker thread above {OUTSIDE_STEPS_BUSY} % \
+                in step; max {max} %): the pool's loop or the clients, not told apart"
+            );
         }
-        format!("mixed (worker {worker} at {max} % busy, no outbox above capacity)")
+        format!("mixed (worker thread {worker} at {max} % busy, no outbox above capacity)")
     }
 
-    /// The machines the pool gives worker `index`: the order machine on worker 0 and
-    /// partition `p` on worker `p % N`.
+    /// The machines the pool gives worker thread `index`: the order machine on thread 0
+    /// and partition `p` on thread `p % N`.
     fn machines_of(&self, index: usize) -> String {
         let workers = self.workers.max(1);
         let partitions = (0..self.partitions)
@@ -236,7 +284,8 @@ fn nanos(duration: StdDuration) -> u64 {
 }
 
 /// The report of one run: the clients' tally, the pool's counters and the settled
-/// machines.
+/// machines. The window is the one the driver measured over, not the configured
+/// duration: the rates divide by it.
 pub(super) fn build(
     load: &LoadConfig,
     pool: PoolConfig,
@@ -269,18 +318,25 @@ pub(super) fn build(
     report.pockets = load.pockets;
     report.lease_ttl_ms = load.lease_ttl.nanos() / 1_000_000;
     report.decay_ttl_ms = load.decay_ttl.nanos() / 1_000_000;
-    report.window = load.duration;
     report.warm_up = load.warm_up;
     report.repeats = 1;
     report.wall = wall;
-    let mut tally = outcome.into_result();
+    from_tally(&mut report, outcome.into_result());
+    report
+}
+
+/// The clients' counts, the real window and the latency percentiles, into the report.
+fn from_tally(report: &mut RunReport, mut tally: Tally) {
+    report.window = tally.window;
     report.pub_service = summarise(&mut tally.pub_service);
     report.pull_service = summarise(&mut tally.pull_service);
+    report.settle_service = summarise(&mut tally.settle_service);
     report.pub_wait = summarise(&mut tally.pub_wait);
     report.pull_wait = summarise(&mut tally.pull_wait);
     report.publishes = tally.publishes;
     report.pulls = tally.pulls;
     report.settles = tally.settles;
+    report.releases = tally.releases;
     report.empty_pulls = tally.empty_pulls;
     report.requests = tally.requests;
     report.replies = tally.replies;
@@ -288,7 +344,6 @@ pub(super) fn build(
     report.published = tally.published;
     report.rejected_publishes = tally.rejected_publishes;
     report.lease_not_active = tally.lease_not_active;
-    report
 }
 
 /// What the settled machines show: the invariants, the violations, lapses, parks and
@@ -332,14 +387,16 @@ fn lapses_and_parks(pockets: &[PocketMachine]) -> (u64, u64) {
 }
 
 /// The columns and their widths; the first two are left-aligned.
-const COLUMNS: [(&str, usize); 17] = [
+const COLUMNS: [(&str, usize); 19] = [
     ("N,P", 5),
     ("clients", 7),
     ("pub/s", 8),
     ("pull/s", 8),
     ("ack+nack/s", 10),
+    ("release/s", 9),
     ("p50/p99 pub (us)", 16),
     ("p50/p99 pull (us)", 17),
+    ("p50/p99 ack+nack (us)", 21),
     ("send-wait p99 pub (us)", 22),
     ("retry pulls", 11),
     ("msgs local", 10),
@@ -421,17 +478,27 @@ fn write_preamble(reports: &[RunReport], host: &Host, out: &mut impl Write) -> i
     }
     writeln!(
         out,
-        "note: N workers + C clients oversubscribe the host; numbers compare configurations \
-        on this host on this day and claim nothing else"
+        "note: N worker threads + C clients oversubscribe the host; numbers compare \
+        configurations on this host on this day and claim nothing else; a difference within \
+        run-to-run noise (a few %) orders nothing, so a ranking is read per column, from \
+        repeated runs"
     )?;
     writeln!(
         out,
-        "bottleneck thresholds: channels when outbox hwm > queue capacity; a worker when its \
-        busy >= {WORKER_BUSY} %; clients when no worker is above {CLIENTS_BUSY} %; else mixed. \
-        busy % = time inside step / pool wall time (warm-up and stop included; a worker \
-        yielding on a pending outbox is not busy). lapses = leases Expired and parks = \
-        pockets Parked in the settled machines; retry pulls = the order machine's counter; \
-        both over the whole pool life"
+        "bottleneck thresholds: channels when outbox hwm > queue capacity; a worker thread \
+        when its busy >= {WORKER_BUSY} %; outside the machines' steps (the pool's loop or \
+        the clients, not told apart) when no worker thread is above {OUTSIDE_STEPS_BUSY} %; \
+        else mixed. busy % = step time only: time inside step / pool wall time (warm-up and \
+        stop included; routing, replies, channel operations and allocation are outside step; \
+        a worker thread yielding on a pending outbox is not busy). lapses = leases Expired \
+        and parks = pockets Parked in the settled machines; retry pulls = the order \
+        machine's counter; both over the whole pool life"
+    )?;
+    writeln!(
+        out,
+        "invariants checked at the end, over the settled machines, and every machine's \
+        violations() == 0 (ok = all held): {}",
+        INVARIANTS_CHECKED.join(", ")
     )
 }
 
@@ -448,8 +515,10 @@ fn cells(report: &RunReport) -> Vec<String> {
         format!("{:.0}", per_second(report.publishes, report.window)),
         format!("{:.0}", per_second(report.pulls, report.window)),
         format!("{:.0}", per_second(report.settles, report.window)),
+        format!("{:.0}", per_second(report.releases, report.window)),
         format!("{}/{}", report.pub_service.0, report.pub_service.1),
         format!("{}/{}", report.pull_service.0, report.pull_service.1),
+        format!("{}/{}", report.settle_service.0, report.settle_service.1),
         report.pub_wait.1.to_string(),
         report.retry_pulls.to_string(),
         report.msgs_local.to_string(),
@@ -486,7 +555,7 @@ fn write_cells(out: &mut impl Write, cells: &[String]) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Host, RunReport, format_table, percentile};
+    use super::{Host, INVARIANTS_CHECKED, RunReport, format_table, percentile};
 
     #[test]
     fn percentile_on_a_small_vec_by_nearest_rank() {
@@ -518,8 +587,10 @@ mod tests {
             publishes: 20_000,
             pulls: 4_000,
             settles: 16_000,
+            releases: 3_000,
             pub_service: (50, 900),
             pull_service: (70, 1_200),
+            settle_service: (40, 800),
             pub_wait: (1, 30),
             retry_pulls: 3,
             msgs_local: 100,
@@ -552,11 +623,15 @@ mod tests {
         assert_eq!(
             cells,
             vec![
-                "2,4", "8+8", "10000", "2000", "8000", "50/900", "70/1200", "30", "3", "100",
-                "200", "5", "600", "97/68", "4", "1", "ok"
+                "2,4", "8+8", "10000", "2000", "8000", "1500", "50/900", "70/1200", "40/800", "30",
+                "3", "100", "200", "5", "600", "97/68", "4", "1", "ok"
             ]
         );
-        assert!(text.contains("bottleneck: worker 0 (order machine + 2 partitions) at 97 % busy"));
+        assert!(
+            text.contains(
+                "bottleneck: worker thread 0 (order machine + 2 partitions) at 97 % busy"
+            )
+        );
     }
 
     #[test]
@@ -573,12 +648,55 @@ mod tests {
         assert!(
             report
                 .bottleneck()
-                .starts_with("clients (no worker above 60 %")
+                .starts_with("outside the machines' steps (no worker thread above 60 %")
         );
         report.busy = vec![30, 70];
-        assert!(report.bottleneck().starts_with("mixed (worker 1 at 70 %"));
+        assert!(
+            report
+                .bottleneck()
+                .starts_with("mixed (worker thread 1 at 70 %")
+        );
         report.busy = vec![30, 85];
-        assert_eq!(report.bottleneck(), "worker 1 (2 partitions) at 85 % busy");
+        assert_eq!(
+            report.bottleneck(),
+            "worker thread 1 (2 partitions) at 85 % busy"
+        );
+    }
+
+    /// The names `invariants.rs` passes to `Violation::new`: every quoted literal
+    /// that is an invariant name (`spike:` prefix, else a capital), the detail
+    /// strings being lower-case words or single letters.
+    fn names_in_invariants_source() -> Vec<&'static str> {
+        let source = include_str!("../invariants.rs");
+        let mut names: Vec<&str> = source
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .filter(|literal| {
+                let name = literal.strip_prefix("spike:").unwrap_or(literal);
+                name.len() > 1
+                    && name.starts_with(|c: char| c.is_ascii_uppercase())
+                    && name.chars().all(|c| c.is_ascii_alphabetic())
+            })
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
+    }
+
+    #[test]
+    fn the_invariants_listed_are_the_ones_the_source_checks() {
+        let mut listed = INVARIANTS_CHECKED.to_vec();
+        listed.sort_unstable();
+        assert_eq!(listed, names_in_invariants_source());
+        let mut out = Vec::new();
+        format_table(&[hand_built()], &Host::new(1), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("invariants checked at the end"), "{text}");
+        assert!(
+            text.contains("OnePocketPerKey, OneRecordPerKeyPerPocket"),
+            "{text}"
+        );
     }
 
     #[test]
