@@ -7,6 +7,47 @@ exclude = ["fuzz"]
 # only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
 [workspace.dependencies]
 divan = "0.1.21"
+# Decision 0007: thiserror derives libpachinko's and pachinko's error enums
+# (invariant 10); a hand-written Display and Error per variant is what it saves.
+thiserror = "2.0.21"
+# Decision 0007: proptest drives the shrinking state-machine walk over the queue's
+# invariants, as a development dependency only; std has no generator or shrinker.
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+# Decision 0007, and decision 0019 for the choice: tokio is the service's async
+# runtime, listener, timer, signal handling and shutdown channel. pachinko only;
+# `just effects` keeps it out of libpachinko's tree.
+tokio = { version = "1.54.1", features = [
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time",
+] }
+# Decision 0007, and decision 0019: axum routes HTTP requests to the queue's
+# operations over tokio's listener; without it the service hand-writes hyper glue.
+# Only the HTTP/1.1, JSON and tokio features; no form, query, ws or macros.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+# Decision 0007: serde derives the service's request and response bodies, which
+# axum's `Json` reads and writes (decision 0019); the library's types stay serde-free.
+serde = { version = "1.0.229", features = ["derive"] }
+# Decision 0007: serde_json reads the replies in tests/http.rs, as a development
+# dependency only; the service reaches it through axum's `Json`.
+serde_json = "1.0.154"
+# Decision 0007: payloads are bytes and JSON has no byte type, so the wire carries
+# them base64-encoded (decision 0019).
+base64 = "0.23.1"
+# Decision 0007: the lease-id source draws 128 bits from the operating system; a
+# smaller tree than rand for one call (decision 0019). pachinko only.
+getrandom = "0.4.3"
+# Decision 0007: tracing and tracing-subscriber write the service's log lines to
+# standard error, which the lint table forbids `eprintln!` from doing. `fmt` only,
+# and no `#[instrument]` attribute macro, whose syn 2 would duplicate serde's syn 3.
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
+# Decision 0007: ureq is the blocking HTTP client tests/http.rs drives the server
+# with, as a development dependency only. Plain HTTP to localhost: no TLS feature.
+ureq = { version = "3.5.0", default-features = false }
 
 [workspace.package]
 edition = "2024"

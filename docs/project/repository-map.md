@@ -29,22 +29,32 @@ library and the library never on the service.
 ├── .dockerignore           What the image build leaves out of its context
 ├── .config/nextest.toml    The test runner's profiles
 ├── crates/
-│   ├── libpachinko/        The library: the domain, once the specifications define one
+│   ├── libpachinko/        The library: the domain docs/specs/pachinko.allium specifies
 │   │   ├── Cargo.toml
 │   │   ├── README.md
 │   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
 │   │   ├── benches/
 │   │   │   └── version.rs  The smoke benchmark just bench runs
-│   │   └── src/
-│   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
-│   └── pachinko/           The service: a minimal binary built around the library
+│   │   ├── src/
+│   │   │   ├── lib.rs      The crate root: the crate docs, the re-exports and version()
+│   │   │   ├── ids.rs  config.rs  error.rs    Names and values, the config block, refusals
+│   │   │   ├── clock.rs  lease_ids.rs         The two effect traits, each with its fake
+│   │   │   ├── queue.rs    The Queue, the one place the module's rules run
+│   │   │   └── queue/      One file per group of rules, plus state, view and outcomes
+│   │   └── tests/          One file per group of rules, and invariants.rs, the property walk
+│   └── pachinko/           The service: the library's queue over HTTP
 │       ├── Cargo.toml
 │       ├── README.md
 │       ├── src/
-│       │   ├── lib.rs      The tested run(), which writes the service's one line
-│       │   └── main.rs     The one-line main: run() on standard output, then the exit code
+│       │   ├── lib.rs      The tested run(): the version line, or serve
+│       │   ├── main.rs     The one-line main: run() on the arguments and standard output
+│       │   ├── serve.rs    The task scope: listener, sweep and shutdown signal
+│       │   ├── http.rs     The routes, the bodies and each refusal's status
+│       │   ├── config.rs  error.rs            serve's flags, and the service's errors
+│       │   └── clock.rs  lease_ids.rs         SystemClock and RandomLeaseIds
 │       └── tests/
-│           └── binary.rs   Runs the built binary as a user would
+│           ├── binary.rs   Runs the built binary as a user would, and stops serve
+│           └── http.rs     Drives an in-process server over HTTP
 ├── fuzz/                   The fuzz crate, outside the workspace, with its own lockfile
 │   ├── Cargo.toml
 │   ├── Cargo.lock          The pin for the fuzz crate's separate graph
@@ -81,12 +91,13 @@ reads for libpachinko alone in place of the root file, so it restates every root
 
 | Directory | Responsibility |
 | --- | --- |
-| `crates/libpachinko/src/` | The library. It holds the domain once the specifications define one; today `lib.rs` holds the crate docs and one item, `version()`, with its doctest and an in-module unit test. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
-| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. |
-| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
+| `crates/libpachinko/src/` | The library. It holds the domain `docs/specs/pachinko.allium` specifies, one Rust module per concern: `lib.rs` holds the crate docs, the re-exports and `version()`; `queue.rs` and the files under `queue/` hold the `Queue` and its rules; `clock.rs` and `lease_ids.rs` hold the two effect traits and their fakes. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
+| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the arguments and the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on the command line and standard output, turns the result into an exit code, and holds nothing else. `serve.rs`, `http.rs` and `config.rs` hold the `serve` command ([decision 0019](../decisions/0019-tokio-and-axum-service.md)); `clock.rs` and `lease_ids.rs` hold the real implementations of the library's effect traits. |
+| `crates/libpachinko/tests/` | Integration tests of the queue through its public API: one file per group of rules, and `invariants.rs`, a seeded property walk over the module's invariants. |
+| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status, a usage error, and that `serve` exits zero on SIGTERM; `http.rs` drives an in-process server through the [HTTP API](../reference/http-api.md). Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
 | `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
-| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
+| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one module, `pachinko.allium`, the root, which specifies the queue the library implements. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
 | `tickets/` | The tickets, their `README.md` and `CONVENTIONS.md`, the conventions every ticket obeys. |

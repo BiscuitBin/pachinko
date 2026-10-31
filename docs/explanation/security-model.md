@@ -8,20 +8,22 @@ requires: []
 
 # Security model
 
-This workspace is a library and a minimal service binary. The library holds no data
-about anyone and performs no effect itself, and the service, today, writes one line to
-standard output and exits. That removes most of the attack surface software usually
-has, and it is worth being precise about what remains rather than claiming the problem
-away: the supply chain that builds both crates, the code handed to whoever consumes the
-library, and a network surface for the service that no decision has drawn yet.
+This workspace is a library and a service binary. The library holds no data about
+anyone and performs no effect itself, and the service, with no argument, writes one line
+to standard output and exits; `pachinko serve` holds a queue in memory and answers HTTP
+on one listener. It is worth being precise about what that leaves rather than claiming
+the problem away: the supply chain that builds both crates, the code handed to whoever
+consumes the library, and the listener.
 
 ## What there is to protect
 
 Very little, and that is the point.
 
-- **Nothing is collected or stored.** libpachinko will hold the domain once the
-  specifications define one; it takes values from its caller and hands values back,
-  and it has nowhere of its own to send anything.
+- **Nothing is stored beyond the process.** libpachinko holds the queue the
+  specifications define; it takes values from its caller and hands values back, and it
+  has nowhere of its own to send anything. The service keeps the payloads publishers
+  send in memory, unread, until they are acked, decay or the process ends; nothing is
+  written to disk.
 - **There are no credentials in the repository.** No file here carries a token.
   Continuous integration uses the token GitHub mints for each run and discards with it,
   and the workflows need nothing more: the Pages deployment proves itself with the run's
@@ -32,9 +34,14 @@ Very little, and that is the point.
 ## What is deliberately not secure
 
 **Nothing in the library is a secret.** Its output is computable by anyone holding the
-crate and the same inputs. No specification yet asks for cryptographic randomness; until
-one does, no effect trait promises it, and the fakes that sit beside the effect traits
-for tests are never a source to use where unpredictability matters.
+crate and the same inputs. No specification asks for cryptographic randomness, so no
+effect trait promises it: `LeaseIds` asks only for ids that do not repeat, and the
+queue draws again if one does. The
+service's `RandomLeaseIds` draws 128 bits from the operating system, so a lease id is
+hard to guess, but it is a fencing token against a stale consumer, not a credential
+([decision 0019](../decisions/0019-tokio-and-axum-service.md)). The fakes that sit
+beside the effect traits for tests are never a source to use where unpredictability
+matters.
 
 ## What the build defends
 
@@ -107,14 +114,22 @@ for tests are never a source to use where unpredictability matters.
 - **Credential leakage.** `ripsecrets` scans every commit, and its output is redacted so
   a match never copies the matched value into a log.
 
-## What is deferred
+## The listener
 
-**The service's network surface.** The service is a minimal std binary with no async
-runtime, transport or HTTP stack, and so it listens on nothing. Which of those it gets,
-and therefore what it exposes and to whom, waits for the specifications to say what the
-service must do ([decision 0014](../decisions/0014-service-runtime-deferred.md)). This
-page describes that surface, its authentication and its limits when the decision that
-follows the specifications records them.
+**The service's network surface is `pachinko serve`'s listener.** It binds
+`127.0.0.1:8080` unless `--listen` says otherwise, and answers the routes of the
+[HTTP API](../reference/http-api.md) in plain HTTP/1.1
+([decision 0019](../decisions/0019-tokio-and-axum-service.md)). Anyone who can reach it
+can join as a publisher or a consumer, publish, pull and act on a lease whose id they
+hold. An action on a lease is refused unless it names the consumer that holds it, but a
+consumer id is a name the client chose, not a proof.
+
+**What is deferred.** There is no TLS, no authentication and no rate limit, and
+nothing bounds the queue's memory but decay: capacity is an open question in the
+module. Binding beyond localhost is the operator's
+choice, and serving it beyond a trusted network belongs behind a proxy that terminates
+TLS and authenticates; `deny.toml` keeps `openssl-sys` out, so the service grows no
+native TLS stack by accident.
 
 ## What is out of scope
 
@@ -132,4 +147,6 @@ See `SECURITY.md` at the repository root.
 - [Maintain dependencies](../how-to/maintain-dependencies.md)
 - [Quality gates](../reference/quality-gates.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
+- [HTTP API](../reference/http-api.md)
 - [Decision 0014](../decisions/0014-service-runtime-deferred.md)
+- [Decision 0019](../decisions/0019-tokio-and-axum-service.md)

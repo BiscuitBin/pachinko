@@ -68,12 +68,11 @@ API reference.
 Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a consumer may move
 a value between threads, copy it or print it. Public structs and enums are
 `#[non_exhaustive]`, so a field or variant added later breaks no consumer. These are
-invariants of [the agent contract](agent-contract.md); the domain types that will carry
-them arrive with the specifications, and today the public API is two functions,
-`libpachinko::version` and `pachinko::run`. Neither crate has features, and neither has
-a normal dependency beyond `pachinko`'s on `libpachinko`; divan, the library's benchmark
-harness, is a development dependency only. The library performs no effect itself; its
-effect traits will appear here beside their fakes, and
+invariants of [the agent contract](agent-contract.md). libpachinko's public API is the
+queue the specifications define, `Queue`, with its identifiers, outcomes and `Error`,
+beside `version`; pachinko's is `run`, `serve` and the types they take and return.
+Neither crate has features. The library performs no
+effect itself; its effect traits, `Clock` and `LeaseIds`, sit beside their fakes, and
 [Architecture](../explanation/architecture.md) explains the boundary.
 
 ## Related pages

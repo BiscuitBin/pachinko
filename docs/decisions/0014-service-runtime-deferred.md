@@ -8,6 +8,8 @@ requires: []
 
 # Decision 0014: The service runtime waits for the specifications
 
+*Superseded by [decision 0019](0019-tokio-and-axum-service.md) on 2026-10-31.*
+
 ## Context
 
 The workspace holds a library and a service

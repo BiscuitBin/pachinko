@@ -29,16 +29,20 @@ package fields every crate inherits, and the `[workspace.lints]` table every cra
 into. `Cargo.lock` beside it is the pin
 ([decision 0007](../decisions/0007-dependency-policy.md)).
 
-`crates/libpachinko` is the library. It holds the domain once the specifications define
-one; today `src/lib.rs` holds the crate's documentation and one item, `version()`.
-Behaviour will arrive as one Rust module per specification module, and a module may use
-only what its specification imports, in the direction
+`crates/libpachinko` is the library. It holds the domain `docs/specs/pachinko.allium`
+specifies, a single-deployment queue of pockets, as one synchronous aggregate, `Queue`,
+split into one Rust module per concern: names and values, the `config` block, the
+refusals, the two effect traits, and under `queue/` one module per group of rules.
+`src/lib.rs` holds the crate's documentation, the re-exports and `version()`. A module
+may use only what its specification imports, in the direction
 [Layering and dependency direction](layering.md) describes;
 [Specifications](specifications.md) explains why the specification comes first.
 
-`crates/pachinko` is the service. It depends on `libpachinko` and nothing else, and
+`crates/pachinko` is the service. It depends on `libpachinko` and on the runtime and
+HTTP crates [decision 0019](../decisions/0019-tokio-and-axum-service.md) chose, and
 `libpachinko` never depends on it. `src/lib.rs` holds `run()`, `src/main.rs` holds the
-binary's one-line `main`, and `tests/binary.rs` runs the built binary as a user would.
+binary's one-line `main`, `src/serve.rs` and `src/http.rs` hold the server, and
+`tests/binary.rs` runs the built binary as a user would.
 
 ## A std library
 
@@ -67,9 +71,12 @@ read the environment or spawn a thread, and it will hand each implementation to 
 library through the library's trait. The library never learns which implementation it
 was given.
 
-No trait exists yet. The traits arrive with the specifications that name the effects:
-a specification change that needs the time, a random draw or a stored value brings its
-trait, its fake and the service's implementation together
+Two traits exist, for the two effects the module needs. `Clock` gives the time every
+`now` and every `expires_at` reads, with the fake `FakeClock`, which a test sets and
+advances; the service supplies `SystemClock`. `LeaseIds` mints the opaque lease id a
+claim hands out, with the fake `CountingLeaseIds`, which counts; the service supplies
+`RandomLeaseIds`, 128 bits from the operating system. A specification change that needs
+another effect brings its trait, its fake and the service's implementation together
 ([decision 0003](../decisions/0003-effects-behind-traits.md)).
 
 Standard input and output are not on the list. The service writes its line to standard
@@ -147,23 +154,37 @@ old ones. `AGENTS.md` states this as invariant 3.
 
 ## The service today
 
-`pachinko::run` takes any writer and writes one line, `pachinko <version>`, with the
-library's version. `main` calls it on locked standard output and turns the result into
-the process's exit status, and does nothing else. A unit test in `src/lib.rs` checks the
-line against a buffer, and `tests/binary.rs` runs the built binary and checks its output,
-its exit status and that it writes nothing to standard error.
-[Test and debug](../how-to/test-and-debug.md) shows how to tell those two tests' failures
-apart.
+`pachinko::run` takes the command line and any writer. With no argument it writes one
+line, `pachinko <version>`, with the library's version; with `serve` it runs the HTTP
+service until a signal stops it. `main` calls it on the arguments and locked standard
+output, turns the result into the process's exit status, and does nothing else.
+
+`serve` builds a multi-thread tokio runtime and runs one structured task scope: the
+listener, a sweep that fires lease lapses and decay every `--sweep-ms`, and the shutdown
+signal. The first task to end stops the others, and all of them are joined before
+`serve` returns. The queue sits behind a `std::sync::Mutex` that no handler holds across
+an `.await`, so the library stays synchronous and free of the runtime. The routes map
+each action of the module's `Publishing` and `Consuming` surfaces to one HTTP request
+([HTTP API](../reference/http-api.md)), and its flags are in
+[Configuration](../reference/configuration.md#the-serve-command). Logs go to standard
+error through `tracing`.
+
+A unit test in `src/lib.rs` checks the version line against a buffer, `tests/binary.rs`
+runs the built binary, and `tests/http.rs` drives an in-process server.
+[Test and debug](../how-to/test-and-debug.md) shows how to tell those tests' failures
+apart and how to drive the server by hand.
 
 ## What is deferred
 
-The service has no async runtime, transport or HTTP stack, and none is chosen. Choosing
-one before the specifications say what the service must expose would be a guess. The
-trigger is the first specification that names a surface the service exposes; a spike
-then compares the options and a decision record supersedes
-[decision 0014](../decisions/0014-service-runtime-deferred.md). Until then the service is
-`run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md) records the
-rest of what this repository deliberately does not do.
+The queue lives in one process's memory, so a restart empties it; storage and recovery
+are outside the module's scope. The listener speaks plain HTTP with no TLS,
+authentication or rate limiting ([Security model](security-model.md)). No route reads the
+superseded records or the dead letters, because who reads them is an open question in
+the module. [Decision 0019](../decisions/0019-tokio-and-axum-service.md), which
+superseded [decision 0014](../decisions/0014-service-runtime-deferred.md), names what
+would reopen the runtime choice, and
+[Purpose and scope](../project/purpose-and-scope.md) records the rest of what this
+repository deliberately does not do.
 
 ## What wave 2 added
 

@@ -39,9 +39,12 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0016](0016-release-process.md) | The release process |
 | [0017](0017-mutation-bench-and-fuzz.md) | Mutation testing, benchmarks and fuzzing |
 | [0018](0018-renovate.md) | Dependency updates through Renovate |
+| [0019](0019-tokio-and-axum-service.md) | The service runs on tokio and serves HTTP with axum |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
-0004 it replaces and the ones that stand. Two recipes in the gate list decision 0009
+0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019:
+the specifications named the surfaces it waited for, and 0019 records the spike and the
+runtime it chose. Two recipes in the gate list decision 0009
 records have records of their own: decision 0012 holds gate 7, `just metrics`, and
 decision 0008 holds gate 8, `just effects`.
 
@@ -57,8 +60,9 @@ here is rendered from a template, so no frozen inventory of numbers applies.
 Numbers 0015 to 0018 were reserved for the wave-2 tickets that took those decisions: 0015
 for the container image (T13), 0016 for the release process (T14), 0017 for mutation
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
-Renovate (T17). Each added its file, its manifest entry and its row above. The next
-decision is 0019.
+Renovate (T17). Each added its file, its manifest entry and its row above. Decision 0019
+was taken by T20, which implemented the first specified domain. The next decision is
+0020.
 
 ## Writing a new one
 

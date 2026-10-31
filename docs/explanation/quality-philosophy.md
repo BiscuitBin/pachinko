@@ -82,9 +82,9 @@ evidence for the floor.
 
 ## Tests inject, they do not stub
 
-A fake is not a mock. No effect trait exists yet, but the fake that
-[decision 0003](../decisions/0003-effects-behind-traits.md) puts beside each one must
-behave: it gives the values the test chose, in the order the test chose, and reports when
+A fake is not a mock. The fake that
+[decision 0003](../decisions/0003-effects-behind-traits.md) puts beside each effect trait,
+`FakeClock` beside `Clock` and `CountingLeaseIds` beside `LeaseIds`, must behave: it gives the values the test chose, in the order the test chose, and reports when
 the test asks for more than it supplied. Tests that assert a function was called are not
 evidence that anything works.
 

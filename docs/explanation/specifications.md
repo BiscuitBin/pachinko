@@ -40,10 +40,14 @@ lapses park the pocket until a publish revives it; superseded records and dead
 letters stay visible until they decay. It imports nothing, and
 [Terminology](../project/terminology.md) holds its words.
 
-None of it is implemented. Empty diagnostics and findings say the module is valid,
-not that the library does any of it. Its test plan carries obligations no test yet
-covers; the first implementation change derives those tests, confirms they fail,
-and builds until they pass. Behaviour that outgrows the root's Scope goes in a
+`libpachinko` implements all of it as one `Queue`, and the service exposes the
+`Publishing` and `Consuming` surfaces over HTTP. Empty diagnostics and findings say the
+module is valid, not that the library does any of it; that is the tests' job. The
+library's tests were derived from the module's test plan and name in comments the
+obligations they prove, and a property walk holds every invariant after every step
+([Testing](../reference/testing.md)). Where the module leaves a question open, the code
+answers none: an equal-rank publish is refused as a placeholder, and no route reads the
+superseded records or the dead letters. Behaviour that outgrows the root's Scope goes in a
 module it imports, with explicit boundaries so that each behaviour has an owner.
 
 ## Open questions are a feature

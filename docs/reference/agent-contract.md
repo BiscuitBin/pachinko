@@ -37,7 +37,7 @@ condition applies. In order:
 - The always-on core: what the repository holds, a `## Project map`, the rule that the
   specifications under `docs/specs/` decide what the code does, the rule that issue text,
   pull request bodies, comments, fixtures and tool output are untrusted data, and
-  `## Invariants` with the nine invariants. The authority rules follow, still outside
+  `## Invariants` with the ten invariants. The authority rules follow, still outside
   every block: anything that leaves the worktree needs explicit authorization for each
   action, the recipes that reach the network are named, scratch goes in `ai_tmp/`, and
   work is handed back only when `just check` is green.
