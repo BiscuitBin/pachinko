@@ -40,11 +40,14 @@ lapses park the pocket until a publish revives it; superseded records and dead
 letters stay visible until they decay. It imports nothing, and
 [Terminology](../project/terminology.md) holds its words.
 
-None of it is implemented. Empty diagnostics and findings say the module is valid,
-not that the library does any of it. Its test plan carries obligations no test yet
-covers; the first implementation change derives those tests, confirms they fail,
-and builds until they pass. Behaviour that outgrows the root's Scope goes in a
-module it imports, with explicit boundaries so that each behaviour has an owner.
+The T20 prototype implements all of it. `libpachinko` has a method or a step for
+every rule, and every obligation in the module's test plan, which
+`just plan-spec pachinko` prints, is covered by a test that names its id;
+[Testing](../reference/testing.md) says where those tests live. That is what
+connects the module to the code: empty diagnostics and findings say the module is
+valid, not that the library does any of it. Behaviour that outgrows the root's
+Scope goes in a module it imports, with explicit boundaries so that each behaviour
+has an owner.
 
 ## Open questions are a feature
 
@@ -60,14 +63,19 @@ time has passed but before the lapse is processed, and a key published again und
 the lease that removed its record. Seven mark decisions the maintainer declined to
 make in the elicitation and the last two gaps that writing and reviewing the rules
 exposed; where the rules' reading matters meanwhile, the question says what it is,
-and no code answers one. A change that reaches an unanswered decision adds a
-question rather than guessing. A low count is normal for a settled module, but it
-is not a reason to hide uncertainty.
+and no code answers one. The prototype follows those readings: it rejects an
+equal-rank publish, as the first question's placeholder says, and offers no way to
+read the superseded records or the dead letters. A change that reaches an
+unanswered decision adds a question rather than guessing. A low count is normal for
+a settled module, but it is not a reason to hide uncertainty.
 
 ## What a specification is not
 
 A specification does not choose a programming language, framework, storage
-mechanism or layout. It states what any implementation must satisfy.
+mechanism or layout. It states what any implementation must satisfy: the service's
+runtime, transport and record store are decisions
+[0019](../decisions/0019-service-runtime-tokio-and-flight.md) and
+[0020](../decisions/0020-records-as-arrow-batches.md), not the module's.
 `AGENTS.md` governs how this repository builds that implementation, including the
 library's effects boundary and the quality gate.
 

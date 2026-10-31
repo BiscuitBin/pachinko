@@ -8,19 +8,53 @@ requires: []
 
 # Configuration
 
-Neither crate has runtime configuration yet: no file either reads, no variable either
-consults, no flag the binary parses. The service writes one line and exits; what it will
-read arrives with the specifications and with the runtime decision 0014 waits for. Neither
-crate declares a Cargo feature, so a consumer has nothing to choose there either.
-Everything else on this page configures the tools that build and check the workspace.
+The service is configured on its command line and nowhere else: `pachinko serve` takes
+the address it listens on and the module's five figures, below, and reads no file and no
+variable of its own. libpachinko takes its configuration as a `Config` value its caller
+builds. Its one Cargo feature, `testing`, exposes the records contract, which both
+crates' tests run, and the queue's inspection seam, which its own tests read; no normal
+build turns it on, and the service declares none. Everything else on this page
+configures the tools that build and check the workspace.
+
+## The service's command line
+
+`pachinko` with no arguments writes `pachinko <version>` and exits.
+`pachinko serve [OPTIONS]` binds a listener, writes `listening on <address>`, and serves
+the queue over Arrow Flight until an interrupt (Ctrl-C) arrives. Each option takes one
+value, as the next argument; a later copy of an option wins, and an option left out keeps
+its default.
+
+| Option | Value | Default |
+| --- | --- | --- |
+| `--listen` | A socket address, such as `127.0.0.1:50051` | `127.0.0.1:0`: loopback, on a port the system picks, which the `listening on` line reports |
+| `--lease-ttl` | A duration | 5 minutes |
+| `--max-consecutive-expiries` | A whole number, at least 1 | 3 |
+| `--max-pull-batch` | A whole number, at least 1 | 100 |
+| `--superseded-ttl` | A duration | 12 hours |
+| `--dead-letter-ttl` | A duration | 12 hours |
+
+Every option but `--listen` sets the module's figure of the same name, and its default is
+the module's, as [Values the specifications decide](#values-the-specifications-decide)
+says. A duration is a whole number with a unit, `ms`, `s`, `m` or `h`, such as `250ms` or
+`2h`, and may be zero; a whole number fits in 32 bits. An unknown command or option, a
+missing or unreadable value, or a count of 0, which `Config::validate` rejects, stops the
+binary before it binds anything: it writes one `pachinko: <error>` line on standard error
+and exits 1. The ticker's interval, one second, is not an option; a caller of the `serve`
+function sets it through `ServeOptions` ([API reference](api.md)). An address other than
+loopback exposes a service with no authentication and no encryption, which
+[Security model](../explanation/security-model.md) explains, and
+[Test and debug](../how-to/test-and-debug.md) shows the service run.
 
 ## Environment
 
 libpachinko reads no environment variable, and never will: the environment is one of the
 effects it reaches only through a trait it defines, as
 [Architecture](../explanation/architecture.md) explains. The `env!` in its `version()` is
-read by the compiler, not at run time. The service reads none today. The tooling reads a
-few, each in one place:
+read by the compiler, not at run time. The service's own code reads none: its arguments
+are its only input. tokio, its runtime, reads `TOKIO_WORKER_THREADS` when the service
+builds its multi-thread runtime, as the size of the worker pool, and panics on a value
+that is not a positive whole number; nothing in the repository sets it. The tooling reads
+a few, each in one place:
 
 | Variable | Read by | Effect |
 | --- | --- | --- |
@@ -45,9 +79,9 @@ constants belong in source where they can be reviewed.
 | File | What it configures |
 | --- | --- |
 | `rust-toolchain.toml` | The compiler: an exact stable release, the minimal profile, and three components: rustfmt, clippy and `llvm-tools-preview` for coverage. Exact rather than `stable`, because clippy's lint set moves every six weeks and would break `-D warnings` with no diff here. No extra target, because libpachinko is a std library ([decision 0008](../decisions/0008-std-library.md)), and no `rust-src`, which served rust-analyzer only; a contributor who wants it runs `rustup component add rust-src`. Honoured only by rustup's proxy. |
-| `Cargo.toml` (root) | The workspace: resolver 3, every directory under `crates/` a member and `fuzz/` excluded, the package fields each crate inherits (edition, `rust-version`, licence, repository, homepage, authors, `publish = false`), the lint table, and the release and test profiles. The release profile builds with fat LTO and one codegen unit, kept by the maintainer's choice on 2026-10-24 after the container image's release build compiled in 6.24 s uncached for a 9.4 MB image; the test profile at `opt-level = 1`. The `[workspace.dependencies]` table holds one entry, divan, which libpachinko takes as a development dependency only ([decision 0007](../decisions/0007-dependency-policy.md)). |
-| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). No features and no normal dependencies; divan, from the workspace table, is its one development dependency, for the `version` bench under `benches/`. |
-| `crates/pachinko/Cargo.toml` | The service, in the same shape, with one dependency: `libpachinko`, by path and version. Cargo then enforces the direction, since libpachinko cannot name `pachinko` without a cycle; see [Layering](../explanation/layering.md). |
+| `Cargo.toml` (root) | The workspace: resolver 3, every directory under `crates/` a member and `fuzz/` excluded, the package fields each crate inherits (edition, `rust-version`, licence, repository, homepage, authors, `publish = false`), the lint table, and the release and test profiles. The release profile builds with fat LTO and one codegen unit, kept by the maintainer's choice on 2026-10-24 after the container image's release build compiled in 6.24 s uncached for a 9.4 MB image; the test profile at `opt-level = 1`. The `[workspace.dependencies]` table holds every third-party dependency, each with the note [decision 0007](../decisions/0007-dependency-policy.md) asks for: divan and proptest, for development only; thiserror, which both crates take; and the service's alone, the four Arrow crates of its record store ([decision 0020](../decisions/0020-records-as-arrow-batches.md)), then arrow-flight, arrow-ipc, tonic, tokio, futures and bytes for its Flight API ([decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)). tonic takes no default features, only `transport`, `router` and `codegen`, and no Arrow or tonic crate turns on a TLS feature. |
+| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). One feature, `testing`, with no dependency of its own; one normal dependency, thiserror; and two development dependencies, divan for the `version` bench under `benches/` and proptest for the property test. Its two integration-test targets, `queue` (`tests/queue/main.rs`) and `records_contract`, each require `testing`, so a build without the feature skips them. |
+| `crates/pachinko/Cargo.toml` | The service, in the same shape. Its dependencies are `libpachinko`, by path and version, thiserror, and the Arrow, Flight and tokio crates from the workspace table; its development dependencies are divan, for the `arrow` bench, and `libpachinko` again with `testing` on, for the records contract its tests run. Cargo enforces the direction, since libpachinko cannot name `pachinko` without a cycle; see [Layering](../explanation/layering.md). |
 | `fuzz/Cargo.toml` | The fuzz crate, `libpachinko-fuzz`: excluded from the workspace, so it is its own, with its own `fuzz/Cargo.lock`, a dependency on libfuzzer-sys and on libpachinko by path, and the `smoke` target. An excluded crate inherits nothing, so it restates `rust-version`, the workspace's two `forbid` lints and its clippy levels, which are kept in step with the root table by hand. |
 | `clippy.toml` | The restriction lints relaxed inside tests only (`allow-unwrap-in-tests` and its siblings for `expect`, `panic`, indexing, `dbg!` and printing), `HashMap` and `HashSet` disallowed, because their iteration order is not deterministic (the reason names `BTreeMap` and `BTreeSet`); and four thresholds, for cognitive complexity, nesting depth, function length and parameter count, whose numbers `rustqual.toml` repeats. [Decision 0012](../decisions/0012-metrics-gate.md) owns the numbers and says why each. |
 | `rustfmt.toml` | The 2024 style edition, a width of 100, Unix newlines, and the field-init and `?` shorthands. Stable options only. |
@@ -57,7 +91,7 @@ constants belong in source where they can be reviewed.
 | `pyproject.toml` | The pixi manifest: Python, just, prek, cargo-binstall and every cargo tool conda-forge carries, cargo-insta among them, under `[tool.pixi.*]`, for Linux and macOS on Apple silicon, with the tooling package as a git dependency; and the tooling package's own table, `[tool.biscuit-games-tooling]`, whose `recipes` list is what `just check` runs, in order. No `rust`: rustup owns the compiler. `pixi.lock` is the pin, generated by pixi and never edited by hand. |
 | `tools.txt` | The exception list: binaries conda-forge lacks, one `name@version` per line, installed by `just install-tools` from a release archive and never compiled. Today three lines: cargo-hack, cargo-release and cargo-fuzz. |
 | `tools-source.txt` | The second exception list: tools conda-forge lacks that also have no release binary, one `name@version` per line, which `just install-tools` builds from crates.io source with `--locked` unless cargo-quickinstall has a signed build of the pin. Today one line, rustqual. |
-| `rustqual.toml` | rustqual, for the `metrics` gate: the dimensions it runs (complexity, SRP, coupling, architecture, and IOSP, which cannot be switched off) and their thresholds, with duplicates, boilerplate, test quality and structural checks switched off. Architecture is enabled but holds no `[[architecture.pattern]]` rule yet: the rules that hold module direction wait for there to be modules, as [Layering](../explanation/layering.md) says. Its globs resolve against the crate directory, so the recipe runs it from the root with `--config`, once per crate. |
+| `rustqual.toml` | rustqual, for the `metrics` gate: the dimensions it runs (complexity, SRP, coupling, architecture, and IOSP, which cannot be switched off) and their thresholds, with duplicates, boilerplate, test quality and structural checks switched off. Architecture is enabled but holds no `[[architecture.pattern]]` rule yet: the rules that hold module direction follow the specification import graph, as [Layering](../explanation/layering.md) says, and the one specification module imports nothing. Its globs resolve against the crate directory, so the recipe runs it from the root with `--config`, once per crate. |
 | `scripts/check-effects.sh` | The `effects` gate, below. |
 | `crates/libpachinko/clippy.toml` | The root `clippy.toml` restated for libpachinko, plus the `effects` gate's std-API bans, below. |
 | `tests/fixtures/effects-violation/` | The `effects` gate's probe, below. |
@@ -91,7 +125,7 @@ every build, and the rustdoc `deny` pair, which fails any `cargo doc`.
 | `rustdoc::broken_intra_doc_links`, `rustdoc::private_intra_doc_links` | deny | A doc link that does not resolve, or resolves to something a reader cannot see, fails. |
 | `clippy::pedantic`, `clippy::cargo` | warn, priority -1 | The whole group, so a single lint can be set above it. |
 | `unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`, `unimplemented` | warn | The library does not panic; an error is returned. `clippy.toml` relaxes `unwrap_used`, `expect_used` and `panic` in tests; the other three hold there too. |
-| `exhaustive_enums`, `exhaustive_structs` | warn | A public type is `#[non_exhaustive]`, so growing it breaks no consumer. |
+| `exhaustive_enums`, `exhaustive_structs` | warn | A public type is `#[non_exhaustive]`, so growing it breaks no caller. |
 | `allow_attributes`, `allow_attributes_without_reason` | warn | A suppression is `#[expect(lint, reason = "...")]`, which reports itself when it stops being needed. They reject an outer `#[allow]` and any `allow` without a reason; an inner `#![allow(..., reason = "...")]` passes both, so review holds that form, by the maintainer's choice on 2026-10-24. |
 | `mod_module_files` | warn | No `mod.rs`: a module is the file named after it. |
 | `cognitive_complexity` | warn | A restriction lint, so the pedantic group leaves it off; `clippy.toml` sets its threshold. |
@@ -152,9 +186,30 @@ stays on its one line.
 A figure a specification states is mirrored in code once, by name, in a constant a
 doctest and a unit test hold to the specification's `config` entry. A Rust constant that
 stands for a figure but has no `config` entry to name is drift the other way: the figure
-belongs in the specification first. Today the one module, `docs/specs/pachinko.allium`,
-declares nothing, so the code mirrors no figure; see
+belongs in the specification first; see
 [Specifications](../explanation/specifications.md).
+
+The one module, `docs/specs/pachinko.allium`, declares five figures in its `config`
+block, and `crates/libpachinko/src/config.rs` mirrors them, as the defaults of `Config`'s
+fields of the same names:
+
+| Figure | Default | Constant |
+| --- | --- | --- |
+| `lease_ttl` | 5 minutes | `DEFAULT_LEASE_TTL` |
+| `max_consecutive_expiries` | 3 | `DEFAULT_MAX_CONSECUTIVE_EXPIRIES` |
+| `max_pull_batch` | 100 | `DEFAULT_MAX_PULL_BATCH` |
+| `superseded_ttl` | 12 hours | `DEFAULT_DECAY_TTL` |
+| `dead_letter_ttl` | 12 hours | `DEFAULT_DECAY_TTL` |
+
+The two decay figures share one constant, since the module gives both the same value.
+`Config`'s doctest holds `lease_ttl`, and `the_config_defaults_are_the_modules` in
+`crates/libpachinko/tests/queue/identity.rs` holds all five to the module's entries.
+`Config::validate` enforces the module's five config invariants: it checks that
+`max_consecutive_expiries` and `max_pull_batch` are at least 1, and the three
+non-negative durations hold by representation, since a `Duration` cannot be negative. The
+service mirrors none of these figures itself: `pachinko serve` starts from
+`Config::default()` and sets only what its options name, as
+[the command line](#the-services-command-line) shows.
 
 ## Version pins
 
@@ -179,4 +234,5 @@ How to move each is in [Maintain dependencies](../how-to/maintain-dependencies.m
 - [Commands](commands.md)
 - [Quality gates](quality-gates.md)
 - [Architecture](../explanation/architecture.md)
+- [API reference](api.md)
 - [Maintain dependencies](../how-to/maintain-dependencies.md)

@@ -76,8 +76,9 @@ it reports, so
 `tools-source.txt`, rather than let a missing `.tools/bin/rustqual` fall through to
 another on `PATH`. Then it runs rustqual twice against `rustqual.toml`, over
 `crates/libpachinko` and over `crates/pachinko`, each with warnings as failures. The
-module-boundary rules wait for there to be modules to order, as
-[Layering](../explanation/layering.md) records, so there is no rule to probe yet; the
+module-boundary rules follow the specification import graph, as
+[Layering](../explanation/layering.md) records, and the one specification module imports
+nothing, so there is no rule to probe yet; the
 effect bans, which are boundary rules of a kind, are gate 8's, with a probe of their
 own.
 Nothing proves the complexity, cohesion and coupling sections are running with the numbers

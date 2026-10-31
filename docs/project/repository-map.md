@@ -14,7 +14,7 @@ library and the library never on the service.
 
 ```text
 .
-├── Cargo.toml              The workspace: members, shared package fields, lints, profiles
+├── Cargo.toml              The workspace: members, shared package fields, dependencies, lints, profiles
 ├── Cargo.lock              The pin for every workspace crate; the build gates pass --locked
 ├── rust-toolchain.toml     The exact toolchain and its components
 ├── tools.txt               Tools conda-forge lacks, from release binaries into .tools/bin
@@ -29,22 +29,44 @@ library and the library never on the service.
 ├── .dockerignore           What the image build leaves out of its context
 ├── .config/nextest.toml    The test runner's profiles
 ├── crates/
-│   ├── libpachinko/        The library: the domain, once the specifications define one
+│   ├── libpachinko/        The library: the queue the specification defines
 │   │   ├── Cargo.toml
 │   │   ├── README.md
 │   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
 │   │   ├── benches/
 │   │   │   └── version.rs  The smoke benchmark just bench runs
-│   │   └── src/
-│   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
-│   └── pachinko/           The service: a minimal binary built around the library
+│   │   ├── src/
+│   │   │   ├── lib.rs      The crate root: the crate docs, the modules and version()
+│   │   │   ├── clock.rs    Timestamp, the Clock trait and FakeClock
+│   │   │   ├── config.rs   Config: the module's five figures and their validation
+│   │   │   ├── error.rs    The error enums and LeaseId
+│   │   │   ├── records.rs  The PocketRecords trait and its value types
+│   │   │   ├── records/    MemoryRecords, and the records contract behind `testing`
+│   │   │   ├── queue.rs    Queue: one method per trigger
+│   │   │   └── queue/      The rules, one file per family, and the inspection seam
+│   │   └── tests/
+│   │       ├── queue/      The tests from the specification, one module per rule family
+│   │       └── records_contract.rs  The records contract over MemoryRecords
+│   └── pachinko/           The service: a binary built around the library
 │       ├── Cargo.toml
 │       ├── README.md
+│       ├── benches/
+│       │   └── arrow.rs    The Arrow record store under load, which just bench runs
 │       ├── src/
-│       │   ├── lib.rs      The tested run(), which writes the service's one line
-│       │   └── main.rs     The one-line main: run() on standard output, then the exit code
+│       │   ├── lib.rs      The tested run(), and serve, which runs the queue
+│       │   ├── main.rs     The one-line main: run() on standard output, then the exit code
+│       │   ├── cli.rs      The command line: no arguments, or serve and its options
+│       │   ├── clock.rs    SystemClock, the real Clock
+│       │   ├── arrow.rs    ArrowRecords: one pocket's records as one RecordBatch
+│       │   ├── arrow/      The batch schemas
+│       │   ├── actor.rs    The owner task that holds the queue, and its ticker
+│       │   ├── flight.rs   The Arrow Flight service
+│       │   └── flight/     The action types and the wire's Arrow IPC
 │       └── tests/
-│           └── binary.rs   Runs the built binary as a user would
+│           ├── binary.rs   Runs the built binary as a user would
+│           ├── arrow_records.rs  The records contract over ArrowRecords
+│           ├── flight.rs   The Flight API over loopback
+│           └── flight/     Its fixture and one module per operation family
 ├── fuzz/                   The fuzz crate, outside the workspace, with its own lockfile
 │   ├── Cargo.toml
 │   ├── Cargo.lock          The pin for the fuzz crate's separate graph
@@ -81,12 +103,13 @@ reads for libpachinko alone in place of the root file, so it restates every root
 
 | Directory | Responsibility |
 | --- | --- |
-| `crates/libpachinko/src/` | The library. It holds the domain once the specifications define one; today `lib.rs` holds the crate docs and one item, `version()`, with its doctest and an in-module unit test. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
-| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. |
-| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
-| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
+| `crates/libpachinko/src/` | The library: the queue `docs/specs/pachinko.allium` specifies. `queue` holds `Queue`, with one method per trigger, `records` the record-store trait and its reference, `clock` the clock trait and its fake, `config` the module's five figures and `error` the error enums; `lib.rs` holds the crate docs and `version()`. The `testing` feature adds the records contract and the queue's inspection seam. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
+| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`, and `serve`, which runs the queue; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. `cli` reads the arguments, `clock` and `arrow` supply `SystemClock` and `ArrowRecords`, `actor` holds the owner task and the ticker, and `flight` the Arrow Flight service ([decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md), [decision 0020](../decisions/0020-records-as-arrow-batches.md)). |
+| `crates/libpachinko/tests/` | Integration tests. `queue/` is one target with a module per rule family, every test tagged with the obligations it covers, over `MemoryRecords` and `FakeClock`; `records_contract.rs` runs the records contract over `MemoryRecords`. Both need the `testing` feature, which the gate turns on. |
+| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status, and that `serve` writes the address it listens on; `arrow_records.rs` runs the records contract over `ArrowRecords`; `flight.rs` drives the Flight API over loopback. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
+| `crates/*/benches/` | Benchmarks, run by hand through `just bench` and never in CI or the gate, because their timings measure the machine. `crates/libpachinko/benches/version.rs` is a divan smoke benchmark of `version()`; `crates/pachinko/benches/arrow.rs` measures the Arrow record store under load. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
-| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
+| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one module, `pachinko.allium`, which specifies the queue that `libpachinko` implements. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
 | `tickets/` | The tickets, their `README.md` and `CONVENTIONS.md`, the conventions every ticket obeys. |

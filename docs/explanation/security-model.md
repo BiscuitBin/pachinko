@@ -8,20 +8,24 @@ requires: []
 
 # Security model
 
-This workspace is a library and a minimal service binary. The library holds no data
-about anyone and performs no effect itself, and the service, today, writes one line to
-standard output and exits. That removes most of the attack surface software usually
-has, and it is worth being precise about what remains rather than claiming the problem
-away: the supply chain that builds both crates, the code handed to whoever consumes the
-library, and a network surface for the service that no decision has drawn yet.
+This workspace is a library and a prototype service built around it. The library
+performs no effect itself, and the service holds one queue in memory and serves it over
+Arrow Flight to anyone who can reach its port. That removes most of the attack surface
+software usually has, and it is worth being precise about what remains rather than
+claiming the problem away: the supply chain that builds both crates, the code handed to
+the library's callers, and a network surface that authenticates no one.
 
 ## What there is to protect
 
 Very little, and that is the point.
 
-- **Nothing is collected or stored.** libpachinko will hold the domain once the
-  specifications define one; it takes values from its caller and hands values back,
-  and it has nowhere of its own to send anything.
+- **Payloads, in memory only.** The queue holds what publishers send it: record keys,
+  pocket keys, ranks and payloads, which are opaque bytes it never reads. libpachinko
+  keeps them only in the `Queue` value its caller owns, and has nowhere of its own to
+  send anything. The service keeps that queue in process memory and writes none of it
+  to disk or to a log, so it ends with the process. Nothing here encrypts a payload, and
+  anyone who reaches the port can pull one, so a deployment that sends sensitive
+  payloads answers for that choice.
 - **There are no credentials in the repository.** No file here carries a token.
   Continuous integration uses the token GitHub mints for each run and discards with it,
   and the workflows need nothing more: the Pages deployment proves itself with the run's
@@ -32,9 +36,34 @@ Very little, and that is the point.
 ## What is deliberately not secure
 
 **Nothing in the library is a secret.** Its output is computable by anyone holding the
-crate and the same inputs. No specification yet asks for cryptographic randomness; until
-one does, no effect trait promises it, and the fakes that sit beside the effect traits
-for tests are never a source to use where unpredictability matters.
+crate and the same inputs. The clock is its one effect trait, and no specification asks
+for cryptographic randomness; until one does, no effect trait promises it, and the fakes
+that sit beside the effect traits for tests are never a source to use where
+unpredictability matters.
+
+**The service authenticates no one and encrypts nothing.** Every request names its
+publisher or consumer id in its body, ticket or descriptor, and nothing checks who sent
+it: an id is a name the client asserts, not a credential. Anyone who reaches the port can
+therefore claim an id no one has joined, and publish, pull, ack, nack, renew, release or
+read the `status` as any party that has joined. A lease id is a fencing token, not a secret: it comes from
+the queue's counter, so it is predictable, and it stops a delayed consumer acting on a
+lease that has ended, not a hostile party acting on one that has not. The traffic is
+unencrypted gRPC: no TLS feature of `tonic` or `arrow-flight` is enabled, so
+`deny.toml`'s `openssl-sys` ban holds
+([decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)).
+[API reference](../reference/api.md) lists what each Flight method and action does.
+
+**Loopback is the default, and `--listen` is the operator's.** `pachinko serve` binds
+`127.0.0.1:0` unless told otherwise, so only the host it runs on can reach it, and it
+prints the address it bound as `listening on <addr>`. `--listen` binds any address the
+operator names; an address other hosts can reach gives every one of them the access
+above.
+
+**Memory has no bound.** Queued and held records stay until a consumer settles them,
+however many a publisher sends; superseded records and dead letters stay until
+`superseded_ttl` or `dead_letter_ttl` decays them. A party that can reach the port can
+therefore grow the process's memory until it fails. What, if anything, bounds it is the
+module's third open question, on capacity, which no code answers.
 
 ## What the build defends
 
@@ -109,18 +138,23 @@ for tests are never a source to use where unpredictability matters.
 
 ## What is deferred
 
-**The service's network surface.** The service is a minimal std binary with no async
-runtime, transport or HTTP stack, and so it listens on nothing. Which of those it gets,
-and therefore what it exposes and to whom, waits for the specifications to say what the
-service must do ([decision 0014](../decisions/0014-service-runtime-deferred.md)). This
-page describes that surface, its authentication and its limits when the decision that
-follows the specifications records them.
+**Authentication, encryption and a memory bound.** The prototype has none of the three,
+by the choices above. Authentication and TLS wait for a deployment beyond one host, which
+reopens [decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md) and with
+it `deny.toml`'s TLS ban; a memory bound waits for the specification's answer on
+capacity. No surface reads the superseded records or the dead letters yet, which is the
+module's second open question, so what an operator may see of them, and who may, waits
+for its answer too. This page describes each when its decision
+records it.
 
 ## What is out of scope
 
-What a consumer does with the library's output, and what it passes in through the
-effect traits it implements: an implementation that reads the clock or the network on
-the library's behalf answers for its own sources.
+What a caller does with the library's output, and what it passes in through the effect
+traits it implements: an implementation that reads the clock or the network on the
+library's behalf answers for its own sources. What a consumer does with a payload it
+pulls is its own too: a lease's fencing token protects the queue only from actions that
+reach it, so a consumer that writes elsewhere needs that store to check the token
+itself.
 
 ## Reporting
 
@@ -131,5 +165,6 @@ See `SECURITY.md` at the repository root.
 - [Architecture](architecture.md)
 - [Maintain dependencies](../how-to/maintain-dependencies.md)
 - [Quality gates](../reference/quality-gates.md)
+- [API reference](../reference/api.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
-- [Decision 0014](../decisions/0014-service-runtime-deferred.md)
+- [Decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)
