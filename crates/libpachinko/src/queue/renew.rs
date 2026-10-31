@@ -65,7 +65,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
     /// ```
     pub fn release(&mut self, consumer_id: &str, lease: LeaseId) -> Result<Lease, ActionError> {
         self.authorise(consumer_id, lease)?;
-        let now = self.clock.now();
+        let now = self.now();
         let ended = self
             .leases
             .end(lease, LeaseStatus::Released, now)

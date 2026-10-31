@@ -21,7 +21,6 @@
 pub mod clock;
 pub mod config;
 pub mod error;
-mod fencing;
 pub mod queue;
 pub mod records;
 

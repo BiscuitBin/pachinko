@@ -44,9 +44,19 @@ pub(super) struct Term {
 
 impl Leases {
     /// Grants a lease on `pocket_key` to `consumer_id` and returns its new id.
+    ///
+    /// The counter stops at exhaustion rather than wrapping, in release builds as in
+    /// debug ones, so an id is never issued twice.
+    #[expect(
+        clippy::expect_used,
+        reason = "2^64 grants cannot occur; wrapping would reissue a fencing token"
+    )]
     pub(super) fn grant(&mut self, pocket_key: &str, consumer_id: &str, term: Term) -> LeaseId {
         let id = LeaseId::from_raw(self.next_id);
-        self.next_id += 1;
+        self.next_id = self
+            .next_id
+            .checked_add(1)
+            .expect("lease id counter exhausted: ids are never reused");
         let lease = Active {
             pocket_key: pocket_key.to_owned(),
             consumer_id: consumer_id.to_owned(),
@@ -130,5 +140,39 @@ impl Leases {
                 ended_at: None,
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LeaseId, Leases, Term};
+    use crate::clock::Timestamp;
+
+    const TERM: Term = Term {
+        granted_at: Timestamp::from_millis(0),
+        expires_at: Timestamp::from_millis(1_000),
+    };
+
+    #[test]
+    fn the_last_lease_id_is_issued_once() {
+        let mut leases = Leases {
+            next_id: u64::MAX - 1,
+            ..Leases::default()
+        };
+        assert_eq!(
+            leases.grant("pocket", "consumer", TERM),
+            LeaseId::from_raw(u64::MAX - 1)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "lease id counter exhausted")]
+    fn an_exhausted_lease_id_counter_stops_instead_of_wrapping() {
+        let mut leases = Leases {
+            next_id: u64::MAX - 1,
+            ..Leases::default()
+        };
+        leases.grant("pocket", "consumer", TERM);
+        leases.grant("pocket", "consumer", TERM);
     }
 }

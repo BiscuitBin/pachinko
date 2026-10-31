@@ -4,6 +4,7 @@
 //! every lapse and decay, asks the [`Clock`] it was built with. The service supplies
 //! a clock over the system time; tests supply a [`FakeClock`] and move it by hand.
 
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -80,8 +81,14 @@ impl Timestamp {
 /// }
 /// assert_eq!(stamp(&FakeClock::new(Timestamp::from_millis(7))).as_millis(), 7);
 /// ```
-pub trait Clock: Send + Sync + 'static {
+pub trait Clock: Clone + Debug + Send + Sync + 'static {
     /// The current instant.
+    ///
+    /// ```
+    /// use libpachinko::clock::{Clock, FakeClock, Timestamp};
+    ///
+    /// assert_eq!(FakeClock::new(Timestamp::from_millis(5)).now(), Timestamp::from_millis(5));
+    /// ```
     fn now(&self) -> Timestamp;
 }
 

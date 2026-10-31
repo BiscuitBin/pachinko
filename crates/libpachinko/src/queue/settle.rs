@@ -2,7 +2,7 @@
 //! `NackSettlesRecord` and `NackDefersNewerVersion`.
 
 use super::{DeadLetter, LeaseId, Queue, SettleOutcome};
-use crate::clock::Clock;
+use crate::clock::{Clock, Timestamp};
 use crate::error::ActionError;
 use crate::records::{PocketRecords, Version};
 
@@ -11,6 +11,9 @@ struct Settled {
     outcome: SettleOutcome,
     pocket_key: String,
     held: Option<Version>,
+    /// The one clock read the step took: the lease's new expiry is measured from
+    /// it, and so are the dead letter's `nacked_at` and `expires_at`.
+    at: Timestamp,
 }
 
 impl<R: PocketRecords, C: Clock> Queue<R, C> {
@@ -79,7 +82,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
         record_key: &str,
     ) -> Result<SettleOutcome, ActionError> {
         let settled = self.settle_held(consumer_id, lease, record_key)?;
-        let now = self.clock.now();
+        let now = settled.at;
         let expires_at = now.saturating_add(self.config.dead_letter_ttl);
         settled
             .held
@@ -115,6 +118,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
             outcome,
             pocket_key,
             held,
+            at: term.granted_at,
         })
     }
 }

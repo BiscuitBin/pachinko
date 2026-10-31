@@ -60,7 +60,7 @@ the last sender is dropped, the owner task drains the commands already sent and 
 `serve` joins both. tonic's per-connection tasks are tonic's own, outside the set, and
 end with its graceful shutdown, which `serve` awaits before it closes the channel.
 
-**The lease id is a fencing token.** `libpachinko::LeaseId` is a `u64` taken from the
+**The lease id is a fencing token.** `libpachinko::queue::LeaseId` is a `u64` taken from the
 queue's counter when a lease is granted, monotonic and never reused. Every ack, nack,
 renew and release carries it, and the queue rejects one that names a lease no longer
 active, even when the same consumer holds the same pocket again under a newer id. This is

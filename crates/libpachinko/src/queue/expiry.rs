@@ -34,7 +34,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
     /// assert_eq!(queue.tick().lapsed.len(), 1);
     /// ```
     pub fn tick(&mut self) -> TickReport {
-        let now = self.clock.now();
+        let now = self.now();
         let lapsed = self
             .leases
             .due(now)

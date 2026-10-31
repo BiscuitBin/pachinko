@@ -42,7 +42,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
     ) -> Result<PublishOutcome, PublishError> {
         self.publishers.require(publisher_id)?;
         let target = self.pockets.target(&publication)?;
-        let now = self.clock.now();
+        let now = self.now();
         let stamp = Stamp {
             at: now,
             expires_at: now.saturating_add(self.config.superseded_ttl),

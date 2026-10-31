@@ -1,13 +1,16 @@
 //! Ack and nack: `AckSettlesRecord`, `AckDefersNewerVersion`,
 //! `NackSettlesRecord` and `NackDefersNewerVersion`.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use libpachinko::clock::{Clock, Timestamp};
 use libpachinko::error::ActionError;
-use libpachinko::queue::{LeaseId, SettleOutcome};
-use libpachinko::records::{RecordStatus, Version};
+use libpachinko::queue::{LeaseId, Publication, PullOutcome, Queue, SettleOutcome};
+use libpachinko::records::{MemoryRecords, RecordStatus, Version};
 
-use crate::fixture::{Batch, DECAY_TTL, Fixture, LEASE_TTL, at};
+use crate::fixture::{Batch, DECAY_TTL, Fixture, LEASE_TTL, at, config};
 
 /// Which of the two actions a shared test drives.
 #[derive(Clone, Copy, Debug)]
@@ -116,6 +119,44 @@ fn a_nack_of_the_latest_version_dead_letters_it_and_removes_the_record() {
         fixture.snapshot().leases[0].expires_at,
         at(fixture.now(), LEASE_TTL)
     );
+}
+
+/// A clock one millisecond later on every read, so a rule that reads it twice
+/// stamps two different instants.
+#[derive(Clone, Debug, Default)]
+struct SteppingClock(Arc<AtomicU64>);
+
+impl Clock for SteppingClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::from_millis(self.0.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+// A nack reads the clock once: the lease's new expiry, the dead letter's
+// `nacked_at` and its `expires_at` all come from the same `now`.
+#[test]
+fn a_nack_stamps_the_lease_and_the_dead_letter_from_one_clock_read() {
+    let mut queue: Queue<MemoryRecords, _> =
+        Queue::new(config(), SteppingClock::default()).unwrap();
+    queue.publisher_joins("p").unwrap();
+    queue.consumer_joins("c1").unwrap();
+    queue
+        .publish("p", Publication::new("pk", "a", 1, b"a1".to_vec()))
+        .unwrap();
+    let PullOutcome::Batch(batch) = queue.pull("c1", 10).unwrap() else {
+        panic!("expected a batch");
+    };
+    assert_eq!(
+        queue.nack("c1", batch.lease, "a"),
+        Ok(SettleOutcome::Settled)
+    );
+    let snapshot = queue.snapshot();
+    let letter = &snapshot.dead_letters[0];
+    assert_eq!(
+        snapshot.leases[0].expires_at,
+        at(letter.nacked_at, LEASE_TTL)
+    );
+    assert_eq!(letter.expires_at, at(letter.nacked_at, DECAY_TTL));
 }
 
 // obligation: rule-success.NackDefersNewerVersion

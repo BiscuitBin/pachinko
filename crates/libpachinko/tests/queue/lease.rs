@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use libpachinko::clock::Timestamp;
 use libpachinko::error::ActionError;
 use libpachinko::queue::{LeaseStatus, PocketStatus};
 use libpachinko::records::{RecordStatus, Version};
@@ -20,6 +21,24 @@ fn a_renew_moves_the_expiry_to_now_plus_the_ttl() {
     assert_eq!(expires_at, at(fixture.now(), LEASE_TTL));
     assert_eq!(fixture.snapshot().leases[0].expires_at, expires_at);
     assert_eq!(fixture.snapshot().leases[0].granted_at, T0);
+}
+
+// The clock may step back (decision 0019); the queue's `now` holds at the latest
+// instant it read, so a renew never sets the expiry before the grant and a
+// release never ends the lease before it.
+// obligation: invariant.Lease.GrantedBeforeExpiry
+// obligation: invariant.Lease.EndedAfterGrant
+#[test]
+fn a_clock_that_steps_back_cannot_stamp_a_lease_before_its_grant() {
+    let mut fixture = Fixture::new();
+    fixture.publish("pk", "a", 1, "a").unwrap();
+    let batch = fixture.pull("c1", 10);
+    fixture.clock.set(Timestamp::from_millis(1));
+    let expires_at = fixture.queue.renew("c1", batch.lease).unwrap();
+    assert_eq!(expires_at, at(T0, LEASE_TTL));
+    let ended = fixture.queue.release("c1", batch.lease).unwrap();
+    assert_eq!(ended.granted_at, T0);
+    assert_eq!(ended.ended_at, Some(T0));
 }
 
 // obligation: rule-failure.Renew.1

@@ -211,42 +211,161 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
 
     /// The key's latest rank, status and held rank, or `None` when the pocket has
     /// no record with that key.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordState, RecordStatus, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// assert_eq!(records.lookup("k"), None);
+    /// records.insert_queued("k", Version::new(3, Vec::new()), 0);
+    /// assert_eq!(records.lookup("k"), Some(RecordState::new(3, RecordStatus::Queued, None)));
+    /// ```
     fn lookup(&self, key: &str) -> Option<RecordState>;
 
     /// Adds a queued record at `position` (`PublishIntoNewPocket`,
     /// `PublishNewKey`). The queue calls it only for a key the pocket lacks.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("k", Version::new(1, Vec::new()), 0);
+    /// assert_eq!(records.record_count(), 1);
+    /// assert_eq!(records.lookup("k").map(|state| state.status), Some(RecordStatus::Queued));
+    /// ```
     fn insert_queued(&mut self, key: &str, version: Version, position: u64);
 
     /// Replaces the key's latest rank and payload in place, leaving its position,
     /// status and held version alone (`Supersede`). Returns the replaced version,
     /// or `None`, changing nothing, when the key is absent.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("k", Version::new(1, b"a".to_vec()), 10);
+    /// records.hold_oldest(1);
+    /// let replaced = records.supersede("k", Version::new(2, b"b".to_vec()));
+    /// assert_eq!(replaced, Some(Version::new(1, b"a".to_vec())));
+    /// let view = &records.snapshot()[0];
+    /// assert_eq!((view.position, view.status), (10, RecordStatus::Held));
+    /// assert_eq!(view.held.as_ref().map(|held| held.rank), Some(1));
+    /// assert_eq!(view.latest.rank, 2);
+    /// assert_eq!(records.supersede("absent", Version::new(1, Vec::new())), None);
+    /// ```
     fn supersede(&mut self, key: &str, version: Version) -> Option<Version>;
 
     /// Holds the `limit` queued records with the smallest positions, smallest
     /// first, each holding its latest version (`HoldRecord`), and returns them as
     /// a batch. All of them when `limit` exceeds their count; none when it is 0.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("later", Version::new(1, Vec::new()), 7);
+    /// records.insert_queued("sooner", Version::new(1, Vec::new()), 3);
+    /// assert!(records.hold_oldest(0).is_empty());
+    /// let batch = records.hold_oldest(1);
+    /// assert_eq!(batch.len(), 1);
+    /// assert_eq!(batch[0].key, "sooner");
+    /// ```
     fn hold_oldest(&mut self, limit: usize) -> Self::Batch;
 
     /// Removes a held record (`AckSettlesRecord`, `NackSettlesRecord`) and returns
     /// its held version, or `None`, changing nothing, when the key is not held.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("held", Version::new(1, b"h".to_vec()), 0);
+    /// records.hold_oldest(1);
+    /// records.insert_queued("queued", Version::new(1, Vec::new()), 1);
+    /// assert_eq!(records.settle("queued"), None);
+    /// assert_eq!(records.settle("held"), Some(Version::new(1, b"h".to_vec())));
+    /// assert_eq!(records.record_count(), 1);
+    /// ```
     fn settle(&mut self, key: &str) -> Option<Version>;
 
     /// Moves a held record to deferred at `position`, dropping its held version
     /// (`AckDefersNewerVersion`, `NackDefersNewerVersion`), and returns that
     /// version, or `None`, changing nothing, when the key is not held.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("k", Version::new(1, b"a".to_vec()), 0);
+    /// records.hold_oldest(1);
+    /// assert_eq!(records.defer("k", 5), Some(Version::new(1, b"a".to_vec())));
+    /// assert_eq!(records.lookup("k").map(|state| state.status), Some(RecordStatus::Deferred));
+    /// let view = &records.snapshot()[0];
+    /// assert_eq!((view.position, view.held.as_ref()), (5, None));
+    /// ```
     fn defer(&mut self, key: &str, position: u64) -> Option<Version>;
 
     /// Returns every held and deferred record to queued, dropping each held
     /// version and keeping each position (`RequeueHeldRecord`,
     /// `RequeueDeferredRecord`).
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("held", Version::new(1, Vec::new()), 0);
+    /// records.insert_queued("deferred", Version::new(1, Vec::new()), 1);
+    /// records.hold_oldest(2);
+    /// records.defer("deferred", 4);
+    /// records.free_all();
+    /// assert!(records.snapshot().iter().all(|view| view.status == RecordStatus::Queued));
+    /// assert!(records.held().is_empty());
+    /// ```
     fn free_all(&mut self);
 
     /// How many records the pocket has, in any state.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("a", Version::new(1, Vec::new()), 0);
+    /// records.insert_queued("b", Version::new(1, Vec::new()), 1);
+    /// records.hold_oldest(1);
+    /// assert_eq!(records.record_count(), 2);
+    /// ```
     fn record_count(&self) -> usize;
 
     /// The held records, as the `Consuming` surface exposes them, by position.
+    ///
+    /// ```
+    /// use libpachinko::records::{HeldRecord, MemoryRecords, PocketRecords, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("a", Version::new(2, b"x".to_vec()), 0);
+    /// records.insert_queued("b", Version::new(1, Vec::new()), 1);
+    /// records.hold_oldest(1);
+    /// assert_eq!(records.held(), vec![HeldRecord::new("a".to_owned(), 2, b"x".to_vec())]);
+    /// ```
     fn held(&self) -> Vec<HeldRecord>;
 
     /// Every record, by key: the inspection seam tests read invariants through.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus, RecordView, Version};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// records.insert_queued("b", Version::new(1, Vec::new()), 0);
+    /// records.insert_queued("a", Version::new(2, Vec::new()), 1);
+    /// records.hold_oldest(1);
+    /// let held = Some(Version::new(1, Vec::new()));
+    /// assert_eq!(
+    ///     records.snapshot(),
+    ///     vec![
+    ///         RecordView::new("a".to_owned(), Version::new(2, Vec::new()), 1, RecordStatus::Queued, None),
+    ///         RecordView::new("b".to_owned(), Version::new(1, Vec::new()), 0, RecordStatus::Held, held),
+    ///     ]
+    /// );
+    /// ```
     fn snapshot(&self) -> Vec<RecordView>;
 }

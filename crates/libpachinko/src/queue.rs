@@ -19,7 +19,7 @@ mod types;
 #[cfg(feature = "testing")]
 mod view;
 
-use crate::clock::Clock;
+use crate::clock::{Clock, Timestamp};
 use crate::config::Config;
 use crate::error::{ConfigError, ConsumerError, JoinError};
 use crate::records::PocketRecords;
@@ -29,7 +29,7 @@ use parties::{Consumers, Publishers};
 use pockets::Pockets;
 use shed::Shed;
 
-pub use crate::fencing::LeaseId;
+pub use crate::error::fencing::LeaseId;
 pub use types::{
     DeadLetter, Lease, LeaseStatus, LeaseView, PocketStatus, Publication, PublishOutcome,
     PullOutcome, PulledBatch, SettleOutcome, ShedReason, SupersededRecord, TickReport,
@@ -66,6 +66,9 @@ pub struct Queue<R, C> {
     leases: Leases,
     pockets: Pockets<R>,
     shed: Shed,
+    /// The latest instant the queue has read: its `now` never goes back, even
+    /// when the clock does.
+    latest: Timestamp,
 }
 
 impl<R: PocketRecords, C: Clock> Queue<R, C> {
@@ -95,6 +98,7 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
             leases: Leases::default(),
             pockets: Pockets::default(),
             shed: Shed::default(),
+            latest: Timestamp::default(),
         })
     }
 
@@ -189,12 +193,42 @@ impl<R: PocketRecords, C: Clock> Queue<R, C> {
         }))
     }
 
+    /// The module's `now`: the clock's reading, held at the latest instant the
+    /// queue has read so far, so a clock that steps back cannot stamp a lease
+    /// end before its grant or an expiry before its grant.
+    fn now(&mut self) -> Timestamp {
+        let now = self.clock.now().max(self.latest);
+        self.latest = now;
+        now
+    }
+
     /// Now, and when a lease granted or extended now lapses.
-    fn lease_term(&self) -> leases::Term {
-        let now = self.clock.now();
+    fn lease_term(&mut self) -> leases::Term {
+        let now = self.now();
         leases::Term {
             granted_at: now,
             expires_at: now.saturating_add(self.config.lease_ttl),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Queue;
+    use crate::clock::{Clock, FakeClock};
+    use crate::records::{MemoryRecords, PocketRecords};
+    use std::fmt::Debug;
+
+    fn assert_invariant_3<T: Clone + Debug + Send + Sync + 'static>() {}
+
+    /// Generic over every store and clock `Queue::new` accepts, so it compiles
+    /// only when the trait bounds alone carry invariant 3 to the queue.
+    fn queue_meets_invariant_3<R: PocketRecords, C: Clock>() {
+        assert_invariant_3::<Queue<R, C>>();
+    }
+
+    #[test]
+    fn every_queue_is_clone_debug_send_sync_and_static() {
+        queue_meets_invariant_3::<MemoryRecords, FakeClock>();
     }
 }
