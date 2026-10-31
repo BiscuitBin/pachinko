@@ -18,8 +18,8 @@ specifications and the code arrive in a repository that is already green.
 
 ## What it does
 
-Today, very little, on purpose. `libpachinko` holds the domain once the specifications
-define one; until then it holds one public item, `version()`. `pachinko`'s `main` is one
+Today, very little, on purpose. `libpachinko` will hold the domain the specifications
+define; today it holds one public item, `version()`. `pachinko`'s `main` is one
 call to a tested `run()`, which writes the line `pachinko <version>`. Everything else in
 the repository is there to hold the code that comes later to the same standard from its
 first commit: the full Rust gate, coverage, the effects check, the specification checks,
@@ -28,14 +28,18 @@ the handbook's checks and the API reference.
 What the library does will be stated first in `docs/specs/`, one rule at a time, and
 built second ([decision 0002](../decisions/0002-specs-are-the-source-of-truth.md)); see
 [Specifications](../explanation/specifications.md). Today `docs/specs/` holds one
-placeholder module, `pachinko.allium`, which declares nothing. A behaviour that no module
-states is not the library's yet, however obvious it looks.
+module, `pachinko.allium`, which specifies the domain: a queue of pockets, each holding
+one record per key with a higher rank superseding in place, consumed under exclusive,
+renewable leases. None of it is implemented yet. A behaviour that no module states is not
+the library's yet, however obvious it looks.
 
 ## What it deliberately does not do
 
-- **No domain yet.** No module under `docs/specs/` defines an entity, a rule or a
-  surface, so no code here implements one, and no page here says what the domain is.
-  The first specification change that names a behaviour defines it.
+- **No implementation of the domain yet.** The root module under `docs/specs/` defines
+  the queue's entities, rules and surfaces, and no code here implements any of them.
+  The implementation follows the specification, tests first, and until it lands the
+  library's public API is `version()` alone. [Terminology](terminology.md) holds the
+  domain's words.
 - **No runtime or transport for the service.** The service is a minimal std binary with
   no async runtime, transport or HTTP stack. Choosing them before the specifications say
   what the service must do would be a guess; a spike and a further decision follow the
@@ -54,8 +58,8 @@ states is not the library's yet, however obvious it looks.
 
 ## Who it is for
 
-Consumers of the library, and the people and agents who change it. The `pachinko`
-service is the library's one consumer today: it depends on `libpachinko`, never the
+Callers of the library, and the people and agents who change it. The `pachinko`
+service is the library's one caller today: it depends on `libpachinko`, never the
 reverse, and it is where the real implementations of the library's effect traits will
 live. The repository's readers are contributors, maintainers and agents working to the
 [agent contract](../reference/agent-contract.md); none of them re-decides a behaviour the

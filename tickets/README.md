@@ -6,9 +6,9 @@ tickets carried libpawdoku's toolchain, gates, handbook, agent contract, CI and 
 tooling across, so that the specifications and the code would land in a repository that
 was already green.
 
-The bootstrap is done. Every ticket below is `done` and merged on `main`, the last at
-`f080d62`, where `just check` was green. The domain is still undefined: the Allium
-specifications under `docs/specs/` come next, then the implementation. The tickets stay
+The bootstrap is done: T00 to T18 are `done` and merged on `main`, the last at
+`f080d62`, where `just check` was green. T19 opens the domain: the first Allium module
+under `docs/specs/`, with the implementation to follow it. The bootstrap tickets stay
 here as the record of what was carried and what was changed.
 
 Each ticket was written for an AI agent with no other context, working in its own git
@@ -42,6 +42,7 @@ snapshot.
 | T16 | Benchmarks and fuzzing: a divan bench, a fuzz crate on stable, a weekly fuzz job | `T16-bench-and-fuzz.md` | T11 | T12 to T15 | done |
 | T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | done |
 | T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | done |
+| T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07.
@@ -80,6 +81,9 @@ The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
   Docker digests, the release and mutation tools, the fuzz crate.
 - **T18** ran, or recorded as open, the checks the wave-0 and wave-1 hand-backs did not
   run and T11 could not close. It was off the critical path and blocked nothing.
+- **T19** is the first ticket after the bootstrap. It depends on T18 only so that it
+  starts from the `main` the bootstrap finished on, and it writes the domain's first
+  specification; the implementation tickets that follow depend on it.
 
 ## How to pick up a ticket
 

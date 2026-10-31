@@ -25,10 +25,10 @@ meets the outside.
 Inside `libpachinko` the module graph will be the specification import graph. Each
 specification module under `docs/specs/` names the modules it imports, and the Rust
 module that implements it may use what its specification imports and nothing above it.
-Today there is one specification module, `pachinko.allium`, which declares no behaviour
+Today there is one specification module, `pachinko.allium`, which specifies the domain
 and imports nothing, and one Rust module, `crates/libpachinko/src/lib.rs`, so there is
-nothing to order. When the first specification change splits the domain into modules,
-the code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-the-first-behavioural-module)
+nothing to order. When a specification change splits the domain into modules, the
+code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
 shows how a module states its imports.
 
 ## Why the direction matters
