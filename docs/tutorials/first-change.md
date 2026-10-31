@@ -48,44 +48,53 @@ just doc
 ```
 
 Open `target/doc/pachinko/index.html` and follow `run`. Its source is
-`crates/pachinko/src/lib.rs`. `run` writes the service's one line, `pachinko <version>`,
-to whatever writer it is given; the version is `libpachinko::version()`, the library's
-manifest version. The binary's `main`, in `crates/pachinko/src/main.rs`, calls `run` on
-standard output and nothing else. The library's `version` carries an example, and
-`just test-doc` runs every such example as a test. Your exercise changes the
-line `run` writes.
+`crates/pachinko/src/lib.rs`. `run` takes the command line, without the program name,
+and a writer: with no argument it writes the line `pachinko <version>` to that writer,
+through the private helper `version` beside it, and `serve` starts the HTTP service
+instead. The version is `libpachinko::version()`, the library's manifest version. The
+binary's `main`, in `crates/pachinko/src/main.rs`, calls `run` on the arguments and
+standard output and nothing else. `run` carries an example, and `just test-doc` runs
+every such example as a test. Your exercise changes the line `run` writes with no
+argument.
 
 ## 3. Read what decides the behaviour
 
-Open `docs/specs/pachinko.allium`. It is the root module, and today it declares no
-entity, rule, surface or invariant: the domain is not defined yet, and the first change
-that names a behaviour states it there before any code implements it. So no clause
-decides the line `run` writes. Two tests state it instead:
+Open `docs/specs/pachinko.allium`. It is the root module, and it specifies the queue
+the library implements and the service serves: its entities, rules, surfaces and
+invariants. A change to any of that is stated there before any code implements it. The
+version line is not the domain, though; it is the service's scaffolding, so no clause
+decides it. Two tests and one example state it instead:
 
 - `run_writes_the_name_and_the_library_version`, the unit test at the foot of
   `crates/pachinko/src/lib.rs`, calls `run` on a `Vec<u8>` and compares what it wrote.
 - `the_binary_prints_its_line_and_exits_zero`, in `crates/pachinko/tests/binary.rs`,
   runs the built binary as a user would and compares its standard output, its standard
   error and its exit status.
+- The example in `run`'s doc comment calls `run` with no argument and asserts the same
+  bytes; `just test-doc` runs it.
 
-Read both expected lines now. Each builds the line from `libpachinko::version()`,
+Read the three expected lines now. Each builds the line from `libpachinko::version()`,
 `format!("pachinko {}\n", libpachinko::version())`, so the tests hold whatever version
 the manifest states and the exercise works the same on any `main`.
 
 ## 4. Change something
 
-In `crates/pachinko/src/lib.rs`, change the format string in `run` so the line reads
-`pachinko version <version>`:
+In `crates/pachinko/src/lib.rs`, change the format string in `version`, the helper
+`run` calls with no argument, so the line reads `pachinko version <version>`. The longer
+line no longer fits rustfmt's width of 100, so write it as rustfmt would, or `just fix`
+will:
 
 ```diff
- pub fn run(out: &mut impl Write) -> io::Result<()> {
--    writeln!(out, "pachinko {}", libpachinko::version())
+ fn version(out: &mut impl Write) -> Result<(), Error> {
+-    writeln!(out, "pachinko {}", libpachinko::version()).map_err(Error::io("writing the version"))
 +    writeln!(out, "pachinko version {}", libpachinko::version())
++        .map_err(Error::io("writing the version"))
  }
 ```
 
-Leave the tests alone and run the suite. It should fail in two places, because two tests
-state the old line.
+Leave the tests alone and run the suite. nextest should fail in two places, because two
+tests state the old line; the example on `run` states it too, but `just test` reaches
+the doctests only once nextest passes.
 
 ```console
 just test
@@ -105,7 +114,8 @@ assertion `left == right` failed
 
 `118, 101, 114, 115, 105, 111, 110, 32` after the first space is `version` and its
 space. The binary test fails with the same two lists at
-`crates/pachinko/tests/binary.rs`, and nextest's summary names both:
+`crates/pachinko/tests/binary.rs`, and nextest's summary names both. The counts and the
+line number below date from before T20 added the queue's and the service's tests; today far more tests run, and the two `FAIL` lines are the ones to find:
 
 ```text
      Summary [   0.205s] 3 tests run: 1 passed, 2 failed, 0 skipped
@@ -133,8 +143,8 @@ are the point: they show the line is stated in two places, and where.
 
 ## 5. Change the tests to match
 
-Update the expected line in both tests, inserting `version` and a space after
-`pachinko`. In `crates/pachinko/src/lib.rs`:
+Update the expected line in both tests and in the example, inserting `version` and a
+space after `pachinko`. In the unit test in `crates/pachinko/src/lib.rs`:
 
 ```diff
 -            format!("pachinko {}\n", libpachinko::version()).as_bytes()
@@ -148,10 +158,18 @@ In `crates/pachinko/tests/binary.rs`:
 +        format!("pachinko version {}\n", libpachinko::version()).as_bytes()
 ```
 
+Back in `crates/pachinko/src/lib.rs`, in the example in `run`'s doc comment:
+
+```diff
+-/// assert_eq!(out, format!("pachinko {}\n", libpachinko::version()).as_bytes());
++/// assert_eq!(out, format!("pachinko version {}\n", libpachinko::version()).as_bytes());
+```
+
 Run `just test` again. Every nextest test passes, then the doctests. In a real change,
-`run`'s doc comment, which names the line, would change in the same commit too: the
-behaviour, its tests and its documentation land together. Once the specifications define
-a behaviour, the clause moves first and the test is named for the clause it proves.
+the prose of `run`'s doc comment, which names the line, would change in the same commit
+too: the behaviour, its tests and its documentation land together. For a behaviour the
+specifications define, the clause moves first and the test is named for the clause it
+proves.
 
 ## 6. Run the whole gate
 
@@ -186,9 +204,9 @@ why `just check` comes first. Nothing is pushed until you ask for it.
 
 ## What you just touched
 
-An item, the two tests that state its output, and the gate. That is the whole loop;
-every change after this one is the same shape, and the first real one starts by adding a
-rule to a specification module rather than finding none.
+An item, the tests and the example that state its output, and the gate. That is the
+whole loop; every change after this one is the same shape, and a change to the queue's
+behaviour starts one step earlier, at the rule in `docs/specs/pachinko.allium`.
 
 ## Related pages
 

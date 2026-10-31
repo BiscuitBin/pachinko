@@ -17,17 +17,28 @@ nothing in the workspace ([decision 0001](../decisions/0001-library-and-service.
 | `libpachinko` | nothing in the workspace | `pachinko` |
 | `pachinko` | `libpachinko` | nothing |
 
-`libpachinko` holds the domain once the specifications define one, and performs no
-effect itself. `pachinko` is a minimal binary that supplies the real implementations of
-the library's effect traits, and nothing imports it: it is the leaf where the library
-meets the outside.
+`libpachinko` holds the domain the specifications define, and performs no effect
+itself. `pachinko` is a binary that serves the library's queue over HTTP and supplies
+the real implementations of the library's effect traits, and nothing imports it: it is
+the leaf where the library meets the outside.
 
-Inside `libpachinko` the module graph will be the specification import graph. Each
+Inside `libpachinko`, the specification import graph bounds the module graph. Each
 specification module under `docs/specs/` names the modules it imports, and the Rust
-module that implements it may use what its specification imports and nothing above it.
-Today there is one specification module, `pachinko.allium`, which specifies the domain
-and imports nothing, and one Rust module, `crates/libpachinko/src/lib.rs`, so there is
-nothing to order. When a specification change splits the domain into modules, the
+modules that implement it may use what its specification imports and nothing above it.
+Today there is one specification module, `pachinko.allium`, which imports nothing, so
+there is no boundary between specification modules to hold. Its implementation is split
+one Rust module per concern, and those run one way too:
+
+| Layer | Rust modules | Uses |
+| --- | --- | --- |
+| Leaves | `ids`, `clock`, `lease_ids` | nothing in the crate |
+| Refusals and settings | `error`, then `config` | the leaves; `config` also uses `error` |
+| The aggregate | `queue` | every module above |
+| Inside `queue/` | `view` and `outcome`, then `state`, then the rule modules `publish`, `pull`, `lease`, `settle`, `expiry` and `decay` | the modules before them; `settle` also uses `lease`'s shared check |
+
+`lib.rs` declares the modules and re-exports the public items, and the modules under
+`queue/` are private to it, so only what `queue.rs` and `lib.rs` re-export leaves the
+crate. When a specification change splits the domain into specification modules, the
 code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
 shows how a module states its imports.
 
@@ -68,11 +79,13 @@ dependency to close a cycle; invariant 5 in `AGENTS.md`, that `pachinko` depends
 
 rustc will not enforce the module direction: it allows a cycle between modules of the
 same crate. Gate 7, `just metrics`, will. It runs rustqual over each crate against
-`rustqual.toml`, whose architecture section is on, and once there are modules that file
-gains one `[[architecture.pattern]]` rule per module, each listing every `crate::` path
-its module may not name, with the specification's imports as its reason
-([decision 0012](../decisions/0012-metrics-gate.md)). Today it holds no pattern rule,
-because there is no module to bound. A rule will cover the file named after its module
+`rustqual.toml`, whose architecture section is on, and once there is a second
+specification module that file gains one `[[architecture.pattern]]` rule per module,
+each listing every `crate::` path its module may not name, with the specification's
+imports as its reason ([decision 0012](../decisions/0012-metrics-gate.md)). Today it
+holds no pattern rule, because the one specification module imports nothing and so
+draws no boundary; the order of the Rust modules inside it, in the table above, is held
+by review. A rule will cover the file named after its module
 and everything under the directory of the same name, so a child is held to its parent's
 row, and it will catch both a `use crate::…` line and an inline `crate::…` path in a
 function body.

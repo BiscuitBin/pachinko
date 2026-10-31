@@ -45,26 +45,79 @@ Framework configuration and conventions are described in
 
 `crates/pachinko/tests/binary.rs` runs the built service as a user would. Cargo builds
 the `pachinko` binary before it runs that crate's integration tests and hands the test
-its path as `CARGO_BIN_EXE_pachinko`; the test asserts that the binary exits zero, prints
-`pachinko`, a space, `libpachinko::version()` and one newline on standard output and
-writes nothing to standard error. Run it alone with:
+its path as `CARGO_BIN_EXE_pachinko`; the first test asserts that the binary, with no
+argument, exits zero, prints `pachinko`, a space, `libpachinko::version()` and one
+newline on standard output and writes nothing to standard error. Two more run a usage
+error and, on Unix, start `pachinko serve`, wait for its `listening on` line and send it
+SIGTERM. Run them alone with:
 
 ```console
 INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test binary
 ```
 
-The line has two tests: the unit test beside `run` in `crates/pachinko/src/lib.rs`
-writes into a buffer, and the binary test reads the real standard output. A change to
-the line fails both, and both are updated together, as
+The line has two tests and an example: the unit test beside `run` in
+`crates/pachinko/src/lib.rs` writes into a buffer, the example on `run` does the same as
+a doctest, and the binary test reads the real standard output. A change to the line
+fails all three, and all three are updated together, as
 [Make your first change](../tutorials/first-change.md) walks through. When only the
 binary test fails, the fault is between `run` and the process: `main.rs`, its exit
 status, or something written to standard error.
 
+## Run the service and drive it by hand
+
+`crates/pachinko/tests/http.rs` drives an in-process server through every route; to see
+one by hand, run the service and send it requests. From the repository root:
+
+```console
+cargo run -p pachinko --locked -- serve
+```
+
+It writes `listening on 127.0.0.1:8080` to standard output once it is ready, and one log
+line per request to standard error. If port 8080 is taken, binding fails and the binary
+exits 1 with the reason; pass another address, or port 0 for any free port, and read the
+address from that first line:
+
+```console
+cargo run -p pachinko --locked -- serve --listen 127.0.0.1:0
+```
+
+Then, in another terminal, with the address the service printed, join a publisher and a
+consumer, publish one record and pull it. Request bodies need the JSON content type, and
+a payload is base64 (`aGVsbG8=` is `hello`):
+
+```console
+curl -i http://127.0.0.1:8080/healthz
+curl -X POST http://127.0.0.1:8080/publishers/p1
+curl -X POST http://127.0.0.1:8080/consumers/c1
+curl -X PUT http://127.0.0.1:8080/pockets/tenant-a/records/k1 \
+  -H 'content-type: application/json' \
+  -d '{"publisher_id": "p1", "rank": 1, "payload": "aGVsbG8="}'
+curl -X POST http://127.0.0.1:8080/consumers/c1/pull \
+  -H 'content-type: application/json' -d '{"limit": 10}'
+```
+
+The pull answers with a batch whose `lease_id` every later action on it names; ack the
+record under it, then release the pocket:
+
+```console
+curl -X POST http://127.0.0.1:8080/leases/<lease_id>/ack \
+  -H 'content-type: application/json' -d '{"consumer_id": "c1", "record_key": "k1"}'
+curl -X POST http://127.0.0.1:8080/leases/<lease_id>/release \
+  -H 'content-type: application/json' -d '{"consumer_id": "c1"}'
+```
+
+A refusal answers with its status and `{"error", "message"}`; [HTTP API](../reference/http-api.md)
+lists every route, body and refusal. The queue lives in memory, so stopping the service
+with ctrl-c, which exits 0, empties it. To watch leases lapse without waiting five
+minutes, start it with a short `--lease-ttl-ms`;
+[Configuration](../reference/configuration.md#the-serve-command) lists every flag.
+
 ## Narrow down a failing test
 
 1. Run the single test first, by filter. A failure that only appears in the whole suite
-   is usually shared state, and there is very little of it here: neither crate holds a
-   global, and an effect reaches libpachinko only through a trait with a fake built per
+   is usually shared state, and there is very little of it here: no test reaches a
+   global (the one the service sets, its log subscriber, is installed by the `serve`
+   command, which no in-process test runs), and an effect reaches libpachinko only through a trait with a fake built per
    test (see [Architecture](../explanation/architecture.md)).
 2. Read the assertion's left and right and, for a panic, the backtrace
    `RUST_BACKTRACE=1` prints. `ci.yml` and `pages.yml` set it for every job of theirs,
@@ -116,8 +169,8 @@ lines in the terminal instead. From cold,
 does both at once.
 
 The binary's lines count: cargo-llvm-cov instruments a binary an integration test runs,
-so `crates/pachinko/src/main.rs` is covered by the binary test. The denominator is small
-today, so one untested line moves the percentage by several points.
+so `crates/pachinko/src/main.rs` is covered by the binary test. The report is per file,
+so start with the file whose percentage fell.
 Two cases look alike and are not:
 
 - **Untested behaviour.** Add the test. This is the common case.

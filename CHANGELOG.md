@@ -13,19 +13,24 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The queue `docs/specs/pachinko.allium` specifies, implemented as a synchronous `Queue`:
+  publish and supersede, claim, pull, ack, nack, renew and release under a named lease,
+  lease expiry and parking, and decay, with every refusal an `Error` variant.
+- The effect traits `Clock` and `LeaseIds`, with the fakes `FakeClock` and
+  `CountingLeaseIds`, and `Config`, the module's five settings and their defaults.
+- Integration tests per group of rules and a seeded property walk over the module's
+  invariants.
 - The first behavioural specification, `docs/specs/pachinko.allium`: pockets holding one
   record per key, higher ranks superseding in place, exclusive renewable leases, parking
   after consecutive lease expiries, and decaying superseded records and dead letters.
-  Specified, not yet implemented.
 - Manual divan benchmarks and stable byte fuzzing with a weekly crash-reporting job.
 - Workspace mutation testing through `just mutants` and a weekly report workflow.
-- An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
-  implementation.
+- An Apache-2.0 library, `libpachinko`, exposing its version.
 - A pinned toolchain and tools, the `just initialize` setup, and the read-only
   `just check` gate: linting, tests, coverage, API documentation, dependency checks,
   metrics and a probed effects boundary for the library.
-- The handbook, architecture decisions, a placeholder Allium module and its pinned
-  checker, and an agent contract with skills and provider bridges.
+- The handbook, architecture decisions, the pinned Allium checker, and an agent contract
+  with skills and provider bridges.
 - GitHub Actions for continuous integration and dependency advisory audits, a shared
   pre-commit hook, and both crates' API reference hosted on GitHub Pages.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow,
@@ -37,6 +42,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- `pachinko serve`: the library's queue over HTTP on tokio and axum, with an in-memory
+  queue, a sweep for lease lapses and decay, flags for the listen address and the
+  module's settings, logs on standard error and a clean exit on SIGTERM or ctrl-c.
+- `SystemClock` and `RandomLeaseIds`, the real implementations of the library's effect
+  traits.
 - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.

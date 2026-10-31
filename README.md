@@ -2,15 +2,18 @@
 
 [![CI](https://github.com/BiscuitBin/pachinko/actions/workflows/ci.yml/badge.svg)](https://github.com/BiscuitBin/pachinko/actions/workflows/ci.yml)
 
-A Rust workspace with two crates: `libpachinko`, the library, and `pachinko`, a minimal
-service built around it. The library performs no effects itself; as specifications
-introduce effects, it will define traits and fakes, and the service will supply their
-real implementations.
+A Rust workspace with two crates: `libpachinko`, the library, and `pachinko`, a service
+built around it. The library performs no effects itself: it reaches the clock and its
+lease-id source through the traits `Clock` and `LeaseIds`, with fakes beside them, and
+the service supplies their real implementations.
 
-The domain is not defined yet. The Allium specifications under `docs/specs/` decide
-behaviour; today they contain one placeholder module with no declarations. The library
-exposes `version()`, and the service writes `pachinko <version>` and exits. Neither
-crate is published to crates.io.
+The domain is a single-deployment queue of pockets: publishers publish records into
+pockets, a higher rank supersedes a record in place, and a consumer leases one pocket at
+a time, pulls its oldest records in batches and acks, nacks, renews or releases them.
+The Allium module `docs/specs/pachinko.allium` decides that behaviour, and the library
+implements it as a synchronous `Queue`. `pachinko serve` runs it as an in-memory HTTP
+service ([HTTP API](docs/reference/http-api.md)); with no argument, `pachinko` writes
+`pachinko <version>` and exits. Neither crate is published to crates.io.
 
 ## Quick start
 

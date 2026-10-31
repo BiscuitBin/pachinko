@@ -16,9 +16,10 @@ runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests 
 `pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
 report, is there for a job that wants one; no recipe selects it today. Divan is the
-library’s development dependency for benchmarks. A property-test crate and insta, the
-snapshot crate, each arrive with the first test that needs it, as a development
-dependency only, with the note that
+library’s development dependency for benchmarks, and proptest for the property walk over
+the queue's invariants. The service's HTTP test drives the server with ureq and reads the
+replies with serde_json. insta, the snapshot crate, arrives with the first test that
+needs it, as a development dependency only, with the note that
 [decision 0007](../decisions/0007-dependency-policy.md) asks for beside its range.
 
 ## Layout
@@ -36,11 +37,17 @@ never colocated with the code: in Rust a unit test can reach a private item only
 inside its module, and [Decision 0009](../decisions/0009-rust-quality-gate.md) records
 the deviation.
 
-One integration test file exists, and libpachinko has none yet.
+libpachinko's integration tests drive the `Queue` through its public API, one file per
+group of rules (`publish.rs`, `pull.rs`, `settle.rs`, `lease.rs`, `expiry.rs` and
+`decay.rs`), each building its queue over `FakeClock` and `CountingLeaseIds`.
+`invariants.rs` holds the property walk and T19's trace, below.
+
 `crates/pachinko/tests/binary.rs` is the binary test: it runs the built service as a user
-would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that the
-process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
-and writes nothing to standard error. The file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its
+would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that with
+no argument the process exits zero, prints `pachinko`, a space, `libpachinko::version()`
+and a newline, and writes nothing to standard error; that a command line it does not
+read exits 1 with the reason on standard error; and, on Unix, that `pachinko serve`
+announces its address and exits zero on SIGTERM. The file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its
 reason, because an integration test file is its own test module.
 [Run the binary test](../how-to/test-and-debug.md#run-the-binary-test) says how to run it
 and how it divides from the unit test beside `run`.
@@ -49,9 +56,19 @@ A helper shared between two files under `tests/` would be compiled into each, an
 would report the functions it does not call as dead code. So each file carries the few
 helpers and fixtures it uses, and the snapshot tests, once there are any, share one file.
 
-Once a property test exists, a failing case is written to a `proptest-regressions/` file
-beside the test that produced it. That file is committed, so the case is replayed first
-on every later run.
+`crates/pachinko/tests/http.rs` is the HTTP test: it starts `pachinko::serve` in-process
+on port 0, drives it with a blocking client as a publisher and consumers would, through
+every route of the [HTTP API](http-api.md), and then stops it and checks it returned
+cleanly. The lapse runs against a second server with a short lease, so no step of the
+main scenario races its lease.
+
+The property walk in `crates/libpachinko/tests/invariants.rs` is a proptest state machine
+over small domains: random sequences of joins, publishes, pulls, acks, nacks, renews,
+releases, lapses, decays and clock steps. Before each step it predicts the outcome from
+the rules' guards; after each step it checks every invariant and every transition. Its
+runner is seeded with a fixed generator and persists no failure to disk, so every run
+walks the same sequences and no `proptest-regressions/` file is written; a case it finds
+is fixed or turned into a named test, not replayed from a file.
 
 ## Conventions
 
@@ -63,8 +80,9 @@ test named after the function it calls does not.
 being true stops the gate. Every public item is to carry one.
 
 **Reach an effect through the fake beside its trait; never through the real thing.** The
-effect traits arrive with the specifications that need them, each with a fake beside it,
-and a test drives the library through that fake and gets exactly the behaviour it chose.
+library has two effect traits, `Clock` and `LeaseIds`, with the fakes `FakeClock`, a clock
+the test sets and advances, and `CountingLeaseIds`, which mints lease ids in order; a test
+drives the library through them and gets exactly the behaviour it chose.
 [Architecture](../explanation/architecture.md) explains the boundary, and decisions
 [0003](../decisions/0003-effects-behind-traits.md) and
 [0008](../decisions/0008-std-library.md) record it.
@@ -80,8 +98,9 @@ A specification's clauses are what the tests prove.
 derives from one module under `docs/specs/`: what each rule, invariant, transition and
 surface clause would have a test for. It plans that one file and reads no import. The
 list is a suggestion for a ticket's test list, not a gate: nothing asserts on it and it
-sits outside `just check`. Today the only module is `pachinko`, a placeholder that
-states no behaviour, so `just plan-spec pachinko` has nothing to ask for.
+sits outside `just check`. Today the only module is `pachinko`, and libpachinko's tests
+name the obligations they prove in comments above the tests, in the checker's own
+names, such as `rule-success.AckSettlesRecord`.
 [Work with the specifications](../how-to/work-with-the-specs.md) covers the workflow.
 
 These rules hold for every module the specifications add.
@@ -116,8 +135,7 @@ when line coverage over `crates/*/src/**` falls below 90 per cent. The floor is 
 llvm-cov's doctest support needs a nightly toolchain, so `test-doc` runs them uncovered
 and the floor is a statement about unit and integration tests. A binary an integration
 test runs is instrumented too, so the binary test counts towards the service's lines.
-While the crates are small the denominator is too: one untested line moves the
-percentage by several points. The recipe also writes `target/llvm-cov/lcov.info`, which
+The recipe also writes `target/llvm-cov/lcov.info`, which
 CI keeps as an artifact once the floor has passed.
 
 Coverage counts a snapshot test like any other test. That count proves no specification
@@ -203,7 +221,7 @@ explains the commands in order.
 `just bench` runs the divan smoke benchmark over `libpachinko::version()`, passing
 its function pointer and result through `divan::black_box` to retain a runtime call.
 The measurement includes indirect-call overhead. Extra Cargo options may follow the
-recipe. This establishes the harness; real workloads arrive with their specifications.
+recipe. This establishes the harness; no workload over the queue is benchmarked yet.
 Timings depend on the machine and its load, so benchmarks run manually and never in CI
 or `just check`. Clippy still compiles the bench target in the gate.
 
@@ -237,10 +255,13 @@ be promoted to regression tests when domain targets arrive. See
 
 | Suite | Covers |
 | --- | --- |
-| In-module tests, `crates/libpachinko/src/lib.rs` | `the_version_is_the_manifests`: `version` returns the version the manifest states. |
-| Doctests | The example on `libpachinko::version`, which asserts the same value from outside the crate. |
-| In-module tests, `crates/pachinko/src/lib.rs` | `run_writes_the_name_and_the_library_version`: `run` writes `pachinko`, the library's version and a newline into a buffer. |
-| `crates/pachinko/tests/binary.rs` | `the_binary_prints_its_line_and_exits_zero`: the built binary exits zero, prints that line on standard output and writes nothing to standard error. |
+| In-module tests, `crates/libpachinko/src/` | `the_version_is_the_manifests`: `version` returns the version the manifest states; and, module by module, the config defaults and invariants, the identifiers, the refusals' messages, the lease-id format and the fakes. |
+| `crates/libpachinko/tests/`, one file per group of rules | Each rule of `docs/specs/pachinko.allium` on its success path and on each guard that refuses it, through the public API over the fakes. |
+| `crates/libpachinko/tests/invariants.rs` | `every_invariant_holds_after_every_step_of_any_walk` and `the_walk_reaches_every_state_and_every_outcome`: the seeded property walk; T19's trace replayed through the queue; and the entities' fields, relationships and projections read back. |
+| Doctests | The example on every public item of both crates, among them the queue round trip in libpachinko's crate docs and `run`'s version line. |
+| In-module tests, `crates/pachinko/src/` | `run_writes_the_name_and_the_library_version`: `run` writes `pachinko`, the library's version and a newline into a buffer; a usage error for an unknown command or flag; `serve`'s flags and their defaults; the mapping from each refusal to its status; the real clock and lease-id source; a connection still open after the shutdown grace period, cut before `serve` returns; and one that ignores the cut, which `serve` waits for. |
+| `crates/pachinko/tests/binary.rs` | `the_binary_prints_its_line_and_exits_zero`, the usage error's exit status and message, and `serve_exits_zero_on_sigterm`. |
+| `crates/pachinko/tests/http.rs` | `a_publisher_and_consumers_drive_the_queue_over_http_and_it_stops_cleanly`: every route, its replies and its refusals, end to end; `the_sweep_frees_a_lapsed_lease_and_the_server_stops_cleanly`. |
 
 ## Related pages
 
