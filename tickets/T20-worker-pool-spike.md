@@ -187,7 +187,7 @@ drained between inputs, and a test provokes the case with the smallest capacity.
 | 2 | `cargo deny --manifest-path spikes/worker-pool/Cargo.toml --config deny.toml --locked check licenses bans sources` applies the root policy to the spike's graph. | Step 3 | Holds. The same run prints `bans ok, licenses ok, sources ok` for the spike's graph, with the eleven license-not-encountered warnings an empty graph gives. |
 | 3 | Renovate's cargo manager finds `spikes/worker-pool/Cargo.toml` by its default file pattern, so only the `rust-version` regex manager in `renovate.json` needs the path; the manager's documentation (`https://docs.renovatebot.com/modules/manager/cargo/`) is read on the day, because the dashboard shows it only after the merge. | Step 7 | Holds, per the Renovate page read on 2026-10-31; quoted under "Claims" in the hand-back notes. The dashboard check waits for the merge. |
 | 4 | `std::sync::mpmc` is unstable on 1.99.1 and `std::sync::mpsc::sync_channel` and `std::thread::scope` are stable, so the first cut needs no dependency. Verified 2026-10-31 while writing this ticket, with a one-line probe. | Step 2 | Holds. E0658 on `std::sync::mpmc` and the `sync_channel` plus `thread::scope` probe compiles and runs; quoted under "Survey". No dependency was added. |
-| 5 | The clippy pass over the spike inside `just check` costs an acceptable time; T16's precedent for `fuzz/` was 7.87 s cold and 0.06 s warm. | Step 9 | Holds. At ce593ec the spike adds 0.76 s to a cold `just clippy` (1.229 s total) and nothing measurable to a warm one (0.181 s total); quoted under "Claims" in the hand-back notes. |
+| 5 | The clippy pass over the spike inside `just check` costs an acceptable time; T16's precedent for `fuzz/` was 7.87 s cold and 0.06 s warm. | Step 9 | Holds. At 340e8d0 the spike adds 0.51 s to a cold `just clippy` (0.828 s total) and nothing measurable to a warm one (0.178 s total); quoted under "Claims" in the hand-back notes. |
 
 Risks from `CONVENTIONS.md` §13 that apply: the toolchain pin, which moves the lint set
 the spike is linted with; the network at first run and none in `check`; a gate that
@@ -455,8 +455,9 @@ The numbers compare configurations on that host on that day and claim nothing el
 capacity claim is made anywhere in these notes. Every quoted output is headed by the
 commit it ran at, with "with uncommitted changes" where that was true, and shows its exit
 status where the recording file holds one; where a file holds no exit status the notes
-say so. The commit that carries the checkpoint 3 round 2 fixes is ce593ec, the final
-commit before these notes; the quotable sweep and the clippy timing were taken at it.
+say so. The final code commit is 340e8d0, which carries the checkpoint 4 and code-review
+fixes on top of ce593ec's checkpoint 3 round 2 fixes; the quotable sweep, the client
+scaling, the clippy timing and the gate were taken at it, on a clean worktree.
 
 ### Worktree and baseline
 
@@ -537,7 +538,71 @@ The spike's lockfile holds one package and was generated with
 all. `git diff --stat main -- crates docs/specs Cargo.toml Cargo.lock deny.toml` at
 3de4bc1 with uncommitted changes prints nothing (exit 0), and
 `git diff --stat main -- docs/decisions` lists only
-`docs/decisions/0016-release-process.md | 2 +-`, the lockfile count.
+`docs/decisions/0016-release-process.md | 2 +-`, the lockfile count; checkpoint 4's
+reviewer ran the same commands at 913f1b1, exit 0, and found nothing more.
+
+### Gate
+
+`just check` on the clean worktree at 340e8d0 (`ai_tmp/t20-check-340e8d0.log`, 12:53:36
+PDT). Every recipe from `check-toolchain` to `check-clean` ran; the first and last lines:
+
+```text
+commit 340e8d0, 0 uncommitted paths
+$ just check
+bg-project-check run
+
+==> just check-toolchain
+...
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit=0
+```
+
+Then once more with the finished ticket as the only uncommitted path, so the quote covers the
+hand-back notes themselves (`ai_tmp/t20-check-final.log`); 340e8d0 with uncommitted changes
+(`tickets/T20-worker-pool-spike.md`), exit 0:
+
+```text
+$ just check
+...
+All checks passed and the worktree is unchanged.
+exit=0
+```
+
+Then once under the network denial `CONVENTIONS.md` §11 describes, at 340e8d0
+(`ai_tmp/t20-check-sandbox-340e8d0.log`, 12:53:45 PDT): the two negative controls, then
+the gate, as three invocations of the same profile, the form T10 and T11 used. Step 9
+says "after `just sync`"; `just sync` was not run first, because it reaches the network
+and the ordinary run above had just shown the environment current (`just lock-check`
+ran `cargo update --workspace --locked --offline` on all three manifests and
+`pixi lock --check --offline --dry-run`, each already up to date). No sandbox failed to
+launch.
+
+```text
+commit 340e8d0, 0 uncommitted paths
+$ sandbox-exec -p '(version 1)(allow default)(deny network*)' curl -fsS --max-time 10 https://static.rust-lang.org
+curl: (6) Could not resolve host: static.rust-lang.org
+exit=6
+
+$ sandbox-exec -p '(version 1)(allow default)(deny network*)' curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1
+curl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server
+exit=7
+
+$ sandbox-exec -p '(version 1)(allow default)(deny network*)' just check
+bg-project-check run
+
+==> just check-toolchain
+...
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit=0
+```
 
 ### Survey
 
@@ -592,7 +657,7 @@ the notifications after the reply included. The rule names are the module's.
 | Publish, parked pocket (`ReviveParkedPocket`) | pocket, order | `Enqueue` | 1 |
 | Pull, no active lease, a pocket queued (`PullClaimsFrontPocket` and `HoldRecord`) | order, pocket | `Claim` | 2 |
 | Pull, no active lease, none queued (`PullFindsNoPocket`) | order | none | 1 |
-| Pull, active lease (`PullWithinLease`) | order, pocket | `PullUnderLease` | 2, or 3 with `RetryPull` in the window |
+| Pull, active lease (`PullWithinLease`) | order, pocket | `PullUnderLease`; in the window, `RetryPull` back to the order machine and a fresh `Claim` | 2; in the window, 4 when the retry claims a pocket (the `Claim` is a hop) or 3 when it finds none queued |
 | Ack (`AckSettlesRecord`, `AckDefersNewerVersion`) | pocket | none | 1 |
 | Nack (`NackSettlesRecord`, `NackDefersNewerVersion`) | pocket | none | 1 |
 | Renew (`Renew`) | pocket | none | 1 |
@@ -603,11 +668,14 @@ the notifications after the reply included. The rule names are the module's.
 
 A, leases central, from the rules alone, since nothing of A was built: the publish rows
 as B; a claiming pull is order to pocket for the batch and back for the lease, 2 hops; a
-pull within a lease is order (extend `expires_at`) then pocket (batch), 2; ack, nack and
-renew are pocket (the record) plus order (extend `expires_at`), 2 hops or 1 plus a
-message; release is order (end the lease) then pocket (free the records), 2; the lapse is
-detected in the order machine and frees records in the pocket machine, 1 message. Under
-A every consumer action reaches the order machine; under B only pulls and lease ends do.
+pull within a lease is order (extend `expires_at`) then pocket (batch), 2; ack and nack
+are order (the lease guards, extend `expires_at`) and pocket (the record), 2 hops or 1
+plus a message; renew is order alone, since the rule touches only the lease, 1 hop;
+release is order (end the lease) then pocket (free the records), 2; the lapse is
+detected in the order machine and frees records in the pocket machine, 1 message. The
+joins and the no-pocket pull are order alone, 1 hop, as under B; the two decays are
+pocket on the tick, no hop, as under B. Under A every consumer action reaches the order
+machine; under B only pulls and lease ends do.
 
 The window the Context names, between a pocket machine's decision and the order
 machine's hearing of it, was shown and guarded. A `Claim` always finds its pocket queued:
@@ -703,7 +771,7 @@ the `PocketBecame`, so the next `Pull` went out under the ended lease, came back
 `RetryPull`, and only then claimed, two extra hops. After B8 (a client-lane burst ends
 as soon as a step has queued a message for one of the worker thread's own machines) the
 counter is 0 on one worker thread in every run since, and roughly halved across worker
-threads: at ce593ec, 24,054 to 25,815 with six and 16,790 to 19,032 with eighteen. What
+threads: at 340e8d0, 25,837 to 27,573 with six and 19,706 to 19,810 with eighteen. What
 remains is the cross-worker-thread case, a `PocketBecame` on the peer lane overtaken by
 the next `Pull` on the client lane, which the protocol tolerates.
 
@@ -720,7 +788,9 @@ read once per input as it is dequeued; a tick into every machine on a fixed inte
 stop is a signal and then the scope's join, and a panic in a worker thread or the body
 surfaces at the join.
 
-The six integration tests, with their wall times run alone from the pool agent's report:
+The six integration tests, with their wall times run alone from the pool agent's report
+(`ai_tmp/t20-agent-pool.md`, which records no commit and no exit status; the tests are
+the ones first committed in 110e006, measured on the pool files before they landed):
 
 | Test | Time |
 | --- | --- |
@@ -736,7 +806,11 @@ the stop test's panic half asserts the payload, that `thread::scope` returned, a
 no worker thread is live. `just spike-test` at 3de4bc1 with uncommitted changes (the
 checkpoint 3 round 2 fixes, landing in ce593ec;
 `ai_tmp/review/T20-3b/spike-test.log`, exit 0 per the apply report beside it) names
-every test the acceptance criteria ask for:
+every test the acceptance criteria ask for; at 913f1b1 with uncommitted changes (the
+checkpoint 4 and code-review fixes, landing in 340e8d0;
+`ai_tmp/review/T20-4/apply-spike-test.log`, exit 0 per `apply-code-report.md`) the same
+targets passed with the six new unit tests: 161, 6, 5, 6, 1 and 4 unit and integration
+tests and 22 doctests, 0 failed:
 
 ```text
      Running tests/invariants.rs
@@ -802,7 +876,9 @@ overtaken under load, which the protocol tolerates.
 
 **Shown to bite.** For the invariant, fencing and one-thread tests the code was broken
 on purpose at 109ddb0, each break restored with `git checkout --` and `git status --short`
-empty after the last (`ai_tmp/t20-breaks.md`).
+empty after the last (`ai_tmp/t20-breaks.md`). That file records no exit status for any
+run; the `test result: FAILED` line is the evidence for each break and the
+`test result: ok` lines for the restore.
 
 Break 1, the invariant test: `RequeueHeldRecord` in `src/pocket.rs` no longer sets the
 record back to `Queued`, so a held record stays held after a release or a lapse.
@@ -870,122 +946,140 @@ repeat ahead of it, with every row counting its unhealthy repeats and the binary
 1 when any row has one. The publishers publish with repeated keys so that supersedes and
 stale drops happen; the consumers pull, ack seven of eight, nack one of eight, release
 three of four pulls, and consumer 0 sleeps three TTLs after every batch so that lapses
-happen. The quotable table, taken at the final commit ce593ec on a clean worktree
-(`ai_tmp/t20-sweep-ce593ec.txt`, 11:55:55 PDT), 20 columns with release latency. The
+happen. The quotable table, taken at the final code commit 340e8d0 on a clean worktree
+(`ai_tmp/t20-sweep-340e8d0.txt`, 12:50:53 PDT), 20 columns with release latency. The
 binary exits 1 when any row has an unhealthy repeat, so the exit code 0 recorded on the
-file's last line is itself evidence that every repeat of every row was healthy; the
-stderr file holds cargo's three lines and no panic. The note, thresholds and invariants
-preamble lines are in the file; the host line, the load line, the column header and the
-rows:
+file's last line is itself evidence that every repeat of every row was healthy. The note,
+thresholds and invariants preamble lines are in the file; the host line, the load line,
+the column header and the rows:
 
 ```text
-commit ce593ec, worktree clean
-worker-pool spike on macOS 26.4; Apple M5 Pro; hw.ncpu 18; perf cores 6; efficiency cores 12; available_parallelism 18; commit ce593ec
+commit 340e8d0, worktree clean
+worker-pool spike on macOS 26.4; Apple M5 Pro; hw.ncpu 18; perf cores 6; efficiency cores 12; available_parallelism 18; commit 340e8d0
 load: 256 pockets, lease_ttl 200 ms, superseded/dead-letter ttl 1000 ms, tick 10 ms, queue capacity 1024, 3.0 s measured after 1.0 s warm-up, median of 3 run(s) by pub/s; clients = publishers+consumers, closed loop
 N,P   | clients |    pub/s |   pull/s | ack+nack/s | release/s | p50/p99 pub (us) | p50/p99 pull (us) | p50/p99 ack+nack (us) | p50/p99 release (us) | send-wait p99 pub (us) | retry pulls | msgs local | msgs channel | outbox hwm |   ticks | busy % (max/mean) | lapses | parks | invariants
-1,1   | 18+18   |   230122 |    39419 |     148555 |     29565 |           68/196 |            69/219 |                68/192 |               68/193 |                      1 |           0 |     374349 |            0 |          6 |     422 |             20/20 |     13 |     0 |         ok
-    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 20 %): the pool's loop or the clients, not told apart
-    requests 1829961 replies 1829961 timed out: 0; publishes new-pocket 0 new-key 439235 superseded 117815 stale 132015 rejected 148; lease-not-active 40; empty pulls 0; unhealthy repeats 0 of 3; wall 4.22 s
-1,18  | 18+18   |   237535 |    40694 |     153331 |     30520 |           68/131 |            68/136 |                68/129 |               68/132 |                      1 |           0 |     380052 |            0 |          8 |     422 |             19/19 |     15 |     0 |         ok
+1,1   | 18+18   |   245792 |    42063 |     158603 |     31549 |           67/119 |            67/129 |                67/119 |               67/117 |                      0 |           0 |     394971 |            0 |          7 |     423 |             19/19 |     14 |     0 |         ok
     bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 19 %): the pool's loop or the clients, not told apart
-    requests 1856858 replies 1856858 timed out: 0; publishes new-pocket 0 new-key 453601 superseded 121381 stale 136577 rejected 164; lease-not-active 34; empty pulls 0; unhealthy repeats 0 of 3; wall 4.23 s
-6,18  | 18+18   |   345524 |    40128 |     185291 |     30096 |           38/199 |           127/540 |                36/185 |               35/187 |                      8 |       24054 |      67316 |       362538 |          2 |    2527 |             15/10 |     11 |     0 |         ok
-    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 15 %): the pool's loop or the clients, not told apart
-    requests 2441040 replies 2441040 timed out: 0; publishes new-pocket 0 new-key 548946 superseded 218193 stale 268807 rejected 274; lease-not-active 45; empty pulls 0; unhealthy repeats 0 of 3; wall 4.22 s
-18,18 | 18+18   |   244361 |    32472 |     139998 |     24354 |           55/292 |           194/561 |                45/249 |               44/253 |                     13 |       19032 |      15955 |       328166 |          2 |    7614 |               7/2 |     13 |     0 |         ok
-    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 7 %): the pool's loop or the clients, not told apart
-    requests 1749044 replies 1749044 timed out: 0; publishes new-pocket 0 new-key 414519 superseded 145133 stale 171878 rejected 209; lease-not-active 42; empty pulls 0; unhealthy repeats 0 of 3; wall 4.23 s
+    requests 1931610 replies 1931610 timed out: 0; publishes new-pocket 0 new-key 468522 superseded 125668 stale 140945 rejected 154; lease-not-active 33; empty pulls 0; unhealthy repeats 0 of 3; wall 4.24 s
+1,18  | 18+18   |   244738 |    41878 |     157923 |     31408 |           67/126 |            67/134 |                67/126 |               67/121 |                      1 |           0 |     391505 |            0 |          5 |     425 |             19/19 |     12 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 19 %): the pool's loop or the clients, not told apart
+    requests 1913816 replies 1913816 timed out: 0; publishes new-pocket 0 new-key 466182 superseded 124871 stale 140437 rejected 164; lease-not-active 34; empty pulls 0; unhealthy repeats 0 of 3; wall 4.26 s
+6,18  | 18+18   |   383660 |    43516 |     203517 |     32637 |           35/175 |           113/543 |                33/172 |               33/175 |                      8 |       27573 |      70657 |       384463 |          2 |    2538 |             13/10 |     11 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 13 %): the pool's loop or the clients, not told apart
+    requests 2626073 replies 2626073 timed out: 0; publishes new-pocket 0 new-key 601078 superseded 244218 stale 301785 rejected 291; lease-not-active 42; empty pulls 0; unhealthy repeats 0 of 3; wall 4.23 s
+18,18 | 18+18   |   246626 |    36021 |     148736 |     27016 |           59/228 |           169/446 |                45/188 |               44/184 |                     14 |       19706 |      17423 |       349589 |          2 |    7650 |               6/2 |     12 |     0 |         ok
+    bottleneck: outside the machines' steps (no worker thread above 60 % in step; max 6 %): the pool's loop or the clients, not told apart
+    requests 1805965 replies 1805965 timed out: 0; publishes new-pocket 0 new-key 439606 superseded 138115 stale 159538 rejected 190; lease-not-active 41; empty pulls 0; unhealthy repeats 0 of 3; wall 4.26 s
 exit code 0
 ```
 
-A second sweep at ce593ec (`ai_tmp/t20-sweep-ce593ec-2.txt`, 11:56:47 PDT, exit code 0
-on its last line) agrees: every rate within 3.3 % on every row and column (the worst is
-(6,18) publishes, 345,524 against 356,902), every p50 within 8 % (the worst is (6,18)
-pull, 127 against 118 us), every p99 within 22 % except (1,1) run 1's publish and pull
-p99 (196 and 219 us against 134 and 142 in run 2), a tail of one three-second window.
-Every row of both runs: `ok` over the 23 invariants named in the preamble, violations
-0, `timed out: 0`, requests equal to replies, `unhealthy repeats 0 of 3`, parks 0,
-lapses 11 to 15. The (1,18) outlier of the earlier 3de4bc1 sweeps
-(`ai_tmp/t20-sweep-final.txt`, `t20-sweep-final-2.txt`, whose run 1 had (1,18) 23 %
-low) did not recur: (1,18) equals (1,1) within 3 %, so partitions cost nothing on one
-worker thread.
+A second sweep at 340e8d0 (`ai_tmp/t20-sweep-340e8d0-2.txt`, 12:51:51 PDT, exit code 0
+on its last line) agrees: every rate within 6 % on every row and column (the worst are
+(6,18) pulls and releases a second, 43,516 against 41,047 and 32,637 against 30,786),
+every p50 within 6 % (the worst is (6,18) pull, 113 against 120 us), every p99 within
+8 % (the worst is (18,18) pull, 446 against 482 us). Every row of both runs: `ok` over
+the 23 invariants named in the preamble, violations 0, `timed out: 0`, requests equal
+to replies, `unhealthy repeats 0 of 3`, parks 0, lapses 11 to 15. The two sweeps at
+ce593ec (`ai_tmp/t20-sweep-ce593ec.txt`, `-2.txt`, both exit code 0) and the two at
+3de4bc1 (`ai_tmp/t20-sweep-final.txt`, `-2.txt`, no exit status recorded) are history
+now; the (1,18) outlier of the 3de4bc1 run 1 recurred in none of the four later runs,
+and (1,18) equals (1,1) within 1 % at 340e8d0, so partitions cost nothing on one worker
+thread. These numbers were derived from the two sweep files by the hand-back writer; the
+load agent's reading of the 340e8d0 sweeps was not written when these notes were.
 
-What is fastest, per column, both runs agreeing on every ordering: publishes a second,
-(6,18) at 346k to 357k, then (18,18) at 242k to 244k, then (1,18) at 233k to 238k and
-(1,1) at 230k to 233k; six worker threads buy 1.5 times one, eighteen buy 4 to 6 %,
-within noise of one. Pulls a second do not rise with worker threads: (1,1), (1,18) and
-(6,18) all at 39k to 41k, and 18 % lower at (18,18), 32k to 33k. Publish p50 is best at
-(6,18), 36 to 38 us, against 53 to 55 at (18,18) and 68 to 69 on one worker thread; pull
-p50 is best on one worker thread, 68 to 69 us, against 118 to 127 at (6,18) and 194 to
-204 at (18,18), the retry round trips. Release p50 is best at (6,18), 34 to 35 us,
-against 68 to 69 on one worker thread, where a release queues behind the publishes.
-Retry pulls are 0 on one worker thread in both rows of both runs, 24k to 26k with six
-and 17k to 19k with eighteen. The picture at 3de4bc1 was the same on every point; no
-number moved by more than 5 %.
+What is fastest, per column, both runs agreeing on every ordering stated here: publishes
+a second, (6,18) at 367k to 384k, then (18,18), (1,1) and (1,18) tied at 244k to 248k,
+within 1.6 % of each other, which the preamble's noise rule says orders nothing; six
+worker threads buy 1.5 to 1.6 times one, eighteen buy nothing. Pulls a second do not
+rise with worker threads: (1,1), (1,18) and (6,18) all at 41k to 44k, and 14 to 17 %
+lower at (18,18), 35k to 36k. Acks and nacks a second, (6,18) at 194k to 204k, then
+(1,1) and (1,18) at 157k to 159k, then (18,18) at 147k to 149k. Publish p50 is best at
+(6,18), 35 to 36 us, against 57 to 59 at (18,18) and 67 on one worker thread; publish
+p99 is best on one worker thread, 119 to 129 us. Pull p50 is best on one worker thread,
+67 to 68 us, against 113 to 120 at (6,18) and 169 to 177 at (18,18), the retry round
+trips; pull p99 likewise, 129 to 137 us against 543 to 565 and 446 to 482. Release p50
+is best at (6,18), 33 to 34 us, against 67 on one worker thread, where a release queues
+behind the publishes. Retry pulls are 0 on one worker thread in both rows of both runs,
+25.8k to 27.6k with six and 19.7k to 19.8k with eighteen. Against ce593ec every
+ordering above is the same except one: there (18,18) led (1,1) and (1,18) by 4 to 6 %
+on publishes a second, and at 340e8d0 the three are tied; the rates themselves moved by
+at most 8 % ((6,18) publishes, 346k to 357k then, 367k to 384k now).
 
 **The bottleneck, as the fixed binary names it.** Every row's bottleneck line reads
 "outside the machines' steps (no worker thread above 60 % in step; max N %): the pool's
-loop or the clients, not told apart", with N at 19 to 20 on one worker thread, 14 to 15
-with six and 7 with eighteen at ce593ec. The caveat is in the preamble: `busy %` is step time only, time
-inside `Machine::step` over the pool's wall, so routing, replies, channel operations,
-allocation and wake-ups are outside it, and the pool exposes no per-thread CPU time. The
-line therefore cannot by itself tell "the pool's loop is the cost" from "the clients
-offer too little", which is why checkpoint 3 renamed it from the earlier "clients" and
-why the client-scaling run below exists. No row names the channels: the outbox high
-water never exceeded 8 against a capacity of 1024 in any sweep, and send-wait p99 for a
-publish never exceeded 14 us, so step 6's clause "only if the table names the channels"
-did not fire.
+loop or the clients, not told apart", with N at 19 on one worker thread, 13 with six and
+6 with eighteen at 340e8d0. The caveat is in the preamble: `busy %` is step time only,
+time inside `Machine::step` over the pool's wall, so routing, replies, channel
+operations, allocation and wake-ups are outside it, and the pool exposes no per-thread
+CPU time. The line therefore cannot by itself tell "the pool's loop is the cost" from
+"the clients offer too little", which is why checkpoint 3 renamed it from the earlier
+"clients" and why the client-scaling run below exists. No row names the channels: the
+outbox high water never exceeded 8 against a capacity of 1024 in any sweep, and
+send-wait p99 for a publish never exceeded 14 us, so step 6's clause "only if the table
+names the channels" did not fire.
 
-**Client scaling**, eight single-repeat runs of 2 s after 1 s warm-up at 3de4bc1 on a
-clean worktree (`ai_tmp/t20-scaling.txt`, 10:44:36 PDT; no exit status in the file; the
-stderr file holds cargo's lines only). The header and the eight rows, verbatim:
+**Client scaling**, eight single-repeat runs of 2 s after 1 s warm-up at 340e8d0 on a
+clean worktree (`ai_tmp/t20-scaling-340e8d0.txt`, 12:52:43 PDT; each run's exit code is
+recorded after its row and the file's last line is
+`exit code (worst of the eight runs) 0`). The header and the eight rows, verbatim:
 
 ```text
-commit 3de4bc1, worktree clean
-N,P   | clients |    pub/s |   pull/s | ack+nack/s | release/s | p50/p99 pub (us) | p50/p99 pull (us) | p50/p99 ack+nack (us) | send-wait p99 pub (us) | retry pulls | msgs local | msgs channel | outbox hwm |   ticks | busy % (max/mean) | lapses | parks | invariants
-1,1   | 8+8     |   245767 |    37286 |     150033 |     27963 |            29/55 |             29/56 |                 29/55 |                      1 |           0 |     271226 |            0 |          2 |     304 |             18/18 |      5 |     0 |         ok
-1,1   | 16+16   |   242644 |    41048 |     155760 |     30784 |           59/114 |            60/118 |                59/113 |                      1 |           0 |     285688 |            0 |          2 |     303 |             19/19 |      5 |     0 |         ok
-1,1   | 32+32   |   240908 |    42852 |     158468 |     32139 |          122/434 |           122/439 |               122/433 |                      1 |           0 |     283703 |            0 |          2 |     303 |             20/20 |      5 |     0 |         ok
-1,1   | 72+72   |   224791 |    41047 |     149923 |     30782 |          283/753 |           284/758 |               283/753 |                      1 |           0 |     257755 |            0 |          2 |     303 |             22/22 |      5 |     0 |         ok
-6,18  | 8+8     |   268442 |    35399 |     153432 |     26549 |            24/68 |            41/163 |                 23/65 |                     12 |       11290 |      46988 |       232046 |          2 |    1818 |              13/9 |      5 |     0 |         ok
-6,18  | 16+16   |   364970 |    41950 |     194945 |     31461 |           34/147 |            94/521 |                33/142 |                      9 |       20817 |      51451 |       275254 |          2 |    1819 |             14/10 |      5 |     0 |         ok
-6,18  | 32+32   |   347201 |    37792 |     181329 |     28346 |           47/429 |           312/809 |                44/426 |                      8 |        5243 |      38626 |       228800 |          2 |    1812 |             16/11 |      5 |     0 |         ok
-6,18  | 72+72   |   318458 |    47357 |     189014 |     35518 |          73/1161 |          567/1339 |               63/1135 |                      8 |         578 |      46043 |       274259 |          2 |    1818 |             15/10 |      5 |     0 |         ok
+commit 340e8d0, worktree clean
+N,P   | clients |    pub/s |   pull/s | ack+nack/s | release/s | p50/p99 pub (us) | p50/p99 pull (us) | p50/p99 ack+nack (us) | p50/p99 release (us) | send-wait p99 pub (us) | retry pulls | msgs local | msgs channel | outbox hwm |   ticks | busy % (max/mean) | lapses | parks | invariants
+1,1   | 8+8     |   244398 |    37087 |     149242 |     27816 |            29/54 |             29/56 |                 29/54 |                29/53 |                      1 |           0 |     273126 |            0 |          2 |     303 |             19/19 |      5 |     0 |         ok
+1,1   | 16+16   |   238236 |    40304 |     152988 |     30228 |           60/117 |            60/119 |                60/117 |               60/115 |                      1 |           0 |     291034 |            0 |          2 |     303 |             19/19 |      5 |     0 |         ok
+1,1   | 32+32   |   223259 |    39730 |     146895 |     29796 |          132/556 |           132/561 |               132/554 |              132/557 |                      1 |           0 |     268892 |            0 |          2 |     303 |             22/22 |      5 |     0 |         ok
+1,1   | 72+72   |   237403 |    43293 |     158388 |     32472 |          283/655 |           284/657 |               283/655 |              283/654 |                      1 |           0 |     256794 |            0 |          2 |     304 |             21/21 |      5 |     0 |         ok
+6,18  | 8+8     |   267164 |    35017 |     152111 |     26262 |            24/67 |            41/167 |                 24/65 |                24/64 |                     12 |       11096 |      46695 |       229305 |          2 |    1818 |              13/9 |      5 |     0 |         ok
+6,18  | 16+16   |   344670 |    39089 |     182557 |     29316 |           34/176 |           111/523 |                32/173 |               32/173 |                     10 |       19989 |      48644 |       266040 |          2 |    1812 |             14/10 |      5 |     0 |         ok
+6,18  | 32+32   |   351000 |    36420 |     179234 |     27313 |           44/442 |           339/766 |                42/438 |               41/434 |                      9 |        3933 |      35544 |       220416 |          2 |    1823 |             15/10 |      5 |     0 |         ok
+6,18  | 72+72   |   356091 |    40300 |     193491 |     30220 |          72/1038 |          762/1386 |                64/991 |               59/956 |                      7 |         305 |      35143 |       250339 |          2 |    1818 |             16/11 |      5 |     0 |         ok
+exit code (worst of the eight runs) 0
 ```
 
-All eight runs `ok`, violations 0, `timed out: 0`, requests equal to replies, parks 0,
-lapses 5 (the stalled consumer's). The table resolves the "not told apart" label. At
-(1,1) publishes a second are flat, 246k, 243k, 241k, 225k from 8+8 to 72+72 clients,
-while publish p50 grows linearly with the client count, 29, 59, 122, 283 us: a closed
-loop whose throughput stays put while its latency scales with the offered concurrency is
-served by a saturated server, so on this host on this day one worker thread saturates at
-about 450k client inputs a second (publishes, pulls, settles and releases summed) with
-step time one fifth of it, and the other four fifths is the pool's loop: the lane
-`try_recv` bursts, the envelope and reply-channel allocation, the reply `send`, the
-wake-ups. Not the clients, and not the machines. At (6,18) publishes a second rise from
-268k at 8+8 to 365k at 16+16 and then fall, 347k and 318k, as 32+32 and 72+72 client
-threads oversubscribe the 18 cores beside the six worker threads, pull p99 reaching
-1.3 ms; the sweep's 18+18 point sits on that plateau. So the clients cap no row of the
-sweep, and with six worker threads the limit is the loop plus the cross-worker-thread
-retry round trips and the host's oversubscription. The machines are nowhere near a limit
-in any row. The scaling runs were taken at 3de4bc1 and not re-measured at ce593ec; the
-round 2 fixes between the two commits changed the health reporting and the columns, not
-the measurement path, and the ce593ec sweep moved no number by more than 5 % from
-3de4bc1, so the conclusion stands as taken at 3de4bc1.
+All eight runs `ok`, violations 0, `timed out: 0`, requests equal to replies,
+`unhealthy repeats 0 of 1`, parks 0, lapses 5 (the stalled consumer's). The table
+resolves the "not told apart" label. At (1,1) publishes a second are flat, 244k, 238k,
+223k, 237k from 8+8 to 72+72 clients, while publish p50 grows linearly with the client
+count, 29, 60, 132, 283 us: a closed loop whose throughput stays put while its latency
+scales with the offered concurrency is served by a saturated server, so on this host on
+this day one worker thread saturates at about 450k client inputs a second (publishes,
+pulls, settles and releases summed: 440k to 472k over the four rows) with step time one
+fifth of its wall, and the other four fifths is outside the steps: the pool's loop (the
+lane `try_recv` bursts, the envelope and reply-channel allocation, the reply `send`, the
+wake-ups) and whatever share of the thread's wall the host's scheduling took, which
+`busy %` divides by wall time and cannot tell apart; parks were 0 in every row. Not the
+clients, and not the machines. At (6,18) publishes a second rise from 267k at 8+8 to
+345k at 16+16 and then sit on a plateau, 351k and 356k, while pull p50 grows from 41 to
+111, 339 and 762 us and pull p99 reaches 1.4 ms as 32+32 and 72+72 client threads
+oversubscribe the 18 cores beside the six worker threads; the sweep's 18+18 point sits on
+that plateau. So the clients cap neither (1,1) nor (6,18), the two rows scaled; (1,18)
+equals (1,1) within 1 % in the sweeps, and (18,18) was not scaled and is oversubscribed
+by construction (below). With six worker threads the limit is the loop plus the
+cross-worker-thread retry round trips and the host's oversubscription. The machines are
+nowhere near a limit in any row. The scaling runs were re-run at 340e8d0 after the
+round 2 fixes (`ai_tmp/t20-scaling-340e8d0.txt`, exit code 0 on its last line); the
+earlier runs at 3de4bc1 (`ai_tmp/t20-scaling.txt`) showed the same shape, with the
+(6,18) row falling rather than sitting flat past 16+16. A side observation: at (6,18)
+retry pulls fall as clients rise (11k, 20k, 4k, 305), because deeper order-machine
+queues let the `PocketBecame` on the peer lane land before the consumer's next `Pull`;
+scheduling luck, not a fix.
 
 Two more caveats. Every sweep row runs N worker threads plus 36 client threads on 18
 cores, so (18,18) is oversubscribed by construction and its numbers say what that
 costs, not what eighteen worker threads would do alone. And the warm-up is at full
 load, so `busy %`, which divides by the whole pool wall including warm-up and the stop
 drain, is slightly diluted, equally for every row. Why no crate was tried: the channels
-were never near capacity in any run, the limit is the pool's own loop and the
-closed-loop clients, and step 6 puts a crate behind the interface only when the table
-names the channels. The numbers compare configurations on this host on this day and
-claim nothing else.
+were never near capacity in any run, the limit is outside the machines' steps, in the
+pool's own loop or the host's scheduling of the worker thread and never in the channels,
+and step 6 puts a crate behind the interface only when the table names the channels. The
+numbers compare configurations on this host on this day and claim nothing else.
 
 Before the B8 fix the (1,1) and (1,18) rows looked worse on the pull side for a reason
 that was a defect, not a property of one worker thread. Pre-fix at 110e006 against
-post-fix at 110e006 with uncommitted changes, run 1 of each from the load agent's report:
+post-fix at 110e006 with uncommitted changes, run 1 of each from the load agent's report
+(`ai_tmp/t20-sweep.txt` and `t20-sweep-post.txt`, neither of which records an exit
+status):
 
 | N,P | pull/s before / after | retry pulls before / after | p50/p99 pull (us) before / after |
 | --- | --- | --- | --- |
@@ -1144,30 +1238,37 @@ Drafted record text, status "proposed, the maintainer's to take":
 > invariants checked after every step [the scripted invariants test; 23 invariants `ok`
 > in every measured row], the lease identifier acted as the fencing token [the three
 > fencing tests and break 2], and the pool never blocked a worker thread on a send
-> [the flood test at capacity 1 with both lanes full]. On the host the pool stepped the
-> machines in a fifth of a worker thread's time and spent the rest in its own loop [the
-> client-scaling table at (1,1): flat throughput, latency linear in the clients]; six
-> worker threads bought 1.4 to 1.5 times one for publishes and nothing for pulls, and
-> eighteen bought nothing [the two sweeps at ce593ec, and the two at 3de4bc1]; one worker
-> thread gave the lowest pull latency by two times [the same sweeps, pull p50].
+> [the flood test at capacity 1 with both lanes full]. On the host the machines' steps
+> took a fifth of a saturated worker thread's wall and the rest was outside them, in the
+> pool's loop or the host's scheduling, not in the clients [the client-scaling table at
+> (1,1): flat throughput, latency linear in the clients]; six worker threads bought 1.5
+> to 1.6 times one for publishes and nothing for pulls, and eighteen bought nothing [the
+> two sweeps at 340e8d0; the same ordering at ce593ec and 3de4bc1]; one worker thread
+> gave the lowest pull latency, by 1.7 times over six worker threads and 2.5 over
+> eighteen [the same sweeps, pull p50].
 >
 > **Decision.** The service runs the domain as single-threaded machines over partitions
 > of pockets, decomposition B, on a bounded pool of long-lived worker threads whose
 > count is configuration, with the pocket order and the lease routing in one order
 > machine; the machines are library code with `now` as a value and the pool is service
-> code behind effect traits for the clock and threads. The pool's loop, not the machines,
-> is where the next effort goes if more throughput is wanted [the scaling table].
+> code behind effect traits for the clock and threads. Outside the machines' steps, not
+> in them, is where the next effort goes if more throughput is wanted [the scaling
+> table; the spike reports step time over wall time only].
 >
 > **Consequences.** The window between a pocket machine's decision and the order
 > machine's hearing of it is observable through `Pull` [Representation item 2], and the
 > specification must say which reading of `free` it means before the implementation
 > ticket starts [Open points, the C1 question]. Positions come from two single-writer
 > counters, which the specification must either adopt or rule out [Representation item
-> 1]. Partitions cost nothing on one worker thread and the thread count is a deployment
-> choice, so the first deployment may run one worker thread and lose nothing but
-> publish throughput on a loaded host [the (1,1) against (1,18) rows and the pub/s
-> column]. The transport half of the spike has not run; this record settles the
-> execution model alone, or waits for it (Open points).
+> 1]. Partitions cost nothing on one worker thread [the (1,1) against (1,18) rows] and
+> the thread count is a deployment choice, so the first deployment may run one worker
+> thread and keep the best pull latency, at the cost of a third of the publish
+> throughput, a fifth of the ack and nack throughput and 1.9 to 2 times the publish and
+> release p50 on a loaded host [the (1,1) against (6,18) rows at 340e8d0 run 1: 246k
+> against 384k publishes a second, 159k against 204k acks and nacks a second, publish
+> p50 67 against 35 us, release p50 67 against 33 us, pull p50 67 against 113 us]. The
+> transport half of the spike has not run; this record settles the execution model
+> alone, or waits for it (Open points).
 
 Implementation-ticket outline, as a proposal:
 
@@ -1184,8 +1285,8 @@ Implementation-ticket outline, as a proposal:
   on sleeps.
 - Open questions to settle before the ticket is written: the Release-then-Pull window
   (close it with the extra hop, or specify the stream-order reading); A versus B
-  revisited with the retry numbers in hand (B's extra hop on a pull after a release or a
-  lapse against A's hop on every consumer action); and whether the superseding record
+  revisited with the retry numbers in hand (B's two extra hops on a pull after a release
+  or a lapse against A's hop on every consumer action); and whether the superseding record
   waits for the transport half.
 
 ### Claims
@@ -1198,35 +1299,36 @@ if found." `spikes/worker-pool/Cargo.toml` matches, so only the `rust-version` r
 manager needed the path (`renovate.json` line 109). Holds; the dashboard shows it only
 after the merge.
 
-Claim 5 holds. Timed at ce593ec (`ai_tmp/t20-clippy-timing.txt`, 11:58:01 PDT, the
-file headed "1 uncommitted paths", this ticket's notes) on the host, with the workspace
+Claim 5 holds. Timed at 340e8d0 on a clean worktree
+(`ai_tmp/t20-clippy-timing-340e8d0.txt`, 12:53:34 PDT) on the host, with the workspace
 and fuzz targets already warm, so "cold" means the spike's own target only, removed
 before each cold run; all four exit 0. The zsh time lines as the file holds them:
 
 ```text
-commit ce593ec, 1 uncommitted paths
+commit 340e8d0, 0 uncommitted paths
 $ rm -rf spikes/worker-pool/target; time just clippy   (cold)
 cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings
     Checking worker-pool v0.0.0 (.../spikes/worker-pool)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.76s
-just clippy  1.24s user 0.44s system 136% cpu 1.229 total
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
+just clippy  1.12s user 0.31s system 173% cpu 0.828 total
 exit=0
 
 $ time just clippy   (warm)
-just clippy  0.09s user 0.06s system 83% cpu 0.181 total
+just clippy  0.09s user 0.06s system 84% cpu 0.178 total
 exit=0
 
 $ rm -rf spikes/worker-pool/target; time cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings   (spike line alone, cold)
-cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   1.06s user 0.23s system 222% cpu 0.579 total
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   1.09s user 0.24s system 223% cpu 0.593 total
 exit=0
 
 $ time cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets --locked -- -D warnings   (spike line alone, warm)
-cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   0.03s user 0.02s system 80% cpu 0.054 total
+cargo clippy --manifest-path spikes/worker-pool/Cargo.toml --all-targets  --   0.03s user 0.02s system 81% cpu 0.056 total
 exit=0
 ```
 
 The spike adds under a second to a cold `just clippy` and about nothing to a warm one,
-against T16's 7.87 s cold and 0.06 s warm for `fuzz/`.
+against T16's 7.87 s cold and 0.06 s warm for `fuzz/`. The earlier timing at ce593ec
+(`ai_tmp/t20-clippy-timing.txt`) read 1.229 s cold and 0.181 s warm.
 
 ### Adversarial reviews
 
@@ -1290,7 +1392,8 @@ test exit 0
 
 Handed back: none. No fix touched the protocol or a machine. The apply report's result
 lines, at 110e006 with uncommitted changes, after 30 of 30 runs of the pool target
-passed; the fixes landed in 109ddb0:
+passed; the report records no exit status for the clippy or test run, so the `Finished`
+and `test result` lines are the evidence; the fixes landed in 109ddb0:
 
 ```text
 110e006 with uncommitted changes
@@ -1341,7 +1444,8 @@ maintainer's added checkpoint), over 109ddb0 and the post-fix sweeps, two lenses
 
 Handed back: C4 and B7 (the configuration page), and the re-run of the sweep at the
 final commit, which the triage required regardless. The apply report's result lines, at
-109ddb0 with uncommitted changes; the fixes landed in 3de4bc1:
+109ddb0 with uncommitted changes; the report records no exit status for the test run,
+so the `test result` lines are the evidence; the fixes landed in 3de4bc1:
 
 ```text
 109ddb0 with uncommitted changes
@@ -1390,9 +1494,57 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 ```
 
-**Checkpoint 4, the whole diff and these notes** (ticket step 8's marked checkpoint 2):
+**Checkpoint 4, the whole diff and these notes** (ticket step 8's marked checkpoint 2),
+over `git diff main...HEAD` and the hand-back as committed at 913f1b1, two lenses; the
+same harness, model and procedure as above. Briefs under `ai_tmp/review/T20-4/`,
+findings in `findings-conformance.md` and `findings-breakage.md`, verdicts in
+`verdicts-conformance.md` and `verdicts-breakage.md`, the code fixes in
+`apply-code-report.md`. The reviewer ran the protected-path diffs (`crates`,
+`docs/specs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, `docs/decisions`,
+`pyproject.toml`, `docs/manifest.yml`, `CHANGELOG.md`, `.github`) at 913f1b1 and found
+only 0016's lockfile count; terminology leaks: none found.
 
-<!-- checkpoint 4 -->
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| C1 | low | VALID | Six quoted blocks and two tables rested on files that record no exit status, or no commit, without the notes saying so: five clauses now say "records no exit status" or "records no commit; first committed in 110e006"; nothing invented. |
+| C2 | medium | VALID | The client-scaling table was taken at 3de4bc1 and the notes said the round 2 fixes did not touch the measurement path, which was false (two edits in `clients.rs` on the counting path): the eight runs were re-taken at 340e8d0 with the exit status recorded, the quote replaced and the "not re-measured" sentence dropped. |
+| C3 | medium | VALID | B's retry path costs four hops when the retry claims a pocket and three when none is queued, not "2, or 3": the hop row names `RetryPull` and the fresh `Claim` and counts 4 or 3; the outline says "two extra hops". |
+| C4 | medium | VALID | A's paragraph charged renew a pocket operation the rule does not make, and omitted the joins, the no-pocket pull and the decays: renew is order alone, 1 hop; the four rows added in prose. |
+| C5 | medium | VALID | "The other four fifths is the pool's loop" apportioned what `busy %` (step time over wall time) cannot: weakened to "outside the steps: the pool's loop or the host's scheduling, not told apart" in five places, and "the clients cap no row" scoped to the two rows scaled. |
+| C6 | medium | VALID | Three quantitative summaries overstated the runs: (1,1) and (1,18) are a tie; "no number moved by more than 5 %" was false (up to 10 %, 27 % for the 3de4bc1 outlier); the record's "lose nothing but publish throughput" now lists what (1,1) loses against (6,18). |
+| B1 | medium | VALID | The notes quoted only the 364d921 baseline, not a post-change `just check` nor the network-denial run with its two controls: the "Gate" section above quotes both at 340e8d0. |
+| B2 | low | VALID | The median repeat was chosen by raw publish count while every promise says publishes a second, and the divisor is each repeat's own window: `select` now sorts by `publishes_per_second` with `total_cmp`, with a pinning test, fixed in 340e8d0. |
+
+No high finding, so no second round. Handed back: none. The re-run evidence the fixes
+made stale (the sweep, the scaling runs, the clippy timing and the gate) is quoted at
+340e8d0 above.
+
+**Code review** (`/code-review medium main` over `git diff main...HEAD` at 913f1b1, the
+Claude Code code-review skill on Claude Fable 5.1, high-effort recipe, a different
+harness from the checkpoints): findings in `ai_tmp/review/T20-cr/findings.md` (R1 to
+R10), verdicts in `ai_tmp/review/T20-cr/verdicts.md`, the fixes in
+`ai_tmp/review/T20-4/apply-code-report.md`. The bar: VALID-FIX is a real defect against
+the spike's promises or the gates with a fix of a few lines; hardening or performance
+preferences on a throwaway crate are VALID-DOC, one sentence each under Open points.
+
+| Id | Severity reviewed | Verdict | What happened |
+| --- | --- | --- | --- |
+| R1 | medium | VALID-FIX | A client-built lease identity naming a partition the pool lacks was routed by modulo, counted as misrouted and never answered, breaking the one-reply promise: `route()` folds the index into the pool's range so the pocket machine answers `UnknownLease`; a unit test and a `Direct` test. |
+| R2 | low | VALID-DOC | A zero tick interval makes every worker thread spin; the implementation rejects it (Open points). |
+| R3 | low | VALID-FIX | The three unit constructors in `time.rs` multiplied without saturating while `plus` and `since` saturate: `saturating_mul` in each, with a test at `u64::MAX`. |
+| R4 | low | VALID-DOC | A refused `Claim` would strand its consumer under a lease no pocket machine granted; unreachable by construction, the implementation rolls back or notifies (Open points). |
+| R5 | low | VALID-DOC | The load counts a refused send and a dropped reply handle as a timeout; no completed run can show it (Open points). |
+| R6 | low | VALID-FIX | The outbox drain's `Disconnected` arm dropped an envelope without releasing its in-flight token, unlike the other arm: one line, with a unit test. |
+| R7 | low | VALID-FIX | `Direct::new` built zero pocket machines for zero partitions where the pool clamps to one: clamped, with a test. |
+| R8 | low | VALID-DOC | The outbox high-water mark is an O(worker threads) scan per message (Open points). |
+| R9 | low | VALID-DOC | The nanosecond and `usize` saturating conversions are written four times (Open points). |
+| R10 | low | VALID-FIX | `docs/operations/maintenance.md` and `renovate.json` counted the toolchain's places as three where five files take their version from the image: "all five" and "five places". |
+
+All five VALID-FIX findings and checkpoint 4's B2 landed in 340e8d0; the apply report
+records exit 0 for `just spike-test`, `just fmt-check` (after `just fix` reflowed one
+closure), `just clippy`, `just deny`, `just lock-check` and `just check-docs`, and the
+Renovate configuration validator did not run because it reaches the network and the
+change is to a description string only. No VALID-FIX changed a machine's step semantics.
 
 ## Open points
 
@@ -1478,3 +1630,36 @@ Added at hand-back on 2026-10-31:
   defect at HEAD. Each step's commit must carry every module its `lib.rs` declares; the
   check is `git ls-tree -r --name-only HEAD spikes/worker-pool/src` against the
   `pub mod` lines.
+
+From the code review (R2, R4, R5, R8 and R9, VALID-DOC), for the implementation ticket:
+
+- `PoolConfig::with_tick_interval` and `--tick-ms` accept zero, which makes every worker
+  thread tick on every iteration and `park_timeout(0)` in `idle`, a full spin whose busy
+  and tick columns mean nothing; the spike's runs all used 5 ms or more. The
+  implementation validates its configuration (a positive tick, positive TTLs) and rejects
+  a zero rather than clamping it, since a 1 ns floor still spins.
+- A refused `Claim` strands its consumer: the order machine records the lease and the
+  `Leased` view before the `Claim` is confirmed, and the pocket machine answers a `Claim`
+  on a pocket that is absent or not queued with `Rejected(Protocol)` and a counted
+  violation, with no `PocketBecame`, so from then on every `Pull` by that consumer is
+  forwarded under a lease no pocket machine granted and answered `Rejected(Protocol)`,
+  and the pocket never re-enters the order. Unreachable in the spike (a pocket is queued
+  in its machine before the `Enqueue` or `PocketBecame` that puts it in the order, every
+  such message rides one FIFO lane, and once queued it leaves that status only by the one
+  `Claim` sent for its one order entry), and `tests/window.rs` and the sweep show zero
+  violations. The implementation either has the pocket machine answer a refused `Claim`
+  with a notification that rolls back the routing and the view, or records the lease
+  only when the pocket machine confirms it, at one more hop per claim; it does not leave
+  a protocol violation as a silent strand.
+- The load's tally counts a refused send and a dropped reply handle as `timed_out`; in
+  the spike neither reaches a printed row, because the only mid-run cause is a worker
+  thread panic that `Pool::start` re-raises, but the implementation's client keeps
+  `Timeout`, `NoReply` and `Send` apart, as `CallError` already does, so a lost worker
+  thread is never reported as a client timeout.
+- `enqueue` recomputes the sum of every outbox's length to update `outbox_high_water`,
+  an O(worker threads) walk per message; the implementation keeps a running count of
+  waiting messages, decremented where the outboxes pop, and the sweep is the place to
+  show whether it matters.
+- The nanosecond and `usize` saturating conversions are written four times (twice in the
+  load, twice in the worker thread's loop); the implementation gives `libpachinko`'s
+  duration type one saturating conversion the service side imports.
