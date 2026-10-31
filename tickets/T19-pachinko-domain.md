@@ -1,7 +1,7 @@
 ---
 id: T19
 title: "Pachinko domain: the first behavioural module"
-status: todo
+status: done
 depends_on: [T18]
 parallel_with: []
 branch: ticket/t19-pachinko-domain
@@ -349,6 +349,34 @@ the unobservable lease extension above.
 Run over the complete change, this section included, immediately before the commit; the
 commit is the only change after it. `git status --short` after the commit is in the
 hand-over.
+
+```text
+just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
+### Landing: `633f05e` with uncommitted changes
+
+On 2026-10-31 the user invoked `/show-me` followed by `/visual-pr` and asked for the pull
+request to be opened with the diagrams in its description; that request is the
+authorisation for `git fetch origin`, the push and the pull request. `git fetch origin`
+found `origin/main` still at `a1435d6`, so no rebase or merge was needed and every quote
+above stands. Pushed `ticket/t19-pachinko-domain` at `633f05e` and opened pull request 34,
+`https://github.com/BiscuitBin/pachinko/pull/34`, whose description carries the pocket and
+record lifecycles, the approved trace, the lapse chain and the file tree. The description
+is saved at `ai_tmp/pr/pr-34/description.md`, under `ai_tmp/` rather than `.humanlayer/`
+because nothing ignores the latter and an untracked file would dirty the worktree.
+
+CI for `633f05e`, in progress when this was written: run
+`https://github.com/BiscuitBin/pachinko/actions/runs/41185354096` (CI) and
+`https://github.com/BiscuitBin/pachinko/actions/runs/41185353977` (Audit). Their
+conclusions are read on the pull request; a pull request's tested commit is the merge
+commit, not the branch head.
+
+`status:` is set to `done` in this commit, in the same pull request, as the definition of
+done requires. `just check` ran over this change, this section included, immediately
+before the commit:
 
 ```text
 just check

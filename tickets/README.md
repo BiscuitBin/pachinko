@@ -42,7 +42,7 @@ snapshot.
 | T16 | Benchmarks and fuzzing: a divan bench, a fuzz crate on stable, a weekly fuzz job | `T16-bench-and-fuzz.md` | T11 | T12 to T15 | done |
 | T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | done |
 | T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | done |
-| T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | todo |
+| T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07.
