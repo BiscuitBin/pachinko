@@ -3,10 +3,17 @@ resolver = "3"
 members = ["crates/*"]
 exclude = ["fuzz"]
 
+[workspace.dependencies]
 # Decision 0007: divan times the smoke benchmark, as a development dependency
 # only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
-[workspace.dependencies]
 divan = "0.1.21"
+# Decision 0007: thiserror derives libpachinko's error enums (AGENTS.md invariant
+# 10). A proc macro that adds no runtime code; MIT or Apache-2.0; MSRV 1.77.
+thiserror = "2.0.21"
+# Decision 0007: proptest drives libpachinko's property tests, the framework the
+# propagate skill names for Rust; development only, so outside consumer graphs and
+# outside `just effects`, which reads the normal tree. MIT or Apache-2.0; MSRV 1.88.
+proptest = "1.12.0"
 
 [workspace.package]
 edition = "2024"
