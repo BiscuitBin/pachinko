@@ -137,7 +137,8 @@ impl FakeClock {
         self.millis.store(to.as_millis(), Ordering::SeqCst);
     }
 
-    /// Moves every clone of this clock forward by `by`, saturating.
+    /// Moves every clone of this clock forward by `by`, saturating. The move is one
+    /// atomic read-modify-write, so clones advancing at once lose no time.
     ///
     /// ```
     /// use std::time::Duration;
@@ -147,7 +148,10 @@ impl FakeClock {
     /// assert_eq!(clock.now(), Timestamp::from_millis(1_000));
     /// ```
     pub fn advance(&self, by: Duration) {
-        self.set(self.now() + by);
+        self.millis
+            .update(Ordering::SeqCst, Ordering::SeqCst, |millis| {
+                (Timestamp::from_millis(millis) + by).as_millis()
+            });
     }
 }
 
@@ -198,5 +202,12 @@ mod tests {
         assert_eq!(clock.now(), Timestamp::from_millis(105));
         clock.set(Timestamp::from_millis(1));
         assert_eq!(other.now(), Timestamp::from_millis(1));
+    }
+
+    #[test]
+    fn advancing_a_fake_clock_saturates_at_the_largest_timestamp() {
+        let clock = FakeClock::new(Timestamp::from_millis(u64::MAX - 1));
+        clock.advance(Duration::MAX);
+        assert_eq!(clock.now(), Timestamp::from_millis(u64::MAX));
     }
 }
