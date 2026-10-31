@@ -70,7 +70,7 @@ implemented; `just check` is green.
 
 | Path | Class | Content |
 | --- | --- | --- |
-| `docs/specs/pachinko.allium` | final | The module: the placeholder header replaced by Scope, Includes, Excludes, Dependencies and Vocabulary; seven entities; config; the rules for publish, supersede, revive, pull, ack, nack, renew, release, lease expiry and decay; the invariants; two surfaces; the open questions |
+| `docs/specs/pachinko.allium` | final | The module: the placeholder header replaced by Scope, Includes, Excludes, Dependencies and Vocabulary; eight entities; config; the rules for publish, supersede, revive, pull, ack, nack, renew, release, lease expiry and decay; the invariants; two surfaces; the open questions |
 | `docs/project/terminology.md` | shared, own lines | The domain table above the repository table; the repository's `Consumer` row renamed `Caller`; the library row no longer says the domain is undefined |
 | `docs/how-to/work-with-the-specs.md` | shared, own lines | The intro, the module table row, the module section and the open-question section |
 | `docs/explanation/specifications.md` | shared, own lines | "What exists today" and "Open questions are a feature" |
@@ -206,18 +206,20 @@ The decision table, row by row:
 - Pull outcomes: `PullWithinLease`, `PullClaimsFrontPocket` and `PullFindsNoPocket`, which
   emit `Batch` or `NoPocketAvailable` and reject nothing; the pull has no `limit` guard,
   so a non-positive limit yields an empty batch rather than an error; invariant
-  `PullBatchPositive` keeps `max_pull_batch` at 1 or more.
+  `PullBatchPositive` keeps `max_pull_batch` at 1 or more. `Batch` names the lease the
+  records were handed under.
 - Lease: invariants `OneActiveLeasePerPocket`, `OneActiveLeasePerConsumer`,
   `LeasedHasOneActiveLease` and `UnleasedHasNoActiveLease`; every rule that continues a
   lease (`PullWithinLease`, the two ack rules, the two nack rules and `Renew`) sets
   `expires_at = now + config.lease_ttl`; the two release rules and the three lapse rules
-  end it; `Renew` is the heartbeat.
+  end it; `Renew` is the heartbeat. Ack, nack, renew and release carry the lease they act
+  under and require it to be active and the consumer's; guarantee `ActionsNameTheirLease`.
 - Expiry: `LeaseLapses` and the three `LeaseExpiry*` rules, with `RequeueHeldRecord` and
   `RequeueDeferredRecord`; guarantee `ExpiryRecoversWithinTtl`; invariants
   `ExpiriesWithinLimit`, `ExpiryLimitPositive`, `PullBatchPositive`, `LeaseTtlNonNegative`,
   `SupersededTtlNonNegative` and `DeadLetterTtlNonNegative`; the last five are over
   config, which the pinned checker accepts, and the implementation reads them as checks at
-  config load; the queued path leaves `enqueued_at` alone, so the pocket keeps the front;
+  config load; the queued path leaves the pocket's position alone, so it keeps the front;
   `ReleaseRequeuesPocket` and `ReleaseIdlesEmptyPocket` reset the count.
   `LeaseExpiryIdlesEmptyPocket` is the agent's reading for a pocket with no records,
   listed in Open points.
@@ -384,6 +386,73 @@ All checks passed and the worktree is unchanged.
 Exit status: 0
 ```
 
+### Pull request review: `bb90641` with uncommitted changes
+
+Pull request 34 drew one review, from GitHub Copilot on 2026-10-31, with two threads on
+the module; the user asked for the valid ones to be fixed, replied to and closed. Both
+were valid.
+
+- Thread on the `Consuming` surface (high): ack, nack, renew and release carried only the
+  consumer, the pocket and a key, and the rules found the lease as the consumer's active
+  one on that pocket, so a delayed ack for a lease that had lapsed could settle the record
+  the same consumer held again under a new lease over the same pocket, and a delayed renew
+  or release acted on the new lease. Open question 8 covers a late action before the lapse
+  is processed, not one after a successor lease exists. Fixed: the actions name the lease
+  (`Ack(consumer, lease, record_key)`, `Nack(consumer, lease, record_key)`,
+  `Renew(consumer, lease)`, `Release(consumer, lease)`), the rules require it active and
+  the consumer's and take the pocket from it, `Batch` names the lease, and guarantee
+  `ActionsNameTheirLease` states it. `PullClaimsFrontPocket` creates its lease unbound in
+  the same rule and the emission looks it up in the resulting state; the checker accepts
+  that form but validates no emission parameter, so the lookup rests on the reference's
+  semantics. `Pull` keeps its signature: a stale pull lands on the current lease and
+  settles nothing.
+- Thread on the pull section's black-box comment (medium): two pockets could share an
+  `enqueued_at` when a publish and a release fall in one clock tick, so `min_by` could put
+  the released pocket ahead of the newer one, against the release decision; two records
+  could share a `queued_at` the same way. Fixed: both orderings are by `position`, taken
+  from the deployment's one `Queue`, bound in a `given` block as the Scope's "one queue of
+  pockets", whose `next_position` every assigning rule takes and advances; a supersede and
+  a lapse keep a position, a publish, deferral, release or revival takes a fresh one. Four
+  invariants, `UniquePocketPosition`, `UniqueRecordPosition`, `PocketPositionsBelowNext`
+  and `RecordPositionsBelowNext`, state what the counter guarantees. A black-box
+  `next_position()` was rejected: black boxes are deterministic for the same inputs within
+  a rule, so the pocket and its first record in `PublishIntoNewPocket` would collide.
+
+The design was probed on scratch copies before it touched the module; the probes also
+showed that the checker accepts `given` without a creating rule and rejects the bindings
+without it, and the two further limits now listed in Open points. The witness lines above
+(Pull outcomes, Lease, Expiry) and the deferral reading in Open points were edited in place
+to say position and lease where they said `enqueued_at`, `queued_at` and pocket.
+
+```text
+just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just plan-spec pachinko
+190 obligations, 0 diagnostics
+Exit status: 0
+
+just check-docs
+markdownlint.............................................................Passed
+typos....................................................................Passed
+lychee...................................................................Passed
+bg-validate-docs
+Validated 44 pages and 45 canonical topics.
+Exit status: 0
+
+just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+```
+
+The commit that follows carries this section; its push updates the pull request, the two
+threads get replies naming it, and both are resolved.
+
 ## Open points
 
 - The module's nine open questions are the maintainer's to answer; seven come from the
@@ -395,7 +464,10 @@ Exit status: 0
   but before the lapse is processed; and a key published again under the lease that
   removed its record. The maintainer asked for a `research` task on the rank tie, covering
   the literature, comparable queues and databases, user expectation and configurability,
-  and a survey of comparable open-source queues.
+  and a survey of comparable open-source queues. The pull request review narrowed open
+  question 8 without answering it: a late action now names its lease, so it can no longer
+  land on a successor lease, and the question that remains is whether it may extend the
+  lease it names.
 - Config defaults: `max_pull_batch = 100` is the agent's placeholder; `lease_ttl =
   5.minutes`, `max_consecutive_expiries = 3`, `superseded_ttl = 12.hours` and
   `dead_letter_ttl = 12.hours` are the sketch's. The parking preview the maintainer
@@ -410,11 +482,11 @@ Exit status: 0
   equality; whether any TTL needs a positive floor is a decision the maintainer has not
   taken.
 - Readings the elicitation did not cover, each a one-line confirmation for the maintainer:
-  - Deferral position: the module stamps the deferred record's `queued_at` when the held
+  - Deferral position: the module gives the deferred record a fresh position when the held
     version is acked or nacked, following the maintainer's words that the newer version
     "restarts at the back of the pocket" and the approved read-back ("re-queued at the
     back" at ack). A key published into the pocket between that ack and the release
-    therefore queues behind the deferred record; the alternative stamps it when the lease
+    therefore queues behind the deferred record; the alternative assigns it when the lease
     ends.
   - Release and `expires_at`: no elicitation question asked it, but the approved read-back
     says every pull, ack, nack, renew and release moves `expires_at` forward by the TTL.
@@ -442,6 +514,18 @@ Exit status: 0
     and a later publish entering as a new queued record, as the model the maintainer
     approved. The module keeps the approved model and asks; if the maintainer chooses one
     visit per key, the `Visit` design is the ready answer.
+  - Actions name their lease: after the pull request review, `Batch` names the lease the
+    records were handed under, and ack, nack, renew and release carry that lease and are
+    rejected once it has ended, so a delayed action cannot land on a successor lease over
+    the same pocket. The lease entity is the identity; no id field was added, since the
+    wire form is decision 0014's. The maintainer confirms the shape.
+  - Ordering by position: after the pull request review, pockets and records are ordered by
+    a position taken from the deployment's one `Queue`, a `given` instance whose counter
+    every assigning rule advances, in place of the `enqueued_at` and `queued_at`
+    timestamps, which could tie within one clock tick. A supersede and a lapse keep a
+    position; a publish, deferral, release or revival takes a fresh one. Four invariants
+    state uniqueness and the bound. The maintainer confirms the model and whether the
+    counter's start value should be stated with a `default`.
 - `SupersededRecord.reason` and `DeadLetter.nacked_by` are kept on the assumption in open
   question 2; nothing reads them yet, and the checker did not object.
 - The word "consumer" in the generic sense of a library's caller remains in
@@ -450,14 +534,17 @@ Exit status: 0
   and several decision records, while `docs/project/terminology.md` now reserves it for
   the domain party and says "caller" for the other sense. Rewording those pages is handed
   back; decision records are not edited.
-- Four limits of the pinned checker and analyser learned here belong in the
+- Six limits of the pinned checker and analyser learned here belong in the
   "Diagnostics and waivers" section of `docs/how-to/work-with-the-specs.md`, which is
   carried verbatim from libpawdoku and which this ticket does not edit: a status assigned
   inside a `for` loop is not observed as a transition; a guard `status in {a, b}` witnesses
   no edge; a temporal rule that itself leaves a state conflicts with every other rule that
   leaves it; and a config-valued invariant is accepted structurally with its expression
   not type-checked, nothing being reported for a Duration against a bare integer, an
-  Integer against a Duration literal or an Integer against a string. Handed back.
+  Integer against a Duration literal or an Integer against a string; the parameters of a
+  trigger emission are not validated, so a wrong field in a join lookup inside one passes;
+  and two assignments to one field in one rule are accepted silently although each reads
+  the pre-rule value. Handed back.
 - Ten places outside Files touched still say the domain is undefined or the module declares
   nothing, and are now false: `README.md:10-11`, `AGENTS.md:5` and `:13`,
   `docs/README.md:20-22`, `docs/project/repository-map.md:89`,
