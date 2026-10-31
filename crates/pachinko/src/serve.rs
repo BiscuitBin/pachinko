@@ -605,6 +605,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failure_inside_the_grace_period_outlives_a_later_success() {
+        let (cut, _cutting) = watch::channel(false);
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async { Err(Error::Task(String::from("early"))) });
+        tasks.spawn(async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Ok(())
+        });
+        let drained = drain(&mut tasks, &cut, Duration::from_secs(5)).await;
+        assert_eq!(drained, Err(Error::Task(String::from("early"))));
+        assert!(tasks.is_empty(), "every task is joined");
+    }
+
+    #[tokio::test]
     async fn a_failure_after_the_cut_comes_after_the_grace_periods_error() {
         let (drained, left) = drain_a_late_task(false, "late").await;
         assert!(
