@@ -132,9 +132,10 @@ pub enum ServeError {
 /// [`ServeOptions::tick_interval`]; both are spawned into a `JoinSet` this function
 /// owns. On shutdown tonic finishes its graceful shutdown first, then the ticker
 /// stops, the owner drains the commands already sent and ends, and the set is
-/// joined before this function returns. An upload still open when `shutdown`
-/// resolves is answered `UNAVAILABLE` and publishes nothing, so it cannot hold the
-/// graceful shutdown open.
+/// joined before this function returns. A request whose handler has not begun, or
+/// an upload still open, when `shutdown` resolves is answered `UNAVAILABLE` and
+/// sends the owner nothing, so it cannot hold the graceful shutdown open; a handler
+/// that has begun runs to its end.
 ///
 /// # Errors
 ///

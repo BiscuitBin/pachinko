@@ -4,12 +4,15 @@
 use std::task::Poll;
 use std::time::Duration;
 
-use arrow_flight::FlightData;
+use arrow_flight::{FlightClient, FlightData};
 use futures::TryStreamExt;
 use pachinko::{ServeOptions, serve};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tonic::Code;
+use tonic::codec::{Codec, DecodeBuf, Decoder, EncodeBuf, Encoder};
+use tonic::codegen::http::uri::PathAndQuery;
+use tonic::transport::Channel;
 
 use crate::fixture::{Client, SCENARIO_DEADLINE, config, status_of, with_server};
 
@@ -143,4 +146,116 @@ async fn shutdown_answers_an_upload_still_open_unavailable_and_returns_ok() {
     let status = uploaded.unwrap_err();
     assert_eq!(status.code(), Code::Unavailable);
     assert_eq!(status.message(), "the service is shutting down");
+}
+
+/// A codec for a request that never sends a message, so neither half is asked to
+/// do anything.
+#[derive(Clone, Copy, Debug, Default)]
+struct Silent;
+
+impl Encoder for Silent {
+    type Item = ();
+    type Error = tonic::Status;
+
+    fn encode(&mut self, (): (), _dst: &mut EncodeBuf<'_>) -> Result<(), tonic::Status> {
+        Ok(())
+    }
+}
+
+impl Decoder for Silent {
+    type Item = ();
+    type Error = tonic::Status;
+
+    fn decode(&mut self, _src: &mut DecodeBuf<'_>) -> Result<Option<()>, tonic::Status> {
+        Ok(Some(()))
+    }
+}
+
+impl Codec for Silent {
+    type Encode = ();
+    type Decode = ();
+    type Encoder = Self;
+    type Decoder = Self;
+
+    fn encoder(&mut self) -> Self {
+        Self
+    }
+
+    fn decoder(&mut self) -> Self {
+        Self
+    }
+}
+
+/// Opens a request to the unary-request method at `path` whose message never
+/// arrives, starts shutdown once the server has taken it, and asserts that `serve`
+/// returns `Ok` within the deadline and the request is answered `UNAVAILABLE`.
+/// tonic reads such a request's message before it calls the handler, so this
+/// stalls before `do_get` or `do_action` is reached.
+async fn assert_shutdown_answers_an_unfinished_request_unavailable(path: &'static str) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let (stop, stopped) = oneshot::channel::<()>();
+    let shutdown = async move {
+        stopped.await.unwrap();
+    };
+    let serving = serve(config(), listener, ServeOptions::default(), shutdown);
+    // One connection carries both the unfinished request and the round trip that
+    // orders shutdown after it.
+    let channel = Channel::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut flight = FlightClient::new(channel.clone());
+    let mut grpc = tonic::client::Grpc::new(channel);
+    // A message that never comes. hyper polls a request's body only after it has
+    // sent the headers, so the first poll says the request is on the connection.
+    let (sent, on_the_wire) = oneshot::channel::<()>();
+    let mut sent = Some(sent);
+    let input = futures::stream::poll_fn(move |_| {
+        if let Some(sent) = sent.take() {
+            sent.send(()).unwrap();
+        }
+        Poll::<Option<()>>::Pending
+    });
+    let requesting = async move {
+        grpc.ready().await.unwrap();
+        let path = PathAndQuery::from_static(path);
+        grpc.streaming(tonic::Request::new(input), path, Silent)
+            .await
+            .map(|_| ())
+    };
+    let stopping = async move {
+        on_the_wire.await.unwrap();
+        // `list_actions` goes out on the same connection after the request's
+        // headers, so its reply means the server has taken the request before
+        // shutdown starts.
+        let _listed = flight.list_actions().await.map_err(status_of).unwrap();
+        stop.send(()).unwrap();
+    };
+    let (outcome, requested, ()) = tokio::time::timeout(SCENARIO_DEADLINE, async {
+        tokio::join!(serving, requesting, stopping)
+    })
+    .await
+    .expect("serve returns within the deadline while a request is unfinished");
+    assert_eq!(outcome, Ok(()));
+    let status = requested.unwrap_err();
+    assert_eq!(status.code(), Code::Unavailable);
+    assert_eq!(status.message(), "the service is shutting down");
+}
+
+#[tokio::test]
+async fn shutdown_answers_a_do_action_whose_message_never_arrives_unavailable_and_returns_ok() {
+    assert_shutdown_answers_an_unfinished_request_unavailable(
+        "/arrow.flight.protocol.FlightService/DoAction",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn shutdown_answers_a_do_get_whose_message_never_arrives_unavailable_and_returns_ok() {
+    assert_shutdown_answers_an_unfinished_request_unavailable(
+        "/arrow.flight.protocol.FlightService/DoGet",
+    )
+    .await;
 }

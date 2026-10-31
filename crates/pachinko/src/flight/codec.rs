@@ -71,6 +71,12 @@ pub(super) fn read_one_row(body: &[u8]) -> Result<RecordBatch, Status> {
 /// `Ok` when the stream ends after the batch `reader` has read, and the body
 /// holds no bytes after its end of stream.
 fn end_of_body(mut reader: StreamReader<&[u8]>) -> Result<(), Status> {
+    // Arrow reads a short length prefix as the end of the stream and consumes it.
+    if (1..4).contains(&reader.get_ref().len()) {
+        return Err(Status::invalid_argument(
+            "the body holds bytes after its end of stream",
+        ));
+    }
     match reader.next() {
         None if reader.get_ref().is_empty() => Ok(()),
         None => Err(Status::invalid_argument(
@@ -520,6 +526,18 @@ mod tests {
         malformed.extend_from_slice(b"not ipc");
         assert_invalid(read_one_row(&malformed), "not an Arrow IPC stream");
 
+        for tail in [&b"x"[..], b"xy", b"xyz"] {
+            let mut short = complete[..complete.len() - 8].to_vec();
+            short.extend_from_slice(tail);
+            assert_invalid(read_one_row(&short), "bytes after its end of stream");
+        }
+        assert_eq!(
+            read_one_row(&complete[..complete.len() - 8])
+                .unwrap()
+                .num_rows(),
+            1
+        );
+
         let mut trailing = complete.to_vec();
         trailing.extend_from_slice(b"not ipc");
         assert_invalid(read_one_row(&trailing), "bytes after its end of stream");
@@ -535,6 +553,11 @@ mod tests {
             pull_ticket(&writer.into_inner().unwrap()),
             "must hold one batch",
         );
+
+        let ticket = ipc(&ticket);
+        let mut short_tail = ticket[..ticket.len() - 8].to_vec();
+        short_tail.extend_from_slice(b"xy");
+        assert_invalid(pull_ticket(&short_tail), "bytes after its end of stream");
     }
 
     #[test]

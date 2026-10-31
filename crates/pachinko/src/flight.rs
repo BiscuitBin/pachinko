@@ -10,12 +10,17 @@
 //! The status codes: an unknown party is `NOT_FOUND`; an action the rules reject,
 //! or a join of an id that has joined, is `FAILED_PRECONDITION` with the error's
 //! text; a malformed body, descriptor or ticket, or an unknown action type, is
-//! `INVALID_ARGUMENT`; an owner that has stopped, or an upload still open when
-//! shutdown starts, is `UNAVAILABLE`. A pull that finds no pocket is a reply,
-//! never an error.
+//! `INVALID_ARGUMENT`; an owner that has stopped, or a request whose handler has
+//! not begun or an upload still open when shutdown starts, is `UNAVAILABLE`. A pull
+//! that finds no pocket is a reply, never an error.
 
 mod actions;
 mod codec;
+
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
 
 use arrow_flight::decode::{DecodedFlightData, FlightDataDecoder};
 use arrow_flight::encode::FlightDataEncoderBuilder;
@@ -31,6 +36,9 @@ use libpachinko::error::{ActionError, ConsumerError, JoinError, PublishError};
 use libpachinko::queue::Publication;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
+use tonic::body::Body;
+use tonic::codegen::{BoxFuture, Service, http};
+use tonic::server::NamedService;
 use tonic::transport::Server;
 use tonic::transport::server::TcpIncoming;
 use tonic::{Code, Request, Response, Status, Streaming};
@@ -50,10 +58,28 @@ struct PachinkoFlight {
     stopping: watch::Receiver<bool>,
 }
 
+/// Marks, in a request's extensions, whether its handler has begun:
+/// [`UntilStopping`] inserts it unset, and the handler sets it once tonic has
+/// handed it the request.
+#[derive(Clone, Debug, Default)]
+struct Begun(Arc<AtomicBool>);
+
+/// Answers `UNAVAILABLE`, once shutdown starts, to a request whose handler has not
+/// begun. tonic reads a unary request's message and its end before it calls the
+/// handler, so without this a `do_get` or `do_action` whose message never arrives
+/// would hold the graceful shutdown open. A handler that has begun runs to its end,
+/// so no command already sent to the owner is cut off.
+#[derive(Clone, Debug)]
+struct UntilStopping<S> {
+    inner: S,
+    stopping: watch::Receiver<bool>,
+}
+
 /// Serves Flight over `queue` on `listener` until `shutdown` resolves and tonic's
-/// graceful shutdown has finished. When `shutdown` resolves the handlers are told,
-/// so an upload still open then is answered `UNAVAILABLE` rather than holding the
-/// graceful shutdown open until its client ends it.
+/// graceful shutdown has finished. When `shutdown` resolves the requests are told,
+/// so a request whose handler has not begun, or an upload still open, is answered
+/// `UNAVAILABLE` rather than holding the graceful shutdown open until its client
+/// ends it.
 ///
 /// # Errors
 ///
@@ -68,11 +94,79 @@ pub(crate) async fn serve_flight(
         shutdown.await;
         stop.send_replace(true);
     };
+    let flight = PachinkoFlight {
+        queue,
+        stopping: stopping.clone(),
+    };
     Server::builder()
-        .add_service(FlightServiceServer::new(PachinkoFlight { queue, stopping }))
+        .add_service(UntilStopping {
+            inner: FlightServiceServer::new(flight),
+            stopping,
+        })
         .serve_with_incoming_shutdown(TcpIncoming::from(listener), shutdown)
         .await
         .map_err(|error| ServeError::Transport(error.to_string()))
+}
+
+impl<S: NamedService> NamedService for UntilStopping<S> {
+    const NAME: &'static str = S::NAME;
+}
+
+impl<S, B> Service<http::Request<B>> for UntilStopping<S>
+where
+    S: Service<http::Request<B>, Response = http::Response<Body>, Error = Infallible>,
+    S::Future: Send + 'static,
+{
+    type Response = http::Response<Body>;
+    type Error = Infallible;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, mut request: http::Request<B>) -> Self::Future {
+        let begun = Begun::default();
+        request.extensions_mut().insert(begun.clone());
+        let answer = self.inner.call(request);
+        Box::pin(answer_until_stopping(answer, begun, self.stopping.clone()))
+    }
+}
+
+/// Awaits `answer`, unless shutdown starts before its handler has begun, when the
+/// request is answered `UNAVAILABLE` instead.
+async fn answer_until_stopping(
+    answer: impl Future<Output = Result<http::Response<Body>, Infallible>>,
+    begun: Begun,
+    mut stopping: watch::Receiver<bool>,
+) -> Result<http::Response<Body>, Infallible> {
+    let mut answer = std::pin::pin!(answer);
+    tokio::select! {
+        biased;
+        response = &mut answer => response,
+        // The guard `wait_for` returns is not `Send`, so it is dropped in this block
+        // rather than held while the handler's answer is awaited below.
+        () = async { let _ = stopping.wait_for(|stopped| *stopped).await; } => {
+            if begun.0.load(Ordering::SeqCst) {
+                answer.await
+            } else {
+                Ok(Status::unavailable("the service is shutting down").into_http())
+            }
+        }
+    }
+}
+
+/// The flag [`UntilStopping`] put in `request`'s extensions; a request it did not
+/// wrap carries none.
+fn begun_flag<T>(request: &Request<T>) -> Option<Begun> {
+    request.extensions().get::<Begun>().cloned()
+}
+
+/// Sets `begun`, so a shutdown that starts from now on lets the handler finish.
+fn begin(begun: Option<Begun>) {
+    if let Some(Begun(flag)) = begun {
+        flag.store(true, Ordering::SeqCst);
+    }
 }
 
 #[tonic::async_trait]
@@ -126,6 +220,7 @@ impl FlightService for PachinkoFlight {
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
+        begin(begun_flag(&request));
         let (consumer_id, limit) = codec::pull_ticket(&request.into_inner().ticket)?;
         let outcome = self
             .queue
@@ -144,11 +239,13 @@ impl FlightService for PachinkoFlight {
     /// `Publish`: the descriptor's command names the publisher, and each input
     /// batch is published as one command and answered by one `PutResult`. Every
     /// batch is read before any is published, so a malformed one, or one still open
-    /// when shutdown starts and answered `UNAVAILABLE`, publishes nothing.
+    /// when shutdown starts and answered `UNAVAILABLE`, publishes nothing. The
+    /// handler counts as begun only once every batch is read.
     async fn do_put(
         &self,
         request: Request<Streaming<FlightData>>,
     ) -> Result<Response<Self::DoPutStream>, Status> {
+        let begun = begun_flag(&request);
         let input = request.into_inner().map_err(FlightError::from);
         let mut stopping = self.stopping.clone();
         let decoded: Vec<DecodedFlightData> = tokio::select! {
@@ -158,6 +255,7 @@ impl FlightService for PachinkoFlight {
                 return Err(Status::unavailable("the service is shutting down"));
             }
         };
+        begin(begun);
         let (publisher_id, batches) = codec::put_input(&decoded)?;
         let results: Vec<PutResult> = stream::iter(batches)
             .then(|publications| self.publish_put(&publisher_id, publications))
@@ -180,6 +278,7 @@ impl FlightService for PachinkoFlight {
         &self,
         request: Request<Action>,
     ) -> Result<Response<Self::DoActionStream>, Status> {
+        begin(begun_flag(&request));
         let action = request.into_inner();
         let body = actions::perform(&self.queue, &action.r#type, &action.body).await?;
         let reply = arrow_flight::Result { body };
@@ -267,9 +366,12 @@ fn action_status(error: &ActionError) -> Status {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
+    use std::task::{Context, Poll};
+
     use super::{
-        PachinkoFlight, action_status, consumer_status, join_status, malformed, publish_status,
-        unavailable,
+        Begun, PachinkoFlight, UntilStopping, action_status, begin, consumer_status, join_status,
+        malformed, publish_status, unavailable,
     };
     use crate::actor::{QueueHandle, Stopped};
     use arrow_flight::error::FlightError;
@@ -277,8 +379,10 @@ mod tests {
     use arrow_flight::{Criteria, FlightDescriptor};
     use libpachinko::error::{ActionError, ConsumerError, JoinError, PublishError};
     use libpachinko::queue::LeaseId;
-    use tokio::sync::watch;
+    use tokio::sync::{oneshot, watch};
+    use tonic::body::Body;
     use tonic::codec::{DecodeBuf, Decoder};
+    use tonic::codegen::{BoxFuture, Service, http};
     use tonic::{Code, Request, Status, Streaming};
 
     /// A decoder for a request stream that carries no message.
@@ -295,7 +399,7 @@ mod tests {
 
     fn empty_stream<T: Send + 'static>() -> Request<Streaming<T>> {
         let decoder = NoMessages(std::marker::PhantomData);
-        Request::new(Streaming::new_empty(decoder, tonic::body::Body::default()))
+        Request::new(Streaming::new_empty(decoder, Body::default()))
     }
 
     /// A service whose owner has already stopped; the methods under test never
@@ -305,6 +409,76 @@ mod tests {
             queue: QueueHandle::stopped(),
             stopping: watch::channel(false).1,
         }
+    }
+
+    /// An inner service whose handler sets the request's `Begun` when `begins`, then
+    /// answers with an empty response once `answer` is sent.
+    struct Parked {
+        begins: bool,
+        answer: Option<oneshot::Receiver<()>>,
+    }
+
+    impl Service<http::Request<()>> for Parked {
+        type Response = http::Response<Body>;
+        type Error = Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, request: http::Request<()>) -> Self::Future {
+            let begins = self.begins;
+            let begun = request.extensions().get::<Begun>().cloned();
+            let answer = self.answer.take().unwrap();
+            Box::pin(async move {
+                begin(begun.filter(|_| begins));
+                answer.await.unwrap();
+                Ok(http::Response::new(Body::default()))
+            })
+        }
+    }
+
+    /// `Parked` behind `UntilStopping`, with the sender that starts shutdown and
+    /// the one that lets the handler answer.
+    fn until_stopping(
+        begins: bool,
+    ) -> (
+        UntilStopping<Parked>,
+        watch::Sender<bool>,
+        oneshot::Sender<()>,
+    ) {
+        let (stop, stopping) = watch::channel(false);
+        let (answer, answered) = oneshot::channel();
+        let inner = Parked {
+            begins,
+            answer: Some(answered),
+        };
+        (UntilStopping { inner, stopping }, stop, answer)
+    }
+
+    #[tokio::test]
+    async fn shutdown_answers_a_request_whose_handler_has_not_begun_unavailable() {
+        let (mut service, stop, _answer) = until_stopping(false);
+        let mut answering = service.call(http::Request::new(()));
+        assert!(futures::poll!(&mut answering).is_pending());
+        stop.send_replace(true);
+        let response = answering.await.unwrap();
+        let status = Status::from_header_map(response.headers()).unwrap();
+        assert_eq!(status.code(), Code::Unavailable);
+        assert_eq!(status.message(), "the service is shutting down");
+    }
+
+    #[tokio::test]
+    async fn shutdown_lets_a_handler_that_has_begun_answer() {
+        let (mut service, stop, answer) = until_stopping(true);
+        let mut answering = service.call(http::Request::new(()));
+        assert!(futures::poll!(&mut answering).is_pending());
+        stop.send_replace(true);
+        assert!(futures::poll!(&mut answering).is_pending());
+        answer.send(()).unwrap();
+        let response = answering.await.unwrap();
+        assert!(Status::from_header_map(response.headers()).is_none());
     }
 
     fn descriptor() -> Request<FlightDescriptor> {
