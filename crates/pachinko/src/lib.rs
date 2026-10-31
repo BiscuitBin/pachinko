@@ -1,8 +1,12 @@
 //! The pachinko service, built around `libpachinko`.
 //!
-//! It supplies the real implementations of the library's effect traits once the
-//! specifications name them. Today it reports which version of the library it was
-//! built with. The binary's `main` calls [`run`] and nothing else.
+//! It supplies the real implementations of the library's effect traits: the system
+//! clock in [`clock`], and an Arrow record store in [`arrow`], where each pocket's
+//! records are one `RecordBatch` (decision 0020). The binary's `main` calls [`run`]
+//! and nothing else.
+
+pub mod arrow;
+pub mod clock;
 
 use std::io::{self, Write};
 

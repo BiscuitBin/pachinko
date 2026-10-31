@@ -23,6 +23,21 @@ workspace = true
 # Invariant 5: the service depends on the library, never the reverse. Without the
 # version beside the path, deny.toml's `wildcards = "deny"` rejects the dependency.
 libpachinko = { path = "../libpachinko", version = "0.1.0" }
+# The Arrow record store (decision-0007 notes in the workspace manifest).
+arrow-array = { workspace = true }
+arrow-ord = { workspace = true }
+arrow-schema = { workspace = true }
+arrow-select = { workspace = true }
+
+[dev-dependencies]
+# The records contract the Arrow store's test runs, from libpachinko's `testing`
+# feature; development only, so no normal build of the service turns it on.
+divan = { workspace = true }
+libpachinko = { path = "../libpachinko", version = "0.1.0", features = ["testing"] }
+
+[[bench]]
+name = "arrow"
+harness = false
 
 # The same `--cfg docsrs` and features `just doc` builds with, so a docs.rs build
 # would match the gate.

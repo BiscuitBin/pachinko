@@ -4,8 +4,9 @@ members = ["crates/*"]
 exclude = ["fuzz"]
 
 [workspace.dependencies]
-# Decision 0007: divan times the smoke benchmark, as a development dependency
-# only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
+# Decision 0007: divan times the benchmarks, libpachinko's smoke benchmark and the
+# service's Arrow store, as a development dependency only. It is outside consumer
+# and cargo-deny graphs; MSRV 1.80 is below our pin.
 divan = "0.1.21"
 # Decision 0007: thiserror derives libpachinko's error enums (AGENTS.md invariant
 # 10). A proc macro that adds no runtime code; MIT or Apache-2.0; MSRV 1.77.
@@ -14,6 +15,16 @@ thiserror = "2.0.21"
 # propagate skill names for Rust; development only, so outside consumer graphs and
 # outside `just effects`, which reads the normal tree. MIT or Apache-2.0; MSRV 1.88.
 proptest = "1.12.0"
+# Decision 0007: the Arrow crates hold each pocket's records as one RecordBatch in
+# the service (decision 0020): arrays and batches, the schema, and the selection
+# and ordering kernels every step runs. Apache Software Foundation, Apache-2.0
+# (arrow-array: Apache-2.0 AND MIT); MSRV 1.88. Never a libpachinko dependency:
+# arrow-array pulls getrandom through ahash's runtime-rng, which `just effects`
+# bans there.
+arrow-array = "60.1.0"
+arrow-ord = "60.1.0"
+arrow-schema = "60.1.0"
+arrow-select = "60.1.0"
 
 [workspace.package]
 edition = "2024"
