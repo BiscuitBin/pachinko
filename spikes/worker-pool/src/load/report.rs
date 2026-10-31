@@ -107,6 +107,8 @@ pub struct RunReport {
     pub pull_service: (u64, u64),
     /// Ack and nack service latency: p50 and p99 in microseconds.
     pub settle_service: (u64, u64),
+    /// Release service latency: p50 and p99 in microseconds.
+    pub release_service: (u64, u64),
     /// Publish send-wait, the time blocked in `Handle::send`: p50 and p99 in microseconds.
     pub pub_wait: (u64, u64),
     /// Pull send-wait: p50 and p99 in microseconds.
@@ -143,6 +145,10 @@ pub struct RunReport {
     pub rejected_publishes: u64,
     /// Replies of `Rejected(LeaseNotActive)` in the window: the stalled consumer's.
     pub lease_not_active: u64,
+    /// How many of the repeats ended [`Self::is_unhealthy`], this run included when it
+    /// did; `measure` counts them over every repeat, so a dropped repeat's failure
+    /// still shows here. One for a single unhealthy run, zero for a healthy one.
+    pub unhealthy_repeats: usize,
 }
 
 impl RunReport {
@@ -176,6 +182,21 @@ impl RunReport {
     #[must_use]
     pub const fn invariants_hold(&self) -> bool {
         self.failed_invariants.is_empty() && self.violations == 0
+    }
+
+    /// Whether the run ended unhealthy: an invariant failed, a machine saw a protocol
+    /// violation, a call timed out, or a request went without a reply.
+    ///
+    /// ```
+    /// use worker_pool::load::RunReport;
+    /// let mut report = RunReport::new();
+    /// assert!(!report.is_unhealthy());
+    /// report.timed_out = 1;
+    /// assert!(report.is_unhealthy());
+    /// ```
+    #[must_use]
+    pub const fn is_unhealthy(&self) -> bool {
+        !self.invariants_hold() || self.timed_out > 0 || self.requests != self.replies
     }
 
     /// The one line naming what limited the run, by the thresholds in the header.
@@ -331,6 +352,7 @@ fn from_tally(report: &mut RunReport, mut tally: Tally) {
     report.pub_service = summarise(&mut tally.pub_service);
     report.pull_service = summarise(&mut tally.pull_service);
     report.settle_service = summarise(&mut tally.settle_service);
+    report.release_service = summarise(&mut tally.release_service);
     report.pub_wait = summarise(&mut tally.pub_wait);
     report.pull_wait = summarise(&mut tally.pull_wait);
     report.publishes = tally.publishes;
@@ -387,7 +409,7 @@ fn lapses_and_parks(pockets: &[PocketMachine]) -> (u64, u64) {
 }
 
 /// The columns and their widths; the first two are left-aligned.
-const COLUMNS: [(&str, usize); 19] = [
+const COLUMNS: [(&str, usize); 20] = [
     ("N,P", 5),
     ("clients", 7),
     ("pub/s", 8),
@@ -397,6 +419,7 @@ const COLUMNS: [(&str, usize); 19] = [
     ("p50/p99 pub (us)", 16),
     ("p50/p99 pull (us)", 17),
     ("p50/p99 ack+nack (us)", 21),
+    ("p50/p99 release (us)", 20),
     ("send-wait p99 pub (us)", 22),
     ("retry pulls", 11),
     ("msgs local", 10),
@@ -426,7 +449,7 @@ pub fn format_table(reports: &[RunReport], host: &Host, out: &mut impl Write) ->
             out,
             "    requests {} replies {} timed out: {}; publishes new-pocket {} new-key {} \
             superseded {} stale {} rejected {}; lease-not-active {}; empty pulls {}; \
-            wall {:.2} s",
+            unhealthy repeats {} of {}; wall {:.2} s",
             report.requests,
             report.replies,
             report.timed_out,
@@ -437,6 +460,8 @@ pub fn format_table(reports: &[RunReport], host: &Host, out: &mut impl Write) ->
             report.rejected_publishes,
             report.lease_not_active,
             report.empty_pulls,
+            report.unhealthy_repeats,
+            report.repeats,
             report.wall.as_secs_f64(),
         )?;
         for failed in &report.failed_invariants {
@@ -519,6 +544,7 @@ fn cells(report: &RunReport) -> Vec<String> {
         format!("{}/{}", report.pub_service.0, report.pub_service.1),
         format!("{}/{}", report.pull_service.0, report.pull_service.1),
         format!("{}/{}", report.settle_service.0, report.settle_service.1),
+        format!("{}/{}", report.release_service.0, report.release_service.1),
         report.pub_wait.1.to_string(),
         report.retry_pulls.to_string(),
         report.msgs_local.to_string(),
@@ -591,6 +617,7 @@ mod tests {
             pub_service: (50, 900),
             pull_service: (70, 1_200),
             settle_service: (40, 800),
+            release_service: (20, 300),
             pub_wait: (1, 30),
             retry_pulls: 3,
             msgs_local: 100,
@@ -623,9 +650,13 @@ mod tests {
         assert_eq!(
             cells,
             vec![
-                "2,4", "8+8", "10000", "2000", "8000", "1500", "50/900", "70/1200", "40/800", "30",
-                "3", "100", "200", "5", "600", "97/68", "4", "1", "ok"
+                "2,4", "8+8", "10000", "2000", "8000", "1500", "50/900", "70/1200", "40/800",
+                "20/300", "30", "3", "100", "200", "5", "600", "97/68", "4", "1", "ok"
             ]
+        );
+        assert!(
+            text.contains("unhealthy repeats 0 of 3; wall 3.00 s"),
+            "{text}"
         );
         assert!(
             text.contains(
@@ -704,6 +735,8 @@ mod tests {
         let mut report = hand_built();
         report.violations = 2;
         report.failed_invariants = vec!["OneActiveLeasePerPocket: x".to_owned()];
+        report.unhealthy_repeats = 2;
+        assert!(report.is_unhealthy());
         let mut out = Vec::new();
         format_table(&[report], &Host::new(1), &mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
@@ -713,5 +746,22 @@ mod tests {
             "{row}"
         );
         assert!(text.contains("failed invariant: OneActiveLeasePerPocket: x"));
+        assert!(text.contains("unhealthy repeats 2 of 3;"), "{text}");
+    }
+
+    #[test]
+    fn unhealthy_is_a_failed_invariant_a_violation_a_timeout_or_a_lost_reply() {
+        let healthy = hand_built();
+        assert!(!healthy.is_unhealthy());
+        let mut timed_out = hand_built();
+        timed_out.timed_out = 1;
+        assert!(timed_out.is_unhealthy());
+        let mut lost = hand_built();
+        lost.requests = 10;
+        lost.replies = 9;
+        assert!(lost.is_unhealthy());
+        let mut violated = hand_built();
+        violated.violations = 1;
+        assert!(violated.is_unhealthy());
     }
 }

@@ -122,8 +122,11 @@ pub(super) struct Tally {
     pub(super) pull_service: Vec<u64>,
     /// Ack and nack service samples, window only.
     pub(super) settle_service: Vec<u64>,
-    /// The real measured window: the deadline minus when `measuring` opened. The
-    /// driver's, kept by `merge`; zero in a single client's tally.
+    /// Release service samples, window only.
+    pub(super) release_service: Vec<u64>,
+    /// The real measured window: the deadline minus the instant taken just before
+    /// `measuring` opened, so never shorter than the counting interval. The driver's,
+    /// kept by `merge`; zero in a single client's tally.
     pub(super) window: Duration,
 }
 
@@ -149,6 +152,7 @@ impl Tally {
         self.pull_wait.extend(other.pull_wait);
         self.pull_service.extend(other.pull_service);
         self.settle_service.extend(other.settle_service);
+        self.release_service.extend(other.release_service);
         // `window` is the driver's and is kept.
     }
 
@@ -355,7 +359,7 @@ impl Consumer<'_> {
         }
     }
 
-    /// One release, counted when it starts inside the window.
+    /// One release, counted with its service latency when it starts inside the window.
     fn release(&mut self, lease: LeaseId) {
         let input = Input::Release {
             consumer: self.id.clone(),
@@ -366,6 +370,7 @@ impl Consumer<'_> {
         self.tally.account(outcome.reply.as_ref());
         if counting {
             self.tally.releases += 1;
+            self.tally.release_service.push(outcome.service);
         }
     }
 }
@@ -385,8 +390,10 @@ pub(super) fn drive(handle: &Handle, load: &LoadConfig) -> Tally {
             threads.push(scope.spawn(move || consumer(handle, clock, load, index)));
         }
         std::thread::sleep(load.warm_up);
-        clock.measuring.store(true, Ordering::SeqCst);
+        // `opened` is taken before the store, so no counted operation can start
+        // outside the window the rates divide by.
         let opened = Instant::now();
+        clock.measuring.store(true, Ordering::SeqCst);
         let mut total = Tally::default();
         for thread in threads {
             total.merge(
@@ -435,10 +442,12 @@ mod tests {
         b.window = std::time::Duration::from_secs(2);
         a.releases = 2;
         a.settle_service.push(11);
+        a.release_service.push(13);
         b.merge(a);
         assert_eq!((b.requests, b.replies, b.timed_out), (4, 3, 1));
         assert_eq!(b.pub_wait, vec![9]);
         assert_eq!((b.releases, b.settle_service), (2, vec![11]));
+        assert_eq!(b.release_service, vec![13]);
         assert_eq!(b.window, std::time::Duration::from_secs(2));
     }
 }

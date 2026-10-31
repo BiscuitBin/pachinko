@@ -1,7 +1,9 @@
 //! The demo binary: the T20 measurement. With no arguments it runs the sweep the
 //! host's core counts decide and prints one table; with arguments it runs one
 //! configuration. `--help` lists the arguments, `--smoke` runs one 100 ms
-//! configuration so that a test can see the table without waiting.
+//! configuration so that a test can see the table without waiting. The exit code is 0
+//! when every row is healthy, 1 when the table printed but a repeat of some row ended
+//! unhealthy, and 2 when the binary could not run.
 
 use std::fmt;
 use std::io::Write;
@@ -9,7 +11,7 @@ use std::process::ExitCode;
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
-use worker_pool::load::{self, Host, LoadConfig, LoadError, format_table, sweep_plan};
+use worker_pool::load::{self, Host, LoadConfig, LoadError, RunReport, format_table, sweep_plan};
 use worker_pool::pool::PoolConfig;
 use worker_pool::{Config, Duration};
 
@@ -27,9 +29,11 @@ P = max(16, N); publishers and consumers are each raised to N when together they
 are below 2N. With either: one row; a missing count is 1.
 Defaults: publishers 8, consumers 8, pockets 256, lease-ttl-ms 200, duration-s 3
 (plus a 1 s warm-up excluded from the numbers), repeats 3 (the median by pub/s, or
-the first repeat that failed an invariant, timed out or lost a reply), tick-ms 10,
-queue-capacity 1024, seed 1. --smoke: 1 worker thread, 1 partition, 2+2 clients,
-100 ms after a 50 ms warm-up, lease 50 ms, 1 repeat.";
+the first repeat that failed an invariant, timed out or lost a reply, every such
+repeat counted on the row's line), tick-ms 10, queue-capacity 1024, seed 1.
+--smoke: 1 worker thread, 1 partition, 2+2 clients, 100 ms after a 50 ms warm-up,
+lease 50 ms, 1 repeat. Exit code 0 when every row is healthy, 1 when the table
+printed but some repeat ended unhealthy, 2 when the binary could not run.";
 
 /// Why the binary could not run.
 #[derive(Debug)]
@@ -40,6 +44,8 @@ enum Error {
     Load(LoadError),
     /// The output could not be written.
     Io(std::io::Error),
+    /// The table printed, but this many rows had a repeat that ended unhealthy.
+    Unhealthy(usize),
 }
 
 impl fmt::Display for Error {
@@ -48,6 +54,11 @@ impl fmt::Display for Error {
             Self::Usage(message) => write!(f, "{message} (see --help)"),
             Self::Load(error) => write!(f, "{error}"),
             Self::Io(error) => write!(f, "could not write the output: {error}"),
+            Self::Unhealthy(rows) => write!(
+                f,
+                "{rows} row(s) had a repeat that failed an invariant, saw a violation, \
+                timed out or lost a reply; see the table"
+            ),
         }
     }
 }
@@ -201,7 +212,20 @@ fn run(args: &[String], out: &mut impl Write) -> Result<(), Error> {
         reports.push(load::measure(&load, pool, Config::default(), repeats)?);
     }
     format_table(&reports, &host, out)?;
-    Ok(())
+    unhealthy_rows(&reports)
+}
+
+/// An error naming the rows with an unhealthy repeat, or `Ok` when there is none.
+fn unhealthy_rows(reports: &[RunReport]) -> Result<(), Error> {
+    let rows = reports
+        .iter()
+        .filter(|report| report.unhealthy_repeats > 0)
+        .count();
+    if rows == 0 {
+        Ok(())
+    } else {
+        Err(Error::Unhealthy(rows))
+    }
 }
 
 fn main() -> ExitCode {
@@ -212,14 +236,17 @@ fn main() -> ExitCode {
         Err(error) => {
             // The lint bans eprintln!; a failure to report the failure has no remedy.
             let _ = writeln!(std::io::stderr(), "worker-pool: {error}");
-            ExitCode::from(2)
+            match error {
+                Error::Unhealthy(_) => ExitCode::from(1),
+                Error::Usage(_) | Error::Load(_) | Error::Io(_) => ExitCode::from(2),
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, parse, run};
+    use super::{Error, RunReport, parse, run, unhealthy_rows};
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| (*s).to_owned()).collect()
@@ -238,6 +265,20 @@ mod tests {
         assert!(rows[0].contains("| 2+2 "), "{text}");
         assert!(rows[0].ends_with(" ok"), "{text}");
         assert!(text.contains("timed out: 0;"), "{text}");
+        assert!(text.contains("unhealthy repeats 0 of 1;"), "{text}");
+    }
+
+    #[test]
+    fn a_row_with_an_unhealthy_repeat_is_an_error_after_the_table() {
+        let healthy = RunReport::new();
+        assert!(unhealthy_rows(std::slice::from_ref(&healthy)).is_ok());
+        let mut unhealthy = RunReport::new();
+        unhealthy.unhealthy_repeats = 1;
+        match unhealthy_rows(&[healthy, unhealthy.clone(), unhealthy]) {
+            Err(Error::Unhealthy(rows)) => assert_eq!(rows, 2),
+            other => panic!("expected the unhealthy error, got {other:?}"),
+        }
+        assert!(Error::Unhealthy(1).to_string().contains("1 row(s)"));
     }
 
     #[test]

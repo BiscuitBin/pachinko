@@ -203,7 +203,8 @@ pub fn run_once(
 /// `repeats` runs (at least one), keeping the whole report of the run whose publishes
 /// a second are the median (the upper one of an even count), so that every column of
 /// a row comes from one run. A run that failed an invariant, saw a protocol violation,
-/// timed out or lost a reply is kept ahead of the median, so no repeat's failure is
+/// timed out or lost a reply is kept ahead of the median, and the kept report counts
+/// every repeat that ended so in `unhealthy_repeats`, so no repeat's failure is
 /// dropped.
 ///
 /// # Errors
@@ -223,23 +224,20 @@ pub fn measure(
     Ok(select(reports, repeats))
 }
 
-/// Whether a run ended unhealthy: an invariant failed, a machine saw a protocol
-/// violation, a call timed out, or a request went without a reply.
-const fn unhealthy(report: &RunReport) -> bool {
-    !report.invariants_hold() || report.timed_out > 0 || report.requests != report.replies
-}
-
-/// The one report a row prints: the first [`unhealthy`] one by publishes when there is
-/// one, else the median by publishes (the upper one of an even count). `repeats` is
-/// written into it. Empty input yields an empty report.
+/// The one report a row prints: the first [`RunReport::is_unhealthy`] one by publishes
+/// when there is one, else the median by publishes (the upper one of an even count).
+/// `repeats` and the count of unhealthy repeats are written into it. Empty input yields
+/// an empty report.
 fn select(mut reports: Vec<RunReport>, repeats: usize) -> RunReport {
     if reports.is_empty() {
         return RunReport::new();
     }
     reports.sort_by_key(|report| report.publishes);
-    let failing = reports.iter().position(unhealthy);
+    let unhealthy_repeats = reports.iter().filter(|r| r.is_unhealthy()).count();
+    let failing = reports.iter().position(RunReport::is_unhealthy);
     let mut chosen = reports.swap_remove(failing.unwrap_or(reports.len() / 2));
     chosen.repeats = repeats;
+    chosen.unhealthy_repeats = unhealthy_repeats;
     chosen
 }
 
@@ -336,6 +334,8 @@ mod tests {
         let report = measure(&load, pool, Config::default(), 2).unwrap();
         assert_eq!(report.repeats, 2);
         assert!(report.invariants_hold());
+        assert!(!report.is_unhealthy());
+        assert_eq!(report.unhealthy_repeats, 0);
     }
 
     fn healthy(publishes: u64) -> RunReport {
@@ -352,6 +352,7 @@ mod tests {
         let reports = vec![healthy(30), healthy(10), healthy(20)];
         let chosen = select(reports, 3);
         assert_eq!((chosen.publishes, chosen.repeats), (20, 3));
+        assert_eq!(chosen.unhealthy_repeats, 0);
         let even = vec![healthy(10), healthy(40), healthy(20), healthy(30)];
         assert_eq!(select(even, 4).publishes, 30);
         assert_eq!(select(Vec::new(), 1), RunReport::new());
@@ -364,6 +365,7 @@ mod tests {
         timed_out.replies = 9;
         let chosen = select(vec![healthy(20), timed_out.clone(), healthy(30)], 3);
         assert_eq!((chosen.timed_out, chosen.repeats), (1, 3));
+        assert_eq!(chosen.unhealthy_repeats, 1);
         let mut failed = healthy(40);
         failed.failed_invariants = vec!["OnePocketPerKey: x".to_owned()];
         let chosen = select(vec![healthy(20), healthy(30), failed], 3);
@@ -374,6 +376,29 @@ mod tests {
         assert_eq!(chosen.violations, 2);
         let chosen = select(vec![timed_out, failed_first_by_publishes()], 2);
         assert_eq!(chosen.publishes, 0, "the lowest failing run by publishes");
+        assert_eq!(
+            chosen.unhealthy_repeats, 2,
+            "the dropped failure is counted"
+        );
+    }
+
+    #[test]
+    fn select_counts_every_unhealthy_repeat_not_only_the_shown_one() {
+        let mut timed_out = healthy(10);
+        timed_out.timed_out = 1;
+        let mut failed = healthy(40);
+        failed.failed_invariants = vec!["OnePocketPerKey: x".to_owned()];
+        let chosen = select(vec![healthy(20), failed, timed_out, healthy(30)], 4);
+        assert_eq!(
+            (chosen.publishes, chosen.timed_out),
+            (10, 1),
+            "the first by publishes"
+        );
+        assert!(
+            chosen.failed_invariants.is_empty(),
+            "the other failure is not shown"
+        );
+        assert_eq!((chosen.unhealthy_repeats, chosen.repeats), (2, 4));
     }
 
     fn failed_first_by_publishes() -> RunReport {
