@@ -49,7 +49,7 @@ the network, so external links rot silently until someone looks.
 
 **Per toolchain release.** Renovate's `rust toolchain` pull request moves `channel` in
 `rust-toolchain.toml`, the `Dockerfile`'s build-stage `rust` tag and, on a minor release
-only, `rust-version` in the root, fuzz and spike `Cargo.toml`; all three places take their versions
+only, `rust-version` in the root, fuzz and spike `Cargo.toml`; all five take their versions
 from the `rust` image's `-slim-bookworm` tags, so the toolchain waits for its image. On
 that branch run `just install-toolchain`, then `just clippy` before anything else:
 clippy's lint set moves with the release, and a lint that is new under `-D warnings`

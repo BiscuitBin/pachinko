@@ -346,6 +346,7 @@ impl<'a> Worker<'a> {
                 false
             }
             Err(TrySendError::Disconnected(_)) => {
+                self.shared.in_flight.fetch_sub(1, Ordering::SeqCst);
                 self.shared.abort();
                 false
             }
@@ -686,6 +687,20 @@ mod tests {
         worker.enqueue(Envelope::new(MachineId::Order, pull(1), None));
         assert!(shared.aborted.load(Ordering::SeqCst));
         assert!(worker.should_exit());
+    }
+
+    /// The outbox drain's `Disconnected` arm releases the in-flight token as
+    /// `enqueue`'s does, so an abort leaves the count at what is really in flight.
+    #[test]
+    fn a_disconnected_peer_found_by_the_drain_releases_the_token() {
+        let (shared, lanes) = two_workers_with_a_full_lane();
+        let (mut worker, zero) = worker_one(&shared, lanes);
+        worker.enqueue(Envelope::new(MachineId::Order, pull(1), None));
+        assert_eq!(shared.in_flight.load(Ordering::SeqCst), 1, "in the outbox");
+        drop(zero);
+        assert!(!worker.push_front_to_peer(0));
+        assert!(shared.aborted.load(Ordering::SeqCst));
+        assert_eq!(shared.in_flight.load(Ordering::SeqCst), 0);
     }
 
     /// A second reply on a handle the client already read from is counted as a double

@@ -158,6 +158,21 @@ impl RunReport {
         Self::default()
     }
 
+    /// Publishes a second over the measured window: the key the median repeat is
+    /// chosen by, the same number the `pub/s` column prints.
+    ///
+    /// ```
+    /// use worker_pool::load::RunReport;
+    /// let mut report = RunReport::new();
+    /// report.publishes = 300;
+    /// report.window = std::time::Duration::from_secs(2);
+    /// assert_eq!(report.publishes_per_second(), 150.0);
+    /// ```
+    #[must_use]
+    pub fn publishes_per_second(&self) -> f64 {
+        per_second(self.publishes, self.window)
+    }
+
     /// The highest busy percentage and the worker thread that has it.
     #[must_use]
     pub fn busiest(&self) -> (usize, u64) {

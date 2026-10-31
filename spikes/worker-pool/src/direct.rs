@@ -84,7 +84,7 @@ pub struct Direct {
 
 impl Direct {
     /// A router over fresh machines: one order machine and `partitions` pocket machines
-    /// sharing `config`.
+    /// (at least 1, as the pool clamps) sharing `config`.
     ///
     /// ```
     /// use worker_pool::{Config, Direct, MachineId, Partition};
@@ -96,6 +96,7 @@ impl Direct {
     /// ```
     #[must_use]
     pub fn new(config: Config, partitions: u32) -> Self {
+        let partitions = partitions.max(1);
         let pockets: Vec<PocketMachine> = (0..partitions)
             .map(|i| PocketMachine::new(Partition::new(i), partitions, config))
             .collect();
@@ -281,7 +282,8 @@ mod tests {
 
     use super::{Direct, Envelope, Handle, Logs, Protocol, Queues, run};
     use crate::protocol::{
-        ConsumerId, Input, MachineId, Output, Partition, PocketKey, PublisherId, Response,
+        ConsumerId, Input, LeaseId, MachineId, Output, Partition, Payload, PocketKey, Published,
+        PublisherId, Rank, Reason, RecordKey, Response,
     };
     use crate::time::{Config, Timestamp};
 
@@ -446,6 +448,36 @@ mod tests {
             Err(Protocol::NotAClientInput)
         );
         assert!(direct.logs().values().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn a_lease_the_pool_never_granted_is_rejected_as_unknown() {
+        let mut direct = Direct::new(Config::default(), 4);
+        let renew = Input::Renew {
+            consumer: ConsumerId::new("c"),
+            lease: LeaseId::new(Partition::new(99), 0),
+        };
+        assert_eq!(
+            direct.submit(renew, Timestamp::ZERO),
+            Ok(Response::Rejected(Reason::UnknownLease))
+        );
+    }
+
+    #[test]
+    fn zero_partitions_is_clamped_to_one_and_accepts_a_publish() {
+        let mut direct = Direct::new(Config::default(), 0);
+        assert_eq!(direct.partitions(), 1);
+        let publish = Input::Publish {
+            publisher: PublisherId::new("p"),
+            pocket_key: PocketKey::new("k"),
+            record_key: RecordKey::new("r"),
+            rank: Rank::new(1),
+            payload: Payload::new("x"),
+        };
+        assert_eq!(
+            direct.submit(publish, Timestamp::ZERO),
+            Ok(Response::Published(Published::NewPocket))
+        );
     }
 
     #[test]

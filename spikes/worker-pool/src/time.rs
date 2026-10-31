@@ -24,10 +24,10 @@ impl Timestamp {
         Self(nanos)
     }
 
-    /// A timestamp this many milliseconds after the pool's start.
+    /// A timestamp this many milliseconds after the pool's start, saturating.
     #[must_use]
     pub const fn from_millis(millis: u64) -> Self {
-        Self(millis * 1_000_000)
+        Self(millis.saturating_mul(1_000_000))
     }
 
     /// Nanoseconds since the pool's start.
@@ -70,7 +70,7 @@ impl Duration {
         Self(nanos)
     }
 
-    /// A duration of this many milliseconds.
+    /// A duration of this many milliseconds, saturating.
     ///
     /// ```
     /// use worker_pool::Duration;
@@ -78,13 +78,13 @@ impl Duration {
     /// ```
     #[must_use]
     pub const fn from_millis(millis: u64) -> Self {
-        Self(millis * 1_000_000)
+        Self(millis.saturating_mul(1_000_000))
     }
 
-    /// A duration of this many seconds.
+    /// A duration of this many seconds, saturating.
     #[must_use]
     pub const fn from_secs(secs: u64) -> Self {
-        Self(secs * 1_000_000_000)
+        Self(secs.saturating_mul(1_000_000_000))
     }
 
     /// The duration in nanoseconds.
@@ -183,6 +183,13 @@ mod tests {
     fn plus_saturates_instead_of_wrapping() {
         let t = Timestamp::from_nanos(u64::MAX).plus(Duration::from_nanos(1));
         assert_eq!(t.nanos(), u64::MAX);
+    }
+
+    #[test]
+    fn the_unit_constructors_saturate_instead_of_wrapping() {
+        assert_eq!(Duration::from_millis(u64::MAX).nanos(), u64::MAX);
+        assert_eq!(Duration::from_secs(u64::MAX).nanos(), u64::MAX);
+        assert_eq!(Timestamp::from_millis(u64::MAX).nanos(), u64::MAX);
     }
 
     #[test]

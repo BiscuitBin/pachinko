@@ -225,14 +225,18 @@ pub fn measure(
 }
 
 /// The one report a row prints: the first [`RunReport::is_unhealthy`] one by publishes
-/// when there is one, else the median by publishes (the upper one of an even count).
+/// a second when there is one, else the median by publishes a second (the upper one of
+/// an even count).
 /// `repeats` and the count of unhealthy repeats are written into it. Empty input yields
 /// an empty report.
 fn select(mut reports: Vec<RunReport>, repeats: usize) -> RunReport {
     if reports.is_empty() {
         return RunReport::new();
     }
-    reports.sort_by_key(|report| report.publishes);
+    reports.sort_by(|a, b| {
+        a.publishes_per_second()
+            .total_cmp(&b.publishes_per_second())
+    });
     let unhealthy_repeats = reports.iter().filter(|r| r.is_unhealthy()).count();
     let failing = reports.iter().position(RunReport::is_unhealthy);
     let mut chosen = reports.swap_remove(failing.unwrap_or(reports.len() / 2));
@@ -338,11 +342,14 @@ mod tests {
         assert_eq!(report.unhealthy_repeats, 0);
     }
 
+    /// A healthy report over a one-second window, so that its publishes a second equal
+    /// its publishes.
     fn healthy(publishes: u64) -> RunReport {
         RunReport {
             publishes,
             requests: 10,
             replies: 10,
+            window: StdDuration::from_secs(1),
             ..RunReport::new()
         }
     }
@@ -356,6 +363,18 @@ mod tests {
         let even = vec![healthy(10), healthy(40), healthy(20), healthy(30)];
         assert_eq!(select(even, 4).publishes, 30);
         assert_eq!(select(Vec::new(), 1), RunReport::new());
+    }
+
+    #[test]
+    fn select_takes_the_median_by_publishes_a_second_not_by_count() {
+        let over = |publishes: u64, millis: u64| RunReport {
+            window: StdDuration::from_millis(millis),
+            ..healthy(publishes)
+        };
+        // Rates 200/s, 166.7/s and 300/s: the median by rate is the 100-publish run;
+        // by count it would have been the 150-publish one.
+        let reports = vec![over(100, 500), over(150, 900), over(300, 1000)];
+        assert_eq!(select(reports, 3).publishes, 100);
     }
 
     #[test]

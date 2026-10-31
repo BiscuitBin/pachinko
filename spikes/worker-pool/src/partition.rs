@@ -30,8 +30,10 @@ pub fn partition_of(key: &PocketKey, partitions: u32) -> Partition {
 
 /// The machine a client input goes to, with no routing table: a publish by its pocket
 /// key, a pull or a join to the order machine, an action naming a lease to the lease's
-/// partition. `None` for the inputs the machines send each other and for the tick,
-/// which the pool injects everywhere.
+/// partition, folded into the pool's range so that a lease identity the pool never
+/// granted reaches a real pocket machine and is answered `UnknownLease`. `None` for
+/// the inputs the machines send each other and for the tick, which the pool injects
+/// everywhere.
 ///
 /// ```
 /// use worker_pool::{ConsumerId, Input, MachineId, route};
@@ -51,7 +53,9 @@ pub fn route(input: &Input, partitions: u32) -> Option<MachineId> {
         Input::Ack { lease, .. }
         | Input::Nack { lease, .. }
         | Input::Renew { lease, .. }
-        | Input::Release { lease, .. } => Some(MachineId::Partition(lease.partition)),
+        | Input::Release { lease, .. } => Some(MachineId::Partition(Partition::new(
+            lease.partition.index() % partitions.max(1),
+        ))),
         _ => None,
     }
 }
@@ -138,5 +142,26 @@ mod tests {
         }
         assert_eq!(route(&Input::RetryPull { consumer, limit: 1 }, 4), None);
         assert_eq!(route(&Input::Tick, 4), None);
+    }
+
+    #[test]
+    fn a_lease_outside_the_pools_range_is_folded_into_it() {
+        let consumer = ConsumerId::new("c");
+        let renew = Input::Renew {
+            consumer: consumer.clone(),
+            lease: LeaseId::new(Partition::new(99), 0),
+        };
+        assert_eq!(
+            route(&renew, 4),
+            Some(MachineId::Partition(Partition::new(3)))
+        );
+        let release = Input::Release {
+            consumer,
+            lease: LeaseId::new(Partition::new(7), 0),
+        };
+        assert_eq!(
+            route(&release, 0),
+            Some(MachineId::Partition(Partition::new(0)))
+        );
     }
 }
