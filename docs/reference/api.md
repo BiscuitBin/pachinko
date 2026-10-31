@@ -130,7 +130,7 @@ metadata. The service authenticates no one and encrypts nothing;
 | Flight method | Trigger | Request | Reply |
 | --- | --- | --- | --- |
 | `do_put` | `Publish` | A descriptor of type command whose bytes are the publisher id in UTF-8, then batches with `pocket_key` Utf8, `record_key` Utf8, `rank` Int64 and `payload` Binary, none null | One `PutResult` per input batch, whose `app_metadata` is an IPC stream with one `outcome` Utf8 row per input row: `new`, `superseded`, `stale` or `rejected` |
-| `do_get` | `Pull` | A ticket with `consumer_id` Utf8 and `limit` Int64 | The held records, oldest first, as `record_key` LargeUtf8, `rank` Int64 and `payload` LargeBinary, with schema metadata `outcome` = `batch`, `lease_id`, `pocket_key` and `expires_at`; or, when no pocket is available, a schema-only stream with `outcome` = `no_pocket` |
+| `do_get` | `Pull` | A ticket with `consumer_id` Utf8 and `limit` Int64 | The held records, oldest first, as `record_key` LargeUtf8, `rank` Int64 and `payload` LargeBinary, with schema metadata `outcome` = `batch`, `lease_id`, `pocket_key` and `expires_at`; or, when no pocket is available, a schema-only stream with `outcome` = `no_pocket`. The records may span several `FlightData` messages after the schema's. A message of more than one record is at most 2 MiB, its offsets and ranks counted, so it stays under a gRPC client's default 4 MiB message limit; a message of one record is as large as that record makes it |
 | `do_action` | One of the seven action types below | An `Action` whose type names the action and whose body is its one row | One result whose body is the action's reply; `status` may answer with several |
 | `list_actions` | None | Empty | The seven action types, each with a one-line description |
 
@@ -150,7 +150,7 @@ is not an error.
 | `nack` | `Nack` | `consumer_id` Utf8, `lease_id` UInt64, `record_key` Utf8 | `outcome` Utf8 = `settled` or `deferred` |
 | `renew` | `Renew` | `consumer_id` Utf8, `lease_id` UInt64 | `expires_at` UInt64 |
 | `release` | `Release` | `consumer_id` Utf8, `lease_id` UInt64 | `lease_id` UInt64, `ended_at` UInt64 |
-| `status` | The `Consuming` surface's `exposes` | `consumer_id` Utf8 | Schema metadata `lease` = `active` or `none`, and for an active lease its `lease_id`, `pocket_key` and `expires_at`; one row per held record, as `record_key`, `rank` and `payload`. The held records may span several results, each an IPC stream with the same schema and metadata whose keys and payloads total at most 2 MiB unless one record alone is larger, so a reply stays under a gRPC client's default 4 MiB message limit |
+| `status` | The `Consuming` surface's `exposes` | `consumer_id` Utf8 | Schema metadata `lease` = `active` or `none`, and for an active lease its `lease_id`, `pocket_key` and `expires_at`; one row per held record, as `record_key`, `rank` and `payload`. The held records may span several results, each an IPC stream with the same schema and metadata. A result of more than one record is at most 2 MiB, its schema, metadata, offsets and ranks counted, so it stays under a gRPC client's default 4 MiB message limit; a result of one record is as large as that record and the metadata make it |
 
 A refusal is a gRPC status, and one the queue made carries the library error's text as
 its message:

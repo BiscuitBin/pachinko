@@ -57,11 +57,12 @@ on libpachinko with `testing` on.
 would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`. With no arguments the
 process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
 and writes nothing to standard error. `serve --listen 127.0.0.1:0` writes a
-`listening on` line naming a loopback address with a port the system chose, and the test
-kills the child before it asserts. A bad argument exits 1 with the error on standard
-error and nothing on standard output. The file opens with an `#![expect]` of
-`clippy::tests_outside_test_module` and its reason, because an integration test file is
-its own test module.
+`listening on` line naming a loopback address with a port the system chose. The test
+waits at most 30 seconds for that line, then kills and reaps the child before it asserts,
+so a service that never writes the line fails the test instead of hanging it. A bad
+argument exits 1 with the error on standard error and nothing on standard output. The
+file opens with an `#![expect]` of `clippy::tests_outside_test_module` and its reason,
+because an integration test file is its own test module.
 [Run the binary test](../how-to/test-and-debug.md#run-the-binary-test) says how to run it
 and how it divides from the unit tests beside `run`.
 
@@ -295,8 +296,8 @@ be promoted to regression tests when domain targets arrive. See
 | In-module tests, `crates/libpachinko/src/` | What the integration tests cannot reach through the public API: `version` returns the manifest's, `FakeClock` moves both ways and its clones share one instant, `Config` admits zero durations, a lease id round-trips its number, the lease-id counter stops rather than wrap, and every `Queue` is `Clone`, `Debug`, `Send`, `Sync` and `'static`. |
 | `crates/libpachinko/tests/queue/` | Every obligation of the module, as [Tests from the specifications](#tests-from-the-specifications) describes: each rule's success and failure, the config defaults and invariants, the surfaces, and the invariants and transition graphs by property. |
 | `crates/libpachinko/tests/records_contract.rs`, `crates/pachinko/tests/arrow_records.rs` | Each record store keeps the records contract: lookup, insert, supersede in place, holding the oldest by position, settling, deferring and freeing. |
-| In-module tests, `crates/pachinko/src/` | The service's parts alone: the command line's options and refusals, the owner task's replies and shutdown, the system clock, the Arrow store's 64-bit offsets, the Flight codec's reading of each body and the status code each refusal maps to, and `run`'s version line and its errors. |
-| `crates/pachinko/tests/flight.rs` | The two surfaces over a real Flight connection: each trigger's outcome on the wire, two consumers never handed one pocket, each refusal's status code (`NOT_FOUND`, `INVALID_ARGUMENT` or `FAILED_PRECONDITION`), a lapse the ticker processes, and a shutdown that answers stalled requests `UNAVAILABLE` and returns. |
+| In-module tests, `crates/pachinko/src/` | The service's parts alone: the command line's options and refusals, the owner task's replies and shutdown, the system clock, the Arrow store's 64-bit offsets, the Flight codec's reading of each body, the size of each pull and `status` reply message, the status code each refusal maps to, and `run`'s version line and its errors. |
+| `crates/pachinko/tests/flight.rs` | The two surfaces over a real Flight connection: each trigger's outcome on the wire, two consumers never handed one pocket, each refusal's status code (`NOT_FOUND`, `INVALID_ARGUMENT` or `FAILED_PRECONDITION`), a lapse the ticker processes, a pull and a `status` too large for one gRPC message read whole with a default client, and a shutdown that answers stalled requests `UNAVAILABLE` and returns. |
 | `crates/pachinko/tests/binary.rs` | The built binary: its version line, its `listening on` line on loopback, and a bad argument's exit code and message. |
 | Doctests | The examples on both crates' public items, each asserting from outside its crate. |
 

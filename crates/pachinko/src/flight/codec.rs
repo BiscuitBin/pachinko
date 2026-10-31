@@ -7,6 +7,7 @@
 //! panic. A reply that cannot be written is
 //! `INTERNAL`: its schema is this module's, so that is a programming error.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use arrow_array::cast::AsArray;
@@ -224,13 +225,14 @@ const fn outcome_name(outcome: RowOutcome) -> &'static str {
 }
 
 /// A pull's reply: the schema, with the outcome and, for a batch, the lease in
-/// its metadata, and the records when there is a batch.
+/// its metadata, and the records when there is a batch, sliced into runs that
+/// each fit one message.
 pub(super) fn pull_reply(
     outcome: PullOutcome<RecordBatch>,
-) -> Result<(SchemaRef, Option<RecordBatch>), Status> {
+) -> Result<(SchemaRef, Vec<RecordBatch>), Status> {
     match outcome {
         PullOutcome::Batch(batch) => pulled_batch_reply(batch),
-        PullOutcome::NoPocketAvailable => Ok((no_pocket_schema(), None)),
+        PullOutcome::NoPocketAvailable => Ok((no_pocket_schema(), Vec::new())),
         _ => Err(Status::internal(
             "the queue returned a pull outcome this service does not know",
         )),
@@ -242,10 +244,11 @@ fn no_pocket_schema() -> SchemaRef {
     schema_with(&batch_schema(), &[(OUTCOME, "no_pocket".to_owned())])
 }
 
-/// A pulled batch's reply: its records, under a schema that names the lease.
+/// A pulled batch's reply: its records, in runs under a schema that names the
+/// lease.
 fn pulled_batch_reply(
     batch: PulledBatch<RecordBatch>,
-) -> Result<(SchemaRef, Option<RecordBatch>), Status> {
+) -> Result<(SchemaRef, Vec<RecordBatch>), Status> {
     let metadata = [
         (OUTCOME, "batch".to_owned()),
         (LEASE_ID, batch.lease.as_raw().to_string()),
@@ -257,7 +260,38 @@ fn pulled_batch_reply(
         .records
         .with_schema(Arc::clone(&schema))
         .map_err(|error| internal(&error))?;
-    Ok((schema, Some(records)))
+    Ok((schema, record_runs(&records)?))
+}
+
+/// `records` sliced, without copying, into runs whose IPC stream stays within
+/// [`REPLY_MESSAGE_BYTES`] as [`row_runs`] counts it. arrow-flight's encoder only
+/// splits a batch further, never joins two, so each run's messages stay within the
+/// bound too; and it sends the schema once, in a message of its own, so counting
+/// the schema in every run overstates a run's message.
+fn record_runs(records: &RecordBatch) -> Result<Vec<RecordBatch>, Status> {
+    let empty = write_stream(&records.slice(0, 0))?;
+    let runs = row_runs(record_sizes(records)?, empty.len());
+    Ok(runs
+        .into_iter()
+        .map(|run| records.slice(run.start, run.len()))
+        .collect())
+}
+
+/// What each of `records`' rows adds to a reply stream, padding aside.
+fn record_sizes(records: &RecordBatch) -> Result<Vec<usize>, Status> {
+    let keys = records
+        .column_by_name(RECORD_KEY)
+        .and_then(|column| column.as_string_opt::<i64>())
+        .ok_or_else(|| Status::internal("a pulled batch has no LargeUtf8 record_key"))?;
+    let payloads = records
+        .column_by_name(PAYLOAD)
+        .and_then(|column| column.as_binary_opt::<i64>())
+        .ok_or_else(|| Status::internal("a pulled batch has no LargeBinary payload"))?;
+    Ok(keys
+        .iter()
+        .zip(payloads)
+        .map(|(key, payload)| row_bytes(key.unwrap_or_default(), payload.unwrap_or_default()))
+        .collect())
 }
 
 /// The reply to a join: `outcome` = `joined`.
@@ -316,32 +350,63 @@ pub(super) fn status_reply(view: Option<LeaseView>) -> Result<Vec<Bytes>, Status
         },
     );
     let schema = schema_with(&batch_schema(), &metadata);
-    held_chunks(&held)
+    let empty = write_stream(&held_batch(Arc::clone(&schema), &[])?)?;
+    held_chunks(&held, empty.len())
         .into_iter()
         .map(|chunk| write_stream(&held_batch(Arc::clone(&schema), chunk)?))
         .collect()
 }
 
-/// The most key and payload bytes one `status` reply message carries before the
-/// next record starts another: arrow-flight's `do_get` target, so each message
-/// stays under a gRPC client's default 4 MiB limit.
-const STATUS_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
+/// The most bytes the IPC stream of one `status` or pull reply message of more
+/// than one record holds, its schema and metadata included: arrow-flight's
+/// `do_get` target, so each message stays under a gRPC client's default 4 MiB
+/// limit.
+const REPLY_MESSAGE_BYTES: usize = 2 * 1024 * 1024;
 
-/// `held` in runs of at most [`STATUS_MESSAGE_BYTES`], each at least one record;
-/// no records is one empty run.
-fn held_chunks(held: &[HeldRecord]) -> Vec<&[HeldRecord]> {
-    let mut chunks = Vec::new();
-    let (mut start, mut bytes) = (0, 0);
-    for (index, record) in held.iter().enumerate() {
-        let size = record.key.len() + record.payload.len();
-        if index > start && bytes + size > STATUS_MESSAGE_BYTES {
-            chunks.push(&held[start..index]);
-            (start, bytes) = (index, 0);
+/// What a held row adds to a reply stream besides its key and payload: the key's
+/// and the payload's 64-bit offsets and its `Int64` rank.
+const HELD_ROW_BYTES: usize = 3 * size_of::<i64>();
+
+/// What rows add to a reply stream besides their own bytes: up to one 64-byte
+/// alignment unit of padding for each of the five buffers they fill (the key's
+/// offsets and bytes, the ranks, the payload's offsets and bytes), and three for
+/// the batch header, which writes the row count and body length an empty batch
+/// leaves out.
+const HELD_PADDING_BYTES: usize = (5 + 3) * 64;
+
+/// `held` in the runs [`row_runs`] makes of it.
+fn held_chunks(held: &[HeldRecord], empty: usize) -> Vec<&[HeldRecord]> {
+    let sizes = held
+        .iter()
+        .map(|record| row_bytes(&record.key, &record.payload));
+    row_runs(sizes, empty)
+        .into_iter()
+        .map(|run| &held[run])
+        .collect()
+}
+
+/// The rows, of `sizes` bytes each, in runs whose IPC stream, `empty` bytes with
+/// no rows, stays within [`REPLY_MESSAGE_BYTES`], each at least one row; no rows
+/// is one empty run.
+fn row_runs(sizes: impl IntoIterator<Item = usize>, empty: usize) -> Vec<Range<usize>> {
+    let fixed = empty + HELD_PADDING_BYTES;
+    let mut runs = Vec::new();
+    let (mut start, mut end, mut bytes) = (0, 0, fixed);
+    for (index, size) in sizes.into_iter().enumerate() {
+        if index > start && bytes + size > REPLY_MESSAGE_BYTES {
+            runs.push(start..index);
+            (start, bytes) = (index, fixed);
         }
         bytes += size;
+        end = index + 1;
     }
-    chunks.push(&held[start..]);
-    chunks
+    runs.push(start..end);
+    runs
+}
+
+/// The bytes a row of `key` and `payload` adds to a reply stream, padding aside.
+const fn row_bytes(key: &str, payload: &[u8]) -> usize {
+    HELD_ROW_BYTES + key.len() + payload.len()
 }
 
 /// `held` as a batch of `schema`.
@@ -403,19 +468,23 @@ fn internal(error: &ArrowError) -> Status {
 #[cfg(test)]
 mod tests {
     use super::{
-        STATUS_MESSAGE_BYTES, held_chunks, lease_value, outcome_name, pull_reply, pull_ticket,
-        put_input, put_result, read_one_row, release_reply, renew_reply, settle_reply,
+        HELD_PADDING_BYTES, HELD_ROW_BYTES, LEASE, POCKET_KEY, REPLY_MESSAGE_BYTES, held_batch,
+        held_chunks, lease_value, outcome_name, pull_reply, pull_ticket, put_input, put_result,
+        read_one_row, release_reply, renew_reply, row_bytes, schema_with, settle_reply,
         status_reply, utf8_value, write_stream,
     };
+    use crate::arrow::{ArrowRecords, batch_schema};
     use arrow_array::cast::AsArray;
     use arrow_array::types::UInt64Type;
     use arrow_array::{ArrayRef, BinaryArray, Int64Array, RecordBatch, StringArray, UInt64Array};
-    use arrow_flight::decode::DecodedFlightData;
+    use arrow_flight::decode::{DecodedFlightData, DecodedPayload, FlightDataDecoder};
+    use arrow_flight::encode::FlightDataEncoderBuilder;
     use arrow_flight::{FlightData, FlightDescriptor};
     use arrow_ipc::reader::StreamReader;
     use arrow_ipc::writer::StreamWriter;
     use arrow_schema::{DataType, Field, Schema};
     use bytes::Bytes;
+    use futures::{TryStreamExt, stream};
     use libpachinko::clock::{FakeClock, Timestamp};
     use libpachinko::config::Config;
     use libpachinko::queue::{
@@ -758,28 +827,170 @@ mod tests {
     fn a_pull_that_finds_no_pocket_is_a_schema_without_records() {
         let (schema, records) = pull_reply(PullOutcome::NoPocketAvailable).unwrap();
         assert_eq!(schema.metadata().get("outcome").unwrap(), "no_pocket");
-        assert!(records.is_none());
+        assert_eq!(records, Vec::<RecordBatch>::new());
     }
 
     #[test]
-    fn held_chunks_split_at_the_status_message_size() {
+    fn held_chunks_split_at_the_reply_message_size() {
         let record = |key: &str, size: usize| HeldRecord::new(key.to_owned(), 1, vec![0; size]);
-        let lens = |held: &[HeldRecord]| -> Vec<usize> {
-            held_chunks(held).iter().map(|chunk| chunk.len()).collect()
+        let lens = |held: &[HeldRecord], empty: usize| -> Vec<usize> {
+            held_chunks(held, empty)
+                .iter()
+                .map(|chunk| chunk.len())
+                .collect()
         };
-        assert_eq!(lens(&[]), vec![0], "no records is one empty run");
+        assert_eq!(lens(&[], 0), vec![0], "no records is one empty run");
 
-        let half = STATUS_MESSAGE_BYTES / 2 - 1;
+        let half = (REPLY_MESSAGE_BYTES - HELD_PADDING_BYTES) / 2 - HELD_ROW_BYTES - 1;
         let held = [
             record("a", half),
             record("b", half),
-            record("c", STATUS_MESSAGE_BYTES + 1),
+            record("c", REPLY_MESSAGE_BYTES + 1),
             record("d", 1),
         ];
         assert_eq!(
-            lens(&held),
+            lens(&held, 0),
             vec![2, 1, 1],
             "a and b fit together; c is over the limit alone"
         );
+        assert_eq!(
+            lens(&held[..2], 1),
+            vec![1, 1],
+            "one more byte of schema parts a and b"
+        );
+    }
+
+    #[test]
+    fn a_status_stream_stays_within_the_bytes_its_chunks_count() {
+        let metadata = [(LEASE, "active".to_owned()), (POCKET_KEY, "pk".to_owned())];
+        let schema = schema_with(&batch_schema(), &metadata);
+        let stream = |held: &[HeldRecord]| {
+            write_stream(&held_batch(Arc::clone(&schema), held).unwrap())
+                .unwrap()
+                .len()
+        };
+        let empty = stream(&[]);
+        let shapes = (0..4).flat_map(|rows| {
+            (1..10).flat_map(move |key_len| {
+                [0, 1, 7, 8, 63, 64, 65].map(|payload_len| (rows, key_len, payload_len))
+            })
+        });
+        for (rows, key_len, payload_len) in shapes {
+            let held: Vec<HeldRecord> = (0..rows)
+                .map(|index| HeldRecord::new(format!("{index:0key_len$}"), 1, vec![0; payload_len]))
+                .collect();
+            let sizes = held
+                .iter()
+                .map(|record| row_bytes(&record.key, &record.payload));
+            let counted = empty + HELD_PADDING_BYTES + sizes.sum::<usize>();
+            let written = stream(&held);
+            assert!(
+                written <= counted,
+                "{rows} rows of {key_len}-byte keys and {payload_len}-byte payloads: \
+                {written} bytes written, {counted} counted"
+            );
+        }
+    }
+
+    /// The `status` reply for a lease on `pocket_key` holding `held` records, keyed
+    /// `k000000` on, each with a `payload_len`-byte payload.
+    fn status_holding(pocket_key: &str, held: usize, payload_len: usize) -> Vec<Bytes> {
+        let mut config = Config::default();
+        config.max_pull_batch = u32::try_from(held).unwrap();
+        let clock = FakeClock::new(Timestamp::from_millis(7));
+        let mut queue: Queue<MemoryRecords, _> = Queue::new(config, clock).unwrap();
+        queue.publisher_joins("p").unwrap();
+        queue.consumer_joins("c").unwrap();
+        for index in 0..held {
+            let key = format!("k{index:06}");
+            let publication = Publication::new(pocket_key, &key, 1, vec![0; payload_len]);
+            queue.publish("p", publication).unwrap();
+        }
+        let limit = i64::try_from(held).unwrap();
+        let PullOutcome::Batch(pulled) = queue.pull("c", limit).unwrap() else {
+            panic!("no batch")
+        };
+        assert_eq!(pulled.records.len(), held);
+        status_reply(queue.lease_view("c").unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_status_reply_of_many_small_records_keeps_each_message_within_the_bound() {
+        let long_pocket_key = "p".repeat(256 * 1024);
+        for (pocket_key, held, payload_len) in [("pk", 150_000, 0), (&*long_pocket_key, 60_000, 0)]
+        {
+            let replies = status_holding(pocket_key, held, payload_len);
+            assert!(replies.len() > 1, "{held} records fit one message");
+            let mut keys = Vec::new();
+            for reply in &replies {
+                assert!(
+                    reply.len() <= REPLY_MESSAGE_BYTES,
+                    "a message of {} bytes",
+                    reply.len()
+                );
+                let batch = read(reply);
+                let metadata = batch.schema().metadata().clone();
+                assert_eq!(metadata.get("pocket_key").unwrap(), pocket_key);
+                let column = batch.column(0).as_string::<i64>();
+                keys.extend(column.iter().flatten().map(str::to_owned));
+            }
+            let published: Vec<String> = (0..held).map(|index| format!("k{index:06}")).collect();
+            assert_eq!(keys, published, "every held record, in order");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pull_reply_of_uneven_records_keeps_each_message_within_the_bound() {
+        let clock = FakeClock::new(Timestamp::from_millis(7));
+        let mut queue: Queue<ArrowRecords, _> = Queue::new(Config::default(), clock).unwrap();
+        queue.publisher_joins("p").unwrap();
+        queue.consumer_joins("c").unwrap();
+        let keys: Vec<String> = (0..100).map(|index| format!("k{index:03}")).collect();
+        let sizes = [3 << 20; 2].into_iter().chain([1; 98]);
+        for (key, size) in keys.iter().zip(sizes) {
+            let publication = Publication::new("pk", key, 1, vec![0; size]);
+            queue.publish("p", publication).unwrap();
+        }
+        let (schema, records) = pull_reply(queue.pull("c", 100).unwrap()).unwrap();
+        let data: Vec<FlightData> = FlightDataEncoderBuilder::new()
+            .with_schema(schema)
+            .build(stream::iter(records.into_iter().map(Ok)))
+            .try_collect()
+            .await
+            .unwrap();
+        let decoded: Vec<DecodedFlightData> =
+            FlightDataDecoder::new(stream::iter(data.into_iter().map(Ok)))
+                .try_collect()
+                .await
+                .unwrap();
+        let mut pulled = Vec::new();
+        for (size, batch) in decoded.into_iter().filter_map(sized_batch) {
+            let rows = batch.num_rows();
+            assert!(size <= message_bound(rows), "{rows} rows in {size} bytes");
+            let column = batch.column(0).as_string::<i64>();
+            pulled.extend(column.iter().flatten().map(str::to_owned));
+        }
+        assert_eq!(pulled, keys, "every pulled record, in order");
+    }
+
+    /// A decoded message's batch, with its header and body bytes; the protobuf
+    /// framing around those two fields is a few bytes, well inside the padding
+    /// the bound allows for.
+    fn sized_batch(message: DecodedFlightData) -> Option<(usize, RecordBatch)> {
+        let size = message.inner.data_header.len() + message.inner.data_body.len();
+        let DecodedPayload::RecordBatch(batch) = message.payload else {
+            return None;
+        };
+        Some((size, batch))
+    }
+
+    /// The most bytes a reply message of `rows` records may take: the bound when it
+    /// holds more than one, and otherwise a gRPC client's default 4 MiB limit.
+    const fn message_bound(rows: usize) -> usize {
+        if rows > 1 {
+            REPLY_MESSAGE_BYTES
+        } else {
+            4 << 20
+        }
     }
 }

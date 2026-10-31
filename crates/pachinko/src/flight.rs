@@ -215,7 +215,8 @@ impl FlightService for PachinkoFlight {
     }
 
     /// `Pull`: the ticket names the consumer and the limit, and the reply is the
-    /// batch under the consumer's lease, or a schema-only `no_pocket` stream.
+    /// batch under the consumer's lease, in slices that each fit one message, or a
+    /// schema-only `no_pocket` stream.
     async fn do_get(
         &self,
         request: Request<Ticket>,
@@ -231,7 +232,7 @@ impl FlightService for PachinkoFlight {
         let (schema, records) = codec::pull_reply(outcome)?;
         let data = FlightDataEncoderBuilder::new()
             .with_schema(schema)
-            .build(stream::iter(records.map(Ok)))
+            .build(stream::iter(records.into_iter().map(Ok)))
             .map_err(Status::from);
         Ok(Response::new(data.boxed()))
     }

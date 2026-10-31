@@ -1,11 +1,12 @@
 //! `do_get` as `Pull`: the batch and its lease in the reply schema's metadata, a
-//! pull that finds no pocket, and a non-positive limit.
+//! pull that finds no pocket, a non-positive limit, and a batch too large for one
+//! gRPC message.
 
 use arrow_flight::Ticket;
 use pachinko::ServeOptions;
 use tonic::Code;
 
-use crate::fixture::{Client, Record, config, status_of, with_server};
+use crate::fixture::{Client, Record, Row, config, status_of, with_server};
 
 /// Joins `p`, `c1` and `c2`, and publishes `a` and `b` into `first` and `c` into
 /// `second`, in that order.
@@ -100,6 +101,36 @@ async fn an_unknown_consumer_is_not_found_and_a_malformed_ticket_an_invalid_argu
             .map_err(status_of)
             .unwrap_err();
         assert_eq!(status.code(), Code::InvalidArgument);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_pull_answers_when_two_large_records_lead_many_small_ones() {
+    with_server(config(), ServeOptions::default(), |mut client| async move {
+        client.join_publisher("p").await.unwrap();
+        client.join_consumer("c").await.unwrap();
+        let large = vec![7_u8; 3 << 20];
+        let keys: Vec<String> = (0..100).map(|index| format!("k{index:03}")).collect();
+        let payloads = [large.as_slice(); 2].into_iter().chain([&b"t"[..]; 98]);
+        let rows: Vec<Row<'_>> = keys
+            .iter()
+            .zip(payloads)
+            .map(|(key, payload)| ("orders", key.as_str(), 1, payload))
+            .collect();
+        // One batch per large record, so no publish message nears the 4 MiB limit.
+        client
+            .publish_batches("p", &[&rows[..1], &rows[1..2], &rows[2..]])
+            .await
+            .unwrap();
+        let pulled = client.pull("c", 100).await.unwrap();
+        let pulled_keys: Vec<&str> = pulled
+            .records
+            .iter()
+            .map(|(key, ..)| key.as_str())
+            .collect();
+        assert_eq!(pulled_keys, keys, "every record, in order");
+        assert_eq!(pulled.records[1].2.len(), 3 << 20);
     })
     .await;
 }
