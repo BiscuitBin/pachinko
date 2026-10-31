@@ -51,8 +51,9 @@ its path as `CARGO_BIN_EXE_pachinko`. It has three:
   `libpachinko::version()` and one newline on standard output and writes nothing to
   standard error.
 - `serve --listen 127.0.0.1:0` writes `listening on <address>`, a loopback address on a
-  port other than 0. The test reads that one line, then kills and waits for the child
-  before it asserts anything, so a failure never leaves a process running.
+  port other than 0. The test waits at most 30 seconds for that one line, then kills
+  and waits for the child before it asserts anything, so neither a failure nor a
+  missing line leaves a process running or hangs the run.
 - With a value `serve` cannot read, the binary exits 1, writes nothing on standard
   output and writes one `pachinko: <error>` line on standard error.
 

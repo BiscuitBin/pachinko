@@ -8,6 +8,13 @@
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
+/// How long `serve` may take to write its `listening on` line before the test fails
+/// instead of hanging; the line normally arrives in milliseconds.
+const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
 
 #[test]
 fn the_binary_prints_its_line_and_exits_zero() {
@@ -30,12 +37,24 @@ fn serve_writes_the_address_it_listens_on() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let mut line = String::new();
-    let read = BufReader::new(child.stdout.take().unwrap()).read_line(&mut line);
-    // Stop the child before any assertion, so a failure never leaves it running.
+    let stdout = child.stdout.take().unwrap();
+    let (sent, received) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        let mut line = String::new();
+        let read = BufReader::new(stdout).read_line(&mut line).map(|_| line);
+        // After the deadline the test no longer reads the result, so its send is moot.
+        let _unsent = sent.send(read);
+    });
+    let read = received.recv_timeout(STARTUP_DEADLINE);
+    // Stop the child before any assertion, so neither a failure nor the deadline
+    // leaves it running.
     child.kill().unwrap();
     child.wait().unwrap();
-    read.unwrap();
+    // The kill closed the pipe, so the reader has reached the end and returns.
+    reader.join().unwrap();
+    let line = read
+        .unwrap_or_else(|_| panic!("no listening line within {STARTUP_DEADLINE:?}"))
+        .unwrap();
     let address = line
         .strip_prefix("listening on ")
         .and_then(|rest| rest.strip_suffix('\n'))
