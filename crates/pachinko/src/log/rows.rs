@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, VecDeque};
 use libpachinko::records::Version;
 
 use super::chunk::{
-    Chunk, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, PLACEHOLDER_SLOTS, RowStatus,
-    SLOT_BITS, Slot, narrow, widen,
+    Chunk, HEADER_BYTES, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, RowStatus,
+    SLOT_BITS, SLOT_BYTES, Slot, narrow, widen,
 };
 
 /// A row's id: its chunk's id above [`SLOT_BITS`], its slot below.
@@ -98,16 +98,24 @@ pub(super) struct Rows {
     spilled_keys: BTreeMap<RowId, String>,
     /// The payloads too large for a chunk, by row id.
     spilled_payloads: BTreeMap<RowId, Vec<u8>>,
-    /// The sum of every chunk's `Chunk::waste`: slots held for no live row, with a
-    /// placeholder chunk counted as its header's worth of slots.
+    /// The sum of every chunk's `Chunk::waste`: the bytes of dead slots and of
+    /// placeholder chunks' headers.
     waste: usize,
+    /// The bytes the live rows take: a slot each, and each one's key and latest
+    /// payload, in an arena or out of line.
+    live_bytes: usize,
 }
 
 impl Rows {
-    /// Slots held for no live row, counting each placeholder chunk as its header's
-    /// worth: what a compaction would give back.
+    /// The bytes of dead slots and placeholder headers: what a compaction would
+    /// give back.
     pub(super) const fn waste(&self) -> usize {
         self.waste
+    }
+
+    /// The bytes the live rows take: what a rebuild copies.
+    pub(super) const fn live_bytes(&self) -> usize {
+        self.live_bytes
     }
 
     /// The front chunk's first row: no row precedes it.
@@ -258,6 +266,11 @@ impl Rows {
             .add_slot(stored.key, stored.payload, slot);
         let id = row_id(chunk, index);
         self.spill(id, row, stored.flags);
+        self.live_bytes = self
+            .live_bytes
+            .saturating_add(SLOT_BYTES)
+            .saturating_add(row.key.len())
+            .saturating_add(row.payload.len());
         Some(id)
     }
 
@@ -309,6 +322,8 @@ impl Rows {
     /// Marks `row` dead and drops what it stored out of line. Then its chunk
     /// tidies itself, and the spent chunks at the front are popped.
     pub(super) fn kill(&mut self, row: RowId) {
+        let freed = self.live_size(row);
+        self.live_bytes = self.live_bytes.saturating_sub(freed);
         if let Some((chunk, slot)) = self.place_mut(row) {
             let before = chunk.waste();
             chunk.kill_slot(slot);
@@ -319,6 +334,21 @@ impl Rows {
         self.spilled_keys.remove(&row);
         self.spilled_payloads.remove(&row);
         self.pop_spent_front();
+    }
+
+    /// The bytes `row` takes while it lives: its slot, key and latest payload; 0
+    /// for a dead row or one that does not exist.
+    fn live_size(&self, row: RowId) -> usize {
+        let live = self
+            .slot(row)
+            .is_some_and(|slot| slot.status() != RowStatus::Dead);
+        if live {
+            SLOT_BYTES
+                .saturating_add(self.key_bytes_at(row).len())
+                .saturating_add(self.payload_at(row).len())
+        } else {
+            0
+        }
     }
 
     /// Pops the spent chunks at the front, then shrinks the deque to fit once its
@@ -333,7 +363,7 @@ impl Rows {
     fn pop_spent_front(&mut self) {
         while self.chunks.front().is_some_and(Chunk::is_spent) {
             self.chunks.pop_front();
-            self.waste = self.waste.saturating_sub(PLACEHOLDER_SLOTS);
+            self.waste = self.waste.saturating_sub(HEADER_BYTES);
             self.front_id = self.front_id.saturating_add(1);
         }
         if self.chunks.capacity() > self.chunks.len().max(1).saturating_mul(4) {
@@ -354,12 +384,17 @@ impl Rows {
         let Some(stored) = chunk.slot_mut(slot) else {
             return old;
         };
+        let added = payload.len();
         if fits {
             stored.lower(PAYLOAD_SPILLED);
         } else {
             stored.raise(PAYLOAD_SPILLED);
             self.spilled_payloads.insert(row, payload);
         }
+        self.live_bytes = self
+            .live_bytes
+            .saturating_sub(old.len())
+            .saturating_add(added);
         old
     }
 
@@ -376,7 +411,7 @@ impl Rows {
 mod tests {
     use super::{ID_LIMIT, NewRow, RowId, Rows, row_id};
     use crate::log::chunk::{
-        Chunk, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, PLACEHOLDER_SLOTS, RowStatus,
+        Chunk, HEADER_BYTES, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, RowStatus,
     };
 
     fn queued<'a>(key: &'a str, payload: &'a [u8], position: u64) -> NewRow<'a> {
@@ -519,21 +554,21 @@ mod tests {
         }
         rows.kill(row_id(0, 1));
         rows.kill(row_id(2, 3));
-        assert_eq!((rows.waste(), recounted_waste(&rows)), (2, 2));
+        assert_eq!((rows.waste(), recounted_waste(&rows)), (48, 48));
         for slot in 0..4 {
             rows.kill(row_id(1, slot));
         }
-        assert_eq!(rows.waste(), 2 + PLACEHOLDER_SLOTS);
+        assert_eq!(rows.waste(), 48 + HEADER_BYTES);
         assert_eq!(recounted_waste(&rows), rows.waste());
         for slot in [0, 2, 3] {
             rows.kill(row_id(0, slot));
         }
         assert_eq!(rows.front_row(), row_id(2, 0));
-        assert_eq!((rows.waste(), recounted_waste(&rows)), (1, 1));
+        assert_eq!((rows.waste(), recounted_waste(&rows)), (24, 24));
         for slot in 0..3 {
             rows.kill(row_id(2, slot));
         }
-        assert_eq!(rows.waste(), 4, "a dead tail keeps its four dead slots");
+        assert_eq!(rows.waste(), 96, "a dead tail keeps its four dead slots");
         appended(&mut rows, "next", b"", 12);
         assert_eq!(
             rows.front_row(),

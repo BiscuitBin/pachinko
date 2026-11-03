@@ -49,9 +49,10 @@ const BYTE_FLOOR: usize = 64;
 /// bytes, between repacks, to at most max(live bytes / 16, this floor).
 const REPACK_FLOOR: usize = if cfg!(test) { 4 } else { 64 };
 
-/// What a placeholder chunk costs, in slots: its 88-byte header, rounded up to
-/// whole 24-byte slots.
-pub(super) const PLACEHOLDER_SLOTS: usize = size_of::<Chunk>().div_ceil(size_of::<Slot>());
+/// What a slot costs: 24 bytes.
+pub(super) const SLOT_BYTES: usize = size_of::<Slot>();
+/// What a placeholder chunk costs: its header, 88 bytes.
+pub(super) const HEADER_BYTES: usize = size_of::<Chunk>();
 
 /// A row's status, as the top two bits of its slot's key word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -202,13 +203,16 @@ impl Chunk {
         self.sealed && self.live == 0
     }
 
-    /// What the chunk holds for no live row, in slots: its dead slots, or a
+    /// The bytes the chunk holds for no live row: its dead slots, or a
     /// placeholder's header. The log sums it to decide when to compact.
     pub(super) fn waste(&self) -> usize {
         if self.is_spent() {
-            PLACEHOLDER_SLOTS
+            HEADER_BYTES
         } else {
-            self.slots.len().saturating_sub(usize::from(self.live))
+            self.slots
+                .len()
+                .saturating_sub(usize::from(self.live))
+                .saturating_mul(SLOT_BYTES)
         }
     }
 

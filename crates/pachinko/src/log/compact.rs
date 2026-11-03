@@ -8,8 +8,8 @@
 //! store renumbers. That happens once every 2^26 chunks or so, on a log already in
 //! order, where the sort is one pass and the rebuild O(n). And rows that die
 //! behind a live one leave dead slots and placeholder chunks that only a rebuild
-//! gives back, so the store compacts once that waste outgrows the live rows
-//! (`Inner::compact_if_wasteful`).
+//! gives back, so the store compacts once that waste outgrows the live rows'
+//! bytes (`Inner::compact_if_wasteful`).
 //!
 //! Renumbering reuses the rebuild rather than shifting every id in place. A shift
 //! would still rewrite each table that names rows by id and rehash the index,
@@ -26,48 +26,55 @@ use std::collections::BTreeMap;
 use libpachinko::records::Version;
 
 use super::Inner;
-use super::chunk::{RowStatus, SUPERSEDED};
+use super::chunk::{RowStatus, SLOT_BYTES, SUPERSEDED};
 use super::rows::{NewRow, RowId, Rows};
 
-/// The waste, in slots, a store may hold beyond one slot per live row before it
-/// compacts.
-const WASTE_SLACK: usize = 64;
+/// The waste, in bytes, a store may hold beyond its live bytes before it
+/// compacts: 64 slots' worth, one more than a front chunk of a queue that pulls
+/// and acks in order ever leaves dead, so that queue never compacts.
+const WASTE_SLACK: usize = 64 * SLOT_BYTES;
 
 impl Inner {
-    /// Compacts the store once the slots it holds for no live row, counting each
-    /// placeholder chunk as its header's worth of slots, pass the live rows plus
-    /// [`WASTE_SLACK`]. Called after every kill and after `free_all`.
+    /// Compacts the store once its waste, the bytes of dead slots (24 each) and
+    /// placeholder chunk headers (88 each), passes its live bytes, each live row's
+    /// slot, key and latest payload, plus [`WASTE_SLACK`]. Called after every kill
+    /// and after `free_all`.
     ///
-    /// The bound: right after a call, the dead slots and placeholder headers
-    /// together take at most `live + 64` slots, 24 bytes each, so a pocket holds at
-    /// most about twice the slots of a compact log, however its records die. Each
-    /// chunk's dead arena bytes stay within its repack bound besides.
+    /// The bound: right after a call, waste ≤ live bytes + 1536, so dead slots and
+    /// headers never take more memory than the records themselves plus 1.5 KiB,
+    /// however the records die. Each chunk's dead arena bytes stay within its
+    /// repack bound besides.
     ///
-    /// The cost: a rebuild walks the live and dead slots, O(live) under that
-    /// bound, and resets the waste to 0. A death adds at most
-    /// `PLACEHOLDER_SLOTS` (4) to the waste: one dead slot, or a placeholder
-    /// header in place of a chunk's last few dead slots. So at least
-    /// `(live + 64) / 4` deaths separate two rebuilds, about `live + 64` when the
-    /// chunks are full, and a rebuild costs amortised O(1) per death. A queue that
-    /// pulls and acks in order leaves dead slots only in its front chunk, at most
-    /// 63, and never reaches the trigger.
+    /// The cost, in bytes: a rebuild copies the live bytes and walks every slot,
+    /// O(live bytes + waste), and fires only once waste > live bytes, so it costs
+    /// less than twice the waste it gives back. The waste is 0 after a rebuild and
+    /// grows only as rows die, by at most 88 bytes a death (one dead slot, or a
+    /// header in place of a chunk's last dead slots). So a rebuild costs at most
+    /// 176 bytes of copying per death since the one before: amortised O(1) per
+    /// death, whatever the records' sizes. A record with a 64 MiB payload held
+    /// forever raises the trigger by its 64 MiB, so the rows churning past it
+    /// compact only after dying in proportion. Counted in deaths: each one adds at
+    /// most 88 bytes of waste and takes at least 24 off the live bytes, so at
+    /// least `(live bytes + 1536) / 112` deaths separate two rebuilds.
     pub(super) fn compact_if_wasteful(&mut self) {
-        if self.rows.waste() > self.count().saturating_add(WASTE_SLACK) {
+        if self.rows.waste() > self.rows.live_bytes().saturating_add(WASTE_SLACK) {
             self.rebuild();
         }
     }
 
-    /// Rebuilds the store from its live rows, sorted by position.
+    /// Rebuilds the store from its live rows, sorted by position. The cursor
+    /// lands on the first queued row, or past the last row when none is queued.
     pub(super) fn rebuild(&mut self) {
         let old = std::mem::take(&mut self.rows);
         let mut superseded = std::mem::take(&mut self.superseded);
         self.deferred.clear();
-        self.cursor = self.rows.front_row();
+        self.cursor = RowId::MAX;
         self.held_end = self.rows.front_row();
         self.index.reset();
         for row in old.by_position() {
             self.readd(&old, &mut superseded, row);
         }
+        self.cursor = self.cursor.min(self.rows.next_row());
         self.index.trim(|entry| self.rows.key_bytes_at(entry));
     }
 
@@ -96,7 +103,8 @@ impl Inner {
         match new.status {
             RowStatus::Held => self.held_end = id.saturating_add(1),
             RowStatus::Deferred => self.deferred.push(id),
-            RowStatus::Queued | RowStatus::Dead => {}
+            RowStatus::Queued => self.cursor = self.cursor.min(id),
+            RowStatus::Dead => {}
         }
         self.last_position = Some(new.position);
     }
@@ -237,6 +245,26 @@ mod tests {
     }
 
     #[test]
+    fn a_large_record_held_forever_does_not_make_the_churn_behind_it_rebuild_often() {
+        let mut records = LogRecords::default();
+        records.insert_queued("large", Version::new(1, vec![7; 4096]), 0);
+        records.hold_oldest(1);
+        let cycles = u64::from(ID_LIMIT) * 80;
+        let rebuilt = churn(&mut records, cycles);
+        // Only the renumbering at ID_LIMIT chunks rebuilds: about once every 127
+        // records. Counting slots instead would compact about every 66, each time
+        // copying the 4 KiB payload again.
+        assert!(
+            rebuilt * 100 <= usize::try_from(cycles).unwrap(),
+            "{rebuilt} rebuilds"
+        );
+        assert_eq!(
+            records.settle("large"),
+            Some(Version::new(1, vec![7; 4096]))
+        );
+    }
+
+    #[test]
     fn survivors_scattered_across_chunks_are_compacted_together() {
         let mut records = LogRecords::default();
         for position in 0..120 {
@@ -248,8 +276,12 @@ mod tests {
             assert_invariants(&records);
         }
         assert_eq!(records.record_count(), 12);
-        let waste = records.inner.as_deref().unwrap().rows.waste();
-        assert!(waste <= 12 + 64, "{waste}");
+        let rows = &records.inner.as_deref().unwrap().rows;
+        assert!(
+            rows.waste() <= rows.live_bytes() + 64 * 24,
+            "{}",
+            rows.waste()
+        );
         let held: Vec<String> = records.held().into_iter().map(|held| held.key).collect();
         let expected: Vec<String> = (0..120)
             .step_by(10)

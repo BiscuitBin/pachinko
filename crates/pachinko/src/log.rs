@@ -357,7 +357,8 @@ impl LogRecords {
     /// Drops everything once the pocket has no record. With none, nothing can be
     /// held, deferred or superseded, so nothing is lost. The queue releases an
     /// emptied pocket without calling `free_all`, so a settle is where an acked-out
-    /// pocket gives its heap back.
+    /// pocket gives its heap back. The trade-off, accepted: a pocket that empties
+    /// on every pull allocates its state again on the next insert.
     fn drop_if_empty(&mut self) {
         self.inner = self.inner.take().filter(|inner| inner.count() > 0);
     }
@@ -434,7 +435,7 @@ mod tests {
     use libpachinko::records::contract::check_contract;
     use libpachinko::records::{HeldRecord, MemoryRecords, PocketRecords, RecordStatus, Version};
 
-    use super::chunk::{PLACEHOLDER_SLOTS, RowStatus, SUPERSEDED, Slot};
+    use super::chunk::{HEADER_BYTES, RowStatus, SLOT_BYTES, SUPERSEDED, Slot};
     use super::rows::RowId;
     use super::{Inner, LogRecords};
     use crate::arrow::held_records;
@@ -474,9 +475,16 @@ mod tests {
         );
         assert_eq!(listed.len(), inner.deferred.len(), "no row is listed twice");
         assert!(
-            inner.rows.waste() <= inner.count() + 64 + PLACEHOLDER_SLOTS,
+            inner.rows.waste() <= inner.rows.live_bytes() + 64 * SLOT_BYTES + HEADER_BYTES,
             "the waste stays within its compaction bound"
         );
+        let live_bytes: usize = live
+            .iter()
+            .map(|(row, _)| {
+                SLOT_BYTES + inner.rows.key_bytes_at(*row).len() + inner.rows.payload_at(*row).len()
+            })
+            .sum();
+        assert_eq!(inner.rows.live_bytes(), live_bytes, "the live bytes add up");
         let flagged = live.iter().filter(|(_, slot)| slot.has(SUPERSEDED)).count();
         assert_eq!(
             inner.superseded.len(),

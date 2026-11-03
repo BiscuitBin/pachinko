@@ -56,10 +56,11 @@ in position order, with a hash index by key:
   chunks are popped, and a chunk's arenas are repacked once its dead bytes pass a
   sixteenth of its live bytes. A repack never moves a slot to another chunk, so no row id
   changes. A chunk can die behind a live one, for example behind a record a consumer
-  holds while it acks everything after it. So once dead slots and dead chunks' headers
-  outweigh the live records by more than 64 slots, the store rebuilds itself in position
-  order. A rebuild costs O(n) and comes only after at least as many deaths, so a step
-  stays amortised O(1), and the waste stays within one slot per live record plus 64.
+  holds while it acks everything after it. So once the bytes held by dead slots and dead
+  chunks' headers outweigh the live records' bytes (their slots, keys and payloads) by
+  more than 1,536, the store rebuilds itself in position order. A rebuild copies less
+  than twice that waste, and each death adds at most 88 bytes of it, so a step stays
+  amortised O(1) in bytes copied, and the waste stays within the live bytes plus 1,536.
 
 **The pull batch does not change.** `hold_oldest` builds a `RecordBatch` of the held
 versions' `record_key`, `rank` and `payload`, oldest first, with exact-capacity builders:
