@@ -46,6 +46,7 @@ snapshot.
 | T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | done |
 | T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
 | T20 | Pachinko prototype: the queue in libpachinko, Arrow records and a Flight API in the service | `T20-pachinko-prototype.md` | T19 | none | done |
+| T21 | Pocket log records: a faster service record store at no extra memory, measured and verified | `T21-pocket-log-records.md` | T20 | none | in-progress |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07.
@@ -91,6 +92,10 @@ The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2.
   that module, and it carries the spike decision 0014 asked for: the runtime and the
   transport are chosen in it, by the maintainer, and recorded in decision 0019; decision
   0020 records the service's records as Arrow batches.
+- **T21** replaces the service's record store with `LogRecords`, keeping `ArrowRecords`
+  as the benchmark baseline, and records it in decision 0021. It is stacked on T20's
+  branch at `cb77f07`, because the store trait exists only there, and every claim it
+  makes is measured against a ledger written before the code.
 
 ## How to pick up a ticket
 
