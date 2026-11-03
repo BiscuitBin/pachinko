@@ -207,3 +207,81 @@ every new worktree, and it skipped `install-hooks` in this secondary worktree. T
 ```text
 All checks passed and the worktree is unchanged.
 ```
+
+### Baseline, before any store change: `a548785`
+
+Apple M5 Pro, 64 GiB, `rustc 1.99.1 (58cf8f9c3 2026-10-13)`. No other `cargo` or `rustc`
+process ran during either measurement.
+
+- **Timings.** `just bench` runs divan, with medians of 100 samples. `insert`, `settle` and
+  `defer` time 100 ops on one fresh clone, and the per-op figure below is the median ÷
+  100. Every other step times one op on a fresh clone, except `lookup`, which runs on one
+  shared pocket.
+- **Memory.** The scratch probe runs 3 times in release, offline, with each store in its
+  own process; every memory figure was identical in all 3 runs.
+- **Bench against probe.** At 10k, MemoryRecords' bench and probe timings disagree by up
+  to 11.6× (supersede: 485.4 ns in the bench, 41.7 ns in the probe). The bench's sample
+  starts on a cold fresh clone, while the probe repeats one key on one clone. ArrowRecords
+  agrees within 1.5×. The ledger reads the bench, which treats every store the same way.
+
+| Step at 10k (16 B / 1 KiB) | MemoryRecords | ArrowRecords |
+| --- | --- | --- |
+| lookup | 34.9 / 33.92 ns | 13.37 / 14.14 µs |
+| insert, per op | 77.63 / 78.68 ns | 45.64 / 171.7 µs |
+| supersede | 485.4 / 622.1 ns | 27.21 / 252 µs |
+| settle, per op | 125.4 / 362.3 ns | 37.93 / 188.1 µs |
+| defer, per op | 47.7 / 66.45 ns | 27.43 / 25.05 µs |
+| hold_oldest(100) | 36.12 / 52.93 µs | 35.26 / 37.17 µs |
+| free_all, 100 held and 100 deferred | 74.77 / 67.31 µs | 19.5 / 19.21 µs |
+
+| hold_oldest(100) (16 B / 1 KiB) | MemoryRecords | ArrowRecords |
+| --- | --- | --- |
+| 100 records | 4.433 / 10.61 µs | 2.869 / 4.871 µs |
+| 1,000 records | 6.272 / 24.13 µs | 5.729 / 7.942 µs |
+
+| Queue bench | MemoryRecords | ArrowRecords |
+| --- | --- | --- |
+| publish, 1000 records x 10 pockets | 164.6 µs | 1.79 ms |
+| publish, 10000 records x 10 pockets | 2.354 ms | 38.24 ms |
+| publish, 10000 records x 100 pockets | 2.044 ms | 20.21 ms |
+| pull_and_ack, 1000 records x 10 pockets | 210.7 µs | 1.278 ms |
+| pull_and_ack, 10000 records x 10 pockets | 2.745 ms | 44.14 ms |
+| pull_and_ack, 10000 records x 100 pockets | 2.26 ms | 12.9 ms |
+
+| Memory, heap bytes per record (requested / glibc-model) | MemoryRecords | ArrowRecords |
+| --- | --- | --- |
+| M1, 897 x 16 B | 281.03 / 345.17 | 77.02 / 77.41 |
+| M1, 1000 x 16 B | 281.45 / 345.58 | 76.81 / 77.15 |
+| M1, 1000 x 1 KiB | 1,289.45 / 1,353.58 | 1,084.81 / 1,085.15 |
+| M1, 7169 x 16 B | 283 / 345.22 | 76.35 / 76.39 |
+| M1, 10000 x 16 B | 283 / 345.13 | 76.31 / 76.35 |
+| M1, 10000 x 1 KiB | 1,291 / 1,353.13 | 1,084.31 / 1,084.35 |
+| M2 end, 1000 x 16 B | 295.70 / 357.66 | 77.94 / 78.27 |
+| M2 end, 10000 x 1 KiB | 1,306.74 / 1,366.74 | 1,085.42 / 1,085.46 |
+| M4, 10k released pockets, bytes per pocket with inline size | 1,576 / 1,600 | 1,840 / 2,136 |
+| M4, 10k default pockets, bytes per pocket with inline size | 48 / 48 | 1,592 / 1,848 |
+
+M3 (drained 100k → 1k against a fresh 1k pocket) is 1.051 requested and 1.029
+glibc-model for MemoryRecords. ArrowRecords is skipped there, because building 100k
+records takes a full-batch rebuild per insert. M5 (positions `i × k`, k = 7 and 1000) is
+byte-for-byte equal to M1 for both stores.
+
+### MemoryRecords' quick wins: `35a3037`
+
+Same machine. The bench ran `just bench -- MemoryRecords`, and the probe ran as above.
+At 10k, before → after (16 B / 1 KiB):
+
+- settle: 125.4 → 98.53 ns and 362.3 → 128.9 ns per op;
+- supersede: 485.4 → 339.6 ns and 622.1 → 523.2 ns;
+- hold_oldest(100): 36.12 → 24.14 µs and 52.93 → 44.59 µs;
+- free_all: 74.77 → 60.61 µs and 67.31 → 54.51 µs;
+- pull_and_ack: 7.8% to 14.4% faster on every shape.
+
+`defer` is slower: at 10k x 1 KiB it went from 66.45 to 126.1 ns per op, and at 100 and
+1k it is 23% to 135% slower. The bench defers held records that were never superseded,
+so the held version is now cloned from the latest one instead of moved. The queue defers
+only when the held rank differs from the latest (`pockets.rs:219`), that is after a
+supersede has made the copy, so the queue's own defers still move it.
+
+Memory figures M1–M4 are unchanged, except that M2's peak fell (1000 x 1 KiB: 1,645.98
+→ 1,543.58 B/record). T1 and T3 compare against these post-change figures.
