@@ -24,13 +24,22 @@ pub struct MemoryRecords {
     queued: BTreeMap<u64, String>,
 }
 
-/// One record's slot.
+/// One record's slot. A held record's held version is its latest one until a
+/// supersede lands on it; only then is a copy kept in `held`, so a pull clones
+/// each payload once, into its batch, rather than twice.
 #[derive(Clone, Debug)]
 struct Entry {
     latest: Version,
     position: u64,
     status: RecordStatus,
     held: Option<Version>,
+}
+
+impl Entry {
+    /// The version handed out, present exactly while the record is held.
+    fn held_version(&self) -> Option<&Version> {
+        (self.status == RecordStatus::Held).then(|| self.held.as_ref().unwrap_or(&self.latest))
+    }
 }
 
 impl PocketRecords for MemoryRecords {
@@ -40,7 +49,7 @@ impl PocketRecords for MemoryRecords {
         self.records.get(key).map(|entry| RecordState {
             rank: entry.latest.rank,
             status: entry.status,
-            held_rank: entry.held.as_ref().map(|held| held.rank),
+            held_rank: entry.held_version().map(|held| held.rank),
         })
     }
 
@@ -56,9 +65,12 @@ impl PocketRecords for MemoryRecords {
     }
 
     fn supersede(&mut self, key: &str, version: Version) -> Option<Version> {
-        self.records
-            .get_mut(key)
-            .map(|entry| std::mem::replace(&mut entry.latest, version))
+        let entry = self.records.get_mut(key)?;
+        let replaced = std::mem::replace(&mut entry.latest, version);
+        if entry.status == RecordStatus::Held && entry.held.is_none() {
+            entry.held = Some(replaced.clone());
+        }
+        Some(replaced)
     }
 
     fn hold_oldest(&mut self, limit: usize) -> Vec<HeldRecord> {
@@ -69,7 +81,6 @@ impl PocketRecords for MemoryRecords {
             .filter_map(|key| {
                 let entry = self.records.get_mut(&key)?;
                 entry.status = RecordStatus::Held;
-                entry.held = Some(entry.latest.clone());
                 Some(HeldRecord {
                     key,
                     rank: entry.latest.rank,
@@ -80,14 +91,15 @@ impl PocketRecords for MemoryRecords {
     }
 
     fn settle(&mut self, key: &str) -> Option<Version> {
-        let held = self.records.get(key)?.held.clone()?;
-        self.records.remove(key);
-        Some(held)
+        self.records.get(key)?.held_version()?;
+        let entry = self.records.remove(key)?;
+        Some(entry.held.unwrap_or(entry.latest))
     }
 
     fn defer(&mut self, key: &str, position: u64) -> Option<Version> {
         let entry = self.records.get_mut(key)?;
-        let held = entry.held.take()?;
+        let held = entry.held_version()?.clone();
+        entry.held = None;
         entry.status = RecordStatus::Deferred;
         entry.position = position;
         Some(held)
@@ -114,7 +126,7 @@ impl PocketRecords for MemoryRecords {
             .records
             .iter()
             .filter_map(|(key, entry)| {
-                let version = entry.held.as_ref()?;
+                let version = entry.held_version()?;
                 let record = HeldRecord {
                     key: key.clone(),
                     rank: version.rank,
@@ -135,7 +147,7 @@ impl PocketRecords for MemoryRecords {
                 latest: entry.latest.clone(),
                 position: entry.position,
                 status: entry.status,
-                held: entry.held.clone(),
+                held: entry.held_version().cloned(),
             })
             .collect()
     }
