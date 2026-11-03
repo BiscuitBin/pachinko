@@ -85,14 +85,22 @@ impl Index {
     /// `capacity()`: a removal can leave a tombstone that `capacity()` stops
     /// counting, so `capacity()` understates the memory the table holds.
     ///
-    /// hashbrown sizes a table to a power of two buckets at 7/8 load, so a shrink to
-    /// fit lands where a fresh store of that length grows to: a pocket drained from
-    /// 100k keys to 1k has the 2048 buckets a fresh 1k pocket has, about 10 KiB.
-    /// After a shrink the table must double before it grows again, or fall to a
-    /// quarter before it shrinks again, so each rehash is paid for by as many
-    /// inserts or removals as it moves: amortised O(1). Shrinking to twice the
-    /// length instead would leave a drained pocket up to twice a fresh one's
-    /// buckets, and a 2× trigger would rehash back and forth across one boundary.
+    /// hashbrown sizes a table to a power of two buckets at 7/8 load, so after a
+    /// drain a shrink to fit lands where a fresh store of that length grows to: a
+    /// pocket drained from 100k keys to 1k has the 2048 buckets a fresh 1k pocket
+    /// has, about 10 KiB.
+    ///
+    /// Churn is different. A removal can leave a tombstone, and once tombstones use
+    /// up the spare slots while the table is more than half full, hashbrown grows
+    /// the table rather than rehashing in place, so the table can grow at a
+    /// constant key count. A pocket churning at 1k keys settles at 4096 buckets,
+    /// twice a fresh one's, and stays there. That is within the rule, which lets
+    /// the buckets reach four times the length before it shrinks them.
+    ///
+    /// Between a shrink and the next resize the table takes as many inserts or
+    /// removals as a constant fraction of its length, so each rehash is paid for
+    /// by the steps before it: amortised O(1). A 2× trigger would also shrink a
+    /// churning table, rehashing back and forth as tombstones regrew it.
     pub(super) fn trim<'k>(&mut self, key_of: impl Fn(RowId) -> &'k [u8]) {
         let len = self.table.len();
         let full = self.table.num_buckets() / 8 * 7;
