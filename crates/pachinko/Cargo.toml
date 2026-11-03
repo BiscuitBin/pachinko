@@ -44,7 +44,7 @@ divan = { workspace = true }
 libpachinko = { path = "../libpachinko", version = "0.1.0", features = ["testing"] }
 
 [[bench]]
-name = "arrow"
+name = "records"
 harness = false
 
 # The same `--cfg docsrs` and features `just doc` builds with, so a docs.rs build
