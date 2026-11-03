@@ -59,6 +59,13 @@ futures = "0.3.34"
 # Decision 0007: bytes is the buffer type Flight's messages carry; the handlers
 # name it directly for action bodies and replies. MIT; MSRV 1.57.
 bytes = "1.12.1"
+# Decision 0007: hashbrown's `HashTable` is the service's key index in `LogRecords`
+# (decision 0021): a table of `u32` row ids, about 5 bytes a key, that reads each key
+# back from the log. Default features off, so no default hasher (the store supplies
+# std's `RandomState`) and no allocator-api2. Already in Cargo.lock at 0.17.1
+# through arrow-array and indexmap, so it adds no crate. MIT or Apache-2.0; MSRV
+# 1.85, below our pin. Never a libpachinko dependency.
+hashbrown = { version = "0.17.1", default-features = false }
 
 [workspace.package]
 edition = "2024"

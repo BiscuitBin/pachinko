@@ -123,7 +123,7 @@ pub fn held_records(batch: &RecordBatch) -> Vec<HeldRecord> {
     clippy::expect_used,
     reason = "the schema is fixed by this module; a kernel error is a programming error"
 )]
-fn kernel<T>(result: Result<T, ArrowError>) -> T {
+pub(crate) fn kernel<T>(result: Result<T, ArrowError>) -> T {
     result.expect("an Arrow kernel failed on the records schema")
 }
 

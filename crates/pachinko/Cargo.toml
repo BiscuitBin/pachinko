@@ -36,6 +36,8 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
+# The key index of the service's log store (decision 0021; note in the workspace manifest).
+hashbrown = { workspace = true }
 
 [dev-dependencies]
 # The records contract the Arrow store's test runs, from libpachinko's `testing`
