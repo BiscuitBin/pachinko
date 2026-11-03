@@ -105,60 +105,69 @@ at 100, 1,000 and 10,000 records with 16-byte and 1 KiB payloads, and `publish` 
 committed: a counting global allocator over the requested sizes, the same sizes rounded
 as glibc's allocator rounds them, three runs per store, each in its own release process.
 
-The figures below are from commit `b616a0b`, on one macOS machine, an Apple M5 Pro with
-64 GiB and `rustc 1.99.1`. The timings are divan medians of one full `just bench` and
-hold only for that machine; the byte counts were identical in all three probe runs.
+The figures below are from commit `a9efedc`, the code this decision ships, on one macOS
+machine, an Apple M5 Pro with 64 GiB and `rustc 1.99.1`. The timings are divan medians of
+one full `just bench` and hold only for that machine; the byte counts were identical in
+all three probe runs. The ledger was measured four times in full: at `b616a0b`, by an
+independent re-measurement from a clean build at `09f8ced`, and after each round of
+review fixes, at `f0bb61f` and `a9efedc`.
 
 | At 10,000 records, 16-byte payloads | MemoryRecords | ArrowRecords | LogRecords |
 | --- | --- | --- | --- |
-| lookup | 34.54 ns | 14.1 µs | 11.67 ns |
-| insert, per op | 78 ns | 47.92 µs | 62.8 ns |
-| supersede | 484 ns | 28.06 µs | 140.7 ns |
-| settle, per op | 109 ns | 37.71 µs | 95.05 ns |
-| defer, per op | 60.83 ns | 26.92 µs | 148.1 ns |
-| `hold_oldest(100)` | 33.99 µs | 34.39 µs | 2.515 µs |
-| `free_all`, 100 held and 100 deferred | 61.93 µs | 18.9 µs | 543.1 ns |
-| `publish`, 10,000 records in 10 pockets | 2.403 ms | 38.43 ms | 1.901 ms |
-| `pull_and_ack`, 10,000 records in 10 pockets | 2.882 ms | 44.29 ms | 2.362 ms |
+| lookup | 36.79 ns | 14.22 µs | 12.3 ns |
+| insert, per op | 74.15 ns | 41.09 µs | 57.99 ns |
+| supersede | 356.4 ns | 26.98 µs | 95.5 ns |
+| settle, per op | 102.9 ns | 35.3 µs | 98.75 ns |
+| defer, per op | 48.1 ns | 22.18 µs | 154.4 ns |
+| `hold_oldest(100)` | 26.59 µs | 33.32 µs | 1.98 µs |
+| `free_all`, 100 held and 100 deferred | 83.14 µs | 18.47 µs | 491.6 ns |
+| `publish`, 10,000 records in 10 pockets | 2.35 ms | 36.32 ms | 1.853 ms |
+| `pull_and_ack`, 10,000 records in 10 pockets | 2.735 ms | 43.02 ms | 2.322 ms |
 | Heap bytes a record, requested / glibc-model | 283 / 345.13 | 76.31 / 76.35 | 61.36 / 62.12 |
 | The same at 1 KiB payloads | 1,291 / 1,353.13 | 1,084.31 / 1,084.35 | 1,069.45 / 1,070.21 |
 | Bytes an idle, released pocket, inline size included, requested / glibc-model | 1,576 / 1,600 | 1,840 / 2,136 | 8 / 8 |
+| Bytes an idle pocket released through the queue (whole queue heap per pocket), requested / glibc-model | 1,733.18 / 1,813.88 | 1,759.55 / 2,071.02 | 137.06 / 192.53 |
 
-Against its ledger, `LogRecords` passed every timing claim: each step at 10,000 records
-at least ten times faster than `ArrowRecords` and within three times `MemoryRecords`,
-`hold_oldest` and `free_all` past their margins, and `publish` and `pull_and_ack` faster
-than `ArrowRecords` on every shape. It passed the memory claims for insert-only pockets,
+The last row goes through the queue: each pocket gets one record, which is pulled, acked
+and released, and the figure is the whole queue's heap per pocket.
+
+Against its ledger, `LogRecords` passed every memory claim but one: insert-only pockets,
 sparse positions, a pocket drained from 100,000 records to 1,000 (1.078 times a fresh
-one) and idle pockets. The ledger's behaviour and gate rows, C1 and C2, are recorded with
-the ticket's hand-back.
+one) and idle pockets. It passed every timing claim but one: `hold_oldest` and `free_all`
+past their margins, and `publish` and `pull_and_ack` faster than `ArrowRecords` on every
+shape. The ledger's behaviour and gate rows, C1 and C2, are recorded with the ticket's
+hand-back.
 
 **M2, memory after churn: a failure.** After 4,000 publish, pull and ack cycles, a pocket
-of 1,000 records with 1 KiB payloads holds 1,087.45 bytes a record against
-`ArrowRecords`' 1,085.94: 1,515 bytes more in all, 0.14% requested, and 0.19% in the
-glibc model. All three runs gave the same bytes. The other twelve sub-cases of the claim
-pass, including 10,000 records at 1 KiB, and the peak during churn stays far below the
-Arrow store's in every case, 1,308.68 against 2,596.89 bytes a record in the failing one.
-The claim fails as written, and its threshold did not move. A byte-by-byte breakdown of
-the churned pocket accounts for all 16,009 bytes it holds beyond a fresh one. Ten
-thousand of them are the key index: settles leave tombstones in the hash table, and
-under steady churn hashbrown grows it from 2,048 to 4,096 buckets at a constant record
-count. That is within the index's shrink rule, which waits until the table is four times
-what the records need. The rest is slack the store's other rules allow: dead and spare
-payload bytes in the front chunk, its dead slots, and the deque's capacity. None of it is
-a defect, so the store was not changed after the measurement. A tighter index rule,
-shrinking whenever the table exceeds a fresh one's size, is left as an option.
+of 1,000 records with 1 KiB payloads holds 1,087,467 bytes against `ArrowRecords`'
+1,085,936: 0.14% more requested, and 0.19% more in the glibc model. All four
+measurements agree to within 16 bytes. The other twelve sub-cases of the claim pass,
+including 10,000 records at 1 KiB, and the peak during churn stays far below the Arrow
+store's in every case. The claim fails as written, and its threshold did not move. A
+byte-by-byte breakdown of the churned pocket accounts for all 16,009 bytes it held
+beyond a fresh one at `b616a0b`. Ten thousand of them are the key index: settles leave
+tombstones in the hash table, and under steady churn hashbrown grows it from 2,048 to
+4,096 buckets at a constant record count. That is within the index's shrink rule, which
+waits until the table is four times what the records need. The rest is slack the store's
+other rules allow: dead and spare payload bytes in the front chunk, its dead slots, and
+the deque's capacity. None of it is a defect, so the store was not changed to pass the
+claim. A tighter index rule, shrinking whenever the table exceeds a fresh one's size, is
+left as an option.
 
-**The margins in the timing claim.** `ArrowRecords` is never close: it is at least 52
+**T1, the step timings: a failure.** `ArrowRecords` is never close: it is at least 52
 times slower than `LogRecords` in every run of the claim's five steps. The bound against
-`MemoryRecords` is tighter. Across four runs, `defer` at 10,000 records takes between
-2.21 and 3.09 times as long as `MemoryRecords`; the one run at 3.09, with 1 KiB payloads,
-fails on its own, and the medians of the four, 2.41 at 16 bytes and 2.32 at 1 KiB, pass.
-`MemoryRecords`' own steps move by 20 to 50% between runs with no code change, and
-against its earlier, faster run both `defer` ratios would be above three. `LogRecords`'
-settle runs 1.8 to 2.6 times slower when `just bench` is filtered to settle than in the
-full run, which takes its ratio to `MemoryRecords` at 1 KiB from 1.66 to 2.87 and 2.91,
-still under three. The timing claim passes, but its bound against the reference is a
-margin one machine's noise can cross.
+`MemoryRecords`, within three times, holds for lookup, insert, supersede and settle in
+every run, and fails for `defer`. Across the four full runs `defer` at 10,000 records
+took 2.17 to 3.43 times as long as `MemoryRecords` at 1 KiB, and the claim failed in two
+of them: the independent re-measurement and the run of the shipped code, at 3.21 (16
+bytes) and 3.39 (1 KiB). `LogRecords`' own `defer` barely moves between runs, 42.4 to
+43.2 µs for 100 at 1 KiB; `MemoryRecords`' moves by 20 to 60%, and its fast runs are the
+failing ones. The median over all seven runs that timed it, 2.44 at 16 bytes and 2.41 at
+1 KiB, is under three, but the claim is read run by run, so it fails as written. A
+`LogRecords` defer copies the record's latest version to the tail of the log and returns
+a copy of the held one, where `MemoryRecords` changes the record in place and copies only
+the held version; the queue defers only a record superseded while held, which is the
+rarer path.
 
 ## Consequences
 

@@ -1,7 +1,7 @@
 ---
 id: T21
 title: "Pocket log records: a faster service record store at no extra memory, measured and verified"
-status: in-progress
+status: done
 depends_on: [T20]
 parallel_with: []
 branch: ticket/t21-pocket-log-records
@@ -285,3 +285,168 @@ supersede has made the copy, so the queue's own defers still move it.
 
 Memory figures M1–M4 are unchanged, except that M2's peak fell (1000 x 1 KiB: 1,645.98
 → 1,543.58 B/record). T1 and T3 compare against these post-change figures.
+
+### LogRecords and its tests: `72d5dc8`
+
+`crates/pachinko/src/log.rs` and `log/{chunk,rows,index,batch,compact}.rs`. The design
+departs from the plan in five recorded ways, each with its reason in a code comment:
+
+- `rows.rs` owns row addressing;
+- renumbering reuses the sorted rebuild;
+- a dead tail chunk is cleared in place rather than dropped;
+- the pull batch uses the public `arrow::batch_schema()`, so `arrow/schema.rs` is
+  untouched;
+- the key arena is bytes, so a repack can move them in place without unsafe code.
+
+A repack moves bytes down in place with no allocation, once dead bytes pass both
+live/16 and 64 B. Before measurement, the first version repacked a front-draining chunk
+every few settles into fresh arenas; that was changed as a design defect, not tuned.
+
+- **`just lock`** (network, authorised) added no `[[package]]`. The whole `Cargo.lock`
+  diff is `+ "hashbrown",` in `pachinko`'s dependency list.
+- **Limit.** More than 2^32 − 64 live records panics under
+  `#[expect(clippy::panic, reason = ...)]`. That is the same ceiling ArrowRecords' `u32`
+  pull indexes already set.
+- **Tests.**
+  - The module tests run under small `cfg(test)` limits (4 rows a chunk, 16 B and 32 B
+    arenas, 32 chunk ids), so the seal, spill, renumber and repack branches are reached.
+    They include `check_contract` and a 16-seed comparison with MemoryRecords.
+  - `tests/log_records.rs` runs the contract and the differential test: 64 seeds × 10,000
+    steps, 16 of them with out-of-order positions. Each seed must reach at least 192
+    records and at least 5 `free_all` calls on an empty pocket, and each group of 16
+    seeds at least 1,000 supersedes of held records.
+
+### LogRecords measured: `b616a0b`
+
+The bench and the probe ran over all three stores, measured exactly as for the baseline.
+
+- **Verdicts.** M1, M3, M4, M5, T1, T2, T3 and T4 passed, and M2 failed at
+  n = 1000 × 1 KiB (+0.14%).
+- **T1 repeat runs.** Repeated `just bench -- <step>` runs, 4 for defer and 3 for each
+  other T1 step, showed MemoryRecords' medians moving 20–50% with no code change.
+- **M2 breakdown.** A byte breakdown of the churned pocket, from a temporary layout
+  report reverted afterwards, accounts for all 16,009 bytes beyond a fresh pocket. 10,240
+  of them are the key index: tombstones grow hashbrown from 2,048 to 4,096 buckets at a
+  constant count, within the 4× trim rule. The rest is front-chunk slack within the
+  stated rules.
+- **No change to pass.** The breakdown found no defect, so the store was not changed to
+  pass M2. Only the index comment, which was wrong about churn, was corrected, at
+  `a20ede1`.
+
+### The service on LogRecords, decision 0021: `09f8ced`
+
+`ServiceQueue` is `Queue<LogRecords, SystemClock>`. All 29 Flight integration tests pass
+on it. Decision 0021 is registered, 0020 carries "superseded in part", and the handbook
+pages name the new store. `just check` at `09f8ced`:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Verification, step 7: `09f8ced`
+
+The verification ran as a workflow of 27 agents on `claude-opus-5-5`. The re-measurer,
+the three refuters and the code reviewer never saw the ledger's verdicts or these notes,
+only the code, the claim definitions and the raw outputs. The re-measurer alone read the
+ledger, in order to diff against it.
+
+- **Independent re-measurement.** It built from fresh target directories and was alone on
+  the machine.
+  - All 300 ledger byte figures matched to the byte, so no memory flag was raised.
+  - 13 timings moved more than 20%: 9 of them MemoryRecords', and 3 LogRecords' (two
+    faster).
+  - One verdict flipped: T1 defer at 10k × 1 KiB, 3.434× MemoryRecords.
+- **Refuters.** A claim fails when 2 of the 3 refute it. The refuters (correctness,
+  numbers, repository invariants) refuted **M2** and **T1**, 2–0 each, and upheld every
+  other claim, 2–0 or 3–0.
+  - The correctness refuter added adversarial differential cases in its own detached
+    worktree and found no divergence.
+  - The invariants refuter ran `just check` itself, which passed.
+- **Defects.** The code review (high) and the refuters reported 22 defects. Each went to
+  its own adversarial verifier, and 14 were confirmed:
+
+| Confirmed defect | Disposition |
+| --- | --- |
+| Memory grows without bound behind a pinned front row: dead chunks stay as placeholders, and a survivor's chunk keeps 64 slots (medium; three reports) | Fixed in `f0bb61f`: a waste-bounded sorted rebuild |
+| `Queue::release` never calls `free_all` on an empty pocket, so an idle LogRecords pocket kept its state on the service's path, and M4 had measured a path the queue never takes (medium) | Fixed in `f0bb61f`: a settle that empties the pocket frees it; M4 is now also measured through `Queue` |
+| M3 measured only a FIFO drain (medium) | Covered by the waste bound; the scattered-survivor case is a module test |
+| The index's `Debug` printed a hasher-dependent bucket count (low) | Fixed: `len` only |
+| The pull batch resolved each row about 5 times (low) | Fixed: once |
+| The `# Panics` bound was off by 63 rows (low) | Fixed: 2^32 − 64 |
+| Stale doc lines: the Cargo.toml dev-dependency comment, testing.md's module row, this ticket's Files touched (low) | Fixed |
+| M2 and T1 fail (two reports) | Reported as failures |
+
+  Of the 8 not confirmed, two concerned `codec.rs`'s test still building its queue over
+  ArrowRecords; it tests the codec's message bounds, not the store.
+
+### A second review round: `f0bb61f` to `a9efedc`
+
+A read-only reviewer of the fix diff found no correctness bugs, and one medium cost flaw.
+The rebuild trigger counted slots while a rebuild copies every live byte, so one pinned
+64 MiB payload under tiny churn was copied about every 66 settles.
+
+`a9efedc` counts waste and live in bytes. A rebuild fires once waste exceeds the live
+bytes plus 1,536 and copies at most 176 B per death; a module test shows it does not
+fire every few settles. The same commit leaves the cursor on the first queued row after a
+rebuild.
+
+The reviewer's low finding is accepted: a pocket that empties on every pull reallocates
+its state on the next insert. It is the cost of freeing idle pockets, and the code
+comment records it.
+
+### The ledger on the shipped code: `a9efedc`
+
+The bench is one full `just bench` and the probe ran 3 times. Machine: Apple M5 Pro,
+64 GiB, macOS, `rustc 1.99.1 (58cf8f9c3 2026-10-13)`. MemoryRecords is from the same run.
+
+| # | Verdict | Measured |
+| --- | --- | --- |
+| M1 | PASS, 32/32 | 1000 × 1 KiB: Log 1,071,458 B against Arrow 1,084,810 B requested; 10k × 16 B: 61.36 against 76.31 B/record |
+| M2 | **FAIL**, 1 of 13 sub-cases | 1000 × 1 KiB after churn: Log 1,087,467 against Arrow 1,085,936 B requested (+0.141%), 1,088,320 against 1,086,272 glibc-model; the other 12 pass |
+| M3 | PASS | 1.0778 requested and 1.0777 glibc-model, a drained 1k pocket over a fresh one |
+| M4 | PASS | Store path: Log 8 B a pocket, against Arrow's 1,840 (requested) and 2,136 (glibc-model). Through `Queue`, the whole queue's heap: Log 137.06 / 192.53, Arrow 1,759.55 / 2,071.02, Memory 1,733.18 / 1,813.88 B a pocket |
+| M5 | PASS, 32/32 | Byte-for-byte equal to M1 at k = 7 and k = 1000 |
+| T1 | **FAIL**, 8 of 10 sub-cases | defer: Log/Memory 3.210 (16 B) and 3.386 (1 KiB). Arrow/Log is at least 54.9 on every step, and the other Log/Memory ratios are at most 2.345 |
+| T2 | PASS, 6/6 | At 10k, 16.83× and 8.36× faster than Arrow; Log ≤ Arrow at 100 and 1k |
+| T3 | PASS | At 10k, 37.6× and 27.9× faster than Arrow, and 169× and 139× faster than Memory |
+| T4 | PASS, 6/6 | The narrowest is pull_and_ack 10000 × 100 at 4.89× faster than Arrow |
+| C1 | PASS | `check_contract::<LogRecords>` and the 64-seed × 10,000-step differential test pass in `just test` (256 run, 256 passed, 1 skipped); the correctness refuter found no divergence |
+| C2 | PASS | See the final gate below |
+
+Across the four full measurements (`b616a0b`, the independent `09f8ced`, `f0bb61f`,
+`a9efedc`), every claim but T1 kept its verdict. T1 is decided by defer:
+
+| Run | defer 16 B, Log/Memory | defer 1 KiB, Log/Memory |
+| --- | --- | --- |
+| `b616a0b` | 2.435 | 2.234 |
+| `09f8ced` | 2.719 | **3.434** |
+| `f0bb61f` | 2.063 | 2.165 |
+| `a9efedc` | **3.210** | **3.386** |
+
+LogRecords' defer stays at 14.7–15.4 µs and 42.4–43.2 µs per 100 ops. The verdict
+follows MemoryRecords' median, which swings 4.81–7.19 µs and 12.51–19.96 µs. The median
+of all seven runs that timed defer, 2.44 and 2.41, is under 3, but the claim is read run
+by run, and it fails on the shipped code and on the independent re-measurement.
+
+## Open points
+
+- **M2 and T1 fail as written, and no threshold moved.**
+  - M2: a churned 1k × 1 KiB pocket is 0.14% over ArrowRecords, mostly a key index that
+    churn's tombstones double. A tighter trim rule, shrinking whenever the table exceeds
+    a fresh one's size, would likely close it, at one O(n) rehash about every 800 settles
+    at 1k. It is a maintainer decision and was not applied.
+  - T1: LogRecords' defer copies the latest version to the tail and returns a copy of the
+    held one, about 3× MemoryRecords' in-place defer. The queue defers only a record
+    superseded while held.
+- **Timings are one macOS machine.** The image runs on Linux, and these figures were not
+  measured there.
+- **The glibc figures are modelled, not measured.** The model rounds every live
+  allocation as glibc's malloc does, Σ max(32, round_up_16(size + 8)); no Linux run
+  confirmed it.
+- **The bench and the probe disagree by more than 2× on some steps.** At 10k: LogRecords'
+  supersede (113.6 ns in the bench, 54.7 ns in the probe), and MemoryRecords' supersede
+  and `free_all`. The bench starts each sample on a cold fresh clone. The ledger reads the
+  bench, which treats every store alike.
+- **Stacked on T20's unmerged branch.** This ticket sits on pull request #38 at `cb77f07`.
+  If another T20 prototype is chosen, it is ported or dropped.
+- **No push and no pull request.** Each needs separate authorisation.

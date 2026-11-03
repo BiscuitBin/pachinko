@@ -46,7 +46,7 @@ snapshot.
 | T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | done |
 | T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
 | T20 | Pachinko prototype: the queue in libpachinko, Arrow records and a Flight API in the service | `T20-pachinko-prototype.md` | T19 | none | done |
-| T21 | Pocket log records: a faster service record store at no extra memory, measured and verified | `T21-pocket-log-records.md` | T20 | none | in-progress |
+| T21 | Pocket log records: a faster service record store at no extra memory, measured and verified | `T21-pocket-log-records.md` | T20 | none | done |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07.
