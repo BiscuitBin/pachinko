@@ -21,6 +21,7 @@ use libpachinko::config::Config;
 use libpachinko::queue::{Publication, PullOutcome, Queue};
 use libpachinko::records::{HeldRecord, MemoryRecords, PocketRecords, Version};
 use pachinko::arrow::{ArrowRecords, held_records};
+use pachinko::log::LogRecords;
 
 #[global_allocator]
 static ALLOC: AllocProfiler = AllocProfiler::system();
@@ -56,7 +57,15 @@ impl Store for ArrowRecords {
     }
 }
 
-// T21: LogRecords joins here
+impl Store for LogRecords {
+    fn held_of(batch: &Self::Batch) -> Vec<HeldRecord> {
+        held_records(batch)
+    }
+
+    fn batch_len(batch: &Self::Batch) -> usize {
+        batch.num_rows()
+    }
+}
 
 /// One pocket of `records` records, each with a `payload`-byte payload.
 #[derive(Clone, Copy)]
@@ -165,7 +174,7 @@ fn held_keys(pocket: Pocket) -> Vec<String> {
 
 /// Looking up a present key. `lookup` reads the pocket, so it runs on one shared
 /// pocket rather than a clone per call, and divan tunes its sample size.
-#[divan::bench(types = [MemoryRecords, ArrowRecords], args = POCKETS)] // T21: LogRecords joins here
+#[divan::bench(types = [MemoryRecords, ArrowRecords, LogRecords], args = POCKETS)]
 fn lookup<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
     let store = queued::<R>(pocket);
     bencher
@@ -176,7 +185,7 @@ fn lookup<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
 /// Inserting 100 new keys, one after another, at the next positions `n`, `n + 1`,
 /// …; the reported time covers all 100 inserts.
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     counter = ItemsCount::new(HELD),
     sample_size = BATCH_SAMPLE_SIZE,
@@ -201,7 +210,7 @@ fn insert<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
 
 /// Superseding a queued key in the middle with a new version of the same size.
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     sample_size = STEP_SAMPLE_SIZE,
 )]
@@ -223,7 +232,7 @@ fn supersede<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
 /// records held (at 100 records, every record: still 100 keys); the reported time
 /// covers all 100 settles.
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     counter = ItemsCount::new(HELD),
     sample_size = BATCH_SAMPLE_SIZE,
@@ -245,7 +254,7 @@ fn settle<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
 /// positions `n`, `n + 1`, …, with the pocket's oldest 100 records held; the
 /// reported time covers all 100 defers.
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     counter = ItemsCount::new(HELD),
     sample_size = BATCH_SAMPLE_SIZE,
@@ -265,7 +274,7 @@ fn defer<R: Store>(bencher: Bencher<'_, '_>, pocket: Pocket) {
 
 /// Holding the oldest 100 records of a pocket where every record is queued.
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     sample_size = STEP_SAMPLE_SIZE,
 )]
@@ -297,7 +306,7 @@ fn held_and_deferred<R: Store>(pocket: Pocket) -> R {
 /// Freeing every held and deferred record when the lease ends, with 100 held and
 /// 100 deferred (50 of each at 100 records).
 #[divan::bench(
-    types = [MemoryRecords, ArrowRecords], // T21: LogRecords joins here
+    types = [MemoryRecords, ArrowRecords, LogRecords],
     args = POCKETS,
     sample_size = STEP_SAMPLE_SIZE,
 )]
@@ -386,7 +395,7 @@ fn drain<R: Store>(queue: &mut Queue<R, FakeClock>) -> usize {
 }
 
 /// Publishing every record of the shape into a fresh queue.
-#[divan::bench(types = [MemoryRecords, ArrowRecords], args = SHAPES)] // T21: LogRecords joins here
+#[divan::bench(types = [MemoryRecords, ArrowRecords, LogRecords], args = SHAPES)]
 fn publish<R: Store>(bencher: Bencher<'_, '_>, shape: Shape) {
     bencher
         .with_inputs(empty_queue::<R>)
@@ -398,7 +407,7 @@ fn publish<R: Store>(bencher: Bencher<'_, '_>, shape: Shape) {
 
 /// Draining a filled queue: pull a batch, ack each record, release each empty
 /// pocket.
-#[divan::bench(types = [MemoryRecords, ArrowRecords], args = SHAPES)] // T21: LogRecords joins here
+#[divan::bench(types = [MemoryRecords, ArrowRecords, LogRecords], args = SHAPES)]
 fn pull_and_ack<R: Store>(bencher: Bencher<'_, '_>, shape: Shape) {
     bencher
         .with_inputs(|| filled_queue::<R>(shape))
