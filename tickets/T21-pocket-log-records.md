@@ -133,7 +133,7 @@ evidence; `just check` is green.
 | `Cargo.toml`, `Cargo.lock` | shared, own lines | `hashbrown` with its decision-0007 note |
 | `crates/libpachinko/src/records/memory.rs` | changed | The two quick wins |
 | `crates/pachinko/src/log.rs` and `log/*.rs` | new | `LogRecords` |
-| `crates/pachinko/src/lib.rs`, `actor.rs`, `arrow.rs`, `arrow/schema.rs` | changed | `pub mod log`; the service's store; the shared `kernel` and `BATCH`; the baseline doc |
+| `crates/pachinko/src/lib.rs`, `actor.rs`, `arrow.rs` | changed | `pub mod log`; the service's store; the shared `kernel`; the baseline doc |
 | `crates/pachinko/tests/log_records.rs` | new | The contract and the differential test |
 | `docs/decisions/0021-pocket-log-records.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, own lines | Decision 0021 |
 | `docs/decisions/0020-records-as-arrow-batches.md` | changed | Superseded in part by 0021 |

@@ -40,7 +40,8 @@ tonic = { workspace = true }
 hashbrown = { workspace = true }
 
 [dev-dependencies]
-# The records contract the Arrow store's test runs, from libpachinko's `testing`
+# The records contract both service stores' tests run, and the reference store the
+# log store's differential test compares against, from libpachinko's `testing`
 # feature; development only, so no normal build of the service turns it on.
 divan = { workspace = true }
 libpachinko = { path = "../libpachinko", version = "0.1.0", features = ["testing"] }

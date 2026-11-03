@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, VecDeque};
 use libpachinko::records::Version;
 
 use super::chunk::{
-    Chunk, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, RowStatus, SLOT_BITS, Slot,
-    narrow, widen,
+    Chunk, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, PLACEHOLDER_SLOTS, RowStatus,
+    SLOT_BITS, Slot, narrow, widen,
 };
 
 /// A row's id: its chunk's id above [`SLOT_BITS`], its slot below.
@@ -98,9 +98,18 @@ pub(super) struct Rows {
     spilled_keys: BTreeMap<RowId, String>,
     /// The payloads too large for a chunk, by row id.
     spilled_payloads: BTreeMap<RowId, Vec<u8>>,
+    /// The sum of every chunk's `Chunk::waste`: slots held for no live row, with a
+    /// placeholder chunk counted as its header's worth of slots.
+    waste: usize,
 }
 
 impl Rows {
+    /// Slots held for no live row, counting each placeholder chunk as its header's
+    /// worth: what a compaction would give back.
+    pub(super) const fn waste(&self) -> usize {
+        self.waste
+    }
+
     /// The front chunk's first row: no row precedes it.
     pub(super) const fn front_row(&self) -> RowId {
         row_id(self.front_id, 0)
@@ -148,9 +157,12 @@ impl Rows {
     /// `row`'s key bytes, from its chunk or from out of line; empty for a row that
     /// does not exist. The index reads these, so a lookup never validates UTF-8.
     pub(super) fn key_bytes_at(&self, row: RowId) -> &[u8] {
-        let Some((chunk, slot)) = self.place(row) else {
-            return &[];
-        };
+        self.place(row)
+            .map_or(&[], |(chunk, slot)| self.key_in(chunk, slot, row))
+    }
+
+    /// The key bytes of `row`, at `slot` of `chunk`.
+    fn key_in<'a>(&'a self, chunk: &'a Chunk, slot: usize, row: RowId) -> &'a [u8] {
         let spilled = chunk
             .slots()
             .get(slot)
@@ -162,18 +174,8 @@ impl Rows {
         }
     }
 
-    /// `row`'s key, for what leaves the store. Every key went in whole from a
-    /// `&str`, so its bytes are valid UTF-8 and the empty fallback is never taken.
-    pub(super) fn key_at(&self, row: RowId) -> &str {
-        std::str::from_utf8(self.key_bytes_at(row)).unwrap_or_default()
-    }
-
-    /// `row`'s latest payload, from its chunk or from out of line; empty for a row
-    /// that does not exist.
-    pub(super) fn payload_at(&self, row: RowId) -> &[u8] {
-        let Some((chunk, slot)) = self.place(row) else {
-            return &[];
-        };
+    /// The payload of `row`, at `slot` of `chunk`.
+    fn payload_in<'a>(&'a self, chunk: &'a Chunk, slot: usize, row: RowId) -> &'a [u8] {
         let spilled = chunk
             .slots()
             .get(slot)
@@ -183,6 +185,28 @@ impl Rows {
         } else {
             chunk.payload(slot)
         }
+    }
+
+    /// `row`'s key, latest rank and latest payload, from one lookup of its chunk:
+    /// what a pull hands out for it.
+    pub(super) fn record_at(&self, row: RowId) -> Option<(&str, i64, &[u8])> {
+        let (chunk, slot) = self.place(row)?;
+        let rank = chunk.slots().get(slot)?.rank;
+        let key = std::str::from_utf8(self.key_in(chunk, slot, row)).unwrap_or_default();
+        Some((key, rank, self.payload_in(chunk, slot, row)))
+    }
+
+    /// `row`'s key, for what leaves the store. Every key went in whole from a
+    /// `&str`, so its bytes are valid UTF-8 and the empty fallback is never taken.
+    pub(super) fn key_at(&self, row: RowId) -> &str {
+        std::str::from_utf8(self.key_bytes_at(row)).unwrap_or_default()
+    }
+
+    /// `row`'s latest payload, from its chunk or from out of line; empty for a row
+    /// that does not exist.
+    pub(super) fn payload_at(&self, row: RowId) -> &[u8] {
+        self.place(row)
+            .map_or(&[], |(chunk, slot)| self.payload_in(chunk, slot, row))
     }
 
     /// `row`'s latest version, copied out.
@@ -262,7 +286,10 @@ impl Rows {
             return false;
         }
         if let Some(tail) = self.chunks.back_mut() {
+            let before = tail.waste();
             tail.seal();
+            let after = tail.waste();
+            self.waste = self.waste.saturating_sub(before).saturating_add(after);
         }
         self.chunks.push_back(Chunk::default());
         self.pop_spent_front();
@@ -283,8 +310,11 @@ impl Rows {
     /// tidies itself, and the spent chunks at the front are popped.
     pub(super) fn kill(&mut self, row: RowId) {
         if let Some((chunk, slot)) = self.place_mut(row) {
+            let before = chunk.waste();
             chunk.kill_slot(slot);
             chunk.tidy();
+            let after = chunk.waste();
+            self.waste = self.waste.saturating_sub(before).saturating_add(after);
         }
         self.spilled_keys.remove(&row);
         self.spilled_payloads.remove(&row);
@@ -303,6 +333,7 @@ impl Rows {
     fn pop_spent_front(&mut self) {
         while self.chunks.front().is_some_and(Chunk::is_spent) {
             self.chunks.pop_front();
+            self.waste = self.waste.saturating_sub(PLACEHOLDER_SLOTS);
             self.front_id = self.front_id.saturating_add(1);
         }
         if self.chunks.capacity() > self.chunks.len().max(1).saturating_mul(4) {
@@ -344,7 +375,9 @@ impl Rows {
 #[cfg(test)]
 mod tests {
     use super::{ID_LIMIT, NewRow, RowId, Rows, row_id};
-    use crate::log::chunk::{KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, RowStatus};
+    use crate::log::chunk::{
+        Chunk, KEY_LIMIT, KEY_SPILLED, PAYLOAD_LIMIT, PAYLOAD_SPILLED, PLACEHOLDER_SLOTS, RowStatus,
+    };
 
     fn queued<'a>(key: &'a str, payload: &'a [u8], position: u64) -> NewRow<'a> {
         NewRow {
@@ -471,6 +504,43 @@ mod tests {
         assert_eq!(keys, ["2", "3", "8", "9", "10", "11"]);
         assert_eq!(rows.key_at(row_id(2, 1)), "9");
         assert_eq!(rows.slot(row_id(1, 0)).map(|slot| slot.rank), None);
+    }
+
+    /// Recounts the waste from the chunks, to check the running sum.
+    fn recounted_waste(rows: &Rows) -> usize {
+        rows.chunks.iter().map(Chunk::waste).sum()
+    }
+
+    #[test]
+    fn the_waste_counts_dead_slots_and_placeholders_and_drops_with_popped_chunks() {
+        let mut rows = Rows::default();
+        for position in 0..12 {
+            appended(&mut rows, &position.to_string(), b"p", position);
+        }
+        rows.kill(row_id(0, 1));
+        rows.kill(row_id(2, 3));
+        assert_eq!((rows.waste(), recounted_waste(&rows)), (2, 2));
+        for slot in 0..4 {
+            rows.kill(row_id(1, slot));
+        }
+        assert_eq!(rows.waste(), 2 + PLACEHOLDER_SLOTS);
+        assert_eq!(recounted_waste(&rows), rows.waste());
+        for slot in [0, 2, 3] {
+            rows.kill(row_id(0, slot));
+        }
+        assert_eq!(rows.front_row(), row_id(2, 0));
+        assert_eq!((rows.waste(), recounted_waste(&rows)), (1, 1));
+        for slot in 0..3 {
+            rows.kill(row_id(2, slot));
+        }
+        assert_eq!(rows.waste(), 4, "a dead tail keeps its four dead slots");
+        appended(&mut rows, "next", b"", 12);
+        assert_eq!(
+            rows.front_row(),
+            row_id(3, 0),
+            "sealing the dead tail spent it"
+        );
+        assert_eq!((rows.waste(), recounted_waste(&rows)), (0, 0));
     }
 
     #[test]

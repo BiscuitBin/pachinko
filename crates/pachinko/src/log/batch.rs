@@ -20,18 +20,20 @@ pub(super) fn empty() -> RecordBatch {
 }
 
 /// The `record_key`, `rank` and `payload` of each of `held`, in order, as one
-/// batch. Each column is sized from the rows' summed lengths before it is
-/// filled, so no builder grows.
+/// batch. Each row's chunk is looked up once; the columns are then sized from the
+/// rows' summed lengths before they are filled, so no builder grows.
 pub(super) fn pulled(rows: &Rows, held: &[RowId]) -> RecordBatch {
-    let key_bytes = held.iter().map(|row| rows.key_at(*row).len()).sum();
-    let payload_bytes = held.iter().map(|row| rows.payload_at(*row).len()).sum();
-    let mut keys = LargeStringBuilder::with_capacity(held.len(), key_bytes);
-    let mut ranks = Int64Builder::with_capacity(held.len());
-    let mut payloads = LargeBinaryBuilder::with_capacity(held.len(), payload_bytes);
-    for row in held {
-        keys.append_value(rows.key_at(*row));
-        ranks.append_value(rows.slot(*row).map_or(0, |slot| slot.rank));
-        payloads.append_value(rows.payload_at(*row));
+    let records: Vec<(&str, i64, &[u8])> =
+        held.iter().filter_map(|row| rows.record_at(*row)).collect();
+    let key_bytes = records.iter().map(|(key, _, _)| key.len()).sum();
+    let payload_bytes = records.iter().map(|(_, _, payload)| payload.len()).sum();
+    let mut keys = LargeStringBuilder::with_capacity(records.len(), key_bytes);
+    let mut ranks = Int64Builder::with_capacity(records.len());
+    let mut payloads = LargeBinaryBuilder::with_capacity(records.len(), payload_bytes);
+    for (key, rank, payload) in records {
+        keys.append_value(key);
+        ranks.append_value(rank);
+        payloads.append_value(payload);
     }
     let columns: Vec<ArrayRef> = vec![
         Arc::new(keys.finish()),

@@ -14,7 +14,8 @@ use super::rows::RowId;
 /// The table is never iterated. Its order comes from the store's random hasher,
 /// so anything built by walking it would come out in an order that changes from
 /// run to run; every read is a lookup by one key's hash. `Debug` prints only the
-/// counts for the same reason.
+/// key count for the same reason: after churn even the bucket count depends on
+/// where the random hasher left tombstones.
 ///
 /// The hasher is a per-store `RandomState`, so a publisher cannot flood a pocket's
 /// buckets with keys chosen to collide. That randomness is the service's own
@@ -30,7 +31,6 @@ impl fmt::Debug for Index {
         formatter
             .debug_struct("Index")
             .field("len", &self.table.len())
-            .field("buckets", &self.table.num_buckets())
             .finish_non_exhaustive()
     }
 }
@@ -184,13 +184,10 @@ mod tests {
     }
 
     #[test]
-    fn debug_prints_the_counts_and_not_the_entries() {
+    fn debug_prints_the_key_count_and_nothing_the_hasher_shapes() {
         let keys: Vec<String> = ["secret"].map(str::to_owned).to_vec();
         let index = entered(&keys);
         let printed = format!("{index:?}");
-        assert!(
-            printed.starts_with("Index { len: 1, buckets: "),
-            "{printed}"
-        );
+        assert_eq!(printed, "Index { len: 1, .. }");
     }
 }

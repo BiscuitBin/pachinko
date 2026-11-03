@@ -33,8 +33,9 @@ benchmarks measure against.
 in position order, with a hash index by key:
 
 - **The empty pocket.** `LogRecords` is one `Option<Box<Inner>>`: an empty pocket costs
-  8 bytes and no heap. A pocket keeps its buffers while it has a lease, even with no
-  records, and frees them once `free_all` finds it empty.
+  8 bytes and no heap. A pocket frees its buffers as soon as a settle or `free_all`
+  leaves it with no records. The queue's release of an empty pocket never calls the
+  store, so the store cannot wait for it.
 - **Chunks.** `Inner` holds a `VecDeque` of chunks in position order. A chunk has up to 64
   rows, a key arena, a payload arena, and live and dead counters. Each row is a 24-byte
   slot: the latest rank, the full 64-bit position, where the key ends with the status and
@@ -54,7 +55,11 @@ in position order, with a hash index by key:
 - **Settling.** A settle marks the row dead and removes its index entry. Fully dead front
   chunks are popped, and a chunk's arenas are repacked once its dead bytes pass a
   sixteenth of its live bytes. A repack never moves a slot to another chunk, so no row id
-  changes.
+  changes. A chunk can die behind a live one, for example behind a record a consumer
+  holds while it acks everything after it. So once dead slots and dead chunks' headers
+  outweigh the live records by more than 64 slots, the store rebuilds itself in position
+  order. A rebuild costs O(n) and comes only after at least as many deaths, so a step
+  stays amortised O(1), and the waste stays within one slot per live record plus 64.
 
 **The pull batch does not change.** `hold_oldest` builds a `RecordBatch` of the held
 versions' `record_key`, `rank` and `payload`, oldest first, with exact-capacity builders:
@@ -71,16 +76,17 @@ pocket into a scan. The standard library seeds `RandomState`'s keys from the ope
 system's randomness once per thread and varies them for each new hasher. That is an
 effect, and it is the service's, in `pachinko`, where effects belong: libpachinko gains no
 dependency and no effect, so `just effects` is unaffected. The index is never iterated
-and its `Debug` prints only its counts, so the random order cannot reach a pull, a status
-reply or a test's output.
+and its `Debug` prints only its length, so neither the random order nor the bucket count
+it shapes after churn can reach a pull, a status reply or a test's output.
 
 **hashbrown comes in under decision 0007.** Its note sits beside its line in the
 workspace `Cargo.toml`: default features off, so no default hasher and no
 `allocator-api2`, and already in `Cargo.lock` through `arrow-array` and `indexmap`, so it
 adds no crate. It is never a libpachinko dependency.
 
-**The limits.** An insert or a defer panics when a pocket would hold more than `u32::MAX`
-live records, whose slots alone take about 96 GiB, because a row id is a `u32`.
+**The limits.** An insert or a defer panics when a pocket would hold more than 2^32 − 64
+live records ((2^26 − 1) chunks of 64 rows, fewer if large keys or payloads seal chunks
+early), whose slots alone take about 96 GiB, because a row id is a `u32`.
 `ArrowRecords` has the same ceiling, because its pull indexes are `u32`. No other size
 panics: a key or payload too large for a chunk's offsets goes out of line.
 

@@ -60,14 +60,16 @@ use rows::{NewRow, RowId, Rows};
 /// `RecordBatch` of the held versions' `record_key`, `rank` and `payload`, oldest
 /// first: the batch [`ArrowRecords`](crate::arrow::ArrowRecords) hands out.
 ///
-/// An empty pocket is one null pointer and holds no heap. A pocket keeps its
-/// buffers while it has a lease, even with no records, and frees them all once
-/// `free_all` finds it empty.
+/// An empty pocket is one null pointer and holds no heap: the store frees
+/// everything once its last record is settled, and once `free_all` finds it
+/// empty.
 ///
 /// # Panics
 ///
-/// An insert or a defer panics when the pocket would hold more than `u32::MAX`
-/// live records, whose slots alone take about 96 GiB: a row id is a `u32`. The
+/// An insert or a defer panics when the pocket would hold more than `2^32 − 64`
+/// live records, `2^26 − 1` chunks of 64 rows, whose slots alone take about 96 GiB:
+/// a row id is a `u32`. Arena limits can seal chunks early and lower that, but
+/// only for keys averaging megabytes or payloads averaging tens of megabytes. The
 /// Arrow store has the same ceiling. No other size panics; a key or payload too
 /// large for a chunk is stored out of line.
 ///
@@ -91,7 +93,7 @@ pub struct LogRecords {
     inner: Option<Box<Inner>>,
 }
 
-/// A pocket that has records, or had them since its last `free_all`.
+/// A pocket that has records.
 #[derive(Clone, Debug, Default)]
 struct Inner {
     rows: Rows,
@@ -277,11 +279,13 @@ impl Inner {
     }
 
     /// Unindexes `key` at `row` and marks the row dead, then shrinks the index if
-    /// it has grown four times too large.
+    /// it has grown four times too large, and compacts the store if dead slots
+    /// have outgrown the live rows.
     fn drop_row(&mut self, key: &str, row: RowId) {
         self.index.forget(key, row);
         self.rows.kill(row);
         self.index.trim(|entry| self.rows.key_bytes_at(entry));
+        self.compact_if_wasteful();
     }
 
     /// Returns every held and deferred row to queued, at the position it has, and
@@ -349,6 +353,16 @@ impl Inner {
     }
 }
 
+impl LogRecords {
+    /// Drops everything once the pocket has no record. With none, nothing can be
+    /// held, deferred or superseded, so nothing is lost. The queue releases an
+    /// emptied pocket without calling `free_all`, so a settle is where an acked-out
+    /// pocket gives its heap back.
+    fn drop_if_empty(&mut self) {
+        self.inner = self.inner.take().filter(|inner| inner.count() > 0);
+    }
+}
+
 impl PocketRecords for LogRecords {
     type Batch = RecordBatch;
 
@@ -378,7 +392,9 @@ impl PocketRecords for LogRecords {
     }
 
     fn settle(&mut self, key: &str) -> Option<Version> {
-        self.inner.as_mut()?.settle_key(key)
+        let held = self.inner.as_mut()?.settle_key(key);
+        self.drop_if_empty();
+        held
     }
 
     fn defer(&mut self, key: &str, position: u64) -> Option<Version> {
@@ -386,10 +402,11 @@ impl PocketRecords for LogRecords {
     }
 
     fn free_all(&mut self) {
-        self.inner = self.inner.take().and_then(|mut inner| {
+        if let Some(inner) = self.inner.as_mut() {
             inner.requeue();
-            (inner.count() > 0).then_some(inner)
-        });
+            inner.compact_if_wasteful();
+        }
+        self.drop_if_empty();
     }
 
     fn record_count(&self) -> usize {
@@ -417,7 +434,7 @@ mod tests {
     use libpachinko::records::contract::check_contract;
     use libpachinko::records::{HeldRecord, MemoryRecords, PocketRecords, RecordStatus, Version};
 
-    use super::chunk::{RowStatus, SUPERSEDED, Slot};
+    use super::chunk::{PLACEHOLDER_SLOTS, RowStatus, SUPERSEDED, Slot};
     use super::rows::RowId;
     use super::{Inner, LogRecords};
     use crate::arrow::held_records;
@@ -456,6 +473,10 @@ mod tests {
             "the deferred list names the deferred rows"
         );
         assert_eq!(listed.len(), inner.deferred.len(), "no row is listed twice");
+        assert!(
+            inner.rows.waste() <= inner.count() + 64 + PLACEHOLDER_SLOTS,
+            "the waste stays within its compaction bound"
+        );
         let flagged = live.iter().filter(|(_, slot)| slot.has(SUPERSEDED)).count();
         assert_eq!(
             inner.superseded.len(),
@@ -517,15 +538,24 @@ mod tests {
     }
 
     #[test]
-    fn a_store_settled_to_empty_keeps_its_inner_until_free_all() {
+    fn the_last_settle_drops_the_inner() {
         let mut records = LogRecords::default();
         records.insert_queued("a", version(1, "a"), 1);
-        records.hold_oldest(1);
+        records.insert_queued("b", version(1, "b"), 2);
+        records.hold_oldest(2);
+        records.defer("b", 3);
         records.settle("a");
-        assert_eq!(records.record_count(), 0);
-        assert!(records.inner.is_some());
+        assert!(
+            records.inner.is_some(),
+            "a deferred record keeps the pocket"
+        );
         records.free_all();
+        records.hold_oldest(1);
+        assert_eq!(records.settle("b"), Some(version(1, "b")));
         assert!(records.inner.is_none());
+        assert_eq!(records.record_count(), 0);
+        records.insert_queued("c", version(1, "c"), 4);
+        assert_eq!(records.lookup("c").map(|state| state.rank), Some(1));
     }
 
     #[test]
@@ -560,7 +590,10 @@ mod tests {
         );
         assert_invariants(&records);
         assert_eq!(records.settle("a"), Some(version(1, "a1")));
-        assert!(records.inner.as_deref().unwrap().superseded.is_empty());
+        assert!(
+            records.inner.is_none(),
+            "the last settle drops the superseded copy too"
+        );
     }
 
     #[test]

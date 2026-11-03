@@ -49,6 +49,10 @@ const BYTE_FLOOR: usize = 64;
 /// bytes, between repacks, to at most max(live bytes / 16, this floor).
 const REPACK_FLOOR: usize = if cfg!(test) { 4 } else { 64 };
 
+/// What a placeholder chunk costs, in slots: its 88-byte header, rounded up to
+/// whole 24-byte slots.
+pub(super) const PLACEHOLDER_SLOTS: usize = size_of::<Chunk>().div_ceil(size_of::<Slot>());
+
 /// A row's status, as the top two bits of its slot's key word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RowStatus {
@@ -198,6 +202,16 @@ impl Chunk {
         self.sealed && self.live == 0
     }
 
+    /// What the chunk holds for no live row, in slots: its dead slots, or a
+    /// placeholder's header. The log sums it to decide when to compact.
+    pub(super) fn waste(&self) -> usize {
+        if self.is_spent() {
+            PLACEHOLDER_SLOTS
+        } else {
+            self.slots.len().saturating_sub(usize::from(self.live))
+        }
+    }
+
     /// Whether the chunk takes a row whose stored key and payload are `key` and
     /// `payload` bytes long: it is the tail, it has a free slot, and neither arena
     /// would pass its limit.
@@ -322,8 +336,10 @@ impl Chunk {
 
     /// Tidies the chunk after a row died. A sealed chunk with no live row frees its
     /// buffers. The tail with no live row empties its arenas but keeps their
-    /// capacity and its slots, so a pocket that churns one record at a time
-    /// reuses one chunk instead of opening one per record. Any other chunk repacks
+    /// capacity and its slots: it is still where the next row goes, and rows live
+    /// in an earlier chunk, or the pocket would have dropped everything when its
+    /// last record settled. Its dead slots count as waste, so a compaction
+    /// reclaims them if they pile up. Any other chunk repacks
     /// once its dead bytes pass a sixteenth of its live bytes, so dead bytes stay
     /// within about 6% of a chunk and a repack costs amortised O(1) per byte that
     /// died.

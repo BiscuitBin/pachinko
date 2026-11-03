@@ -1,12 +1,15 @@
 //! The rebuild: the store's live rows appended again, in position order, to a
 //! fresh log whose chunk ids start at 0.
 //!
-//! Two things call it. An insert or a defer at a position not past the last one
+//! Three things call it. An insert or a defer at a position not past the last one
 //! breaks the log's order; only the records contract and the doc examples do that,
 //! so the store sorts itself again in O(n log n) instead of keeping a structure for
 //! it. And chunk ids only grow, so once the next one would not fit in a row id the
 //! store renumbers. That happens once every 2^26 chunks or so, on a log already in
-//! order, where the sort is one pass and the rebuild O(n).
+//! order, where the sort is one pass and the rebuild O(n). And rows that die
+//! behind a live one leave dead slots and placeholder chunks that only a rebuild
+//! gives back, so the store compacts once that waste outgrows the live rows
+//! (`Inner::compact_if_wasteful`).
 //!
 //! Renumbering reuses the rebuild rather than shifting every id in place. A shift
 //! would still rewrite each table that names rows by id and rehash the index,
@@ -26,7 +29,34 @@ use super::Inner;
 use super::chunk::{RowStatus, SUPERSEDED};
 use super::rows::{NewRow, RowId, Rows};
 
+/// The waste, in slots, a store may hold beyond one slot per live row before it
+/// compacts.
+const WASTE_SLACK: usize = 64;
+
 impl Inner {
+    /// Compacts the store once the slots it holds for no live row, counting each
+    /// placeholder chunk as its header's worth of slots, pass the live rows plus
+    /// [`WASTE_SLACK`]. Called after every kill and after `free_all`.
+    ///
+    /// The bound: right after a call, the dead slots and placeholder headers
+    /// together take at most `live + 64` slots, 24 bytes each, so a pocket holds at
+    /// most about twice the slots of a compact log, however its records die. Each
+    /// chunk's dead arena bytes stay within its repack bound besides.
+    ///
+    /// The cost: a rebuild walks the live and dead slots, O(live) under that
+    /// bound, and resets the waste to 0. A death adds at most
+    /// `PLACEHOLDER_SLOTS` (4) to the waste: one dead slot, or a placeholder
+    /// header in place of a chunk's last few dead slots. So at least
+    /// `(live + 64) / 4` deaths separate two rebuilds, about `live + 64` when the
+    /// chunks are full, and a rebuild costs amortised O(1) per death. A queue that
+    /// pulls and acks in order leaves dead slots only in its front chunk, at most
+    /// 63, and never reaches the trigger.
+    pub(super) fn compact_if_wasteful(&mut self) {
+        if self.rows.waste() > self.count().saturating_add(WASTE_SLACK) {
+            self.rebuild();
+        }
+    }
+
     /// Rebuilds the store from its live rows, sorted by position.
     pub(super) fn rebuild(&mut self) {
         let old = std::mem::take(&mut self.rows);
@@ -74,9 +104,11 @@ impl Inner {
 
 /// Stops the store when its live rows need more chunks than a row id can name.
 ///
-/// A rebuild packs the live rows into as few chunks as their sizes allow, so only
-/// a pocket of about 2^32 live rows reaches here, whose slots alone would take
-/// 96 GiB. A `u32` row id cannot name more rows, and dropping a record silently
+/// A row id names `2^26 − 1` chunks of 64 rows, so a rebuild, which packs the live
+/// rows into as few chunks as their sizes allow, fits at most `2^32 − 64` of them,
+/// fewer when an arena limit seals a chunk early (only keys averaging megabytes or
+/// payloads averaging tens of megabytes do that). Only a pocket of about that many
+/// live rows reaches here, whose slots alone would take 96 GiB. A `u32` row id cannot name more rows, and dropping a record silently
 /// would be worse than stopping. The Arrow store has the same ceiling: its pull
 /// sorts into `UInt32Array` row indexes. A `u64` row id would lift it at about 8
 /// more bytes a record.
@@ -90,6 +122,7 @@ pub(super) fn exhausted() -> RowId {
 
 #[cfg(test)]
 mod tests {
+    use crate::arrow::held_records;
     use crate::log::LogRecords;
     use crate::log::chunk::RowStatus;
     use crate::log::rows::{ID_LIMIT, row_id};
@@ -149,34 +182,84 @@ mod tests {
             .map_or(0, |inner| inner.rows.next_row())
     }
 
-    /// Churns `cycles` records through the store, one insert, pull and settle at a
-    /// time, and returns how often the row ids started again lower.
+    /// Churns `cycles` records through the store: each cycle inserts one, pulls the
+    /// oldest queued one and settles it. Returns how often the row ids started
+    /// again lower, which only a rebuild does.
     fn churn(records: &mut LogRecords, cycles: u64) -> usize {
-        let mut renumbered = 0;
+        let mut rebuilt = 0;
         for position in 1..=cycles {
             let key = position.to_string();
             let before = next_row(records);
             records.insert_queued(&key, version(1, &key), position);
-            renumbered += usize::from(next_row(records) <= before);
-            records.hold_oldest(1);
-            assert_eq!(records.settle(&key), Some(version(1, &key)));
+            for held in held_records(&records.hold_oldest(1)) {
+                assert!(records.settle(&held.key).is_some());
+            }
+            rebuilt += usize::from(next_row(records) <= before);
             assert_invariants(records);
         }
-        renumbered
+        rebuilt
+    }
+
+    /// How many chunk ids the log spans, placeholders included.
+    fn chunk_span(records: &LogRecords) -> u32 {
+        let inner = records.inner.as_deref().unwrap();
+        (inner.rows.next_row() >> 2) - (inner.rows.front_row() >> 2)
     }
 
     #[test]
     fn renumbering_starts_the_chunk_ids_again_from_zero() {
         let mut records = LogRecords::default();
         records.insert_queued("first", version(1, "f"), 0);
-        records.hold_oldest(1);
-        records.settle("first");
         assert!(churn(&mut records, u64::from(ID_LIMIT) * 10) >= 2);
-        assert_eq!(records.record_count(), 0);
+        assert_eq!(records.record_count(), 1);
     }
 
     #[test]
-    fn renumbering_keeps_a_held_row_and_its_superseded_version() {
+    fn a_record_held_forever_keeps_the_log_bounded_while_others_churn() {
+        let mut records = LogRecords::default();
+        records.insert_queued("pinned", version(1, "p"), 0);
+        records.hold_oldest(1);
+        for position in 1..=100_000 {
+            let key = position.to_string();
+            records.insert_queued(&key, version(1, &key), position);
+            records.hold_oldest(1);
+            records.settle(&key);
+            assert!(
+                chunk_span(&records) <= 20,
+                "at {position}: {}",
+                chunk_span(&records)
+            );
+            let inner = records.inner.as_deref().unwrap();
+            assert!(inner.rows.walk(0).count() <= 8, "at {position}");
+        }
+        assert_invariants(&records);
+        assert_eq!(records.settle("pinned"), Some(version(1, "p")));
+    }
+
+    #[test]
+    fn survivors_scattered_across_chunks_are_compacted_together() {
+        let mut records = LogRecords::default();
+        for position in 0..120 {
+            records.insert_queued(&position.to_string(), version(1, ""), position);
+        }
+        records.hold_oldest(120);
+        for position in (0..120).filter(|position| position % 10 != 0) {
+            records.settle(&position.to_string());
+            assert_invariants(&records);
+        }
+        assert_eq!(records.record_count(), 12);
+        let waste = records.inner.as_deref().unwrap().rows.waste();
+        assert!(waste <= 12 + 64, "{waste}");
+        let held: Vec<String> = records.held().into_iter().map(|held| held.key).collect();
+        let expected: Vec<String> = (0..120)
+            .step_by(10)
+            .map(|key: u64| key.to_string())
+            .collect();
+        assert_eq!(held, expected);
+    }
+
+    #[test]
+    fn a_compaction_keeps_a_held_row_and_its_superseded_version() {
         let mut records = LogRecords::default();
         records.insert_queued("kept", version(1, "k"), 0);
         records.hold_oldest(1);
