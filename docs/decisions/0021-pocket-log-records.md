@@ -53,8 +53,8 @@ in position order, with a hash index by key:
 - **Held versions.** A held record is a status flag. A second copy of its payload exists
   only once a supersede lands on it while it is held.
 - **Settling.** A settle marks the row dead and removes its index entry. Fully dead front
-  chunks are popped, and a chunk's arenas are repacked once its dead bytes pass a
-  sixteenth of its live bytes. A repack never moves a slot to another chunk, so no row id
+  chunks are popped, and a chunk's arenas are repacked in place once its dead bytes pass
+  both a sixteenth of its live bytes and 64 bytes. A repack never moves a slot to another chunk, so no row id
   changes. A chunk can die behind a live one, for example behind a record a consumer
   holds while it acks everything after it. So once the bytes held by dead slots and dead
   chunks' headers outweigh the live records' bytes (their slots, keys and payloads) by

@@ -67,7 +67,9 @@ How the ledger is read:
   Σ max(32, round_up_16(request + 8)). The image is distroless on glibc (`Dockerfile`),
   so this catches the per-allocation overhead that requested bytes never see.
 - **MemoryRecords in T1 and T3** means MemoryRecords as measured in step 5's run, after
-  step 3's quick wins. Step 2's pre-change figures are recorded beside them.
+  step 3's quick wins. Step 2's pre-change figures are recorded beside them. *Applied
+  after measurement:* every run is read against its own run's MemoryRecords, which is
+  the stricter reading; the hand-back gives both where they differ.
 - **Timings** are divan medians and the probe's medians of 3 runs, on one macOS machine.
   A step is "faster" when its median is lower.
 
@@ -376,8 +378,22 @@ ledger, in order to diff against it.
 | Stale doc lines: the Cargo.toml dev-dependency comment, testing.md's module row, this ticket's Files touched (low) | Fixed |
 | M2 and T1 fail (two reports) | Reported as failures |
 
-  Of the 8 not confirmed, two concerned `codec.rs`'s test still building its queue over
-  ArrowRecords; it tests the codec's message bounds, not the store.
+The 8 not confirmed, each with its verifier's reason:
+
+- LogRecords' settle runs slower when benched alone: an instrument effect, not a
+  defect, and the full runs, including the independent one, agree with each other.
+- M2 measured only at n = 1000 and 10000: the verifier measured n = 897 and 7169, and
+  both pass, so the verdict is unchanged.
+- The re-measurement's quiet-machine check was ambiguous: its report records
+  `pgrep`'s empty result and the commit.
+- `codec.rs`'s test still builds its queue over ArrowRecords (two reports): it tests
+  the codec's message bounds, not the store, and T21 did not touch it.
+- Batched bench steps with sample size 1 leave MemoryRecords noisy: the noise is real,
+  already reported under T1, and not a code defect.
+- `insert_unique` relies on the trait's promise that the key is absent: the queue
+  inserts only absent keys, and MemoryRecords makes the same assumption.
+- MemoryRecords was rewritten to the log store's held-version design: the rewrite
+  keeps the reference behaviour, and the contract and proptest suites pass on it.
 
 ### A second review round: `f0bb61f` to `a9efedc`
 
@@ -427,6 +443,13 @@ LogRecords' defer stays at 14.7–15.4 µs and 42.4–43.2 µs per 100 ops. The 
 follows MemoryRecords' median, which swings 4.81–7.19 µs and 12.51–19.96 µs. The median
 of all seven runs that timed defer, 2.44 and 2.41, is under 3, but the claim is read run
 by run, and it fails on the shipped code and on the independent re-measurement.
+
+The two readings of "MemoryRecords" differ here. Read as this ticket first wrote it,
+against step 5's MemoryRecords (6.083 and 19.04 µs per 100 defers), the shipped code's
+defer is 15.44 / 6.083 = 2.54 and 42.43 / 19.04 = 2.23, and T1 passes. Every verdict
+above uses each run's own MemoryRecords instead. That reading is stricter, it was applied
+alike to all four runs, the independent one included, and under it T1 fails. The ledger
+reports the stricter verdict.
 
 ### Final gate: `aa31ae9`
 
