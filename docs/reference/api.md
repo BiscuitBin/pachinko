@@ -111,10 +111,13 @@ crate's version.
   owner task and ticker held in a `JoinSet` that `serve` joins before it returns.
   [Architecture](../explanation/architecture.md) explains the design and
   [decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md) records it.
-- `clock::SystemClock`, the real `Clock`, and `arrow::ArrowRecords`, the real
-  `PocketRecords`, which holds each pocket's records as one Arrow `RecordBatch`
-  ([decision 0020](../decisions/0020-records-as-arrow-batches.md)); `arrow::batch_schema`
-  and `arrow::held_records` describe and read the batches a pull hands out.
+- `clock::SystemClock`, the real `Clock`, and `log::LogRecords`, the real
+  `PocketRecords`, which holds each pocket's records as a chunked log with a key index
+  ([decision 0021](../decisions/0021-pocket-log-records.md)). `arrow::ArrowRecords`,
+  which holds them as one Arrow `RecordBatch`
+  ([decision 0020](../decisions/0020-records-as-arrow-batches.md)), is the benchmark
+  baseline; `arrow::batch_schema` and `arrow::held_records` describe and read the
+  batches a pull hands out.
 
 ## The Flight API
 

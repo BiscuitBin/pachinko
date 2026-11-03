@@ -8,6 +8,8 @@ requires: []
 
 # Decision 0020: Records as Arrow batches in the service
 
+*Superseded in part by [decision 0021](0021-pocket-log-records.md).*
+
 ## Context
 
 The maintainer's brief for the T20 prototype, on 2026-10-31, asked for each pocket's

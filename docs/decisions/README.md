@@ -41,13 +41,16 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0018](0018-renovate.md) | Dependency updates through Renovate |
 | [0019](0019-service-runtime-tokio-and-flight.md) | The service runs on tokio and speaks Arrow Flight |
 | [0020](0020-records-as-arrow-batches.md) | Records as Arrow batches in the service |
+| [0021](0021-pocket-log-records.md) | The service keeps each pocket's records as a log |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Decision 0014 is superseded whole by decision
 0019, which chose the runtime and transport 0014 deferred, with the T20 prototype as its
-evidence. Two recipes in the gate list decision 0009 records have records of their own:
-decision 0012 holds gate 7, `just metrics`, and decision 0008 holds gate 8,
-`just effects`.
+evidence. Decision 0020 is superseded in part by decision 0021, which replaces the
+service's record store and the deferred comparison and keeps the trait, its reference,
+the contract and the pull batch. Two recipes in the gate list decision 0009 records have
+records of their own: decision 0012 holds gate 7, `just metrics`, and decision 0008
+holds gate 8, `just effects`.
 
 ## The numbering
 
@@ -63,7 +66,8 @@ for the container image (T13), 0016 for the release process (T14), 0017 for muta
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
 Renovate (T17). Each added its file, its manifest entry and its row above. T20, the
 pachinko prototype, took the next two: 0019 for the service's runtime and transport and
-0020 for the records as Arrow batches. The next decision is 0021.
+0020 for the records as Arrow batches. T21, the pocket log records, took 0021 for the
+service's new record store. The next decision is 0022.
 
 ## Writing a new one
 

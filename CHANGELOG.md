@@ -51,6 +51,10 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 - One task owning the queue and a ticker processing lapses and decay, both in a
   `JoinSet` joined at shutdown, where a request whose handler has not begun is answered
   `UNAVAILABLE`.
+- `LogRecords`, the service's record store: each pocket's records as a log of chunks
+  with a key index, which passes the records contract and a differential test against
+  `MemoryRecords`. `ArrowRecords` stays as the baseline, and the divan benchmark
+  compares the three stores' steps, publish, and pull and ack in one run.
 - `SystemClock`, and `ArrowRecords`, which holds each pocket's records as one Arrow
   `RecordBatch`, with a divan benchmark of publish, pull and ack, and the store's steps.
 - An Apache-2.0 service, `pachinko`, that writes its name and the library version.

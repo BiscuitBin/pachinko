@@ -40,14 +40,16 @@ trigger). All five implement the one specification module, and the order among t
 the one [Layering and dependency direction](layering.md) describes;
 [Specifications](specifications.md) explains why the specification comes first.
 
-`crates/pachinko` is the service. It depends on `libpachinko` and on the runtime,
+`crates/pachinko` is the service. It depends on `libpachinko`, on the runtime,
 transport and Arrow crates decisions
 [0019](../decisions/0019-service-runtime-tokio-and-flight.md) and
-[0020](../decisions/0020-records-as-arrow-batches.md) chose, and `libpachinko` never
-depends on it. `src/lib.rs` holds `run()` and `serve()`, `src/cli.rs` reads the command
-line, `src/clock.rs` and `src/arrow.rs` hold what the service hands the library,
-`src/actor.rs` the queue's owner task and ticker, and `src/flight.rs` the Flight service.
-`src/main.rs` holds the binary's `main`, which calls `run()` and reports its error.
+[0020](../decisions/0020-records-as-arrow-batches.md) chose, and on `hashbrown`, the key
+index [decision 0021](../decisions/0021-pocket-log-records.md) chose, and `libpachinko`
+never depends on it. `src/lib.rs` holds `run()` and `serve()`, `src/cli.rs` reads the
+command line, `src/clock.rs` and `src/log.rs` hold what the service hands the library,
+`src/arrow.rs` the baseline store and the pull batch's schema, `src/actor.rs` the queue's
+owner task and ticker, and `src/flight.rs` the Flight service. `src/main.rs` holds the
+binary's `main`, which calls `run()` and reports its error.
 
 ## A std library
 
@@ -90,7 +92,12 @@ outside the library. The maintainer asked for each pocket's records to be an Arr
 `RecordBatch`, and `arrow-array` turns on `getrandom`, a crate gate 8 bans from
 libpachinko's tree, so `ArrowRecords` lives in `pachinko` and `MemoryRecords`, the
 trait's reference, lives beside the trait
-([decision 0020](../decisions/0020-records-as-arrow-batches.md)).
+([decision 0020](../decisions/0020-records-as-arrow-batches.md)). The service's store is
+now `LogRecords`, a log of chunks with a key index, which also lives in `pachinko`: its
+index hashes with a per-store `RandomState`, keyed from the operating system's
+randomness, against keys chosen to collide
+([decision 0021](../decisions/0021-pocket-log-records.md)). `ArrowRecords` stays as the
+benchmarks' baseline.
 
 Standard input and output are not on the list. The service writes its lines to standard
 output and its errors to standard error, and nothing bans the library from writing to a
@@ -159,7 +166,7 @@ checks in order.
 
 | Caller | Crosses | Through |
 | --- | --- | --- |
-| `pachinko` | Values, the real implementation of the library's effect trait (`SystemClock` for `Clock`) and its record store (`ArrowRecords` for `PocketRecords`) | A Cargo path dependency on `libpachinko` |
+| `pachinko` | Values, the real implementation of the library's effect trait (`SystemClock` for `Clock`) and its record store (`LogRecords` for `PocketRecords`) | A Cargo path dependency on `libpachinko` |
 
 Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, and every public enum
 and struct is `#[non_exhaustive]`: the service may move a value between threads, copy it
@@ -178,7 +185,7 @@ the arguments after the program's name; an error becomes one line on standard er
 exit status 1.
 
 `serve` is the shape [decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)
-chose. One task owns the service's `Queue`, over `ArrowRecords` and `SystemClock`, and
+chose. One task owns the service's `Queue`, over `LogRecords` and `SystemClock`, and
 every trigger reaches it as a command on one bounded channel, with a one-shot reply: the
 Flight handlers send the parties' commands, and a ticker task sends `Tick`, which
 processes lapses and decay, once a second. A lapse and a consumer's action on the same
@@ -198,8 +205,10 @@ actions and a `status` read, each body and reply an Arrow IPC stream. The
 [Security model](security-model.md) says what an unauthenticated listener means.
 
 Unit tests in `src/lib.rs` check `run` against a buffer; `tests/binary.rs` runs the
-built binary, `tests/flight.rs` drives `serve` with a Flight client over loopback, and
-`tests/arrow_records.rs` runs the library's records contract over `ArrowRecords`.
+built binary, `tests/flight.rs` drives `serve` with a Flight client over loopback,
+`tests/log_records.rs` runs the library's records contract over `LogRecords` and checks
+it against `MemoryRecords` over random steps, and `tests/arrow_records.rs` runs the
+contract over `ArrowRecords`.
 [Test and debug](../how-to/test-and-debug.md) shows how to tell their failures apart.
 
 ## What is deferred
@@ -213,8 +222,6 @@ the queue lives in the owner task's memory and ends with the process, and nothin
 that memory. Superseded records and dead letters decay on their TTLs; what more a bound
 should do is the specification's capacity open question. No surface reads the
 superseded records or the dead letters, which waits on the question of who reads them.
-Comparing `ArrowRecords` with `MemoryRecords`, or with any other store behind the trait,
-is a later ticket ([decision 0020](../decisions/0020-records-as-arrow-batches.md)).
 [Purpose and scope](../project/purpose-and-scope.md) records the rest of what this
 repository deliberately does not do.
 
@@ -237,3 +244,4 @@ and cuts a GitHub Release, with `publish = false` kept
 - [API reference](../reference/api.md)
 - [Decision 0019](../decisions/0019-service-runtime-tokio-and-flight.md)
 - [Decision 0020](../decisions/0020-records-as-arrow-batches.md)
+- [Decision 0021](../decisions/0021-pocket-log-records.md)

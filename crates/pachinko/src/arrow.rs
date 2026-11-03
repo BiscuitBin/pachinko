@@ -1,9 +1,14 @@
 //! `ArrowRecords`: one pocket's records as one Arrow `RecordBatch` (decision 0020).
 //!
+//! It was the service's store until `LogRecords` replaced it (decision 0021), and it
+//! stays as the baseline the record-store benchmarks measure every store against.
+//! The module also owns the batch a pull hands out, which every service store
+//! builds: [`batch_schema`] describes it and [`held_records`] reads it back.
+//!
 //! Every step of `PocketRecords` runs the Arrow kernels over the whole batch and
 //! rebuilds it: `arrow_ord` compares keys and statuses and sorts by position, and
 //! `arrow_select` filters, takes, zips and concatenates. That rebuild is the cost the
-//! prototype exists to measure, so no step keeps a side index.
+//! baseline exists to show, so no step keeps a side index.
 //!
 //! Two things are done by hand, because no kernel does them. Turning the row
 //! indexes a pull chose into a mask over the batch is a scatter, which Arrow has

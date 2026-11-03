@@ -137,7 +137,7 @@ evidence; `just check` is green.
 | `crates/pachinko/tests/log_records.rs` | new | The contract and the differential test |
 | `docs/decisions/0021-pocket-log-records.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, own lines | Decision 0021 |
 | `docs/decisions/0020-records-as-arrow-batches.md` | changed | Superseded in part by 0021 |
-| `docs/reference/testing.md`, `docs/explanation/architecture.md`, `docs/project/repository-map.md` | changed | The comparative bench and the service's store |
+| `docs/reference/testing.md`, `docs/reference/api.md`, `docs/explanation/architecture.md`, `docs/project/repository-map.md`, `docs/project/terminology.md`, `crates/pachinko/README.md` | changed | The comparative bench and the service's store |
 | `CHANGELOG.md` | changed | The service's new store |
 
 ## Steps

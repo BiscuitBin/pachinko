@@ -2,11 +2,12 @@
 
 `pachinko` is the service crate of the pachinko workspace, a std binary built around
 `libpachinko`. It supplies the real implementations of the library's traits:
-`SystemClock`, the wall clock, and `ArrowRecords`, which holds each pocket's records as
-one Arrow `RecordBatch` (decision 0020). `serve` runs the queue behind an Arrow Flight
-API on tokio (decision 0019): one task owns the queue, a ticker processes lease lapses
-and decay, and both live in a `JoinSet` that `serve` joins before it returns. The
-binary's `main` calls `run()` and nothing else.
+`SystemClock`, the wall clock, and `LogRecords`, which holds each pocket's records as a
+log of chunks with a key index (decision 0021). `ArrowRecords`, which holds them as one
+Arrow `RecordBatch` (decision 0020), stays as the benchmarks' baseline. `serve` runs the
+queue behind an Arrow Flight API on tokio (decision 0019): one task owns the queue, a
+ticker processes lease lapses and decay, and both live in a `JoinSet` that `serve`
+joins before it returns. The binary's `main` calls `run()` and nothing else.
 
 ## Running it
 

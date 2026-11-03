@@ -36,13 +36,14 @@ never colocated with the code: in Rust a unit test can reach a private item only
 inside its module, and [Decision 0009](../decisions/0009-rust-quality-gate.md) records
 the deviation.
 
-Each crate has its integration tests, five targets in all:
+Each crate has its integration tests, six targets in all:
 
 | Target | What it runs |
 | --- | --- |
 | `crates/libpachinko/tests/queue/` | The tests derived from `docs/specs/pachinko.allium`, one target whose `main.rs` names a module per rule family and the property test in `invariants.rs`, all over `MemoryRecords` and `FakeClock` from one `fixture.rs`. |
 | `crates/libpachinko/tests/records_contract.rs` | The records contract over `MemoryRecords`, the record-store trait's reference. |
-| `crates/pachinko/tests/arrow_records.rs` | The same contract over the service's `ArrowRecords`. |
+| `crates/pachinko/tests/log_records.rs` | The same contract over the service's `LogRecords`, and a differential test that drives it and `MemoryRecords` through the same random steps, positions out of order included, and compares their answers after every step. |
+| `crates/pachinko/tests/arrow_records.rs` | The same contract over `ArrowRecords`, the benchmarks' baseline. |
 | `crates/pachinko/tests/flight.rs` | The Flight API over loopback: each test starts `serve` in-process on `127.0.0.1:0` and drives it with `arrow_flight::FlightClient`. Its modules sit under `tests/flight/` and share one fixture. |
 | `crates/pachinko/tests/binary.rs` | The binary test, below. |
 
@@ -251,17 +252,21 @@ feature on. Extra Cargo options may follow the recipe.
   `libpachinko::version()`, passing its function pointer and result through
   `divan::black_box` to retain a runtime call. The measurement includes indirect-call
   overhead.
-- `crates/pachinko/benches/arrow.rs` measures the service's Arrow record store under the
-  queue. The queue runs on `FakeClock`, so the timings are the queue's and the store's.
-  `publish` publishes N records round-robin into M pockets and `pull_and_ack` drains a
-  filled queue by pull and ack, each over three shapes: 1,000 records in 10 pockets,
-  10,000 in 10 and 10,000 in 100. `store_insert_then_hold` inserts 100, 1,000 or 10,000
-  records into one pocket's store and holds them in batches of 100.
+- `crates/pachinko/benches/records.rs` compares three record stores in one run:
+  `MemoryRecords`, the trait's reference; `ArrowRecords`, the baseline; and `LogRecords`,
+  the service's store. Each of the store's steps runs on one pocket of 100, 1,000 or
+  10,000 records with 16-byte or 1 KiB payloads: `lookup` reads one shared pocket;
+  `supersede`, `hold_oldest` of 100 and `free_all` with 100 held and 100 deferred time
+  one op on a fresh clone; and `insert`, `settle` and `defer` time 100 ops on one clone. `publish` publishes N records
+  round-robin into M pockets and `pull_and_ack` drains a filled queue by pull and ack,
+  each over three shapes: 1,000 records in 10 pockets, 10,000 in 10 and 10,000 in 100.
+  The queue runs on `FakeClock`, so the timings are the queue's and the store's, and
+  divan's allocation profiler counts each step's allocations beside its time.
 
-There is no comparative baseline: `MemoryRecords` is the record-store trait's reference
-for tests, not a benchmark subject. Timings depend on the machine and its load, so
-benchmarks run manually and never in CI or `just check`. Clippy still compiles the bench
-targets in the gate.
+[Decision 0021](../decisions/0021-pocket-log-records.md) records what the comparison
+showed on one machine. Timings depend on the machine and its load, so benchmarks run
+manually and never in CI or `just check`. Clippy still compiles the bench targets in
+the gate.
 
 ## Fuzzing
 
@@ -295,7 +300,7 @@ be promoted to regression tests when domain targets arrive. See
 | --- | --- |
 | In-module tests, `crates/libpachinko/src/` | What the integration tests cannot reach through the public API: `version` returns the manifest's, `FakeClock` moves both ways and its clones share one instant, `Config` admits zero durations, a lease id round-trips its number, the lease-id counter stops rather than wrap, and every `Queue` is `Clone`, `Debug`, `Send`, `Sync` and `'static`. |
 | `crates/libpachinko/tests/queue/` | Every obligation of the module, as [Tests from the specifications](#tests-from-the-specifications) describes: each rule's success and failure, the config defaults and invariants, the surfaces, and the invariants and transition graphs by property. |
-| `crates/libpachinko/tests/records_contract.rs`, `crates/pachinko/tests/arrow_records.rs` | Each record store keeps the records contract: lookup, insert, supersede in place, holding the oldest by position, settling, deferring and freeing. |
+| `crates/libpachinko/tests/records_contract.rs`, `crates/pachinko/tests/log_records.rs`, `crates/pachinko/tests/arrow_records.rs` | Each record store keeps the records contract: lookup, insert, supersede in place, holding the oldest by position, settling, deferring and freeing. `LogRecords` also answers as `MemoryRecords` does over random walks of steps. |
 | In-module tests, `crates/pachinko/src/` | The service's parts alone: the command line's options and refusals, the owner task's replies and shutdown, the system clock, the Arrow store's 64-bit offsets, the Flight codec's reading of each body, the size of each pull and `status` reply message, the status code each refusal maps to, and `run`'s version line and its errors. |
 | `crates/pachinko/tests/flight.rs` | The two surfaces over a real Flight connection: each trigger's outcome on the wire, two consumers never handed one pocket, each refusal's status code (`NOT_FOUND`, `INVALID_ARGUMENT` or `FAILED_PRECONDITION`), a lapse the ticker processes, a pull and a `status` too large for one gRPC message read whole with a default client, and a shutdown that answers stalled requests `UNAVAILABLE` and returns. |
 | `crates/pachinko/tests/binary.rs` | The built binary: its version line, its `listening on` line on loopback, and a bad argument's exit code and message. |

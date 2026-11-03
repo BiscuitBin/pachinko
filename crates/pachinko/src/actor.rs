@@ -25,11 +25,11 @@ use tokio::task::JoinSet;
 use tokio::time::MissedTickBehavior;
 
 use crate::ServeError;
-use crate::arrow::ArrowRecords;
 use crate::clock::SystemClock;
+use crate::log::LogRecords;
 
-/// The service's queue: Arrow records and the system clock.
-pub(crate) type ServiceQueue = Queue<ArrowRecords, SystemClock>;
+/// The service's queue: the log record store and the system clock (decision 0021).
+pub(crate) type ServiceQueue = Queue<LogRecords, SystemClock>;
 
 /// One publish row's outcome: the rule that took it, or `None` when the queue
 /// rejected it for an equal rank, the module's placeholder (its first open
