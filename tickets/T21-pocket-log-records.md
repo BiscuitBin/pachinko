@@ -428,6 +428,17 @@ follows MemoryRecords' median, which swings 4.81–7.19 µs and 12.51–19.96 µ
 of all seven runs that timed defer, 2.44 and 2.41, is under 3, but the claim is read run
 by run, and it fails on the shipped code and on the independent re-measurement.
 
+### Final gate: `aa31ae9`
+
+`just check` at `aa31ae9`, the last commit before this section:
+
+```text
+TOTAL                                     10232               243    97.63%         889                30    96.63%        5404                90    98.33%           0                 0         -
+All checks passed and the worktree is unchanged.
+```
+
+Line coverage is 98.33%, against a floor of 90%, and `git status --short` was empty.
+
 ## Open points
 
 - **M2 and T1 fail as written, and no threshold moved.**
