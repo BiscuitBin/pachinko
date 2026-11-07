@@ -857,10 +857,30 @@ All checks passed and the worktree is unchanged.
 
 ### Step 9: fetch, push and the pull request
 
-Not run by this agent: `git fetch origin` was not run, and the lead pushes, opens the
-pull request and reads its CI run (wave overrides). The CI run URL and the tested merge
-commit are the lead's to record. The step 7 clone in the session's scratch directory,
-which stands for `ai_tmp/fresh`, was deleted after the quotes above.
+Run by the lead (wave overrides). `git fetch origin` showed `origin/main` still at
+`611a86e` and `origin/mvp-inimal-but-sufficient` at `f4a5250`, an ancestor of the head,
+so no merge was needed and the push was a fast-forward, `f4a5250..2ce9179`. The branch
+already had pull request 40 open, from the ticket-writing commit, so the push updated it;
+its title and description now cover the wave, with the original description kept below.
+
+The first CI run, quoted here, tested the merge commit `8ef6949` ("Merge 2ce9179 into
+611a86e", from `refs/remotes/pull/40/merge`), not the branch head `2ce9179`:
+<https://github.com/BiscuitBin/pachinko/actions/runs/42403539853>, conclusion `success`.
+
+```text
+audit      pass  1m34s
+check      pass  3s
+coverage   pass  2m22s
+deny       pass  1m40s
+documents  pass  1m30s
+image      pass  1m24s
+rust       pass  2m45s
+semver     pass  1m23s
+```
+
+The commit that records this run pushes again and starts another run; the run quoted is
+the first. The step 7 clone in the session's scratch directory, which stands for
+`ai_tmp/fresh`, was deleted after the quotes above.
 
 ### Step 10: the `CONVENTIONS.md` hand-back
 
@@ -944,6 +964,9 @@ domain prose or a behavioural specification.":
   Owner: maintainer.
 - T21's branch `ticket/t21-pocket-log-records` (0019 cites `94fc9b8`) is local; no gate
   dereferences it, and pushing it needs authorisation (D-T22-5). Owner: maintainer.
+- `just fix` strips trailing whitespace inside quoted output in ticket hand-backs, so it
+  can rewrite verbatim evidence (seen on `tickets/T30-performance-evidence.md`, restored
+  by hand). Owner: maintainer.
 - No gate runs doctests with default features: `test` and `test-doc` pass
   `--all-features`, and `features` only builds (D-T23-2). Owner: maintainer.
 - The hook gate's `prek run --all-files` reads tracked files only, so a new file's
