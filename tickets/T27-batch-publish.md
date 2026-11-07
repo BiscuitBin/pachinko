@@ -1,7 +1,7 @@
 ---
 id: T27
 title: "Batch publish with per-row outcomes and request-shape limits"
-status: todo
+status: done
 depends_on: [T24]
 parallel_with: [T25, T29]
 branch: ticket/t27-batch-publish
@@ -501,7 +501,34 @@ just check         All checks passed and the worktree is unchanged.
 git status --short (empty)
 ```
 
-The rerun at the merge commit comes when the lead asks for it.
+### The merge into the wave branch
+
+The lead asked this agent to do the merge itself. In the main worktree at `b6b23cd`
+(T25 merged), `git merge --no-ff wave/t27` became `fc3caeb`. It hit three conflicts, all
+resolved by keeping both lanes' lines: `CHANGELOG.md` (both Added bullets),
+`crates/pachinko/src/http.rs` (`mod batch;` beside `mod leases;`, and the lease routes
+beside the body-limit layer) and `docs/reference/http-api.md` (T25's three error rows and
+T27's three, with one `bad_request` row covering both lanes' causes). `Cargo.lock` had no
+conflict. In the same merge commit the merge note below was carried out: T25's `ack`,
+`nack`, `renew` and `release` (`http/leases.rs`) take `BoundedJson(body):
+BoundedJson<_>`, `impl From<JsonRejection> for Refusal` has no user left and is removed,
+and `tests/batch_publish.rs` gains `a_lease_action_body_over_the_cap_is_body_too_large`.
+That test answers 413 `body_too_large` one byte over the cap and, as its control,
+`lease_not_active` at the cap. It was not shown to bite separately.
+
+The Verification block at `fc3caeb`, every recipe exit 0:
+
+```text
+just lock-check    ✔ Lock-file was already up-to-date
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+just test          Summary [   0.366s] 175 tests run: 175 passed, 0 skipped
+just coverage      TOTAL ... 3567 lines, 35 missed, 99.02%
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just check-docs    Validated 46 pages and 47 canonical topics.
+just check         All checks passed and the worktree is unchanged.
+git status --short (empty)
+```
 
 Merge note (T27-1, C1): `impl From<JsonRejection> for Refusal` stays as T24's 400
 fallback so a tree merged with T25's handlers compiles. Every handler that takes a JSON
@@ -531,8 +558,6 @@ merges second makes that change while resolving the merge.
   merged.
 - A `Content-Length` over the cap is refused before the body is read, but a chunked body
   is read up to the cap before it is refused; a read timeout on the listener is T29's.
-- Whichever of T25 and T27 merges second converts T25's four lease handlers (`ack`,
-  `nack`, `renew`, `release`) from `Result<Json<_>, JsonRejection>` and `body?` to
-  `BoundedJson(body): BoundedJson<_>` while merging `origin/main`, and adds an over-limit
-  413 `body_too_large` test on a lease route. After that no handler needs
-  `impl From<JsonRejection> for Refusal`, and it can be removed.
+- Done at the merge `fc3caeb`: T25's four lease handlers read their bodies through
+  `BoundedJson`, a lease route has an over-limit 413 `body_too_large` test, and
+  `impl From<JsonRejection> for Refusal` is removed.

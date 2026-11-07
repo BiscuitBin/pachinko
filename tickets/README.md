@@ -49,7 +49,7 @@ snapshot.
 | T24 | Service tracer: the owner task and HTTP join, publish one record, pull | `T24-service-http-tracer.md` | T23 | none | done |
 | T25 | Ack, nack, renew, release and fencing | `T25-lease-actions.md` | T24 | T27, T29 | todo |
 | T26 | Lease expiry, decay and the tick lane | `T26-expiry-and-tick.md` | T25 | none | todo |
-| T27 | Batch publish with per-row outcomes and request-shape limits | `T27-batch-publish.md` | T24 | T25, T29 | todo |
+| T27 | Batch publish with per-row outcomes and request-shape limits | `T27-batch-publish.md` | T24 | T25, T29 | done |
 | T28 | Invariant walk and the conformance catalog | `T28-invariant-walk.md` | T26, T27 | T30 | todo |
 | T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | todo |
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | todo |
