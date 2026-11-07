@@ -355,10 +355,213 @@ quotes that line as it quotes any other exit status.
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `538cc10`, after `just initialize` in the fresh lane worktree, `just check` exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked on branch `wave/t29` in the lead's lane worktree from `538cc10` (T24 done), not
+  on `ticket/t29-operability` from `main`. `just initialize` ran there (network,
+  authorised); it skipped `install-hooks` in a secondary worktree.
+- `git fetch origin`, merging `origin/main`, push and pull request: not run: one pull
+  request at T31. The lead merges the lanes into `mvp-inimal-but-sufficient`; the
+  Verification block is rerun at the merge commit when asked.
+- The §14 reviews, triage and the fix writer were run by the wave lead; this agent
+  stopped at each checkpoint uncommitted and reran its checks after the fixes.
+
+### The plan (step 2)
+
+T24 already logged each request at `debug`, so step 4 added only the elapsed
+milliseconds. Behaviours, tests and pages are in `ai_tmp/wave/T29/plan.md`; the
+choices that differ from the steps' wording:
+
+- The owner's stop is the cut watch, never readiness, so in-flight requests are still
+  answered during the grace period.
+- The 503 `not_ready` from a publish to a stopped owner is a wire test in `serve.rs`
+  (`a_request_whose_owner_has_stopped_answers_503_not_ready`), not `tests/http.rs`: the
+  public `serve` never stops the owner while the listener still accepts, so the test
+  needs the `scope` seam that T24's owner-panic test uses.
+- `--log-level` is matched against its five names: `tracing::Level`'s parser also
+  reads digits and any case.
+- The scope's bounds live in `Lifecycle` (`Lifecycle::new(&config)`): `scope` is at
+  clippy's five-argument limit.
+
+Shown to bite, each mutation applied, `cargo nextest run -p pachinko` run, then
+reverted (`ai_tmp/wave/T29/bite.py`): the owner never sends `Serving` (3 failed); no
+second bound (3); the request line at `info` (2); the idle bound ignoring an owed reply
+(1); no `Stopping` from the scope (1); no idle bound (1); the owner ignoring its stop
+(3); no timeout layer (2).
+
+### T29-1: the shutdown design (steps 1 to 7)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0 in both rounds), with separate triage
+and one writer, run by the wave lead; outputs under `ai_tmp/review/T29-1/`. Round 1:
+7 findings, 7 valid, one high (C1), so a second round reviewed the fix diff: 3
+findings, 3 valid, all low. Two rounds is the cap.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, high | One byte of a head set the connection owing a reply and disarmed the idle bound, so a partial head held it until shutdown |
+| C2 | valid, low | `bounded(api(), ..)` covers only routes inside `api()`; a merged route chained after it would run unbounded |
+| C3 | valid, low | The binary tests discarded a failed stderr read (`.ok()`), against §11's rule that a failed read never passes |
+| B1 | valid, medium | Same root as C1, from the breakage side |
+| B2 | valid, medium | On a one-worker runtime, a backlogged inbox kept the owner applying commands until tokio's coop budget ran out, delaying the cut and the abort; "yields between commands" was false |
+| B3 | valid, low | axum's connection tasks live outside the `JoinSet`, so the abort neither ends nor joins them |
+| B4 | valid, medium | A T26 ticker waiting on the cut would turn every clean shutdown into an overrun |
+| C1-2 | valid, low | The doubled idle deadline ran from the first byte, so a head arriving slowly could be closed before its 408 |
+| C2-2 | valid, low | The `serve` docs overstated what the abort ends |
+| B1-2 | valid, low | The owner's return drops the queue without a yield, a term the stated bound left out |
+
+Applied by the writer: an owed reply now waits two request timeouts rather than
+forever, with a partial-head test (C1, B1), and each read that brings bytes restarts
+that deadline, with a slow-head 408 test (C1-2); the guard test covers every `api()`
+route, and the merge rule below (C2); `binary.rs` fails on a failed read (C3);
+`yield_now` after each command in `own()` (B2); the module and `drain` docs on the
+connection tasks (B3, C2-2); the `shutdown` watch moved into `Lifecycle`, and every
+task in the scope must end on it, the cut being only the backstop (B4); "releasing the
+queue's state when the owner ends" added to the stated bound (B1-2). Handed back:
+nothing; the trickle case is an Open point.
+
+Rerun after both rounds, at `538cc10` plus the uncommitted change, every recipe exit 0:
+
+```text
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+just test          Summary [   0.467s] 130 tests run: 130 passed, 0 skipped
+just effects       effects: the fixture trips every ban exactly once, and pachinko trips none.
+just metrics       ::notice::Quality score: 100.0% (212 functions analyzed)
+just deps-unused   ✓ no issues found
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just coverage      TOTAL ... 98.02% lines
+```
+
+### Step 8: the image
+
+At `538cc10` plus the uncommitted change, `just image` exit 0 (Docker 29.4.0, an arm64
+host emulating `linux/amd64`), ending:
+
+```text
+#14 [run 2/2] COPY --from=build /build/target/release/pachinko /pachinko
+#14 DONE 0.1s
+#15 naming to docker.io/library/pachinko:dev done
+#15 DONE 0.3s
+```
+
+Then the Verification block's container steps (`ai_tmp/wave/T29/container-b.sh`), run
+under the container name `pachinko-t29b` with `docker rm` bounded by `timeout 60`. A first
+run as `pachinko-t29` reached the same `204` and `docker wait` 0, then hung in `docker rm`:
+
+```text
+b41f3c26e5d800072c83ddb8863fc3eaa8fce781587f230df0a51357bf015a35
+curl: (52) Empty reply from server
+000
+204
+pachinko-t29b
+0
+rm exit 124
+readyz poll exit 0
+pachinko 0.1.0
+```
+
+The service answered `/readyz` 204 and `docker wait` printed 0 after `docker stop -t 15`.
+`docker run --rm pachinko:dev` printed the version line, but its own removal hung, so its
+`exit` line was never printed. The Docker Desktop daemon left every removed container
+`Dead` with "removal already in progress". This is an engine fault, not the service's:
+the serving container had already exited 0 (`docker wait`); the bare-binary run printed
+its version line, but its exit status was not recorded because `docker run --rm` hung in
+removal; its zero exit rests on `the_binary_prints_its_line_and_exits_zero` in
+`crates/pachinko/tests/binary.rs`. Clearing them needs a daemon restart, which was not
+done (handed back). The `Dockerfile` and the CI `image` job are unchanged.
+
+### Step 9: the docs
+
+At `538cc10` plus the uncommitted change, `just check-docs` exit 0:
+
+```text
+Validated 46 pages and 47 canonical topics.
+```
+
+### Step 10: `review-change`
+
+The ten invariants hold: no new dependency or public type; the new `ServeConfig`
+accessors each have an asserting doctest; libpachinko's tree is untouched and
+`just effects` reports `pachinko trips none`. No test asserts only that something was
+called. Handed back, outside Files touched: `docs/explanation/architecture.md:216-220`
+still describes the shutdown as T24 left it ("cuts connections still open after a
+5-second grace"). It is not false at the default, but it omits readiness, the flag and
+the second bound; [HTTP API](../docs/reference/http-api.md#shutdown) owns them now.
+
+### T29-2: the whole diff (step 10)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead; outputs under `ai_tmp/review/T29-2/`. 6 findings, 6 valid (one in
+part), none high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| B1 | valid, medium | A retry's `stale` or `equal_rank` depends only on the stored rank, so it does not prove the timed-out publish landed; another publish, or none if it timed out reading its body, can explain it |
+| B2 | valid, low | The hand-back said the containers had exited 0, but the `docker run --rm` run was never checked for its exit code |
+| C1 | valid in part, low | `lib.rs` said "anything left is aborted"; the abort ends only the scope's tasks, not axum's connection tasks (the binary's runtime drop ends those, so the page and changelog stand) |
+| C2 | valid, low | Troubleshooting said `starting` lasts until the owner's first command; the owner reports `Serving` on starting its loop, not on a command |
+| C3 | valid, low | `http-api.md` said "the 408 always comes first", but a partial head gets no 408, only the close |
+| C4 | valid, low | Same as B2, from the conformance side |
+
+Applied by the writer: the retry paragraphs in `http-api.md` and `troubleshooting.md`
+say a `stale` or `equal_rank` does not prove the first attempt landed (B1); the step 8
+record is narrowed to what was observed (B2, C4); `lib.rs` says the server's own tasks
+are aborted (C1); the readiness entry says `starting` lasts until the owner starts (C2);
+`http-api.md` says a partial head is closed without a 408 (C3). Handed back: nothing new.
+
+After the T29-2 fixes, at `538cc10` plus the uncommitted change (the lane commit's
+content but for this paragraph), `just check` exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+**Merge rule for step 11** (from checkpoint T29-1, finding C2). The request timeout
+covers only the routes inside `api()` in `crates/pachinko/src/http.rs`; a route chained
+onto `router()` after `bounded(...)` compiles and runs unbounded. When the merge brings
+in T25's four `/leases/{lease_id}/...` routes and T27's batch route, each goes inside
+`api()`, never into `router()`'s outer chain, and each gets one line in
+`the_api_routes_are_bounded_and_the_probes_answer_beside_them` asserting 408. T27's
+`Limits` joins `router()`'s signature, passed through at `serve.rs`'s call to `router`
+in `scope` and in the test helper `unanswered_router`; its `DefaultBodyLimit` layer stays
+on the outer router, so it covers every route.
+
+**Connection tasks** (from checkpoint T29-1, finding B3). Step 7's "`shutdown` waits for
+each aborted task to reach one: the listener, the connections, ..." does not hold for the
+connections: axum spawns each connection's task outside the scope's `JoinSet`, so the
+abort at the second bound neither ends nor joins them. The cut fails each one's next
+read or write; one can outlive `serve` until then, which matters only to an embedder
+that keeps the runtime running (the binary drops it). `serve.rs`'s module and `drain`
+docs say so; joining them was not taken, since it would extend the promised bound by up
+to one request timeout.
+
+**For T26's ticker** (from checkpoint T29-1, finding B4). Step 7's "T26's ticker, if
+present, returns the same way" is corrected: the ticker must not wait on the cut, which
+is sent only after the grace period, so a ticker that waits for it turns every clean
+shutdown into an overrun and a non-zero exit. `Lifecycle` in `serve.rs` now holds the
+`shutdown` watch, which turns true when the shutdown begins; the ticker, spawned in
+`scope`, selects its sleep on `shutdown.subscribe()` (or on its lane sender's
+`closed()`) and returns at once. The cut stays the backstop for a task that overran.
+
+**The bound's last term** (from checkpoint T29-1 round 2, finding B1). Step 7's "two
+grace periods plus that one application" leaves out one term: the owner holds the queue
+by value, so its return, or its abort, drops the queue and releases its records, leases
+and members without a yield, in time proportional to the queue's size and not bounded by
+the grace. The bound is two grace periods plus the one command or tick the owner was
+applying, and releasing the queue's state when the owner ends. `serve.rs`'s module and
+`drain` docs and `own`'s docs in `actor.rs` say so, and step 9's `docker stop` guidance
+carries the same term. Moving the drop to an un-awaited `spawn_blocking` was not taken,
+since it leaves a detached task the scope never joins.
 
 ## Open points
 
@@ -377,3 +580,6 @@ was handed back (`CONVENTIONS.md` §14).
   sleeping through the grace is a clock question, not a shutdown one.
 - A metrics endpoint and a structured log format are not planned by any ticket in the
   wave.
+- The idle deadline restarts on every byte that arrives, so a client that trickles one
+  byte per bound keeps a connection open until the shutdown's cut. A trickle or
+  slowloris bound is not in this ticket (T29-1, round 2).

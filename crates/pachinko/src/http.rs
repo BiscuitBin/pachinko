@@ -5,8 +5,13 @@
 //! Every handler reads its request, sends one command through the
 //! [`QueueHandle`] and turns the answer into a reply. A handler holds nothing the
 //! owner needs across an `.await`: the handle is a channel sender.
+//!
+//! Every route but `/healthz` and `/readyz` runs under [`bounded`], which answers
+//! 408 `request_timeout` once its handler has run for `--request-timeout-ms`.
 
 use axum::extract::rejection::{JsonRejection, PathRejection};
+use std::time::{Duration, Instant};
+
 use axum::extract::{Path, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
@@ -20,26 +25,60 @@ use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, Record
 use libpachinko::queue::{LeaseView, Publication, PublishOutcome, PullOutcome};
 use libpachinko::records::HeldRecord;
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
-use crate::actor::{QueueHandle, Stopped};
+use crate::actor::{QueueHandle, Readiness, Stopped};
 
-/// What every handler shares: the handle to the queue's owner.
+/// What every handler shares: the handle to the queue's owner and the readiness
+/// `GET /readyz` reports.
 #[derive(Clone, Debug)]
 struct AppState {
     queue: QueueHandle,
+    readiness: watch::Receiver<Readiness>,
 }
 
-/// The router over `queue`, each request logged at `debug`.
-pub(crate) fn router(queue: QueueHandle) -> Router {
-    Router::new()
+/// The router over `queue`, each request logged at `debug`. Every route but
+/// `/healthz` and `/readyz` is bounded at `request_timeout`.
+pub(crate) fn router(
+    queue: QueueHandle,
+    readiness: watch::Receiver<Readiness>,
+    request_timeout: Duration,
+) -> Router {
+    bounded(api(), request_timeout)
         .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .layer(middleware::from_fn(log_request))
+        .with_state(AppState { queue, readiness })
+}
+
+/// The API's routes, each one action. Every route added here runs under the request
+/// timeout; `router` adds the unbounded probes after the bound is applied.
+fn api() -> Router<AppState> {
+    Router::new()
         .route("/publishers/{publisher_id}", post(publisher_joins))
         .route("/consumers/{consumer_id}", post(consumer_joins))
         .route("/pockets/{pocket_key}/records/{record_key}", put(publish))
         .route("/consumers/{consumer_id}/pull", post(pull))
         .route("/consumers/{consumer_id}/lease", get(lease))
-        .layer(middleware::from_fn(log_request))
-        .with_state(AppState { queue })
+}
+
+/// `routes` with each handler bounded at `bound`: one that runs longer is dropped
+/// and answered 408 `request_timeout`. A command it already sent to the owner is
+/// not withdrawn; the owner still applies it.
+fn bounded<S>(routes: Router<S>, bound: Duration) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    routes.layer(middleware::from_fn(move |request: Request, next: Next| {
+        within(bound, request, next)
+    }))
+}
+
+/// Runs `next` on `request` for at most `bound`.
+async fn within(bound: Duration, request: Request, next: Next) -> Response {
+    tokio::time::timeout(bound, next.run(request))
+        .await
+        .unwrap_or_else(|_| Refusal::RequestTimeout(bound).into_response())
 }
 
 /// Why a request was refused: one variant per code on the wire.
@@ -74,10 +113,17 @@ pub(crate) enum Refusal {
     /// The request could not be read: a malformed body, path or payload.
     #[error("{0}")]
     BadRequest(String),
-    /// The queue's owner has stopped, or the library refused with a variant this map
-    /// does not know.
+    /// The service is starting or stopping, the queue's owner has stopped, or the
+    /// library refused with a variant this map does not know.
     #[error("{0}")]
     NotReady(String),
+    /// The handler ran past `--request-timeout-ms`; a command it sent may still be
+    /// applied.
+    #[error(
+        "the request took longer than {}ms; a command it sent may still be applied",
+        .0.as_millis()
+    )]
+    RequestTimeout(Duration),
 }
 
 impl Refusal {
@@ -90,6 +136,7 @@ impl Refusal {
             Self::UnknownPublisher(_) | Self::UnknownConsumer(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotReady(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::RequestTimeout(_) => StatusCode::REQUEST_TIMEOUT,
         }
     }
 
@@ -103,6 +150,7 @@ impl Refusal {
             Self::EqualRank { .. } => "equal_rank",
             Self::BadRequest(_) => "bad_request",
             Self::NotReady(_) => "not_ready",
+            Self::RequestTimeout(_) => "request_timeout",
         }
     }
 }
@@ -299,6 +347,16 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
+/// `GET /readyz`: 204 with no body while the owner is serving, 503 `not_ready`
+/// naming the state before it has begun and from the moment shutdown starts.
+async fn readyz(State(state): State<AppState>) -> Result<StatusCode, Refusal> {
+    let current = *state.readiness.borrow();
+    match current {
+        Readiness::Serving => Ok(StatusCode::NO_CONTENT),
+        other => Err(Refusal::NotReady(other.to_string())),
+    }
+}
+
 /// `POST /publishers/{publisher_id}`: 201 with no body.
 async fn publisher_joins(
     State(state): State<AppState>,
@@ -370,28 +428,197 @@ async fn lease(
     ))
 }
 
-/// One `debug` line per request: method, path and status. At the default `info`
-/// level none is written: a per-request `info` line cost PR 39 a third of its
-/// publish rate.
+/// One `debug` line per request, after the reply: method, path, status and elapsed
+/// milliseconds. At the default `info` level none is written: a per-request `info`
+/// line cost PR 39 a third of its publish rate.
 async fn log_request(request: Request, next: Next) -> Response {
+    let started = Instant::now();
     let method = request.method().clone();
     let path = request.uri().path().to_owned();
     let response = next.run(request).await;
-    tracing::debug!(%method, path, status = response.status().as_u16(), "request");
+    tracing::debug!(
+        %method,
+        path,
+        status = response.status().as_u16(),
+        elapsed_ms = started.elapsed().as_millis(),
+        "request"
+    );
     response
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use axum::Router;
     use axum::body::to_bytes;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+    use axum::routing::get;
+    use libpachinko::config::Config;
     use libpachinko::error::{JoinError, PublishError, PullError};
     use libpachinko::ids::{ConsumerId, PocketKey, PublisherId, Rank, RecordKey};
+    use libpachinko::queue::Queue;
     use serde_json::{Value, json};
+    use tokio::net::TcpListener;
+    use tokio::sync::watch;
 
-    use super::Refusal;
-    use crate::actor::Stopped;
+    use super::{Refusal, bounded, router};
+    use crate::actor::{self, Readiness, Stopped};
+    use crate::{EpochSerialLeaseIds, SystemClock};
+
+    /// How long one request may take before the test fails.
+    const BOUND: Duration = Duration::from_secs(5);
+
+    /// Serves `routes` on port 0 while `drive` runs against its base URL with a
+    /// blocking client whose every request is bounded, then stops serving.
+    async fn serve_while<T: Send>(routes: Router, drive: impl FnOnce(&Probe) -> T + Send) -> T {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, routes).await });
+        let agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(BOUND))
+            .build()
+            .into();
+        let probe = Probe { agent, base };
+        let driven = tokio::task::block_in_place(|| drive(&probe));
+        server.abort();
+        driven
+    }
+
+    /// A blocking client against one test server.
+    struct Probe {
+        agent: ureq::Agent,
+        base: String,
+    }
+
+    impl Probe {
+        /// The status and body text of `method` on `path`.
+        fn send(&self, method: &str, path: &str) -> (u16, String) {
+            let url = format!("{}{path}", self.base);
+            let response = match method {
+                "GET" => self.agent.get(&url).call(),
+                "POST" => self.agent.post(&url).send_empty(),
+                other => panic!("no such request in this test: {other}"),
+            };
+            Self::read(response)
+        }
+
+        /// The status and body text of `method` on `path` with the JSON `body`.
+        fn send_json(&self, method: &str, path: &str, body: &str) -> (u16, String) {
+            let url = format!("{}{path}", self.base);
+            let response = match method {
+                "POST" => self.agent.post(&url),
+                "PUT" => self.agent.put(&url),
+                other => panic!("no such request in this test: {other}"),
+            }
+            .header("content-type", "application/json")
+            .send(body);
+            Self::read(response)
+        }
+
+        /// The status and body text of `response`.
+        fn read(response: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> (u16, String) {
+            let mut response = response.unwrap();
+            let status = response.status().as_u16();
+            (status, response.body_mut().read_to_string().unwrap())
+        }
+    }
+
+    /// The real router over an owner that is never run, so a command is sent and
+    /// never answered, with the readiness `readiness` holds; and that owner, which
+    /// the caller keeps so that its inbox stays open.
+    fn unanswered_router(
+        readiness: &watch::Sender<Readiness>,
+        bound: Duration,
+    ) -> (Router, impl Future + use<>) {
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let queue = Queue::new(
+            Config::default(),
+            SystemClock::new().unwrap(),
+            lease_ids.clone(),
+        )
+        .unwrap();
+        let (_stop, stopping) = watch::channel(false);
+        let (handle, owner) = actor::start(queue, lease_ids, readiness.clone(), stopping);
+        (router(handle, readiness.subscribe(), bound), owner)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn readyz_is_503_until_serving_204_while_serving_and_503_once_stopping() {
+        let (readiness, _) = watch::channel(Readiness::Starting);
+        let (routes, _owner) = unanswered_router(&readiness, BOUND);
+        let not_ready = |state: &str| {
+            (
+                503,
+                json!({"error": "not_ready", "message": state}).to_string(),
+            )
+        };
+        let seen = serve_while(routes, |probe| {
+            let starting = probe.send("GET", "/readyz");
+            readiness.send_replace(Readiness::Serving);
+            let serving = probe.send("GET", "/readyz");
+            readiness.send_replace(Readiness::Stopping);
+            let stopping = probe.send("GET", "/readyz");
+            [starting, serving, stopping]
+        })
+        .await;
+        assert_eq!(
+            seen,
+            [
+                not_ready("starting"),
+                (204, String::new()),
+                not_ready("stopping")
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_handler_that_never_completes_answers_408_with_the_body() {
+        let routes = bounded(
+            Router::new().route("/never", get(std::future::pending::<()>)),
+            Duration::from_millis(50),
+        );
+        let (status, body) = serve_while(routes, |probe| probe.send("GET", "/never")).await;
+        assert_eq!(status, 408);
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "error": "request_timeout",
+                "message": "the request took longer than 50ms; a command it sent may still be applied"
+            })
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_api_routes_are_bounded_and_the_probes_answer_beside_them() {
+        let (readiness, _) = watch::channel(Readiness::Serving);
+        let (routes, _owner) = unanswered_router(&readiness, Duration::from_millis(50));
+        let seen = serve_while(routes, |probe| {
+            // One line per route in `api()`: a route added there gets a line here.
+            [
+                probe.send("POST", "/publishers/p").0,
+                probe.send("POST", "/consumers/c").0,
+                probe
+                    .send_json(
+                        "PUT",
+                        "/pockets/a/records/k",
+                        r#"{"publisher_id": "p", "rank": 1, "payload": ""}"#,
+                    )
+                    .0,
+                probe
+                    .send_json("POST", "/consumers/c/pull", r#"{"limit": 1}"#)
+                    .0,
+                probe.send("GET", "/consumers/c/lease").0,
+                probe.send("GET", "/healthz").0,
+                probe.send("GET", "/readyz").0,
+            ]
+        })
+        .await;
+        assert_eq!(seen, [408, 408, 408, 408, 408, 200, 204]);
+    }
 
     /// The status and the parsed body `refusal` is answered with.
     async fn answered(refusal: Refusal) -> (StatusCode, Value) {
@@ -455,6 +682,22 @@ mod tests {
     async fn not_ready_is_503() {
         let refusal = Refusal::from(Stopped::Owner);
         assert_eq!(refusal.to_string(), "the queue's owner has stopped");
+        assert_answered(refusal, StatusCode::SERVICE_UNAVAILABLE, "not_ready").await;
+    }
+
+    #[tokio::test]
+    async fn request_timeout_is_408() {
+        let refusal = Refusal::RequestTimeout(Duration::from_secs(30));
+        assert_eq!(
+            refusal.to_string(),
+            "the request took longer than 30000ms; a command it sent may still be applied"
+        );
+        assert_answered(refusal, StatusCode::REQUEST_TIMEOUT, "request_timeout").await;
+    }
+
+    #[tokio::test]
+    async fn a_state_other_than_serving_is_503_not_ready_naming_it() {
+        let refusal = Refusal::NotReady(Readiness::Starting.to_string());
         assert_answered(refusal, StatusCode::SERVICE_UNAVAILABLE, "not_ready").await;
     }
 

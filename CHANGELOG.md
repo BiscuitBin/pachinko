@@ -57,6 +57,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `GET /healthz`; six flags for the listen address and the specification's five config
   values; the real `SystemClock` and `EpochSerialLeaseIds`; and a clean shutdown on
   SIGTERM or SIGINT (decision 0019).
+- Operability for `pachinko serve`: `GET /readyz`, 204 while serving and 503
+  `not_ready` while starting or stopping; `--log-level` (default `info`, `RUST_LOG`
+  ignored), with the per-request line at `debug`; `--request-timeout-ms` (default
+  30000), answering 408 `request_timeout` and closing idle connections; and
+  `--shutdown-grace-ms` (default 5000), after which open connections are cut and,
+  one more grace period later, anything left is aborted.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

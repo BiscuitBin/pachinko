@@ -6,6 +6,12 @@
 //! (`docs/reference/http-api.md` has the routes), and stops cleanly on SIGTERM or
 //! SIGINT.
 //!
+//! `GET /readyz` reports whether the owner is serving. `--log-level` sets the log
+//! level, `--request-timeout-ms` bounds each request and each idle connection, and
+//! `--shutdown-grace-ms` bounds the shutdown: open connections are cut after one
+//! grace period and the server's own tasks still running are aborted after a second
+//! (see [`serve`]).
+//!
 //! The service supplies the real implementations of the library's effect traits,
 //! [`SystemClock`] and [`EpochSerialLeaseIds`], and owns the runtime, the wire format
 //! and the logging. The binary's `main` calls [`run`] and [`exit_code`] and nothing

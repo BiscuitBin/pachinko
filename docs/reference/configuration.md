@@ -17,9 +17,10 @@ build and check the workspace.
 
 ## Service flags
 
-`pachinko serve` reads `--name value` pairs. An unknown flag, a flag without a value, or
-a value that is not an unsigned integer is a usage error naming the flag, and the binary
-exits 1 with `pachinko: usage: <reason>` on standard error. The five specification values
+`pachinko serve` reads `--name value` pairs. An unknown flag, a flag without a value, a
+value that is not an unsigned integer, a log level that is not one of the five names, or
+a request timeout of 0 is a usage error naming the flag, and the binary exits 1 with
+`pachinko: usage: <reason>` on standard error. The five specification values
 then go through the library's config check, which refuses a zero
 `--max-consecutive-expiries` or `--max-pull-batch` the same way, as
 `pachinko: invalid configuration: <reason>`.
@@ -32,18 +33,22 @@ then go through the library's config check, which refuses a zero
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
 | `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
+| `--log-level` | `info` | The most detailed log line written to standard error: `error`, `warn`, `info`, `debug` or `trace`, lower case. Each request writes one line at `debug`. |
+| `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; at least 1. |
+| `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once. |
 
-The defaults are the specification's, which decision 0019 confirms. T26 adds the sweep's
-flag, T27 the request-shape limits and T29 the log level, request timeout and shutdown
-grace; until T29 the shutdown grace is 5 seconds and the log level `info`. The routes are
-in [HTTP API](http-api.md).
+The five specification defaults are the specification's, which decision 0019 confirms.
+T26 adds the sweep's flag and T27 the request-shape limits. The log level comes from
+`--log-level` alone: `RUST_LOG` is ignored. The routes, the timeout and the shutdown
+window are in [HTTP API](http-api.md).
 
 ## Environment
 
 libpachinko reads no environment variable, and never will: the environment is one of the
 effects it reaches only through a trait it defines, as
 [Architecture](../explanation/architecture.md) explains. The `env!` in its `version()` is
-read by the compiler, not at run time. The service reads none either. The tooling reads a
+read by the compiler, not at run time. The service reads none either, `RUST_LOG`
+included: its log level is `--log-level`. The tooling reads a
 few, each in one place:
 
 | Variable | Read by | Effect |

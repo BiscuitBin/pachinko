@@ -11,12 +11,17 @@
 //! lease is granted to nobody. A requester that goes after that check, while the
 //! owner applies the pull, keeps the lease until it lapses (T26); the reply is then
 //! dropped, as every unwanted reply is.
+//!
+//! The owner reports [`Readiness::Serving`] as its first act, before it takes any
+//! command, and leaves its loop between commands once the scope tells it to stop.
+//! Commands still in its inbox are then dropped unanswered, and their senders answer
+//! 503 `not_ready`.
 
 use libpachinko::error::{JoinError, PublishError, PullError};
 use libpachinko::ids::{ConsumerId, PublisherId};
 use libpachinko::queue::{LeaseView, Publication, PublishOutcome, PullOutcome, Queue};
 use libpachinko::records::MemoryRecords;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{EpochSerialLeaseIds, ServeError, SystemClock};
 
@@ -72,6 +77,27 @@ pub(crate) enum Stopped {
     /// The owner task has ended, so its inbox or a reply channel is closed.
     #[error("the queue's owner has stopped")]
     Owner,
+}
+
+/// Whether the service is ready, as `GET /readyz` reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Readiness {
+    /// The owner has not yet begun its loop.
+    Starting,
+    /// The owner is taking commands and shutdown has not started.
+    Serving,
+    /// Shutdown has started; in-flight requests may still finish.
+    Stopping,
+}
+
+impl std::fmt::Display for Readiness {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Starting => "starting",
+            Self::Serving => "serving",
+            Self::Stopping => "stopping",
+        })
+    }
 }
 
 /// A cloneable sender of commands to the queue's owner. Each method sends one
@@ -156,31 +182,62 @@ impl QueueHandle {
 /// into the task scope it owns. The owner holds `lease_ids`, a clone of the queue's
 /// source, to see exhaustion before a pull.
 ///
-/// The owner ends with `Ok` once every handle is dropped, and with
+/// The owner sets `readiness` from [`Readiness::Starting`] to
+/// [`Readiness::Serving`] as its first act, and ends with `Ok` once every handle is
+/// dropped or `stop` turns true (or its sender is dropped), and with
 /// [`ServeError::LeaseIdsExhausted`] at the first `Pull` after the lease-id source
 /// is exhausted, rather than reissue an id.
 pub(crate) fn start(
     queue: ServiceQueue,
     lease_ids: EpochSerialLeaseIds,
+    readiness: watch::Sender<Readiness>,
+    stop: watch::Receiver<bool>,
 ) -> (
     QueueHandle,
     impl Future<Output = Result<(), ServeError>> + Send + 'static,
 ) {
     let (commands, inbox) = mpsc::channel(COMMAND_CAPACITY);
-    (QueueHandle { commands }, own(queue, lease_ids, inbox))
+    let owner = async move {
+        readiness.send_if_modified(|state| {
+            let starting = *state == Readiness::Starting;
+            if starting {
+                *state = Readiness::Serving;
+            }
+            starting
+        });
+        own(queue, lease_ids, inbox, stop).await
+    };
+    (QueueHandle { commands }, owner)
 }
 
 /// The owner loop: applies each command in arrival order until every sender is
-/// gone.
+/// gone or `stop` turns true. The stop is checked first, so the owner takes no
+/// command once told to stop; it is only seen between commands, each applied
+/// synchronously. The owner yields after each command, so that on a runtime with
+/// one worker the scope's grace timer runs and its stop lands before the next
+/// command, rather than after the owner's whole cooperative budget. Returning, or
+/// being aborted, drops the queue, which releases its state without a yield, in
+/// time proportional to its size: the shutdown's bound is two grace periods plus the
+/// one command or tick the owner was applying, and releasing the queue's state when
+/// the owner ends.
 async fn own(
     mut queue: ServiceQueue,
     lease_ids: EpochSerialLeaseIds,
     mut inbox: mpsc::Receiver<Command>,
+    mut stop: watch::Receiver<bool>,
 ) -> Result<(), ServeError> {
-    while let Some(command) = inbox.recv().await {
+    loop {
+        let command = tokio::select! {
+            biased;
+            _ = stop.wait_for(|stop| *stop) => return Ok(()),
+            command = inbox.recv() => command,
+        };
+        let Some(command) = command else {
+            return Ok(());
+        };
         apply(&mut queue, &lease_ids, command)?;
+        tokio::task::yield_now().await;
     }
-    Ok(())
 }
 
 /// Runs one command against the queue and sends its answer.
@@ -255,9 +312,9 @@ mod tests {
     use libpachinko::error::{JoinError, PullError};
     use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
     use libpachinko::queue::{Publication, PullOutcome, Queue};
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::{mpsc, oneshot, watch};
 
-    use super::{Command, QueueHandle, ServiceQueue, Stopped, own, start};
+    use super::{Command, QueueHandle, Readiness, ServiceQueue, Stopped, own, start};
     use crate::{EpochSerialLeaseIds, ServeError, SystemClock};
 
     /// How long a test waits for the owner before it fails.
@@ -292,7 +349,8 @@ mod tests {
             sender.try_send(command).unwrap();
         }
         drop(sender);
-        let owner = own(queue(&lease_ids), lease_ids, inbox);
+        let (_stop, never) = watch::channel(false);
+        let owner = own(queue(&lease_ids), lease_ids, inbox, never);
         tokio::time::timeout(BOUND, owner).await.unwrap()
     }
 
@@ -442,7 +500,8 @@ mod tests {
             let waiting = poll_fn(|context| Poll::Ready(both.as_mut().poll(context).is_pending()));
             assert!(waiting.await, "a sender finished with no owner running");
         }
-        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox));
+        let (_stop, never) = watch::channel(false);
+        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox, never));
         let answers = tokio::time::timeout(BOUND, both).await.unwrap();
         assert_eq!(answers, (Ok(Ok(())), Ok(Ok(()))));
         let ended = tokio::time::timeout(BOUND, owner).await.unwrap();
@@ -452,7 +511,9 @@ mod tests {
     #[tokio::test]
     async fn the_owner_ends_once_every_handle_is_dropped() {
         let lease_ids = EpochSerialLeaseIds::starting_at(1);
-        let (handle, owner) = start(queue(&lease_ids), lease_ids);
+        let (readiness, _) = watch::channel(Readiness::Starting);
+        let (_stop, never) = watch::channel(false);
+        let (handle, owner) = start(queue(&lease_ids), lease_ids, readiness, never);
         let owner = tokio::spawn(owner);
         let copy = handle.clone();
         assert_eq!(
@@ -470,5 +531,55 @@ mod tests {
             tokio::time::timeout(BOUND, owner).await.unwrap().unwrap(),
             Ok(())
         );
+    }
+
+    #[tokio::test]
+    async fn the_owner_reports_serving_then_stops_when_told_and_drops_its_inbox() {
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let (readiness, mut watching) = watch::channel(Readiness::Starting);
+        let (stop, stopping) = watch::channel(false);
+        let (handle, owner) = start(queue(&lease_ids), lease_ids, readiness, stopping);
+        assert_eq!(*watching.borrow_and_update(), Readiness::Starting);
+        let owner = tokio::spawn(owner);
+        tokio::time::timeout(
+            BOUND,
+            watching.wait_for(|state| *state == Readiness::Serving),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            handle.publisher_joins(PublisherId::new("p")).await,
+            Ok(Ok(()))
+        );
+        stop.send_replace(true);
+        let ended = tokio::time::timeout(BOUND, owner).await.unwrap().unwrap();
+        assert_eq!(
+            ended,
+            Ok(()),
+            "the owner ended while a handle is still held"
+        );
+        assert_eq!(
+            handle.consumer_joins(ConsumerId::new("c")).await,
+            Err(Stopped::Owner)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_owner_never_turns_stopping_back_to_serving() {
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let (readiness, watching) = watch::channel(Readiness::Stopping);
+        let (stop, stopping) = watch::channel(true);
+        let (_handle, owner) = start(queue(&lease_ids), lease_ids, readiness, stopping);
+        assert_eq!(tokio::time::timeout(BOUND, owner).await.unwrap(), Ok(()));
+        assert_eq!(*watching.borrow(), Readiness::Stopping);
+        drop(stop);
+    }
+
+    #[test]
+    fn readiness_reads_as_its_state() {
+        let names = [Readiness::Starting, Readiness::Serving, Readiness::Stopping]
+            .map(|state| state.to_string());
+        assert_eq!(names, ["starting", "serving", "stopping"]);
     }
 }
