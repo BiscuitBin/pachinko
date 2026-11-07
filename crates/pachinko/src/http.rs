@@ -6,9 +6,11 @@
 //! [`QueueHandle`] and turns the answer into a reply. A handler holds nothing the
 //! owner needs across an `.await`: the handle is a channel sender.
 
-use axum::extract::rejection::{JsonRejection, PathRejection};
-use axum::extract::{Path, Request, State};
+use axum::body::{Body, Bytes};
+use axum::extract::rejection::{BytesRejection, FailedToBufferBody, JsonRejection, PathRejection};
+use axum::extract::{DefaultBodyLimit, FromRequest, Path, Request, State};
 use axum::http::StatusCode;
+use axum::http::header::CONTENT_LENGTH;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -19,27 +21,61 @@ use libpachinko::error::{JoinError, PublishError, PullError};
 use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
 use libpachinko::queue::{LeaseView, Publication, PublishOutcome, PullOutcome};
 use libpachinko::records::HeldRecord;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::ServeConfig;
 use crate::actor::{QueueHandle, Stopped};
 
-/// What every handler shares: the handle to the queue's owner.
+mod batch;
+
+/// What every handler shares: the handle to the queue's owner and the
+/// request-shape limits.
 #[derive(Clone, Debug)]
 struct AppState {
     queue: QueueHandle,
+    limits: Limits,
 }
 
-/// The router over `queue`, each request logged at `debug`.
-pub(crate) fn router(queue: QueueHandle) -> Router {
+/// The request-shape limits (T27): a request over one is refused for its shape
+/// before any row applies, never for want of room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Limits {
+    /// `--max-batch-rows`: the most rows one batch publish carries.
+    batch_rows: usize,
+    /// `--max-payload-bytes`: the largest decoded payload of one row or one publish.
+    payload_bytes: usize,
+    /// `--max-body-bytes`: the largest request body any route reads.
+    body_bytes: usize,
+}
+
+impl From<&ServeConfig> for Limits {
+    fn from(config: &ServeConfig) -> Self {
+        Self {
+            batch_rows: config.max_batch_rows(),
+            payload_bytes: config.max_payload_bytes(),
+            body_bytes: config.max_body_bytes(),
+        }
+    }
+}
+
+/// The router over `queue` under `limits`, each request logged at `debug`. The body
+/// limit replaces axum's default of 2 MiB on every route.
+pub(crate) fn router(queue: QueueHandle, limits: Limits) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/publishers/{publisher_id}", post(publisher_joins))
         .route("/consumers/{consumer_id}", post(consumer_joins))
         .route("/pockets/{pocket_key}/records/{record_key}", put(publish))
+        .route(
+            "/publishers/{publisher_id}/publish",
+            post(batch::publish_batch),
+        )
         .route("/consumers/{consumer_id}/pull", post(pull))
         .route("/consumers/{consumer_id}/lease", get(lease))
+        .layer(DefaultBodyLimit::max(limits.body_bytes))
         .layer(middleware::from_fn(log_request))
-        .with_state(AppState { queue })
+        .with_state(AppState { queue, limits })
 }
 
 /// Why a request was refused: one variant per code on the wire.
@@ -78,6 +114,35 @@ pub(crate) enum Refusal {
     /// does not know.
     #[error("{0}")]
     NotReady(String),
+    /// A batch publish carried more rows than `--max-batch-rows`.
+    #[error("the batch has {rows} rows, over the limit of {max} (--max-batch-rows)")]
+    TooManyRows {
+        /// The rows the batch carried.
+        rows: usize,
+        /// `--max-batch-rows`.
+        max: usize,
+    },
+    /// A payload decoded to more bytes than `--max-payload-bytes`. The single `PUT`
+    /// is row 1.
+    #[error(
+        "the payload of row {row} is {bytes} bytes, over the limit of {max} \
+        (--max-payload-bytes)"
+    )]
+    PayloadTooLarge {
+        /// The row, counted from 1.
+        row: usize,
+        /// The decoded payload's length.
+        bytes: usize,
+        /// `--max-payload-bytes`.
+        max: usize,
+    },
+    /// The request body was longer than `--max-body-bytes`, by its `Content-Length`
+    /// or as read.
+    #[error("the request body is over the limit of {max} bytes (--max-body-bytes)")]
+    BodyTooLarge {
+        /// `--max-body-bytes`.
+        max: usize,
+    },
 }
 
 impl Refusal {
@@ -90,6 +155,9 @@ impl Refusal {
             Self::UnknownPublisher(_) | Self::UnknownConsumer(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotReady(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::TooManyRows { .. } | Self::PayloadTooLarge { .. } | Self::BodyTooLarge { .. } => {
+                StatusCode::PAYLOAD_TOO_LARGE
+            }
         }
     }
 
@@ -103,6 +171,9 @@ impl Refusal {
             Self::EqualRank { .. } => "equal_rank",
             Self::BadRequest(_) => "bad_request",
             Self::NotReady(_) => "not_ready",
+            Self::TooManyRows { .. } => "too_many_rows",
+            Self::PayloadTooLarge { .. } => "payload_too_large",
+            Self::BodyTooLarge { .. } => "body_too_large",
         }
     }
 }
@@ -155,15 +226,68 @@ impl From<Stopped> for Refusal {
     }
 }
 
+/// T24's 400 fallback for a handler that takes `Result<Json<_>, JsonRejection>`.
+/// T27's routes read their bodies through [`BoundedJson`], which answers an
+/// over-limit body 413 instead; this stays until no handler needs it.
 impl From<JsonRejection> for Refusal {
     fn from(rejection: JsonRejection) -> Self {
         Self::BadRequest(rejection.body_text())
     }
 }
 
+impl Refusal {
+    /// The refusal for a body the `Json` extractor rejected: over `max` bytes as
+    /// read, told apart by the rejection's type, is 413 `body_too_large`; any other
+    /// rejection is 400 `bad_request`.
+    fn from_json(rejection: JsonRejection, max: usize) -> Self {
+        match rejection {
+            JsonRejection::BytesRejection(BytesRejection::FailedToBufferBody(
+                FailedToBufferBody::LengthLimitError(_),
+            )) => Self::BodyTooLarge { max },
+            other => Self::BadRequest(other.body_text()),
+        }
+    }
+}
+
 impl From<PathRejection> for Refusal {
     fn from(rejection: PathRejection) -> Self {
         Self::BadRequest(rejection.body_text())
+    }
+}
+
+/// A JSON body no longer than `--max-body-bytes`. A `Content-Length` over the limit
+/// is refused before the body is read; a body without one is read up to the limit.
+#[derive(Debug)]
+struct BoundedJson<T>(T);
+
+impl<T> FromRequest<AppState> for BoundedJson<T>
+where
+    T: DeserializeOwned + Send,
+{
+    type Rejection = Refusal;
+
+    async fn from_request(request: Request, state: &AppState) -> Result<Self, Refusal> {
+        let max = state.limits.body_bytes;
+        let declared = request
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|length| length.to_str().ok()?.parse::<u64>().ok());
+        if declared.is_some_and(|length| length > u64::try_from(max).unwrap_or(u64::MAX)) {
+            return Err(Refusal::BodyTooLarge { max });
+        }
+        // The body is read before its content type is checked, so a body over the
+        // limit is 413 whatever it claims to be. The content type is then axum's own
+        // decision, made on the request rebuilt around the bytes already read.
+        let (parts, body) = request.into_parts();
+        let mut body_only = Request::new(body);
+        *body_only.extensions_mut() = parts.extensions.clone();
+        let bytes = Bytes::from_request(body_only, state)
+            .await
+            .map_err(|rejection| Refusal::from_json(JsonRejection::from(rejection), max))?;
+        Json::<T>::from_request(Request::from_parts(parts, Body::from(bytes)), state)
+            .await
+            .map(|Json(body)| Self(body))
+            .map_err(|rejection| Refusal::from_json(rejection, max))
     }
 }
 
@@ -294,6 +418,16 @@ fn payload(text: &str) -> Result<Payload, Refusal> {
         .map_err(|error| Refusal::BadRequest(format!("payload is not base64: {error}")))
 }
 
+/// `payload`, unless it is longer than `max` bytes: row `row`'s
+/// `payload_too_large`.
+fn within(row: usize, payload: Payload, max: usize) -> Result<Payload, Refusal> {
+    let bytes = payload.as_ref().len();
+    if bytes > max {
+        return Err(Refusal::PayloadTooLarge { row, bytes, max });
+    }
+    Ok(payload)
+}
+
 /// `GET /healthz`: 200 `ok`.
 async fn healthz() -> &'static str {
     "ok"
@@ -323,16 +457,15 @@ async fn consumer_joins(
 async fn publish(
     State(state): State<AppState>,
     path: Result<Path<(String, String)>, PathRejection>,
-    body: Result<Json<PublishBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<PublishBody>,
 ) -> Result<Json<PublishReply>, Refusal> {
     let Path((pocket, record)) = path?;
-    let Json(body) = body?;
     let pocket_key = PocketKey::new(pocket);
     let publication = Publication::new(
         pocket_key.clone(),
         RecordKey::new(record),
         Rank::new(body.rank),
-        payload(&body.payload)?,
+        within(1, payload(&body.payload)?, state.limits.payload_bytes)?,
     );
     let outcome = state
         .queue
@@ -348,10 +481,9 @@ async fn publish(
 async fn pull(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
-    body: Result<Json<PullBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<PullBody>,
 ) -> Result<Json<PullReply>, Refusal> {
     let Path(id) = path?;
-    let Json(body) = body?;
     let outcome = state.queue.pull(ConsumerId::new(id), body.limit).await??;
     Ok(Json(pull_reply(outcome)?))
 }
@@ -389,6 +521,12 @@ mod tests {
     use libpachinko::error::{JoinError, PublishError, PullError};
     use libpachinko::ids::{ConsumerId, PocketKey, PublisherId, Rank, RecordKey};
     use serde_json::{Value, json};
+
+    use axum::Json;
+    use axum::body::Body;
+    use axum::extract::rejection::JsonRejection;
+    use axum::extract::{FromRequest, Request};
+    use axum::http::header::CONTENT_TYPE;
 
     use super::Refusal;
     use crate::actor::Stopped;
@@ -452,6 +590,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn too_many_rows_is_413() {
+        let refusal = Refusal::TooManyRows { rows: 5, max: 4 };
+        assert_eq!(
+            refusal.to_string(),
+            "the batch has 5 rows, over the limit of 4 (--max-batch-rows)"
+        );
+        assert_answered(refusal, StatusCode::PAYLOAD_TOO_LARGE, "too_many_rows").await;
+    }
+
+    #[tokio::test]
+    async fn payload_too_large_is_413_and_names_the_row() {
+        let refusal = Refusal::PayloadTooLarge {
+            row: 2,
+            bytes: 17,
+            max: 16,
+        };
+        assert_eq!(
+            refusal.to_string(),
+            "the payload of row 2 is 17 bytes, over the limit of 16 (--max-payload-bytes)"
+        );
+        assert_answered(refusal, StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large").await;
+    }
+
+    #[tokio::test]
+    async fn body_too_large_is_413() {
+        let refusal = Refusal::BodyTooLarge { max: 128 };
+        assert_eq!(
+            refusal.to_string(),
+            "the request body is over the limit of 128 bytes (--max-body-bytes)"
+        );
+        assert_answered(refusal, StatusCode::PAYLOAD_TOO_LARGE, "body_too_large").await;
+    }
+
+    /// The `Json` extractor's rejection of `body`, under axum's default limit of
+    /// 2 MiB.
+    async fn rejection(body: Vec<u8>) -> JsonRejection {
+        let request = Request::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        Json::<Value>::from_request(request, &()).await.unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn the_length_limit_rejection_is_body_too_large_and_a_parse_one_bad_request() {
+        let too_long = rejection(vec![b' '; 2 * 1024 * 1024 + 1]).await;
+        assert_eq!(
+            Refusal::from_json(too_long, 7),
+            Refusal::BodyTooLarge { max: 7 }
+        );
+        let malformed = rejection(b"{".to_vec()).await;
+        assert_eq!(Refusal::from_json(malformed, 7).code(), "bad_request");
+    }
+
+    #[tokio::test]
     async fn not_ready_is_503() {
         let refusal = Refusal::from(Stopped::Owner);
         assert_eq!(refusal.to_string(), "the queue's owner has stopped");
@@ -502,6 +695,54 @@ mod tests {
                 "{converted:?} hit the forced arm"
             );
         }
+    }
+
+    /// Sends `request` to `address` and reads the reply until the server closes.
+    fn exchange(address: std::net::SocketAddr, request: &[u8]) -> String {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        stream.write_all(request).unwrap();
+        let mut reply = String::new();
+        stream.read_to_string(&mut reply).unwrap();
+        reply
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_streamed_body_over_the_cap_is_413_before_its_content_type_is_checked() {
+        let config = crate::ServeConfig::parse([
+            "--listen",
+            "127.0.0.1:0",
+            "--max-payload-bytes",
+            "16",
+            "--max-body-bytes",
+            "128",
+        ])
+        .unwrap();
+        let listener = tokio::net::TcpListener::bind(config.listen())
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, stopped) = tokio::sync::watch::channel(());
+        let server = tokio::spawn(async move { crate::serve(listener, &config, stopped).await });
+        // Chunked, so no `Content-Length`, and no content type: 200 bytes over a
+        // 128-byte cap.
+        let mut request = b"POST /consumers/c/pull HTTP/1.1\r\nhost: test\r\n\
+transfer-encoding: chunked\r\nconnection: close\r\n\r\nc8\r\n"
+            .to_vec();
+        request.extend([b'x'; 200]);
+        request.extend(b"\r\n0\r\n\r\n");
+        let reply = tokio::task::block_in_place(|| exchange(address, &request));
+        drop(stop);
+        tokio::time::timeout(std::time::Duration::from_secs(5), server)
+            .await
+            .expect("serve did not stop in time")
+            .unwrap()
+            .unwrap();
+        assert!(reply.starts_with("HTTP/1.1 413"), "{reply}");
+        assert!(reply.contains(r#""error":"body_too_large""#), "{reply}");
     }
 
     #[test]

@@ -117,11 +117,23 @@ set, so by default only the host itself can reach it
 authentication, no TLS and no rate limiting: anyone who can reach the address can join
 under any id, publish into any pocket and pull any record. `--listen 0.0.0.0:<port>`
 opens that to the network, and the service does not warn; put it behind a proxy or a
-firewall that decides who reaches it. The only bound on a request today is axum's
-default 2 MiB body limit; T27 adds the service's own limits on rows, bytes and timeouts,
-which are never capacity refusals, and describes them here. Nothing bounds the memory
-the queue holds, by the specification's `NeverRefusedForCapacity`.
-[HTTP API](../reference/http-api.md) lists every route.
+firewall that decides who reaches it. [HTTP API](../reference/http-api.md) lists every
+route.
+
+## Request-shape limits
+
+Three flags bound what one request can make the service read and hold:
+`--max-body-bytes` (16 MiB) bounds any request body a route reads, refused by its `Content-Length`
+before it is read or once a body without one is read past the limit;
+`--max-batch-rows` (1,000) bounds the rows of one batch publish; and
+`--max-payload-bytes` (1 MiB) bounds each decoded payload. Each is a refusal of the
+request's shape, 413 with its own code, decided before any row applies; none is a
+capacity refusal, and a service under load makes a request wait rather than refuse it,
+by the specification's `NeverRefusedForCapacity`. Nothing bounds the memory the queue
+holds across requests: a publisher within every limit can still grow it without end.
+Whether and how to bound it is the specification's third open question, and the
+prototype's resident memory, 8,191 MiB after ten seconds of batch publishing (decision
+0019's evidence), is the reason it needs an answer.
 
 ## What is out of scope
 

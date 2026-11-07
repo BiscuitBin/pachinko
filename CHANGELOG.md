@@ -57,6 +57,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `GET /healthz`; six flags for the listen address and the specification's five config
   values; the real `SystemClock` and `EpochSerialLeaseIds`; and a clean shutdown on
   SIGTERM or SIGINT (decision 0019).
+- Batch publish, `POST /publishers/{publisher_id}/publish`: one owner command per
+  request answering one outcome per row in row order, an equal rank answered for its row
+  alone; and the request-shape limits `--max-batch-rows` (1000), `--max-payload-bytes`
+  (1 MiB) and `--max-body-bytes` (16 MiB, replacing axum's 2 MiB default on every route),
+  refused as 413 `too_many_rows`, `payload_too_large` and `body_too_large` before any
+  row applies, never for want of room.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

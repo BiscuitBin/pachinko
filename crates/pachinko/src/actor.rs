@@ -11,6 +11,12 @@
 //! lease is granted to nobody. A requester that goes after that check, while the
 //! owner applies the pull, keeps the lease until it lapses (T26); the reply is then
 //! dropped, as every unwanted reply is.
+//!
+//! A batch publish is one `PublishBatch` command, so no other command runs between
+//! two of its rows. Its rows apply in order and independently: an equal rank refuses
+//! its row alone, and any other refusal ends the batch where it stands, leaving the
+//! rows before it applied. The only such refusal the library has, an unknown
+//! publisher, comes at the first row, before any row lands.
 
 use libpachinko::error::{JoinError, PublishError, PullError};
 use libpachinko::ids::{ConsumerId, PublisherId};
@@ -50,6 +56,12 @@ pub(crate) enum Command {
         publication: Publication,
         reply: Reply<Result<PublishOutcome, PublishError>>,
     },
+    /// `Publish` of each row in order, as one command (T27).
+    PublishBatch {
+        publisher_id: PublisherId,
+        rows: Vec<Publication>,
+        reply: Reply<Result<Vec<RowOutcome>, PublishError>>,
+    },
     /// `Pull` of up to `limit` records; a `limit` of zero or less claims a pocket and
     /// hands out none.
     Pull {
@@ -63,6 +75,16 @@ pub(crate) enum Command {
         consumer_id: ConsumerId,
         reply: Reply<Result<Option<LeaseView>, PullError>>,
     },
+}
+
+/// What one row of a batch publish came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RowOutcome {
+    /// The rule that took the row.
+    Applied(PublishOutcome),
+    /// The row carried the stored record's rank: the library's refusal, kept to its
+    /// row (open question 1).
+    EqualRank,
 }
 
 /// The owner has stopped, so a command could not be sent or its answer never came
@@ -91,6 +113,14 @@ impl QueueHandle {
             .await
             .map_err(|_| Stopped::Owner)?;
         answer.await.map_err(|_| Stopped::Owner)
+    }
+
+    /// A handle whose commands wait in an inbox of `capacity` that no owner reads
+    /// until the test runs one over it.
+    #[cfg(test)]
+    pub(crate) fn unowned(capacity: usize) -> (Self, mpsc::Receiver<Command>) {
+        let (commands, inbox) = mpsc::channel(capacity);
+        (Self { commands }, inbox)
     }
 
     /// `PublisherJoins` for `publisher_id`.
@@ -123,6 +153,20 @@ impl QueueHandle {
         self.ask(|reply| Command::Publish {
             publisher_id,
             publication,
+            reply,
+        })
+        .await
+    }
+
+    /// `Publish` of each of `rows` by `publisher_id`, in order, as one command.
+    pub(crate) async fn publish_batch(
+        &self,
+        publisher_id: PublisherId,
+        rows: Vec<Publication>,
+    ) -> Result<Result<Vec<RowOutcome>, PublishError>, Stopped> {
+        self.ask(|reply| Command::PublishBatch {
+            publisher_id,
+            rows,
             reply,
         })
         .await
@@ -202,6 +246,11 @@ fn apply(
             publication,
             reply,
         } => answer(reply, queue.publish(&publisher_id, publication)),
+        Command::PublishBatch {
+            publisher_id,
+            rows,
+            reply,
+        } => answer(reply, publish_each(queue, &publisher_id, rows)),
         Command::Pull {
             consumer_id,
             limit,
@@ -239,6 +288,24 @@ fn pull(
     Ok(())
 }
 
+/// Publishes each of `rows` in order. An equal rank refuses its row alone; any other
+/// refusal ends the batch, leaving the rows before it applied, as PR 38's
+/// `publish_each` did. An unknown publisher is refused at the first row, before any
+/// row has landed.
+fn publish_each(
+    queue: &mut ServiceQueue,
+    publisher_id: &PublisherId,
+    rows: Vec<Publication>,
+) -> Result<Vec<RowOutcome>, PublishError> {
+    rows.into_iter()
+        .map(|row| match queue.publish(publisher_id, row) {
+            Ok(outcome) => Ok(RowOutcome::Applied(outcome)),
+            Err(PublishError::EqualRank { .. }) => Ok(RowOutcome::EqualRank),
+            Err(error) => Err(error),
+        })
+        .collect()
+}
+
 /// Sends `value` back. A requester that has gone no longer wants it, so a failed
 /// send is dropped.
 fn answer<T>(reply: Reply<T>, value: T) {
@@ -252,12 +319,15 @@ mod tests {
     use std::time::Duration;
 
     use libpachinko::config::Config;
-    use libpachinko::error::{JoinError, PullError};
+    use libpachinko::error::{JoinError, PublishError, PullError};
     use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-    use libpachinko::queue::{Publication, PullOutcome, Queue};
+    use libpachinko::queue::{Publication, PublishOutcome, PullOutcome, Queue};
+    use tokio::sync::mpsc::error::TrySendError;
     use tokio::sync::{mpsc, oneshot};
 
-    use super::{Command, QueueHandle, ServiceQueue, Stopped, own, start};
+    use super::{
+        Command, QueueHandle, RowOutcome, ServiceQueue, Stopped, own, publish_each, start,
+    };
     use crate::{EpochSerialLeaseIds, ServeError, SystemClock};
 
     /// How long a test waits for the owner before it fails.
@@ -445,6 +515,122 @@ mod tests {
         let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox));
         let answers = tokio::time::timeout(BOUND, both).await.unwrap();
         assert_eq!(answers, (Ok(Ok(())), Ok(Ok(()))));
+        let ended = tokio::time::timeout(BOUND, owner).await.unwrap();
+        assert_eq!(ended.unwrap(), Ok(()));
+    }
+
+    fn row(pocket: &str, key: &str, rank: i64) -> Publication {
+        Publication::new(
+            PocketKey::new(pocket),
+            RecordKey::new(key),
+            Rank::new(rank),
+            Payload::from(&b"x"[..]),
+        )
+    }
+
+    #[test]
+    fn each_row_applies_in_order_and_an_equal_rank_refuses_its_row_alone() {
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let mut queue = queue(&lease_ids);
+        queue.publisher_joins(PublisherId::new("p")).unwrap();
+        let rows = vec![
+            row("a", "k1", 1),
+            row("a", "k2", 1),
+            row("a", "k1", 2),
+            row("a", "k1", 1),
+            row("a", "k1", 2),
+            row("b", "k1", 1),
+        ];
+        let outcomes = publish_each(&mut queue, &PublisherId::new("p"), rows).unwrap();
+        assert_eq!(
+            outcomes,
+            [
+                RowOutcome::Applied(PublishOutcome::Created),
+                RowOutcome::Applied(PublishOutcome::NewKey),
+                RowOutcome::Applied(PublishOutcome::Superseded),
+                RowOutcome::Applied(PublishOutcome::Stale),
+                RowOutcome::EqualRank,
+                RowOutcome::Applied(PublishOutcome::Created),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unjoined_publisher_is_refused_at_the_first_row_with_nothing_landed() {
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let mut queue = queue(&lease_ids);
+        let rows = vec![row("a", "k1", 1), row("b", "k1", 1)];
+        assert_eq!(
+            publish_each(&mut queue, &PublisherId::new("p"), rows),
+            Err(PublishError::UnknownPublisher(PublisherId::new("p")))
+        );
+        queue.consumer_joins(ConsumerId::new("c")).unwrap();
+        assert_eq!(
+            queue.pull(&ConsumerId::new("c"), 10),
+            Ok(PullOutcome::NoPocketAvailable)
+        );
+    }
+
+    // guarantee: NeverRefusedForCapacity
+    #[tokio::test]
+    async fn a_full_channel_makes_a_batch_publish_wait_then_succeed() {
+        let (handle, inbox) = QueueHandle::unowned(4);
+        // Every filler's reply depends on the order the owner runs them in, and the
+        // batch's outcomes depend on the fillers having run before it.
+        let (reply, mut joined) = oneshot::channel();
+        let join = Command::PublisherJoins {
+            publisher_id: PublisherId::new("p0"),
+            reply,
+        };
+        handle.commands.try_send(join).unwrap();
+        let mut published = Vec::new();
+        for rank in [1, 2, 1] {
+            let (reply, answer) = oneshot::channel();
+            let publish = Command::Publish {
+                publisher_id: PublisherId::new("p0"),
+                publication: row("a", "k1", rank),
+                reply,
+            };
+            handle.commands.try_send(publish).unwrap();
+            published.push(answer);
+        }
+        let (reply, _) = oneshot::channel();
+        let extra = Command::PublisherJoins {
+            publisher_id: PublisherId::new("p4"),
+            reply,
+        };
+        assert!(
+            matches!(handle.commands.try_send(extra), Err(TrySendError::Full(_))),
+            "the channel filled at its capacity"
+        );
+        let rows = vec![row("a", "k1", 3), row("a", "k2", 1)];
+        let mut batch =
+            std::pin::pin!(async move { handle.publish_batch(PublisherId::new("p0"), rows).await });
+        let waited = tokio::time::timeout(Duration::from_millis(50), batch.as_mut()).await;
+        assert!(waited.is_err(), "the batch finished with no owner running");
+        let lease_ids = EpochSerialLeaseIds::starting_at(1);
+        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox));
+        let outcomes = tokio::time::timeout(BOUND, batch).await.unwrap();
+        assert_eq!(
+            outcomes,
+            Ok(Ok(vec![
+                RowOutcome::Applied(PublishOutcome::Superseded),
+                RowOutcome::Applied(PublishOutcome::NewKey),
+            ]))
+        );
+        assert_eq!(joined.try_recv(), Ok(Ok(())), "filler 0 ran first");
+        let expected = [
+            PublishOutcome::Created,
+            PublishOutcome::Superseded,
+            PublishOutcome::Stale,
+        ];
+        for (mut answer, outcome) in published.into_iter().zip(expected) {
+            assert_eq!(
+                answer.try_recv(),
+                Ok(Ok(outcome)),
+                "the fillers ran in order"
+            );
+        }
         let ended = tokio::time::timeout(BOUND, owner).await.unwrap();
         assert_eq!(ended.unwrap(), Ok(()));
     }

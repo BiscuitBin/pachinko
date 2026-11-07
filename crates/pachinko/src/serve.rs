@@ -22,7 +22,7 @@ use tokio::task::{JoinError, JoinSet};
 use tokio::time::timeout;
 
 use crate::actor::{self, QueueHandle, ServiceQueue};
-use crate::http::router;
+use crate::http::{Limits, router};
 use crate::{EpochSerialLeaseIds, ServeConfig, ServeError, SystemClock};
 
 /// How long the tasks have to finish once shutdown starts before open connections
@@ -34,6 +34,9 @@ type TaskResult = Result<(), ServeError>;
 
 /// The queue's handle and its owner, still to be spawned.
 type Owner<F> = (QueueHandle, F);
+
+/// The listener and the request-shape limits its router enforces (T27).
+type Http = (TcpListener, Limits);
 
 /// The `serve` command: installs the log writer on standard error at `info`, builds
 /// the runtime and the queue, binds `--listen`, installs the signal handlers, writes
@@ -57,7 +60,8 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         announce(&listener, out)?;
         let (_never_sent, stop) = watch::channel(());
         let owner = actor::start(queue, lease_ids);
-        scope(listener, owner, stop, signals, GRACE).await
+        let http = (listener, Limits::from(config));
+        scope(http, owner, stop, signals, GRACE).await
     })
 }
 
@@ -93,7 +97,7 @@ pub async fn serve(
     let (queue, lease_ids) = service_queue(config)?;
     let signals = install_signals()?;
     scope(
-        listener,
+        (listener, Limits::from(config)),
         actor::start(queue, lease_ids),
         stop,
         signals,
@@ -121,9 +125,9 @@ fn announce(listener: &TcpListener, out: &mut impl Write) -> Result<(), ServeErr
         .map_err(ServeError::io("writing the bound address"))
 }
 
-/// The task scope over `owner`, the listener and the signals.
+/// The task scope over `owner`, the listener under its limits and the signals.
 pub(crate) async fn scope<F>(
-    listener: TcpListener,
+    (listener, limits): Http,
     owner: Owner<F>,
     stop: watch::Receiver<()>,
     signals: impl Future<Output = ()> + Send + 'static,
@@ -141,7 +145,7 @@ where
     };
     let mut tasks = JoinSet::new();
     tasks.spawn(owner);
-    tasks.spawn(listen(connections, handle, shutting_down.clone()));
+    tasks.spawn(listen(connections, handle, limits, shutting_down.clone()));
     tasks.spawn(signal(signals, stop, shutting_down));
     let first = tasks.join_next().await.map_or(Ok(()), task_result);
     shutdown.send_replace(true);
@@ -204,9 +208,10 @@ async fn join_into(tasks: &mut JoinSet<TaskResult>, first: &mut TaskResult) {
 async fn listen(
     connections: Connections,
     queue: QueueHandle,
+    limits: Limits,
     shutting_down: watch::Receiver<bool>,
 ) -> TaskResult {
-    axum::serve(connections, router(queue))
+    axum::serve(connections, router(queue, limits))
         .with_graceful_shutdown(shutdown_started(shutting_down))
         .await
         .map_err(ServeError::io("serving HTTP"))
@@ -360,7 +365,7 @@ mod tests {
     use tokio::task::JoinSet;
     use tokio::time::timeout;
 
-    use super::{GRACE, drain, scope, service_queue};
+    use super::{GRACE, Limits, drain, scope, service_queue};
     use crate::{ServeConfig, ServeError, actor, exit_code};
 
     /// How long a test waits for `serve` before it fails.
@@ -389,7 +394,13 @@ expect: 100-continue\r\n\r\n";
         let owner = (handle, panicking_owner());
         let served = timeout(
             BOUND,
-            scope(listener, owner, stopped, std::future::pending(), GRACE),
+            scope(
+                (listener, Limits::from(&config)),
+                owner,
+                stopped,
+                std::future::pending(),
+                GRACE,
+            ),
         )
         .await
         .unwrap();
@@ -446,7 +457,7 @@ expect: 100-continue\r\n\r\n";
                 async move { tokio::task::block_in_place(|| stall_a_request(address, stop)) };
             let (queue, lease_ids) = service_queue(&config).unwrap();
             let server = scope(
-                listener,
+                (listener, Limits::from(&config)),
                 actor::start(queue, lease_ids),
                 stopped,
                 std::future::pending(),
