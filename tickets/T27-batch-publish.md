@@ -491,7 +491,17 @@ just doc           Generated .../target/doc/libpachinko/index.html and 1 other f
 just check-docs    Validated 46 pages and 47 canonical topics.
 ```
 
-The requote at the commit follows below. The lead asks for the rerun at the merge commit.
+At `354c7ca`, exit 0 each:
+
+```text
+just lock-check    ✔ Lock-file was already up-to-date
+just test          Summary [   0.355s] 133 tests run: 133 passed, 0 skipped
+just coverage      TOTAL ... 2782 lines, 31 missed, 98.89%
+just check         All checks passed and the worktree is unchanged.
+git status --short (empty)
+```
+
+The rerun at the merge commit comes when the lead asks for it.
 
 Merge note (T27-1, C1): `impl From<JsonRejection> for Refusal` stays as T24's 400
 fallback so a tree merged with T25's handlers compiles. Every handler that takes a JSON
