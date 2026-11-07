@@ -3,14 +3,14 @@
 //! owner; every other guard is the library's, in the order of the rules' `requires`.
 
 use axum::Json;
-use axum::extract::rejection::{JsonRejection, PathRejection};
+use axum::extract::rejection::PathRejection;
 use axum::extract::{Path, State};
 use libpachinko::ids::{ConsumerId, RecordKey};
 use libpachinko::lease_ids::LeaseId;
 use libpachinko::queue::{PocketFate, SettleOutcome};
 use serde::{Deserialize, Serialize};
 
-use super::{AppState, Refusal, unmapped};
+use super::{AppState, BoundedJson, Refusal, unmapped};
 
 /// The body of `POST /leases/{lease_id}/ack` and `.../nack`.
 #[derive(Debug, Deserialize)]
@@ -74,10 +74,9 @@ fn lease_id(path: Result<Path<String>, PathRejection>) -> Result<LeaseId, Refusa
 pub(super) async fn ack(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
-    body: Result<Json<SettleBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<SettleBody>,
 ) -> Result<Json<SettleReply>, Refusal> {
     let lease = lease_id(path)?;
-    let Json(body) = body?;
     let consumer = ConsumerId::new(body.consumer_id);
     let key = RecordKey::new(body.record_key);
     let outcome = state.queue.ack(consumer, lease, key).await??;
@@ -90,10 +89,9 @@ pub(super) async fn ack(
 pub(super) async fn nack(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
-    body: Result<Json<SettleBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<SettleBody>,
 ) -> Result<Json<SettleReply>, Refusal> {
     let lease = lease_id(path)?;
-    let Json(body) = body?;
     let consumer = ConsumerId::new(body.consumer_id);
     let key = RecordKey::new(body.record_key);
     let outcome = state.queue.nack(consumer, lease, key).await??;
@@ -106,10 +104,9 @@ pub(super) async fn nack(
 pub(super) async fn renew(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
-    body: Result<Json<LeaseBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<LeaseBody>,
 ) -> Result<Json<RenewReply>, Refusal> {
     let lease = lease_id(path)?;
-    let Json(body) = body?;
     let consumer = ConsumerId::new(body.consumer_id);
     let expires_at = state.queue.renew(consumer, lease).await??;
     Ok(Json(RenewReply {
@@ -121,10 +118,9 @@ pub(super) async fn renew(
 pub(super) async fn release(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
-    body: Result<Json<LeaseBody>, JsonRejection>,
+    BoundedJson(body): BoundedJson<LeaseBody>,
 ) -> Result<Json<ReleaseReply>, Refusal> {
     let lease = lease_id(path)?;
-    let Json(body) = body?;
     let consumer = ConsumerId::new(body.consumer_id);
     let (fate, _ended) = state.queue.release(consumer, lease).await??;
     Ok(Json(ReleaseReply {

@@ -22,7 +22,13 @@ a value that is not an unsigned integer is a usage error naming the flag, and th
 exits 1 with `pachinko: usage: <reason>` on standard error. The five specification values
 then go through the library's config check, which refuses a zero
 `--max-consecutive-expiries` or `--max-pull-batch` the same way, as
-`pachinko: invalid configuration: <reason>`.
+`pachinko: invalid configuration: <reason>`. The three request-shape limits must each be
+at least 1, and `--max-body-bytes` must be at least the base64 size of one maximum payload
+plus the shortest batch envelope around it, `ceil(max_payload_bytes / 3) * 4 + 88`
+(1,398,192 bytes with the defaults); a smaller body cap is a usage error naming that
+minimum. The 88 bytes are
+`{"records":[{"pocket_key":"","record_key":"","rank":-9223372036854775808,"payload":""}]}`
+less its payload, which also covers the single `PUT`'s shorter envelope.
 
 | Flag | Default | What it sets |
 | --- | --- | --- |
@@ -32,9 +38,13 @@ then go through the library's config check, which refuses a zero
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
 | `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
+| `--max-batch-rows` | `1000` | The most rows one batch publish carries; more is 413 `too_many_rows`. |
+| `--max-payload-bytes` | `1048576` (1 MiB) | The largest decoded payload of a single publish or a batch row; more is 413 `payload_too_large`. |
+| `--max-body-bytes` | `16777216` (16 MiB) | The largest request body any route reads; more is 413 `body_too_large`. At least the minimum above. |
 
-The defaults are the specification's, which decision 0019 confirms. T26 adds the sweep's
-flag, T27 the request-shape limits and T29 the log level, request timeout and shutdown
+The five specification values' defaults are the specification's, which decision 0019
+confirms; the request-shape limits' defaults are the comparables decision 0019's
+evidence lists. T26 adds the sweep's flag and T29 the log level, request timeout and shutdown
 grace; until T29 the shutdown grace is 5 seconds and the log level `info`. The routes are
 in [HTTP API](http-api.md).
 

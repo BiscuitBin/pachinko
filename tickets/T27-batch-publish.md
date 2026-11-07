@@ -327,10 +327,187 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `538cc10`, after `just initialize` (exit 0; "Secondary worktree: skipping
+install-hooks."), `just check` on the untouched worktree (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked on branch `wave/t27` in the lead's lane worktree from `538cc10` (T24 done), not
+  on `ticket/t27-batch-publish` from `main`. `just initialize` ran there, as the lead
+  asked.
+- `git fetch origin` ran in step 2 so the prototype heads would resolve. Merging
+  `origin/main`, push and pull request: not run: one pull request at T31. The lead merges
+  this lane into `mvp-inimal-but-sufficient` after T25, and the Verification block is
+  rerun at that merge commit when asked.
+- The wave lead ran the §14 reviews, the triage and the fix writer. This agent stopped
+  uncommitted at each checkpoint, read the fix diff and reran its checks.
+
+### Deviations from Files touched (approved by the lead)
+
+- `crates/pachinko/src/serve.rs`: one `Copy` value, `Limits`, travels
+  `serve -> scope -> listen -> router(queue, limits)`. `scope` takes it paired with the
+  listener (`type Http = (TcpListener, Limits)`) so it stays under clippy's five-argument
+  threshold, and the test call sites pass `Limits::from(&config)` with the defaults.
+  The reason: the router is built only in `serve.rs`, so the limits cannot reach it any
+  other way. T29 edits `scope` and `listen` too, so expect a conflict at that signature.
+- `crates/pachinko/src/http/batch.rs` (new): the batch route's bodies, `batch_rows`,
+  `row_outcome` and the `publish_batch` handler. `just metrics` (rustqual SRP-002) failed
+  on `http.rs` with 3 independent clusters (max 2) once the handler landed there. The
+  rule card says to split along the clusters.
+
+### The plan against T24's names (step 2)
+
+- `Command::PublishBatch { publisher_id, rows, reply }`, `RowOutcome::{Applied, EqualRank}`,
+  `publish_each` and `QueueHandle::publish_batch` sit beside T24's commands.
+  `QueueHandle::unowned(capacity)` (`#[cfg(test)]`) gives a handle and its inbox with no
+  owner.
+- `Refusal` gains `TooManyRows { rows, max }`, `PayloadTooLarge { row, bytes, max }` and
+  `BodyTooLarge { max }`, all 413, each with its own arm in `status()` and `code()` and
+  no wildcard. The single `PUT` is row 1 in `payload_too_large`.
+- The body limit is `DefaultBodyLimit::max(--max-body-bytes)` over the router. A new
+  extractor, `BoundedJson<T>`, refuses a `Content-Length` over the cap before reading,
+  then reads the body under the cap, then lets axum's `Json` judge the content type and
+  parse it. The length-limit rejection is matched by type
+  (`FailedToBufferBody::LengthLimitError`) and answered 413 `body_too_large`, every other
+  rejection 400 `bad_request`. `publish` and `pull` use it. `impl From<JsonRejection> for
+  Refusal` stays for T25's handlers (merge note below).
+- The checks over the rows run base64 over every row, then size over every row. So a
+  row-1 oversize loses to a row-2 non-base64 (400 naming row 2), as `http-api.md` says.
+
+### T27-1: the command, the route and the limits (steps 1 to 4)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead. Outputs are under `ai_tmp/review/T27-1/`. 7 findings, 6 valid, none
+high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, medium | Removing `From<JsonRejection>` would break T25's four lease handlers at merge, with no textual conflict |
+| C2 | valid, low | Without a `Content-Length`, axum checked the content type before the body limit, so a chunked non-JSON body over the cap was 400, not 413 |
+| C3 | valid, low | `min_body_bytes` saturated, so the load check accepted a `--max-payload-bytes` near `usize::MAX` whose body cannot fit |
+| B1 | valid, medium | Same as C1, plus the lease routes answering an oversize body 400 after a naive restore |
+| B2 | valid, low | Same as C2, with a wire test asked for in `tests/batch_publish.rs` |
+| B3 | invalid, low | A route without a body reads none, so the cap has nothing to bound there; the docs now say "any route reads" |
+| B4 | valid, low | Same as C3 |
+
+Applied by the writer: `impl From<JsonRejection> for Refusal` restored as T24's 400
+fallback, with the merge note and an Open point (C1, B1). `BoundedJson` reads the body
+under the cap before the content-type check, with a unit test for a chunked body that has
+no content type (C2). `min_body_bytes` returns `Option`, and the overflow is a usage error
+with a test (C3, B4). Added on this lane: B2's wire test,
+`a_chunked_body_over_the_cap_is_body_too_large_whatever_its_content_type`. Handed back:
+converting T25's handlers to `BoundedJson`, which happens at merge (below).
+
+Rerun after the fixes, at `538cc10` plus the uncommitted change: `just test` exit 0,
+`Summary [...] 116 tests run: 116 passed, 0 skipped`.
+
+### Step 5: shown to bite
+
+Each break was applied, its test run, and the break then restored:
+
+- `publish_each` turning an equal rank into a batch error:
+  `each_row_applies_in_order_and_an_equal_rank_refuses_its_row_alone` FAILED (9 passed, 1
+  failed).
+- `QueueHandle::ask` using `try_send`, which refuses when the channel is full:
+  `a_full_channel_makes_a_batch_publish_wait_then_succeed` and
+  `a_full_channel_makes_the_sender_wait_not_fail` FAILED (8 passed, 2 failed).
+- `from_json` mapping the length limit to `bad_request`, and `too_many_rows`' code
+  changed: `the_length_limit_rejection_is_body_too_large_and_a_parse_one_bad_request`,
+  `too_many_rows_is_413` and the streamed-body test FAILED (11 passed, 3 failed).
+- The payload size checked on row 1 only:
+  `a_refusal_of_a_later_row_leaves_the_valid_first_row_unapplied` FAILED (8 passed, 1
+  failed).
+- No `DefaultBodyLimit` layer and no `Content-Length` pre-check: the body-cap test, the
+  chunked test and `the_largest_single_publish_and_the_largest_batch_the_caps_allow_are_accepted`
+  FAILED (6 passed, 3 failed).
+- `--max-batch-rows` ignored: the `too_many_rows` test and the unjoined-publisher test
+  FAILED (7 passed, 2 failed).
+- Row 1 published before the checks ran: 7 of 9 wire tests FAILED.
+
+`NeverRefusedForCapacity` is owned here and pinned by three tests, each marked
+`// guarantee: NeverRefusedForCapacity`: the maximum single `PUT` and the 64-row batch of
+65,536-byte payloads in
+`the_largest_single_publish_and_the_largest_batch_the_caps_allow_are_accepted`
+(`tests/batch_publish.rs`), and `a_full_channel_makes_a_batch_publish_wait_then_succeed`
+(`actor.rs`).
+
+### Step 6: the manual smoke run
+
+`cargo run -q -p pachinko --locked -- serve --listen 127.0.0.1:0 --max-batch-rows 2`,
+then curl, then SIGINT, at `538cc10` plus the uncommitted change:
+
+```text
+listening on 127.0.0.1:57715
+$ curl -X POST http://127.0.0.1:57715/publishers/p1
+HTTP/1.1 201 Created
+$ two rows
+{"outcomes":["created","equal_rank"]} 200
+$ three rows
+{"error":"too_many_rows","message":"the batch has 3 rows, over the limit of 2 (--max-batch-rows)"} 413
+exit=0
+2026-11-07T13:35:57.965008Z  INFO pachinko::serve: signal received; shutting down
+```
+
+### T27-2: the whole diff (step 7)
+
+The `review-change` pass by this agent found nothing. Harness and model: two reviewer
+lenses, `conformance` and `breakage`, each `codex exec -m gpt-6-astra -s read-only`
+(exit 0), with separate triage and one writer, run by the wave lead. Outputs are under
+`ai_tmp/review/T27-2/`. 4 findings, 4 valid, none high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, low | The hand-written `json_content_type` accepted headers axum's `mime` parse refuses, such as `application/json; =broken`, a regression from T24's 400 |
+| C2 | valid, low | The streamed-body unit test awaited the server's shutdown with no bound |
+| B1 | valid, low | The full-channel test's fillers all answered `Ok(())`, so it did not show they ran first and in order |
+| B2 | valid, low | Same as C2 |
+
+Applied by the writer: `BoundedJson` reads the capped body, rebuilds the request and lets
+axum's `Json` judge the content type, `json_content_type` is gone, and a new wire test,
+`a_malformed_json_content_type_is_a_bad_request`, expects 400 (C1). There is a 5 s bound
+on the streamed-body test's server join (C2, B2). The full-channel test's fillers are a
+join and three publishes whose outcomes (`created`, `superseded`, `stale`), and the
+batch's (`superseded`, `new_key`), depend on the order they ran in (B1). Handed back:
+nothing.
+
+### Verification
+
+At `538cc10` plus the uncommitted change, after the T27-2 fixes, every recipe exit 0:
+
+```text
+just lock-check    ✔ Lock-file was already up-to-date
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+just test          Summary [   0.293s] 133 tests run: 133 passed, 0 skipped
+just coverage      TOTAL ... 2782 lines, 31 missed, 98.89%
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just check-docs    Validated 46 pages and 47 canonical topics.
+```
+
+At `354c7ca`, exit 0 each:
+
+```text
+just lock-check    ✔ Lock-file was already up-to-date
+just test          Summary [   0.355s] 133 tests run: 133 passed, 0 skipped
+just coverage      TOTAL ... 2782 lines, 31 missed, 98.89%
+just check         All checks passed and the worktree is unchanged.
+git status --short (empty)
+```
+
+The rerun at the merge commit comes when the lead asks for it.
+
+Merge note (T27-1, C1): `impl From<JsonRejection> for Refusal` stays as T24's 400
+fallback so a tree merged with T25's handlers compiles. Every handler that takes a JSON
+body, T25's `ack`, `nack`, `renew` and `release` included, moves to `BoundedJson<_>` so a
+body over the cap answers 413 `body_too_large` rather than 400; whichever of T25 and T27
+merges second makes that change while resolving the merge.
 
 ## Open points
 
@@ -354,3 +531,8 @@ was handed back (`CONVENTIONS.md` §14).
   merged.
 - A `Content-Length` over the cap is refused before the body is read, but a chunked body
   is read up to the cap before it is refused; a read timeout on the listener is T29's.
+- Whichever of T25 and T27 merges second converts T25's four lease handlers (`ack`,
+  `nack`, `renew`, `release`) from `Result<Json<_>, JsonRejection>` and `body?` to
+  `BoundedJson(body): BoundedJson<_>` while merging `origin/main`, and adds an over-limit
+  413 `body_too_large` test on a lease route. After that no handler needs
+  `impl From<JsonRejection> for Refusal`, and it can be removed.

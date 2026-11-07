@@ -23,7 +23,8 @@ exposes. The flags `serve` takes are in [Configuration](configuration.md#service
 | --- | --- | --- | --- |
 | `POST /publishers/{publisher_id}` | none | `PublisherJoins` | 201 with no body; 409 `publisher_exists` |
 | `POST /consumers/{consumer_id}` | none | `ConsumerJoins` | 201 with no body; 409 `consumer_exists` |
-| `PUT /pockets/{pocket_key}/records/{record_key}` | `{"publisher_id": "p1", "rank": 1, "payload": "aGVsbG8="}` | `Publish` | 200 `{"outcome": "created"}`, or `"new_key"`, `"superseded"`, `"stale"`; 404 `unknown_publisher`; 409 `equal_rank`; 400 `bad_request` |
+| `PUT /pockets/{pocket_key}/records/{record_key}` | `{"publisher_id": "p1", "rank": 1, "payload": "aGVsbG8="}` | `Publish` | 200 `{"outcome": "created"}`, or `"new_key"`, `"superseded"`, `"stale"`; 404 `unknown_publisher`; 409 `equal_rank`; 400 `bad_request`; 413 `payload_too_large`, `body_too_large` |
+| `POST /publishers/{publisher_id}/publish` | `{"records": [{"pocket_key": "tenant-a", "record_key": "k1", "rank": 1, "payload": "aGVsbG8="}]}` | `Publish`, once per row | 200 `{"outcomes": [...]}`, one per row; 404 `unknown_publisher`; 400 `bad_request`; 413 `too_many_rows`, `payload_too_large`, `body_too_large` ([Batch publish](#batch-publish)) |
 | `POST /consumers/{consumer_id}/pull` | `{"limit": 10}` | `Pull` | 200 with a batch, or 200 `{"outcome": "no_pocket"}`; 404 `unknown_consumer`; 400 `bad_request` |
 | `GET /consumers/{consumer_id}/lease` | none | the `Consuming` surface's `exposes` | 200 with the lease, or 204 with no body when the consumer holds none; 404 `unknown_consumer` |
 | `POST /leases/{lease_id}/ack` | `{"consumer_id": "c1", "record_key": "k1"}` | `Ack` | 200 `{"outcome": "settled"}` or `{"outcome": "deferred"}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 404 `record_not_held`; 400 `bad_request` |
@@ -78,9 +79,57 @@ to nobody; a client that disconnects while its pull is being applied leaves a le
 nobody acts on: its lease id never reached the client, and the lease read does not
 carry one, so no route ends it until lapses arrive with T26.
 
-A request body is at most 2 MiB, axum's default: a longer body is refused with 400
-`bad_request`, so a payload over about 1.5 MiB before base64 encoding is refused. T27
-replaces that bound with the service's own request-shape limits.
+A request body any route reads is at most `--max-body-bytes`, 16 MiB unless set: a longer
+body is refused with 413 `body_too_large`, by its `Content-Length` before it is read, or,
+without one, once the read passes the limit, whatever its content type. A payload, on
+the single `PUT` or on a batch row, is at most `--max-payload-bytes` once decoded, 1 MiB
+unless set; a longer one is 413 `payload_too_large`, and the single `PUT` counts as row 1.
+These are refusals of a request's shape, never of the queue's room.
+
+## Batch publish
+
+`POST /publishers/{publisher_id}/publish` publishes many records in one request:
+
+```json
+{"records": [{"pocket_key": "tenant-a", "record_key": "k1", "rank": 1, "payload": "aGVsbG8="},
+             {"pocket_key": "tenant-a", "record_key": "k1", "rank": 1, "payload": "aGVsbG8="}]}
+```
+
+It answers 200 with one outcome per row, in row order, each `created`, `new_key`,
+`superseded`, `stale` or `equal_rank`:
+
+```json
+{"outcomes": ["created", "equal_rank"]}
+```
+
+An equal rank is answered for its row alone, where the single `PUT` answers 409
+`equal_rank`; it is still the placeholder for the specification's first open question.
+Rows apply in order and independently, as one command to the owner, so no other request
+runs between two rows: a row's outcome never undoes an earlier row, and a batch is never
+undone as a set.
+
+The whole request is refused, before any row applies, by the first of these checks that
+fails:
+
+| Check | Refusal |
+| --- | --- |
+| The body exceeds `--max-body-bytes`, by its `Content-Length` or as read | 413 `body_too_large` |
+| The body is not the JSON the route takes, or `records` is empty | 400 `bad_request` |
+| More rows than `--max-batch-rows` | 413 `too_many_rows` |
+| A row's payload is not base64, the first such row | 400 `bad_request`, naming the row |
+| A row's decoded payload exceeds `--max-payload-bytes`, the first such row | 413 `payload_too_large`, naming the row |
+| The publisher has not joined | 404 `unknown_publisher` |
+
+Rows are counted from 1. Every row is checked for base64 before any row's size is
+checked. An empty `records` is refused so that the first row always exists to find an
+unknown publisher by.
+
+The three caps are not chosen to fit together, and the body cap is the outer bound. A
+1,000-row batch, the `--max-batch-rows` default, fits under the 16 MiB `--max-body-bytes`
+default only when its base64 payloads average under about 16 KiB; a full batch of 1 MiB
+payloads would be about 1.3 GiB and is refused as `body_too_large`. The load check
+guarantees only that one maximum payload fits in a one-row batch or a single `PUT`
+([Configuration](configuration.md#service-flags)).
 
 ## Errors
 
@@ -97,7 +146,10 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 | `lease_not_active` | 409 | A lease action names a lease that has ended or never existed. |
 | `lease_not_yours` | 403 | A lease action names another consumer's active lease. |
 | `record_not_held` | 404 | An ack or nack names a record the lease's pocket does not hold. |
-| `bad_request` | 400 | The body is not the JSON the route takes, a field is missing, the body is over 2 MiB, the payload is not base64, or a lease id is not 32 lower-case hexadecimal digits. |
+| `bad_request` | 400 | The body is not the JSON the route takes, a field is missing, a batch's `records` is empty, a payload is not base64, or a lease id is not 32 lower-case hexadecimal digits. |
+| `too_many_rows` | 413 | A batch carries more rows than `--max-batch-rows`. |
+| `payload_too_large` | 413 | A payload decodes to more bytes than `--max-payload-bytes`; the message names the row. |
+| `body_too_large` | 413 | The request body is longer than `--max-body-bytes`. |
 | `not_ready` | 503 | The queue's owner has stopped, or the library refused with a variant the map does not know, which is also logged as an error. T29 adds readiness. |
 
 ## Not exposed
@@ -105,7 +157,9 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 The superseded records and the dead letters nacks create are kept; they decay only once T26's sweep
 arrives, so until then they stay in memory for the life of the process. No route reads
 them: who reads them is the specification's second open question. A publish is never refused
-for want of room, and a pull is never refused for want of a pocket.
+for want of room (the specification's `NeverRefusedForCapacity`): a service under load
+makes the request wait for the owner, and the 413s above refuse a request's shape only.
+A pull is never refused for want of a pocket.
 
 ## Related pages
 

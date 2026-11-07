@@ -67,6 +67,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 - The four lease routes, `POST /leases/{lease_id}/ack`, `/nack`, `/renew` and
   `/release`, with the error codes `lease_not_active` (409), `lease_not_yours` (403)
   and `record_not_held` (404), and a 400 `bad_request` for a malformed lease id.
+- Batch publish, `POST /publishers/{publisher_id}/publish`: one owner command per
+  request answering one outcome per row in row order, an equal rank answered for its row
+  alone; and the request-shape limits `--max-batch-rows` (1000), `--max-payload-bytes`
+  (1 MiB) and `--max-body-bytes` (16 MiB, replacing axum's 2 MiB default on every route),
+  refused as 413 `too_many_rows`, `payload_too_large` and `body_too_large` before any
+  row applies, never for want of room.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.
