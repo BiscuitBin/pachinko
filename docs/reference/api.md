@@ -68,13 +68,19 @@ API reference.
 Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a consumer may move
 a value between threads, copy it or print it. Public structs and enums are
 `#[non_exhaustive]`, so a field or variant added later breaks no consumer. These are
-invariants of [the agent contract](agent-contract.md); the domain types that will carry
-them arrive with the specifications, and today the public API is two functions,
-`libpachinko::version` and `pachinko::run`. Neither crate has features, and neither has
-a normal dependency beyond `pachinko`'s on `libpachinko`; divan, the library's benchmark
-harness, is a development dependency only. The library performs no effect itself; its
-effect traits will appear here beside their fakes, and
-[Architecture](../explanation/architecture.md) explains the boundary.
+invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
+`thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
+`ConfigError`), and an outcome that is not a refusal, such as `NoPocketAvailable`, is a
+variant of the operation's outcome instead. `libpachinko`'s public API is `version`, the
+effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes `FakeClock` and
+`CountingLeaseIds`, the store seam `records::PocketRecords` with `MemoryRecords`, and
+`queue::Queue` with its joins, `publish`, `pull` and `lease_view`;
+[Architecture](../explanation/architecture.md#the-library) lists the modules.
+`pachinko`'s is `run`. `libpachinko` has one feature, `testing`, which adds
+`records::contract::check_contract` and `queue::Queue::snapshot` for tests and which no
+normal build turns on. Its one normal dependency is `thiserror`; `pachinko` depends only
+on `libpachinko`, and divan, the library's benchmark harness, is a development dependency
+only.
 
 ## Related pages
 

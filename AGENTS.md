@@ -30,6 +30,7 @@ These hold everywhere. Breaking one is a defect, not a trade-off.
 7. Coverage does not fall below 90% of lines over `crates/*/src/**`.
 8. `Cargo.lock` is the pin; manifests write full `x.y.z` caret ranges; every gate passes `--locked` (decision 0007).
 9. No dependency is added without the decision-0007 note.
+10. Errors are `thiserror` enums.
 
 Invariant 4 is enforced by the workspace lint table every crate inherits. Invariant 8 has two exceptions, which `docs/reference/quality-gates.md` records: `just deps-unused`, whose `cargo shear` takes no `--locked`, and the snapshot recipes below.
 

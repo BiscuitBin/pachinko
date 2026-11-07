@@ -20,6 +20,13 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The library tracer: `Queue` over a record store, a clock and a lease-id source, with
+  publisher and consumer joins, publish (new pocket, new key, supersede, stale shed),
+  pull (claim the front pocket, pull within a lease, no pocket available) and the lease
+  view; the `Clock` and `LeaseIds` effect traits with `FakeClock` and
+  `CountingLeaseIds`; the `PocketRecords` store seam with `MemoryRecords`; `Config` with
+  the specification's defaults and load checks; one `thiserror` error enum per
+  operation; and a `testing` feature with the records contract and the queue snapshot.
 - The first behavioural specification, `docs/specs/pachinko.allium`: pockets holding one
   record per key, higher ranks superseding in place, exclusive renewable leases, parking
   after consecutive lease expiries, and decaying superseded records and dead letters.

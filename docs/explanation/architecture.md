@@ -29,10 +29,9 @@ package fields every crate inherits, and the `[workspace.lints]` table every cra
 into. `Cargo.lock` beside it is the pin
 ([decision 0007](../decisions/0007-dependency-policy.md)).
 
-`crates/libpachinko` is the library. It holds the domain once the specifications define
-one; today `src/lib.rs` holds the crate's documentation and one item, `version()`.
-Behaviour will arrive as one Rust module per specification module, and a module may use
-only what its specification imports, in the direction
+`crates/libpachinko` is the library. It holds the domain `docs/specs/pachinko.allium`
+defines, in the modules [The library](#the-library) lists. A module may use only what its
+specification imports, in the direction
 [Layering and dependency direction](layering.md) describes;
 [Specifications](specifications.md) explains why the specification comes first.
 
@@ -67,9 +66,10 @@ read the environment or spawn a thread, and it will hand each implementation to 
 library through the library's trait. The library never learns which implementation it
 was given.
 
-No trait exists yet. The traits arrive with the specifications that name the effects:
-a specification change that needs the time, a random draw or a stored value brings its
-trait, its fake and the service's implementation together
+Two traits exist: the clock and the lease-id source, described in
+[The library](#the-library). Further traits arrive with the specifications that name
+the effects: a specification change that needs another effect brings its trait, its fake
+and the service's implementation together
 ([decision 0003](../decisions/0003-effects-behind-traits.md)).
 
 Standard input and output are not on the list. The service writes its line to standard
@@ -133,6 +133,53 @@ not linted. Review covers all of these. Leaving another target's `cfg` to review
 unless every ban fires there and none fires on `crates/pachinko`.
 [Quality gates](../reference/quality-gates.md#gate-8-the-effects-bans) lists the script's
 checks in order.
+
+## The library
+
+`libpachinko` implements `docs/specs/pachinko.allium` in seven public modules:
+
+| Module | Holds |
+| --- | --- |
+| `clock` | `Timestamp`, milliseconds since the Unix epoch; the `Clock` trait; `FakeClock` |
+| `lease_ids` | `LeaseId`, an opaque `u128` written as 32 lower-case hex digits; the `LeaseIds` trait; `CountingLeaseIds` |
+| `ids` | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `Position` |
+| `config` | `Config`, the specification's five values with its defaults, and `Config::check` |
+| `error` | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `ConfigError` |
+| `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the `contract` behind `testing` |
+| `queue` | `Queue`, its operations and the values they take and return |
+
+**Two effect traits, each with a fake.** `Clock` gives the queue its `now`; the service's
+implementation reads the system time, and `FakeClock`, shared through an `Arc` so a test
+keeps a handle, moves only when a test moves it. The queue clamps the clock: it keeps the
+latest reading it has seen, so a clock that steps back stamps nothing before an earlier
+stamp. `LeaseIds` hands out the lease ids that fence an ack, nack, renew or release to
+its lease; the service's source draws an epoch once from the operating system's random
+source and counts a serial beside it, and `CountingLeaseIds` counts 1, 2, 3. Both traits
+are `Clone + Debug + Send + Sync + 'static`, so a queue over them meets invariant 3.
+
+**The store seam.** A pocket's records live behind `PocketRecords`, the record-level
+steps the rules take: look a key up, insert it queued, supersede it, hold the oldest
+queued records, settle, defer, and free every held and deferred record in
+O(outstanding). The queue decides every rule and asks the store for one step; the store
+decides nothing. `MemoryRecords` is the one store (decision 0019). `check_contract`,
+behind the `testing` feature, is the one contract every store passes, and it refuses a
+store that could hand out a held record twice, keep two records for one key, or share
+state between clones.
+
+**`Queue<R, C, L>`** is generic over the store, the clock and the lease-id source. It is
+plain data with `&mut self` methods, so its owner applies one operation at a time, which
+is how decision 0019 serializes a lapse with a consumer's action. It holds the
+publishers, the consumers with their active lease, the pockets with the pocket order, the
+lease registry indexed by expiry, the shed queue of superseded records, and the one
+`next_position` counter pockets and records share. A clone forks all of that; the two
+share only what the clock and lease-id source share between clones. Behind `testing`,
+`Queue::snapshot` shows every entity as values, for tests.
+
+**A rule's code may land before its owner.** A rule is owned by the ticket whose test
+pins it. Every publish into an existing pocket ends in the `PocketTouched` dispatch, and
+its idle and parked arms, `ReviveIdlePocket` and `ReviveParkedPocket`, landed with
+publish in T23, although no pocket can be idle or parked until T25 and T26 add release
+and expiry; those tickets own the two rules and their tests.
 
 ## What crosses the boundary
 

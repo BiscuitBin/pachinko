@@ -7,6 +7,9 @@ exclude = ["fuzz"]
 # only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
 [workspace.dependencies]
 divan = "0.1.21"
+# Decision 0007: thiserror derives libpachinko's and pachinko's error enums
+# (invariant 10); a hand-written Display and Error per variant is what it saves.
+thiserror = "2.0.21"
 
 [workspace.package]
 edition = "2024"

@@ -36,7 +36,8 @@ never colocated with the code: in Rust a unit test can reach a private item only
 inside its module, and [Decision 0009](../decisions/0009-rust-quality-gate.md) records
 the deviation.
 
-One integration test file exists, and libpachinko has none yet.
+libpachinko's integration tests are the queue suite under `tests/queue/` and
+`tests/records_contract.rs`, which "Tests from the specifications" describes.
 `crates/pachinko/tests/binary.rs` is the binary test: it runs the built service as a user
 would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that the
 process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
@@ -80,9 +81,29 @@ A specification's clauses are what the tests prove.
 derives from one module under `docs/specs/`: what each rule, invariant, transition and
 surface clause would have a test for. It plans that one file and reads no import. The
 list is a suggestion for a ticket's test list, not a gate: nothing asserts on it and it
-sits outside `just check`. Today the only module is `pachinko`, a placeholder that
-states no behaviour, so `just plan-spec pachinko` has nothing to ask for.
-[Work with the specifications](../how-to/work-with-the-specs.md) covers the workflow.
+sits outside `just check`. [Work with the specifications](../how-to/work-with-the-specs.md)
+covers the workflow.
+
+The tests of `docs/specs/pachinko.allium` follow one layout.
+
+- **The `testing` feature.** `libpachinko`'s `testing` feature adds
+  `records::contract::check_contract` and `queue::Queue::snapshot`, the inspection seam
+  every invariant is checked through. The gate's `just test`, `just coverage` and
+  `just clippy` turn it on with `--all-features`; the integration test files open with
+  `#![cfg(feature = "testing")]`, because `just features` builds without it.
+- **The queue suite.** `crates/libpachinko/tests/queue/` is one test target: `main.rs`
+  declares the modules, each `#[cfg(test)]`, and states the tag conventions;
+  `fixture.rs` builds a queue over `MemoryRecords`, a `FakeClock` at a fixed instant and
+  `CountingLeaseIds`, with helpers by literal keys and each invariant's check by its
+  specification name; one file per rule family (`identity.rs`, `publish.rs`, `pull.rs`)
+  holds one test per scenario and the invariant tests.
+- **The records contract.** `tests/records_contract.rs` runs `check_contract` over
+  `MemoryRecords`; a second store would get a line of its own.
+- **Tags.** A test names what it pins in comments above it: `// scenario:` and the id,
+  once per scenario across the crate; `// obligation:` and an id `just plan-spec`
+  prints; and `// obligation: guarantee.<Name>` for a surface guarantee, which has no
+  checker id. A `compile_fail` doctest may carry the tags when the type system is the
+  test, as the negative-TTL scenario does in `config.rs`.
 
 These rules hold for every module the specifications add.
 
