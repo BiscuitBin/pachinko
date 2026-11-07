@@ -768,6 +768,25 @@ A looser profile was tried first and discarded:
 network* (remote ip "localhost:*"))` let `curl --noproxy '*' https://1.1.1.1` through
 (exit 0), so it is no denial. The gap in §11 is in Open points.
 
+Requote at C, `b9caaf7`, after T31-1 round 2 changed `serve.rs`: a fresh clone from the
+local repository into the session's scratch directory, online only. The loopback-only
+run was not repeated, because nothing in C touches the network path: the change is the
+zero-grace shutdown bound, and the network-denied runs at A2 above stand
+(`ai_tmp/wave/T31/fresh3-init.log`, `fresh3-check.log`, trimmed):
+
+```text
+== clone HEAD b9caaf7e938362839bf04c99b554e57aeff6ab86
+== b9caaf7 just initialize
+...
+exit 0
+== b9caaf7 just check
+...
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+The commit after C carries only this quote in this file.
+
 ### T31-1: the whole diff (step 8)
 
 Harness and model: two reviewer lenses, `conformance` and `breakage`, each
