@@ -1,7 +1,7 @@
 ---
 id: T28
 title: "Invariant walk and the conformance catalog"
-status: todo
+status: done
 depends_on: [T26, T27]
 parallel_with: [T30]
 branch: ticket/t28-invariant-walk
@@ -909,6 +909,50 @@ carried to T31.
 Rerun after the fixes, at `1fdaab3` plus the uncommitted change, `just check` (exit 0):
 
 ```text
+All checks passed and the worktree is unchanged.
+```
+
+### Verification at the merge commit
+
+The lead's override: the lane merged with `git merge --no-ff wave/t28` into
+`mvp-inimal-but-sufficient` at `1fdaab3`, without conflicts, as `039a872`. The Verification
+block at `039a872`, run by `ai_tmp/wave/T28/verify.sh` (scratch), which echoes each
+recipe's exit status, prints the walk's two lines and nextest's summary from `just test`,
+and the `TOTAL` line from `just coverage` (columns: regions, functions, lines, branches;
+the floor is on lines, over `crates/*/src/**` only). The two counts are
+`just plan-spec pachinko`'s obligations and the distinct `obligation:` tags. `git status
+--short` printed nothing:
+
+```text
+just lock-check: exit 0
+just deps-unused: exit 0
+just deny: exit 0
+just features: exit 0
+just test: exit 0
+        PASS [   0.198s] (200/236) libpachinko::queue invariants::every_invariant_holds_after_every_step_of_any_walk
+        PASS [   0.211s] (201/236) libpachinko::queue invariants::the_walk_reaches_every_state_and_every_outcome
+     Summary [   0.682s] 236 tests run: 236 passed, 0 skipped
+crates/libpachinko/tests/queue/expiry.rs:19
+crates/libpachinko/src/config.rs:1
+crates/libpachinko/tests/queue/lease.rs:12
+crates/libpachinko/tests/queue/publish.rs:12
+crates/libpachinko/tests/queue/identity.rs:7
+crates/libpachinko/tests/queue/decay.rs:3
+crates/libpachinko/tests/queue/pull.rs:11
+crates/libpachinko/tests/queue/settle.rs:11
+exit 0
+exit 0
+exit 0
+crates/pachinko/tests/http.rs:10
+exit 0
+exit 0
+exit 0
+190
+     200
+just coverage: exit 0
+TOTAL                                      7620               141    98.15%         646                 5    99.23%        4660                46    99.01%           0                 0         -
+just check-docs: exit 0
+just check: exit 0
 All checks passed and the worktree is unchanged.
 ```
 
