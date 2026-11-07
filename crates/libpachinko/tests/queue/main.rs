@@ -24,6 +24,10 @@ mod fixture;
 #[cfg(test)]
 mod identity;
 #[cfg(test)]
+mod lease;
+#[cfg(test)]
 mod publish;
 #[cfg(test)]
 mod pull;
+#[cfg(test)]
+mod settle;

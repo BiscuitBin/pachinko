@@ -20,6 +20,13 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The lease actions: `Queue::ack`, `Queue::nack`, `Queue::renew` and `Queue::release`,
+  each fenced to the lease it names and refusing, in rule order, with
+  `LeaseActionError` (`UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`,
+  `RecordNotHeld`); `SettleOutcome` for a settled or deferred record, `PocketFate` for a
+  requeued or idled pocket, and `DeadLetter` for a nacked payload kept beside the
+  superseded records. An ended lease leaves the registry, and a publish revives an idle
+  pocket at the back.
 - The library tracer: `Queue` over a record store, a clock and a lease-id source, with
   publisher and consumer joins, publish (new pocket, new key, supersede, stale shed),
   pull (claim the front pocket, pull within a lease, no pocket available) and the lease
@@ -57,6 +64,9 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `GET /healthz`; six flags for the listen address and the specification's five config
   values; the real `SystemClock` and `EpochSerialLeaseIds`; and a clean shutdown on
   SIGTERM or SIGINT (decision 0019).
+- The four lease routes, `POST /leases/{lease_id}/ack`, `/nack`, `/renew` and
+  `/release`, with the error codes `lease_not_active` (409), `lease_not_yours` (403)
+  and `record_not_held` (404), and a 400 `bad_request` for a malformed lease id.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

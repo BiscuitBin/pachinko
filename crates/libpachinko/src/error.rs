@@ -2,6 +2,7 @@
 //! refusal (invariant 10).
 
 use crate::ids::{ConsumerId, PublisherId, Rank, RecordKey};
+use crate::lease_ids::LeaseId;
 
 /// A refused join.
 ///
@@ -79,6 +80,35 @@ pub enum PullError {
     UnknownConsumer(ConsumerId),
 }
 
+/// A refused ack, nack, renew or release. The guards are checked in this order,
+/// the order of the rules' `requires`, and a refused action changes nothing, the
+/// lease's `expires_at` included.
+///
+/// ```
+/// use libpachinko::error::LeaseActionError;
+/// use libpachinko::lease_ids::LeaseId;
+///
+/// let error = LeaseActionError::LeaseNotActive(LeaseId::from_u128(1));
+/// assert_eq!(error.to_string(), "lease 00000000000000000000000000000001 is not active");
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum LeaseActionError {
+    /// The action names a consumer that has not joined; checked first.
+    #[error("consumer {0} has not joined")]
+    UnknownConsumer(ConsumerId),
+    /// The lease is not in the active registry: it has ended, or never existed.
+    /// An ended lease leaves the registry, so the two are one refusal.
+    #[error("lease {0} is not active")]
+    LeaseNotActive(LeaseId),
+    /// The lease is active and another consumer's.
+    #[error("lease {0} is not this consumer's")]
+    LeaseNotYours(LeaseId),
+    /// An ack or nack named a record key the lease's pocket does not hold.
+    #[error("record {0} is not held under this lease")]
+    RecordNotHeld(RecordKey),
+}
+
 /// A configuration the config invariants exclude.
 ///
 /// ```
@@ -102,8 +132,9 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, JoinError, PublishError, PullError};
+    use super::{ConfigError, JoinError, LeaseActionError, PublishError, PullError};
     use crate::ids::{ConsumerId, PublisherId, Rank, RecordKey};
+    use crate::lease_ids::LeaseId;
 
     #[test]
     fn every_variant_says_what_was_refused() {
@@ -119,6 +150,18 @@ mod tests {
             (
                 JoinError::PublisherExists(PublisherId::new("p")).to_string(),
                 "publisher p has already joined",
+            ),
+            (
+                LeaseActionError::UnknownConsumer(ConsumerId::new("c")).to_string(),
+                "consumer c has not joined",
+            ),
+            (
+                LeaseActionError::LeaseNotYours(LeaseId::from_u128(0xab)).to_string(),
+                "lease 000000000000000000000000000000ab is not this consumer's",
+            ),
+            (
+                LeaseActionError::RecordNotHeld(RecordKey::new("k")).to_string(),
+                "record k is not held under this lease",
             ),
             (
                 ConfigError::MaxConsecutiveExpiriesZero.to_string(),

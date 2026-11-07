@@ -18,8 +18,10 @@
 //! - [`records`]: the store seam, the `PocketRecords` trait, its one implementation
 //!   `MemoryRecords`, and, behind the `testing` feature, the contract every store
 //!   passes.
-//! - [`queue`]: `Queue`, with the publisher and consumer joins, publish, pull and
-//!   the lease view, and, behind `testing`, the `Snapshot` inspection seam.
+//! - [`queue`]: `Queue`, with the publisher and consumer joins, publish, pull, the
+//!   lease view, and the four lease actions, ack, nack, renew and release, each
+//!   fenced to the lease it names; and, behind `testing`, the `Snapshot`
+//!   inspection seam.
 //!
 //! See `docs/explanation/architecture.md`.
 

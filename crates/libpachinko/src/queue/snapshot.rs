@@ -6,7 +6,7 @@
 //! so a duplicate an invariant forbids would show rather than be merged away.
 
 use super::Queue;
-use super::types::{Lease, LeaseStatus, PocketStatus, SupersededRecord};
+use super::types::{DeadLetter, Lease, LeaseStatus, PocketStatus, SupersededRecord};
 use crate::clock::Clock;
 use crate::ids::{ConsumerId, PocketKey, Position, PublisherId};
 use crate::lease_ids::{LeaseId, LeaseIds};
@@ -77,6 +77,8 @@ pub struct Snapshot {
     pub leases: Vec<Lease>,
     /// The superseded and stale records, by expiry and arrival.
     pub superseded: Vec<SupersededRecord>,
+    /// The dead letters, by expiry and arrival.
+    pub dead_letters: Vec<DeadLetter>,
 }
 
 impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
@@ -124,6 +126,7 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
                 })
                 .collect(),
             superseded: self.shed.superseded(),
+            dead_letters: self.shed.dead_letters(),
         }
     }
 }

@@ -10,6 +10,8 @@ mod leases;
 mod pockets;
 mod publish;
 mod pull;
+mod renew;
+mod settle;
 mod shed;
 #[cfg(feature = "testing")]
 mod snapshot;
@@ -31,8 +33,8 @@ use shed::Shed;
 #[cfg(feature = "testing")]
 pub use snapshot::{PocketView, Snapshot};
 pub use types::{
-    Lease, LeaseStatus, LeaseView, PocketStatus, Publication, PublishOutcome, PullOutcome,
-    ShedReason, SupersededRecord,
+    DeadLetter, Lease, LeaseStatus, LeaseView, PocketFate, PocketStatus, Publication,
+    PublishOutcome, PullOutcome, SettleOutcome, ShedReason, SupersededRecord,
 };
 
 /// The deployment's one queue, over a record store `R`, a clock `C` and a lease-id
