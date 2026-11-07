@@ -61,7 +61,7 @@ removes a held record whose held version is still the latest (`settled`), or, wh
 newer version arrived while it was held, defers that newer version to the back of the
 pocket until the lease ends (`deferred`). A nack does the same and keeps the held
 version as a dead letter. Ack, nack and renew each move `expires_at` to now plus
-`--lease-ttl`; a refused action moves nothing. A release ends the lease, returns its
+`--lease-ttl-ms`; a refused action moves nothing. A release ends the lease, returns its
 held and deferred records to queued in place, and requeues the pocket at the back
 (`queued`) or, with no records left, leaves it idle until a publish revives it (`idle`).
 No action checks `expires_at` against the clock: a late action the owner applies before
@@ -93,9 +93,14 @@ lease's pocket holds the record (404 `record_not_held`).
 
 Every command reaches the queue through one owner task, in arrival order. A pull whose
 client has disconnected before the owner reaches it is skipped, so no lease is granted
-to nobody; a client that disconnects while its pull is being applied leaves a lease that
-nobody acts on: its lease id never reached the client, and the lease read does not
-carry one, so no route ends it and it lapses at its `expires_at`.
+to nobody. A client that disconnects while its pull is being applied, or whose pull is
+answered 408, never sees the lease id, and the lease read does not carry one. The
+records of that lost batch stay held, visible through the lease read, and are not handed
+out again: the consumer's next pull is a pull within the same lease, which returns only
+records newly held, extends the lease and carries its id. To recover, pull with
+`{"limit": 0}`, which holds nothing more but returns the lease id, then release the
+lease, or act on the held records under it; otherwise the lease lapses at its
+`expires_at` once the consumer stops pulling.
 
 A request body any route reads is at most `--max-body-bytes`, 16 MiB unless set: a longer
 body is refused with 413 `body_too_large`, by its `Content-Length` before it is read, or,
@@ -187,7 +192,8 @@ On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener
 accepting, and requests in flight finish. Connections still open after
 `--shutdown-grace-ms` (5000 by default) are cut without a reply, and the owner stops
 taking commands. Anything still running one more grace period later is aborted, and
-`serve` exits non-zero. A client that sees a 503, a refused connection or a cut
+`serve` exits non-zero. A grace of 0 cuts at once, waits for the server's tasks to end on
+the cut and aborts none, so a clean stop still exits 0. A client that sees a 503, a refused connection or a cut
 connection during the window retries once the service is back. The queue is in memory,
 so a restarted service starts empty.
 

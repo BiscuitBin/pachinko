@@ -10,7 +10,7 @@ requires: []
 
 The workspace is two crates: a library, `libpachinko`, and a service, `pachinko`, built
 around it. The library has no process of its own: no `main`, no clock, no effect, and
-nothing it can do until a consumer calls it. The service is that consumer, today the
+nothing it can do until a caller calls it. The service is that caller, today the
 only one, and the one place in the workspace where an effect may happen.
 
 That split is not a limitation waiting for a runtime to be added; it is the
@@ -208,13 +208,13 @@ and its test; a lapse first parks one, and T26 owns `ReviveParkedPocket`.
 
 ## What crosses the boundary
 
-| Consumer | Crosses | Through |
+| Caller | Crosses | Through |
 | --- | --- | --- |
 | `pachinko` | Values, and the real implementations of the library's effect traits | A Cargo path dependency on `libpachinko` |
 
 Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, and every public enum
 and struct is `#[non_exhaustive]`: the service may move a value between threads, copy it
-or print it, and a new field or variant must not break a consumer that matched on the
+or print it, and a new field or variant must not break a caller that matched on the
 old ones. `AGENTS.md` states this as invariant 3.
 
 ## The service

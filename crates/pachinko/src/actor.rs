@@ -533,7 +533,7 @@ fn pull(
         tracing::debug!(consumer = %consumer_id, "skipping a pull whose requester has gone");
         return Ok(());
     }
-    let _unwanted = reply.send(queue.pull(consumer_id, limit));
+    answer(reply, queue.pull(consumer_id, limit));
     Ok(())
 }
 

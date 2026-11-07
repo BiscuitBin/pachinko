@@ -28,7 +28,7 @@ Tests live in three places, and each is deliberate.
 | Where | What |
 | --- | --- |
 | `#[cfg(test)] mod tests` at the foot of a module | Unit tests of that module, with access to its private items. |
-| `crates/libpachinko/tests/*.rs` and `crates/pachinko/tests/*.rs` | Integration tests: the crate as a consumer sees it, through its public API only. |
+| `crates/libpachinko/tests/*.rs` and `crates/pachinko/tests/*.rs` | Integration tests: the crate as a caller sees it, through its public API only. |
 | `///` examples on public items | Doctests: each example compiles and runs as a test. |
 
 Unit tests live in the module they test. This departs from the games' rule that tests are

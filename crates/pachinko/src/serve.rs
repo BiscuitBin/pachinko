@@ -259,13 +259,19 @@ fn task_result(joined: Result<TaskResult, JoinError>) -> TaskResult {
 /// the abort neither ends nor joins them, and one can outlive `serve` until its next
 /// read or write, which the cut fails. An error a task ended with inside the grace
 /// period is returned; failing that, the overrun's own error. A task that fails
-/// after the cut is logged.
+/// after the cut is logged. A zero grace period cuts at once and is no overrun: the
+/// tasks, which end on the cut, are joined without a bound and none is aborted.
 async fn drain(
     tasks: &mut JoinSet<TaskResult>,
     cut: &watch::Sender<bool>,
     grace: Duration,
 ) -> TaskResult {
     let mut first = Ok(());
+    if grace.is_zero() {
+        cut.send_replace(true);
+        join_into(tasks, &mut first).await;
+        return first;
+    }
     if timeout(grace, join_into(tasks, &mut first)).await.is_ok() {
         return first;
     }
@@ -662,6 +668,18 @@ expect: 100-continue\r\n\r\n";
         );
     }
 
+    // A zero grace period cuts at once; it is not an overrun, so a clean stop still
+    // ends serve with `Ok`.
+    #[tokio::test]
+    async fn a_stop_with_a_zero_grace_period_ends_serve_with_ok() {
+        let config = config(&["--shutdown-grace-ms", "0"]);
+        let listener = TcpListener::bind(config.listen()).await.unwrap();
+        let (stop, stopped) = watch::channel(());
+        drop(stop);
+        let served = timeout(BOUND, super::serve(listener, &config, stopped)).await;
+        assert_eq!(served.unwrap(), Ok(()));
+    }
+
     #[tokio::test]
     async fn a_stop_ends_serve_with_ok() {
         let config = config(&[]);
@@ -990,6 +1008,22 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             )))
         );
         assert_eq!(left, 0, "every task is joined");
+    }
+
+    #[tokio::test]
+    async fn a_zero_grace_period_cuts_at_once_and_joins_the_tasks_that_end_on_the_cut() {
+        let (cut, mut cutting) = watch::channel(false);
+        let mut tasks = JoinSet::new();
+        tasks.spawn(async move {
+            drop(cutting.wait_for(|cut| *cut).await);
+            Ok(())
+        });
+        let drained = timeout(BOUND, drain(&mut tasks, &cut, Duration::ZERO))
+            .await
+            .expect("drain returned within the bound");
+        assert_eq!(drained, Ok(()));
+        assert!(*cut.borrow(), "the connections were cut");
+        assert_eq!(tasks.len(), 0, "every task is joined");
     }
 
     #[tokio::test]

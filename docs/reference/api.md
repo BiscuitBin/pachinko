@@ -65,9 +65,9 @@ API reference.
 
 ## What the API promises
 
-Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a consumer may move
+Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a caller may move
 a value between threads, copy it or print it. Public structs and enums are
-`#[non_exhaustive]`, so a field or variant added later breaks no consumer. These are
+`#[non_exhaustive]`, so a field or variant added later breaks no caller. These are
 invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
 `thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
 `ConfigError`), and an outcome that is not a refusal, such as `NoPocketAvailable`, is a

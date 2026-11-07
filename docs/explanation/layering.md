@@ -69,11 +69,13 @@ dependency to close a cycle; invariant 5 in `AGENTS.md`, that `pachinko` depends
 
 rustc will not enforce the module direction: it allows a cycle between modules of the
 same crate. Gate 7, `just metrics`, will. It runs rustqual over each crate against
-`rustqual.toml`, whose architecture section is on, and once there are modules that file
-gains one `[[architecture.pattern]]` rule per module, each listing every `crate::` path
-its module may not name, with the specification's imports as its reason
+`rustqual.toml`, whose architecture section is on, and once there are several
+specification modules that file gains one `[[architecture.pattern]]` rule per
+specification module's Rust module, each listing every `crate::` path its module may not
+name, with the specification's imports as its reason
 ([decision 0012](../decisions/0012-metrics-gate.md)). Today it holds no pattern rule,
-because there is no module to bound. A rule will cover the file named after its module
+because the one specification module imports nothing, so the library's Rust modules have
+no specification order to bound. A rule will cover the file named after its module
 and everything under the directory of the same name, so a child is held to its parent's
 row, and it will catch both a `use crate::…` line and an inline `crate::…` path in a
 function body.

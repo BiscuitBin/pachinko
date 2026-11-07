@@ -20,9 +20,10 @@ described under [The network surface](#the-network-surface).
 
 Very little, and that is the point.
 
-- **Nothing is collected or stored.** libpachinko holds the queue the specification
-  defines; it takes values from its caller and hands values back,
-  and it has nowhere of its own to send anything.
+- **Nothing is persisted or sent elsewhere.** libpachinko holds the queue the
+  specification defines in memory: the payloads its callers publish, and superseded and
+  dead-lettered ones until their expiry. It writes nothing to disk, collects no telemetry
+  and has nowhere of its own to send anything.
 - **There are no credentials in the repository.** No file here carries a token.
   Continuous integration uses the token GitHub mints for each run and discards with it,
   and the workflows need nothing more: the Pages deployment proves itself with the run's
@@ -142,7 +143,7 @@ slowloris bound exists ([HTTP API](../reference/http-api.md#request-timeout)).
 
 ## What is out of scope
 
-What a consumer does with the library's output, and what it passes in through the
+What a caller does with the library's output, and what it passes in through the
 effect traits it implements: an implementation that reads the clock or the network on
 the library's behalf answers for its own sources.
 
