@@ -51,7 +51,7 @@ snapshot.
 | T26 | Lease expiry, decay and the tick lane | `T26-expiry-and-tick.md` | T25 | none | todo |
 | T27 | Batch publish with per-row outcomes and request-shape limits | `T27-batch-publish.md` | T24 | T25, T29 | done |
 | T28 | Invariant walk and the conformance catalog | `T28-invariant-walk.md` | T26, T27 | T30 | todo |
-| T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | todo |
+| T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | done |
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | todo |
 | T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | todo |
 

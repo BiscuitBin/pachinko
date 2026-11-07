@@ -1,7 +1,7 @@
 ---
 id: T29
 title: "Operability: readiness, logging, timeouts, shutdown grace"
-status: todo
+status: done
 depends_on: [T24]
 parallel_with: [T25, T27]
 branch: ticket/t29-operability
@@ -521,6 +521,72 @@ are aborted (C1); the readiness entry says `starting` lasts until the owner star
 
 After the T29-2 fixes, at `538cc10` plus the uncommitted change (the lane commit's
 content but for this paragraph), `just check` exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Step 11: the merge into the wave branch
+
+The lane commit is `2762433` on `wave/t29`. It was merged with `--no-ff` into
+`mvp-inimal-but-sufficient` at `ef69169`, which already carried T25 and T27, as
+`5b07789`. The resolutions:
+
+- T27's `Limits` is a field of `Lifecycle`, built in `Lifecycle::new` from the config,
+  so `scope` keeps five parameters; `router(queue, readiness, request_timeout, limits)`
+  keeps T27's `DefaultBodyLimit` on the outer router, so it covers every route.
+- T25's four lease routes and T27's batch route sit inside `api()`, under the request
+  timeout. `the_api_routes_are_bounded_and_the_probes_answer_beside_them` covers all ten
+  `api()` routes (408) beside the two probes.
+- T29's middleware runner is renamed `run_bounded`, because T27 already has a `within`
+  (the payload-size check).
+- `ServeConfig::set` hands the service's own flags to `set_service`: twelve arms in one
+  match put its cyclomatic complexity at 12 and failed `just metrics`.
+- T27's in-module test spelled out `std::time::Duration` and friends, which T29's imports
+  made redundant (`unused_qualifications`); they are shortened.
+- `own()`'s new `stop` argument reaches T27's batch test in `actor.rs`; the `Command` doc
+  line names only T26's `Tick` lane as still to come.
+- Docs: both lanes' rows in `configuration.md`, the codes table and the changelog;
+  `security-model.md` keeps T27's "Request-shape limits" section and gains one paragraph
+  on the time bounds and the trickle gap. `Cargo.lock` did not conflict.
+
+The Verification block at `5b07789` (`ai_tmp/wave/T29/verify-a.sh` and
+`verify-b.sh`), every step exit 0 except as noted:
+
+```text
+5b07789
+just build exit 0
+pachinko: usage: --log-level takes one of error, warn, info, debug and trace, not "bogus"
+exit 1
+pachinko: usage: --request-timeout-ms must be at least 1
+exit 1
+just test exit 0
+     Summary [   0.598s] 195 tests run: 195 passed, 0 skipped
+just coverage exit 0
+TOTAL ... 98.05% lines
+just image exit 0
+#15 naming to docker.io/library/pachinko:dev done
+fcc8785329902fe4cc566664b3697c0a3d56fe5e8984d299014f44f7193c1901
+curl: (7) Failed to connect to 127.0.0.1 port 18080 after 0 ms: Couldn't connect to server
+000
+204
+pachinko-t29m
+0
+rm exit 124
+readyz poll exit 0
+pachinko 0.1.0
+exit 137
+Validated 46 pages and 47 canonical topics.
+```
+
+The container ran as `pachinko-t29m`, and each removal was bounded, because the local
+Docker Desktop daemon (29.4.0) still hangs on every container removal (`rm exit 124`).
+The version run printed its line, then hung in its own `--rm` removal. It was killed
+(`timeout -s KILL 90`, hence 137). `docker inspect` on that container reads
+`removing exit=0`: the binary exited 0 and only the daemon's removal failed. Clearing the
+`Dead` containers needs a daemon restart, handed back.
+
+At `5b07789` plus this hand-back and the status change, `just check` exit 0:
 
 ```text
 All checks passed and the worktree is unchanged.
