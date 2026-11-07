@@ -86,6 +86,14 @@ Unlike the service's workspace path dependency, the unpublished fuzz harness nam
 This exception avoids a stale version constraint; a library version bump still requires
 refreshing `fuzz/Cargo.lock` before the locked checks can pass.
 
+The unpublished `loadgen/` crate (T30), the load generator and lapse probe, is excluded
+from the workspace too. It names its two dependencies directly, for the same reason the
+fuzz crate does: ureq, with no default features and no TLS, since it speaks plain HTTP
+over loopback, and serde_json, to build request bodies and read replies as values
+without a derive. `loadgen/Cargo.lock` pins its separate graph, and `lock-check` proves
+that lock offline beside the other three. It names no workspace crate, so a library
+version bump leaves its lock alone.
+
 ## Consequences
 
 The consequences that hurt. The lockfile tests one resolution and consumers get another:

@@ -209,7 +209,7 @@ outside the recipes are ignored.
 writing a snapshot or pending file. The snapshot gate also rejects a `.snap` file no
 test refers to. It runs the entire suite through cargo-insta with nextest and every
 feature, so every reference is seen. cargo-insta cannot pass `--locked` to nextest;
-the snapshot recipes validate all three locks first and run cargo-insta offline.
+the snapshot recipes validate all four locks first and run cargo-insta offline.
 
 A changed snapshot asks whether the change was intended. The person who changed it reads
 the diff, reviews pending snapshots through `just snapshots-review` at a terminal, and
@@ -221,12 +221,59 @@ explains the commands in order.
 
 ## Benchmarks
 
-`just bench` runs the divan smoke benchmark over `libpachinko::version()`, passing
-its function pointer and result through `divan::black_box` to retain a runtime call.
-The measurement includes indirect-call overhead. Extra Cargo options may follow the
-recipe. This establishes the harness; real workloads arrive with their specifications.
+`just bench` runs two divan benches over libpachinko, with every feature. `version` is
+the harness's smoke bench over `libpachinko::version()`. `workloads` runs the queue's
+five workloads, W1 to W5, at 10, 1,000 and 100,000 pockets:
+
+| Workload | One sample |
+| --- | --- |
+| W1 publish | 10,000 publishes of fresh keys, round-robin over the pockets |
+| W2 supersede | 10,000 publishes of each pocket's one key at its rank plus one |
+| W3 pull 16, ack, release | up to 1,000 cycles of a pull with limit 16, 16 acks and a release |
+| W4 publish with every fifth op a consume step | up to 1,000 rounds of four publishes and one W3 cycle |
+| W5 pull then lapse on tick | up to 1,000 cycles of a pull, the fake clock past `lease_ttl`, and a tick |
+
+Each sample runs over one `Queue<MemoryRecords, FakeClock, CountingLeaseIds>` with
+`Config::default()`, payloads of 64 bytes and the pockets pre-created. divan's
+`with_inputs` builds the queue and the sample's publications outside the timed region.
+Every call's result passes through `divan::black_box`, and each sample asserts the
+outcomes it expects. The unit of one op is one library call on the queue, and divan's
+`ItemsCount` counter turns the table's throughput column into ops per second. The bench's
+doc comment gives each workload's call count and cycle bound. It also notes that W5's
+clock step is timed but not counted. Extra Cargo options may follow the recipe.
+[Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md#evidence-from-the-mvp)
+records the figures.
+
 Timings depend on the machine and its load, so benchmarks run manually and never in CI
-or `just check`. Clippy still compiles the bench target in the gate.
+or `just check`. Clippy still compiles the bench targets in the gate.
+
+## Load generation
+
+`just loadgen <workload>` runs the load generator in the excluded `loadgen/` crate,
+`pachinko-loadgen`, against a `pachinko serve` that is already running. It speaks HTTP
+only and names no workspace crate. Each client is a std thread with its own `ureq`
+agent, so it has its own keep-alive connection. The clients run a closed loop: send, read
+the whole reply, parse it, count it, send the next. The workloads are `publish`
+(single-record `PUT`, C=64), `batch` (batch publish, b=256 at C=8 by default), `consume`
+(an untimed fill, then pull, ack each, release, C=64), `mix` (half the clients publish,
+half consume) and `lapse`, the lapse probe. Run `just loadgen --help` for the flags and
+their defaults. The joins and the fill run before the timed window, and each run's ids
+carry the process id and a nonce, so two runs against one service never collide.
+
+A run fails closed. A reply counts only when its status is 2xx and its body parses and
+carries the outcome the workload expects. Anything else is an error, and the run prints
+it. A run with any error prints no rate, and the process exits non-zero, so a refused
+connection or a 404 route can never produce a number. In `consume`, a `no_pocket`
+inside the window ends that consumer's loop. The `lapse` run fails in four
+cases: the probe pocket is not the front, no batch landed before `expires_at`, the claim
+takes more than 60 s, or the queue still holds a pocket after the drain.
+
+The recipe runs `cargo run --locked` against `loadgen/Cargo.lock`, which `just lock-check`
+checks beside the workspace, fuzz and pixi lockfiles. The gates `fmt-check` and `clippy` cover the crate
+by `--manifest-path`, as they cover `fuzz/`. `loadgen/Cargo.toml` copies the root lint
+table, so keep it aligned. `just test-loadgen` runs the crate's own unit tests, which
+`just test` cannot reach. No gate or CI job runs the load generator or its tests, because
+timings measure the machine.
 
 ## Fuzzing
 

@@ -127,7 +127,7 @@ Once a test takes one:
    and names the snapshot. These recipes leave no pending file.
 2. Read the diff and decide whether the interface change was intended. Keep the
    behaviour's asserting tests green; the snapshot establishes no correctness.
-3. For an intended change, run `just snapshots-accept`. It checks all three locks, reruns
+3. For an intended change, run `just snapshots-accept`. It checks all four locks, reruns
    all unit and integration tests with every feature and accepts pending snapshots
    without prompting. It also deletes a `.snap` file no test refers to, such as one a
    renamed or removed test left behind. It works for an agent without a terminal as well.

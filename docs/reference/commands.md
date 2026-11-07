@@ -22,7 +22,7 @@ checkout), and is the one command a fresh clone needs the network for. Nothing i
 `deny` then answer from that cache, and `lint` finds every hook environment already
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
 rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants`,
-`bench`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
+`bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
 so is every recipe that writes.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
@@ -38,26 +38,28 @@ proves and why.
 | `just install-toolchain` | Install the toolchain and components `rust-toolchain.toml` names, through rustup. Over the network when any of them is missing. |
 | `just install-tools` | Install the tools conda-forge lacks into `.tools/bin/` through the environment's cargo-binstall, in two passes. The `tools.txt` pass takes a release binary or fails, never compiling; the `tools-source.txt` pass, for a tool with no release binary, takes a signed cargo-quickinstall build if one exists and otherwise builds from crates.io source with `--locked`, without a GitHub token. A pass whose list is empty is skipped; a list file that is missing or unreadable fails the recipe. Over the network. |
 | `just install-allium` | Download, verify and install the pinned `allium` binary into `.tools/bin/`, which Git ignores. Over the network; no lockfile can name a binary. |
-| `just sync` | Install `Cargo.lock`, `fuzz/Cargo.lock` and `pixi.lock` exactly as committed; never rewrites them. Run after pulling. Over the network. |
-| `just lock` | Relock `Cargo.lock` and `fuzz/Cargo.lock` at the versions the manifests allow, and `pixi.lock` against `pyproject.toml`. Over the network. |
-| `just lock-upgrade` | `cargo update` for both Rust locks and `pixi update`: move within the manifests' constraints. `pixi upgrade`, which rewrites the pins themselves, is not this recipe. Over the network. |
-| `just lock-check` | Fail if a manifest and its lockfile disagree, for all three lockfiles. Offline, and writes none; fails on a cold Cargo cache until `just sync` has run. Gate 2. |
+| `just sync` | Install `Cargo.lock`, `fuzz/Cargo.lock`, `loadgen/Cargo.lock` and `pixi.lock` exactly as committed; never rewrites them. Run after pulling. Over the network. |
+| `just lock` | Relock `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` at the versions the manifests allow, and `pixi.lock` against `pyproject.toml`. Over the network. |
+| `just lock-upgrade` | `cargo update` for the three Rust locks and `pixi update`: move within the manifests' constraints. `pixi upgrade`, which rewrites the pins themselves, is not this recipe. Over the network. |
+| `just lock-check` | Fail if a manifest and its lockfile disagree, for all four lockfiles. Offline, and writes none; fails on a cold Cargo cache until `just sync` has run. Gate 2. |
 | `just install-hooks` | Install the read-only pre-commit gate and prepare every hook environment, so that `just lint` never fetches. Over the network. Run it from the primary checkout: every worktree shares one hooks directory, and the hook runs the environment of whichever worktree installed it. |
 
 ## Develop
 
 | Recipe | Purpose |
 | --- | --- |
-| `just bench [args…]` | Run divan benchmarks manually, with optional Cargo arguments. Never in CI or `just check`. |
-| `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all three locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
+| `just bench [args…]` | Run the divan benchmarks manually, the `version` smoke bench and W1 to W5 over the queue, with optional Cargo arguments. Never in CI or `just check`. See [Benchmarks](testing.md#benchmarks). |
+| `just loadgen <workload> [--name value…]` | Run the load generator or the lapse probe in the excluded `loadgen/` crate against a running `pachinko serve`; `just loadgen --help` lists the workloads and flags. A run with any error prints no rate and exits non-zero. Never in CI or `just check`. See [Load generation](testing.md#load-generation). |
+| `just test-loadgen` | Run the excluded `loadgen/` crate's unit tests, which `just test` cannot reach. Outside `just check`. |
+| `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all four locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
 | `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. Over the network: the build pulls the digest-pinned base images and fetches the crates inside the container. See [Build the container image](../how-to/build-the-container-image.md). |
 | `just build` | Build every crate with every feature. Outside `just check`. |
 | `just test` | Every unit and integration test through cargo-nextest with `INSTA_UPDATE=no`: a snapshot mismatch fails without writing pending files. Then every doctest through `cargo test --doc`, because nextest cannot run doctests. Outside `just check`, where `coverage` and `test-doc` run the same tests. |
 | `just test-doc` | Every doctest. Gate 10. |
-| `just semver [baseline]` | Report library API compatibility against an explicit Git revision, the last reachable `libpachinko-v*` tag, or, before the first release, the merge base with `origin/main` (`main` in a clone without that remote branch). Checks all three locks, then runs cargo-semver-checks offline. Outside `just check`; advisory on pull requests until 1.0. |
-| `just snapshots-check` | Check all three locks, then run every unit and integration test with every feature through cargo-insta and nextest offline. cargo-insta cannot pass `--locked` through to nextest, so the locks are checked first. Fails mismatches without writing snapshots or pending files, and rejects unreferenced `.snap` files; doctests are left to gate 10. Gate 19. |
+| `just semver [baseline]` | Report library API compatibility against an explicit Git revision, the last reachable `libpachinko-v*` tag, or, before the first release, the merge base with `origin/main` (`main` in a clone without that remote branch). Checks all four locks, then runs cargo-semver-checks offline. Outside `just check`; advisory on pull requests until 1.0. |
+| `just snapshots-check` | Check all four locks, then run every unit and integration test with every feature through cargo-insta and nextest offline. cargo-insta cannot pass `--locked` through to nextest, so the locks are checked first. Fails mismatches without writing snapshots or pending files, and rejects unreferenced `.snap` files; doctests are left to gate 10. Gate 19. |
 | `just snapshots-review` | Open cargo-insta's interactive review of pending snapshots for a person at a terminal. |
-| `just snapshots-accept` | Check all three locks, then rerun every unit and integration test with every feature through cargo-insta and nextest offline, and accept all pending snapshots without prompting, deleting any `.snap` file no test refers to. Writes and deletes `.snap` files; read the diff before committing and give the reason for the change. |
+| `just snapshots-accept` | Check all four locks, then rerun every unit and integration test with every feature through cargo-insta and nextest offline, and accept all pending snapshots without prompting, deleting any `.snap` file no test refers to. Writes and deletes `.snap` files; read the diff before committing and give the reason for the change. |
 
 ## Format
 

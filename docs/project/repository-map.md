@@ -34,7 +34,8 @@ library and the library never on the service.
 │   │   ├── README.md
 │   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
 │   │   ├── benches/
-│   │   │   └── version.rs  The smoke benchmark just bench runs
+│   │   │   ├── version.rs  The smoke benchmark just bench runs
+│   │   │   └── workloads.rs The queue's workloads W1 to W5, which just bench runs
 │   │   └── src/
 │   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
 │   └── pachinko/           The service: a minimal binary built around the library
@@ -50,6 +51,10 @@ library and the library never on the service.
 │   ├── Cargo.lock          The pin for the fuzz crate's separate graph
 │   └── fuzz_targets/
 │       └── smoke.rs        The smoke target just fuzz runs
+├── loadgen/                The load generator, outside the workspace, with its own lockfile
+│   ├── Cargo.toml
+│   ├── Cargo.lock          The pin for the load generator's separate graph
+│   └── src/                main.rs, client.rs, workloads.rs, probe.rs and report.rs
 ├── tests/fixtures/
 │   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
@@ -84,8 +89,9 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `crates/libpachinko/src/` | The library. It holds the domain once the specifications define one; today `lib.rs` holds the crate docs and one item, `version()`, with its doctest and an in-module unit test. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
 | `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. |
 | `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
-| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
+| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, and `workloads.rs` times the queue's workloads W1 to W5 at three pocket counts; both run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
+| `loadgen/` | The load generator, `pachinko-loadgen`, outside the workspace and pinned by its own `loadgen/Cargo.lock`. It names no workspace crate and speaks HTTP to a running `pachinko serve`: closed-loop publish, batch, consume and mix workloads and the lapse probe. `just loadgen` runs it and `just test-loadgen` runs its unit tests, by hand and never in CI or the gate, because its timings measure the machine. |
 | `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |

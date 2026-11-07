@@ -1,0 +1,51 @@
+[package]
+name = "pachinko-loadgen"
+version = "0.0.0"
+publish = false
+edition = "2024"
+rust-version = "1.99"
+
+[dependencies]
+# Decision 0007: ureq is the blocking HTTP client every load-generator thread drives
+# `pachinko serve` with, one agent per thread. Plain HTTP to loopback: no TLS
+# feature. This unpublished crate is outside the workspace and pinned by
+# loadgen/Cargo.lock; it names no workspace crate.
+ureq = { version = "3.5.1", default-features = false }
+# Decision 0007: serde_json builds the request bodies and reads the replies as
+# values, without a derive.
+serde_json = "1.0.154"
+
+# An excluded crate cannot inherit the workspace's forbid levels.
+[lints.rust]
+unsafe_code = "forbid"
+non_ascii_idents = "forbid"
+
+# Invariant 6 also applies outside the workspace. Keep these levels aligned with
+# [workspace.lints.clippy] in Cargo.toml; excluded packages cannot inherit them.
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+missing_const_for_fn = "warn"
+use_self = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exhaustive_enums = "warn"
+exhaustive_structs = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+tests_outside_test_module = "warn"
+mod_module_files = "warn"
+iter_over_hash_type = "warn"
+str_to_string = "warn"
+lossy_float_literal = "warn"
+float_cmp_const = "warn"
+same_name_method = "warn"
+cognitive_complexity = "warn"
+multiple_crate_versions = "allow"
