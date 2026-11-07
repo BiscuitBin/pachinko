@@ -485,6 +485,33 @@ no effect, so invariants 2 to 9 are not touched. Invariant 1 holds because the
 specification moved first, no rule changed, and the plan is identical. Every changed
 path is in Files touched. No finding.
 
+The work is committed as `0590a30`. The Verification block at `0590a30`:
+
+```text
+just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just plan-spec pachinko
+190 obligations, ids and plan unchanged from 3115d68 apart from source spans.
+Exit status: 0
+
+just check-docs
+Validated 45 pages and 46 canonical topics.
+Exit status: 0
+
+just check
+All checks passed and the worktree is unchanged.
+Exit status: 0
+
+git status --short
+(empty)
+```
+
 ## Open points
 
 - Config defaults: the maintainer confirmed the specification's five values as the MVP's
