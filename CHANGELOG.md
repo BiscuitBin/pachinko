@@ -51,16 +51,13 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 - The first behavioural specification, `docs/specs/pachinko.allium`: pockets holding one
   record per key, higher ranks superseding in place, exclusive renewable leases, parking
   after consecutive lease expiries, and decaying superseded records and dead letters.
-  Specified, not yet implemented.
 - Manual divan benchmarks and stable byte fuzzing with a weekly crash-reporting job.
 - Workspace mutation testing through `just mutants` and a weekly report workflow.
-- An Apache-2.0 library, `libpachinko`, exposing its version. The domain awaits its
-  implementation.
+- An Apache-2.0 library, `libpachinko`, exposing its version.
 - A pinned toolchain and tools, the `just initialize` setup, and the read-only
   `just check` gate: linting, tests, coverage, API documentation, dependency checks,
   metrics and a probed effects boundary for the library.
-- The handbook, architecture decisions, a placeholder Allium module and its pinned
-  checker, and an agent contract with skills and provider bridges.
+- The handbook, architecture decisions, the pinned Allium checker, and an agent contract with skills and provider bridges.
 - GitHub Actions for continuous integration and dependency advisory audits, a shared
   pre-commit hook, and both crates' API reference hosted on GitHub Pages.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow,

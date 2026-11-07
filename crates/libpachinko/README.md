@@ -5,7 +5,9 @@ domain `docs/specs/pachinko.allium` defines: one queue of pockets. Publishers pu
 records into pockets, a pocket keeps one record per record key and a higher rank
 supersedes in place, and a consumer leases one pocket at a time and pulls its oldest
 records in bounded batches. `Queue` is the entry point, with publisher and consumer
-joins, `publish`, `pull` and `lease_view`.
+joins, `publish`, `pull`, `lease_view`, the four lease actions `ack`, `nack`, `renew`
+and `release`, and `tick`, which lapses expired leases and decays superseded records and
+dead letters.
 
 The library performs no effect itself. The clock is the `Clock` trait and lease ids,
 which need randomness, come from the `LeaseIds` trait; `FakeClock` and

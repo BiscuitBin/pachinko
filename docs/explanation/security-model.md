@@ -20,8 +20,8 @@ described under [The network surface](#the-network-surface).
 
 Very little, and that is the point.
 
-- **Nothing is collected or stored.** libpachinko will hold the domain once the
-  specifications define one; it takes values from its caller and hands values back,
+- **Nothing is collected or stored.** libpachinko holds the queue the specification
+  defines; it takes values from its caller and hands values back,
   and it has nowhere of its own to send anything.
 - **There are no credentials in the repository.** No file here carries a token.
   Continuous integration uses the token GitHub mints for each run and discards with it,
@@ -112,8 +112,7 @@ for tests are never a source to use where unpredictability matters.
 
 `pachinko serve` listens for HTTP/1.1 on `--listen`, which is `127.0.0.1:8080` unless
 set, so by default only the host itself can reach it
-([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which supersedes
-[decision 0014](../decisions/0014-service-runtime-deferred.md)). There is no
+([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). There is no
 authentication, no TLS and no rate limiting: anyone who can reach the address can join
 under any id, publish into any pocket and pull any record. `--listen 0.0.0.0:<port>`
 opens that to the network, and the service does not warn; put it behind a proxy or a
@@ -132,8 +131,8 @@ capacity refusal, and a service under load makes a request wait rather than refu
 by the specification's `NeverRefusedForCapacity`. Nothing bounds the memory the queue
 holds across requests: a publisher within every limit can still grow it without end.
 Whether and how to bound it is the specification's third open question, and the
-prototype's resident memory, 8,191 MiB after ten seconds of batch publishing (decision
-0019's evidence), is the reason it needs an answer.
+resident memory of PR 38's prototype, 8,191 MiB after ten seconds of batch publishing
+(decision 0019's evidence), is the reason it needs an answer.
 
 Time is bounded apart from shape. `--request-timeout-ms` (30 seconds) answers a handler
 that runs past it 408 `request_timeout` and closes a connection that sends nothing for
@@ -157,6 +156,5 @@ See `SECURITY.md` at the repository root.
 - [Maintain dependencies](../how-to/maintain-dependencies.md)
 - [Quality gates](../reference/quality-gates.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
-- [Decision 0014](../decisions/0014-service-runtime-deferred.md)
 - [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)
 - [HTTP API](../reference/http-api.md)

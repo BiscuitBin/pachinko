@@ -10,41 +10,42 @@ requires: []
 
 This repository is the foundation for `libpachinko` and the `pachinko` service. It is a
 Cargo workspace of two crates, both licensed Apache-2.0 and both `publish = false`: a std
-library at `crates/libpachinko`, and a minimal service binary at `crates/pachinko` that
-depends on it ([decision 0001](../decisions/0001-library-and-service.md)). What this
-repository carries today is the toolchain, the gates, the handbook, the agent contract,
-the CI and the Allium tooling, carried from libpawdoku at `ccdd001`, so that the
-specifications and the code arrive in a repository that is already green.
+library at `crates/libpachinko`, and a service binary at `crates/pachinko` that
+depends on it ([decision 0001](../decisions/0001-library-and-service.md)). The toolchain,
+the gates, the handbook, the agent contract, the CI and the Allium tooling were carried
+from libpawdoku at `ccdd001`, so that the specification and the code arrived in a
+repository that was already green.
 
 ## What it does
 
-Today, very little, on purpose. `libpachinko` will hold the domain the specifications
-define; today it holds one public item, `version()`. `pachinko`'s `main` is one
-call to a tested `run()`, which writes the line `pachinko <version>`. Everything else in
-the repository is there to hold the code that comes later to the same standard from its
-first commit: the full Rust gate, coverage, the effects check, the specification checks,
-the handbook's checks and the API reference.
+`libpachinko` holds one queue of pockets. Publishers publish keyed, ranked records into
+pockets, each pocket holding one record per key with a higher rank superseding in place;
+a consumer leases one pocket at a time, pulls its oldest records in bounded batches and
+acks, nacks, renews or releases them under the lease; a lease that lapses returns its
+pocket to the queue, and superseded records and dead letters decay after their TTLs.
+`pachinko serve` serves that queue as an HTTP/1.1 JSON API on tokio, one owner task
+holding it in memory ([HTTP API](../reference/http-api.md)); with no argument the binary
+writes `pachinko <version>`. Everything else in the repository holds the code to one
+standard: the full Rust gate, coverage, the effects check, the specification checks, the
+handbook's checks and the API reference.
 
 What the library does will be stated first in `docs/specs/`, one rule at a time, and
 built second ([decision 0002](../decisions/0002-specs-are-the-source-of-truth.md)); see
 [Specifications](../explanation/specifications.md). Today `docs/specs/` holds one
-module, `pachinko.allium`, which specifies the domain: a queue of pockets, each holding
-one record per key with a higher rank superseding in place, consumed under exclusive,
-renewable leases. None of it is implemented yet. A behaviour that no module states is not
-the library's yet, however obvious it looks.
+module, `pachinko.allium`, which specifies the domain, and the library and the service
+implement it. A behaviour that no module states is not the library's yet, however obvious
+it looks; the module's open questions mark the decisions nobody has made.
 
 ## What it deliberately does not do
 
-- **No implementation of the domain yet.** The root module under `docs/specs/` defines
-  the queue's entities, rules and surfaces, and no code here implements any of them.
-  The implementation follows the specification, tests first, and until it lands the
-  library's public API is `version()` alone. [Terminology](terminology.md) holds the
-  domain's words.
-- **No runtime or transport for the service yet.** The runtime is decided, not
-  deferred: tokio, one owner task and HTTP/JSON
-  ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which supersedes
-  [decision 0014](../decisions/0014-service-runtime-deferred.md)). Until T24 builds it,
-  the service is a minimal std binary with no async runtime, transport or HTTP stack.
+- **No answer to an open question.** Equal-rank publishes, who reads the superseded and
+  dead-letter queues, capacity beyond shedding them and the other open questions in the
+  root module are the maintainer's to decide; the code answers none of them.
+  [Terminology](terminology.md) holds the domain's words.
+- **No persistence, authentication or TLS.** The queue lives in the service's memory and
+  is lost when it stops; the HTTP surface is unauthenticated and binds loopback by
+  default ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md);
+  [Security model](../explanation/security-model.md)).
 - **No publishing to a registry.** Both crates are `publish = false`, so neither reaches
   a package registry. The API reference is the one thing deployed, to GitHub Pages
   ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)); the container
@@ -61,7 +62,7 @@ the library's yet, however obvious it looks.
 
 Callers of the library, and the people and agents who change it. The `pachinko`
 service is the library's one caller today: it depends on `libpachinko`, never the
-reverse, and it is where the real implementations of the library's effect traits will
+reverse, and it is where the real implementations of the library's effect traits
 live. The repository's readers are contributors, maintainers and agents working to the
 [agent contract](../reference/agent-contract.md); none of them re-decides a behaviour the
 specifications state.

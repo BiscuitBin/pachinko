@@ -33,8 +33,8 @@ which fail outright, and a missing crate-level doc and unescaped backticks, whic
 
 ## Doc examples are tests
 
-[The agent contract](agent-contract.md) asks for an example on every public item; today
-`libpachinko::version` carries one. `just test-doc` (gate 10) compiles and runs each
+[The agent contract](agent-contract.md) asks for an example on every public item, and
+every public item of both crates carries one. `just test-doc` (gate 10) compiles and runs each
 example, so an example that stops being true stops the gate. Examples are not counted
 toward the coverage floor, because the coverage tooling cannot measure doctests on a
 stable toolchain. The division of labour follows: an example shows the contract to a

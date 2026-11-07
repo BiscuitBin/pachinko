@@ -44,13 +44,13 @@ snapshot.
 | T17 | Renovate: `renovate.json` over every pin, the how-to and the record | `T17-renovate.md` | T13, T14, T15, T16 | T12 | done |
 | T18 | Verification gaps: the checks wave 0 and wave 1 never ran, run or recorded as open | `T18-verification-gaps.md` | T11 | T12 to T17 | done |
 | T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
-| T22 | Decision 0019 and the settled questions | `T22-decision-0019.md` | T19 | none | todo |
-| T23 | Library tracer: effects, the store seam, publish and pull | `T23-library-publish-pull.md` | T22 | none | todo |
+| T22 | Decision 0019 and the settled questions | `T22-decision-0019.md` | T19 | none | done |
+| T23 | Library tracer: effects, the store seam, publish and pull | `T23-library-publish-pull.md` | T22 | none | done |
 | T24 | Service tracer: the owner task and HTTP join, publish one record, pull | `T24-service-http-tracer.md` | T23 | none | done |
-| T25 | Ack, nack, renew, release and fencing | `T25-lease-actions.md` | T24 | T27, T29 | todo |
-| T26 | Lease expiry, decay and the tick lane | `T26-expiry-and-tick.md` | T25 | none | todo |
+| T25 | Ack, nack, renew, release and fencing | `T25-lease-actions.md` | T24 | T27, T29 | done |
+| T26 | Lease expiry, decay and the tick lane | `T26-expiry-and-tick.md` | T25 | none | done |
 | T27 | Batch publish with per-row outcomes and request-shape limits | `T27-batch-publish.md` | T24 | T25, T29 | done |
-| T28 | Invariant walk and the conformance catalog | `T28-invariant-walk.md` | T26, T27 | T30 | todo |
+| T28 | Invariant walk and the conformance catalog | `T28-invariant-walk.md` | T26, T27 | T30 | done |
 | T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | done |
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | done |
 | T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | todo |

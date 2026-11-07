@@ -17,17 +17,18 @@ nothing in the workspace ([decision 0001](../decisions/0001-library-and-service.
 | `libpachinko` | nothing in the workspace | `pachinko` |
 | `pachinko` | `libpachinko` | nothing |
 
-`libpachinko` holds the domain once the specifications define one, and performs no
-effect itself. `pachinko` is a minimal binary that supplies the real implementations of
-the library's effect traits, and nothing imports it: it is the leaf where the library
+`libpachinko` holds the domain the specification defines, and performs no effect
+itself. `pachinko` is the HTTP/JSON service binary that supplies the real implementations
+of the library's effect traits, and nothing imports it: it is the leaf where the library
 meets the outside.
 
 Inside `libpachinko` the module graph will be the specification import graph. Each
 specification module under `docs/specs/` names the modules it imports, and the Rust
 module that implements it may use what its specification imports and nothing above it.
 Today there is one specification module, `pachinko.allium`, which specifies the domain
-and imports nothing, and one Rust module, `crates/libpachinko/src/lib.rs`, so there is
-nothing to order. When a specification change splits the domain into modules, the
+and imports nothing, so the library's Rust modules (`queue` and its submodules,
+`records`, `clock`, `lease_ids`, `ids`, `config` and `error`) all implement that one
+module and there is no specification order to follow. When a specification change splits the domain into modules, the
 code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
 shows how a module states its imports.
 

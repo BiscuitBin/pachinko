@@ -220,8 +220,7 @@ old ones. `AGENTS.md` states this as invariant 3.
 ## The service
 
 `pachinko serve` is an HTTP/1.1 JSON server over one in-memory queue, built as
-[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md) decided, which
-supersedes [decision 0014](../decisions/0014-service-runtime-deferred.md). `main` makes
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md) decided. `main` makes
 one call, `exit_code(run(args, stdout), stderr)`: with no argument `run` writes
 `pachinko <version>`; with `serve` and its flags ([Configuration](../reference/configuration.md#service-flags))
 it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
@@ -248,13 +247,18 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
   before the epoch or the random source fails, and the owner stops rather than reissue a
   lease id once the serial is exhausted.
 - **The task scope.** `serve` holds the owner, the ticker, the listener and the signal task in one
-  `JoinSet`. The first to end starts the shutdown: the listener stops accepting, lets
-  in-flight requests finish, cuts connections still open after a 5-second grace, and
-  drops the router, whose handle was the owner's last sender, so the owner ends too. A
-  task that panicked comes back as an error, and the binary exits 1.
+  `JoinSet`. The first to end starts the shutdown: `GET /readyz` answers 503 at once, the
+  listener stops accepting, lets in-flight requests finish, cuts connections still open
+  after `--shutdown-grace-ms`, and drops the router, whose handle was the owner's last
+  sender, so the owner ends too. A task that panicked comes back as an error, and the
+  binary exits 1. [HTTP API](../reference/http-api.md#shutdown)
+  owns the shutdown's contract.
 - **The wire.** axum routes each request to one command and maps every refusal through
   one exhaustive table of codes; [HTTP API](../reference/http-api.md) owns the routes,
-  bodies and codes. Each request is logged at `debug`, below the default `info`.
+  bodies and codes. `--request-timeout-ms` answers a request still running at
+  the bound with 408 `request_timeout` and closes an idle connection, and `GET /readyz` reports whether the owner is
+  serving. Each request is logged at `debug`, below the default `info`, which
+  `--log-level` sets.
 
 The tests sit in three places. Unit tests live in the modules: the flag parser, the
 clock, the lease ids, the owner's ordering, skipping, back-pressure and exhaustion, the

@@ -67,6 +67,21 @@ made, and none is permission to invent an answer in code.
 - When a decision is made, state it in the specification and remove its question
   in the same commit.
 
+The module numbers its questions in order, and the numbers do not compact: question 8,
+a late action before its lapse is processed, was closed by
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), and a scenario
+tagged `oq:9` keeps its tag. The eight that remain:
+
+- Question 1, equal-rank publishes: an equal rank with a different payload for one key.
+- Question 2, who reads the superseded and dead-letter queues, and what an entry must
+  carry.
+- Question 3, capacity beyond shedding the decaying queues.
+- Question 4, routing by worker pool or priority.
+- Question 5, an adaptive lease TTL.
+- Question 6, a new pocket jumping the queue.
+- Question 7, reviving a parked pocket other than by a publish.
+- Question 9, a key published again under the lease that removed its record.
+
 ## Tooling
 
 The project owns a pinned, checksummed Allium 3.6.1 binary in the gitignored

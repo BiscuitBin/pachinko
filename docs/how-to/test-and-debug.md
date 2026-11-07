@@ -95,7 +95,8 @@ ok
 ```
 
 The joins answer `201 Created` with no body. Press ctrl-c in the first terminal; the
-service shuts down and exits 0. The ack and release lines arrive with T25. Every route,
+service shuts down and exits 0. The lease actions, `POST /leases/{lease_id}/ack`,
+`/nack`, `/renew` and `/release`, take the `lease_id` the pull returned. Every route,
 body and error code is in [HTTP API](../reference/http-api.md); the request log is at
 `debug`, which the default `info` level does not print.
 

@@ -194,7 +194,8 @@ A figure a specification states is mirrored in code once, by name, in a constant
 doctest and a unit test hold to the specification's `config` entry. A Rust constant that
 stands for a figure but has no `config` entry to name is drift the other way: the figure
 belongs in the specification first. Today the one module, `docs/specs/pachinko.allium`,
-declares nothing, so the code mirrors no figure; see
+declares five figures in its `config` block, and `libpachinko::config::Config::default`
+mirrors them, held by its doctest and by the tests of scenarios S001 and S002; see
 [Specifications](../explanation/specifications.md).
 
 ## Version pins
