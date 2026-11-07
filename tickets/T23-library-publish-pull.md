@@ -663,6 +663,57 @@ test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
+### Step 10: review and verification
+
+`review-change` over the whole diff: the ten invariants hold (every public type derives
+`Clone` and `Debug` and is `#[non_exhaustive]`; libpachinko reaches the clock and lease
+ids only through its traits, and the diff names no `std::time`, `std::fs`, `std::env`,
+`std::net`, `std::process` or `std::thread` call; no `unsafe`, no `allow`; `thiserror`
+carries its decision-0007 note); no rule, guard or threshold is decided outside
+`docs/specs/pachinko.allium` except the open question 1 placeholder, which is labelled.
+The first commit attempt was refused by the editorconfig hook on a string-continuation
+line in `error.rs`, which `just check` had not seen because the file was untracked; the
+continuation was re-indented (the message is unchanged, since `\` strips the leading
+whitespace) and committed.
+
+The Verification block at `714bbcd`, every recipe exit 0:
+
+```text
+$ just lock-check    (exit 0)
+✔ Lock-file was already up-to-date
+$ just effects    (exit 0)
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+$ just check-agents    (exit 0)
+Validated AGENTS.md, 2 adapters, and 14 skills.
+$ just fmt-check    (exit 0)
+cargo fmt --manifest-path fuzz/Cargo.toml --check
+$ just clippy    (exit 0)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+$ just test    (exit 0)
+     Summary [   0.270s] 64 tests run: 64 passed, 0 skipped
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+$ just coverage    (exit 0)
+TOTAL 1846 14 99.24% 155 0 100.00% 1123 8 99.29% 0 0 -
+$ just doc    (exit 0)
+   Generated target/doc/libpachinko/index.html and 1 other file
+$ just features    (exit 0)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+$ just deny    (exit 0)
+bans ok, licenses ok, sources ok
+$ just deps-unused    (exit 0)
+  ✓ no issues found
+$ just check-docs    (exit 0)
+Validated 45 pages and 46 canonical topics.
+$ just check    (exit 0)
+All checks passed and the worktree is unchanged.
+$ git status --short
+(empty)
+```
+
+Not run: `git fetch origin`, merge of `origin/main`, push and pull request (one pull
+request at T31).
+
 ## Open points
 
 - S005 is pinned at the type level: a negative TTL cannot be written, and the
