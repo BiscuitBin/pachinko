@@ -16,9 +16,9 @@ runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests 
 `pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
 report, is there for a job that wants one; no recipe selects it today. Divan is the
-library’s development dependency for benchmarks. A property-test crate and insta, the
-snapshot crate, each arrive with the first test that needs it, as a development
-dependency only, with the note that
+library’s development dependency for benchmarks, and proptest drives the queue's
+invariant walk, as a development dependency only. Insta, the snapshot crate, arrives
+with the first test that needs it, as a development dependency only, with the note that
 [decision 0007](../decisions/0007-dependency-policy.md) asks for beside its range.
 
 ## Layout
@@ -50,9 +50,11 @@ A helper shared between two files under `tests/` would be compiled into each, an
 would report the functions it does not call as dead code. So each file carries the few
 helpers and fixtures it uses, and the snapshot tests, once there are any, share one file.
 
-Once a property test exists, a failing case is written to a `proptest-regressions/` file
-beside the test that produced it. That file is committed, so the case is replayed first
-on every later run.
+The property test persists no regression file. Its runner is seeded, with
+`failure_persistence: None`, so a red run never writes a `proptest-regressions/` file
+into a worktree that a read-only recipe is checking for changes, and every run draws the
+same cases. A failure is reproduced from the shrunk case the output prints: the list of
+steps, which a scratch test can replay through the same walk.
 
 ## Conventions
 
@@ -97,6 +99,22 @@ The tests of `docs/specs/pachinko.allium` follow one layout.
   `CountingLeaseIds`, with helpers by literal keys and each invariant's check by its
   specification name; one file per rule family (`identity.rs`, `publish.rs`, `pull.rs`)
   holds one test per scenario and the invariant tests.
+- **The invariant walk.** `invariants.rs` and `walk.rs` in the queue suite run
+  `every_invariant_holds_after_every_step_of_any_walk`: 512 seeded proptest walks of 1
+  to 80 steps over every trigger, refused ones included, on small domains (two
+  publishers, three consumers, three pockets, three keys, ranks 0 to 3, limits -1 to 3,
+  the clock moving forwards past `lease_ttl` and backwards). Before each step the walk
+  projects the queue's `Snapshot` into a model and applies the step's rules to it, so it
+  predicts both the outcome and the whole post-state, branch A of decision 0019 and the
+  `EqualRank` placeholder included; a step that should change nothing must leave the
+  snapshot equal. After each step it checks all 25 invariants by name, every declared
+  transition, `OldestFirst`, `ExclusivePocket` and `OneVisitPerKeyPerLease`, reading
+  every limit and TTL from the queue's own `config()`. Its functions are generic over the
+  store, the clock and the lease-id source. `the_walk_reaches_every_state_and_every_outcome`
+  draws the same walks and fails, naming the labels, when the generator never reaches a
+  state or an outcome the module names. A failing walk prints the assertion that fired,
+  named after the invariant, the rule's prediction or the transition, and proptest's
+  shrunk list of steps; that list replays the failure.
 - **The records contract.** `tests/records_contract.rs` runs `check_contract` over
   `MemoryRecords`; a second store would get a line of its own.
 - **Tags.** A test names what it pins in comments above it: `// scenario:` and the id,
@@ -128,6 +146,95 @@ These rules hold for every module the specifications add.
 - **A test file is split before the metrics gate's limit.** `rustqual.toml` holds test
   code to a thousand lines per file and a hundred per function; a module whose tests
   would pass that divides them between files by what each proves.
+
+## Scenario catalog
+
+The wave's 76 scenarios, each with the one library test whose `// scenario:` tag pins
+it, found by `rg -n 'scenario: S0NN'`, and for the ten `wire` scenarios the test that
+also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
+boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
+placeholder for open question N; `decision:0019`, a scenario decision 0019 settled. S066
+and S067 each have two halves in two tests; the tag sits on the first and the row names
+both.
+
+| Id | Description | Tags | Owning test | Wire test |
+| --- | --- | --- | --- | --- |
+| S001 | Default `lease_ttl` and `max_pull_batch` apply | core | `crates/libpachinko/tests/queue/identity.rs`, `the_default_lease_ttl_and_pull_batch_apply` | |
+| S002 | Default parking threshold and decay TTLs apply | core | `crates/libpachinko/tests/queue/identity.rs`, `the_default_parking_threshold_and_decay_ttls_apply` | |
+| S003 | `max_consecutive_expiries = 0` is refused | edge | `crates/libpachinko/tests/queue/identity.rs`, `a_zero_expiry_limit_is_refused` | |
+| S004 | `max_pull_batch = 0` is refused | edge | `crates/libpachinko/tests/queue/identity.rs`, `a_zero_pull_batch_is_refused` | |
+| S005 | Negative TTLs are refused | edge | `crates/libpachinko/src/config.rs`, the `compile_fail` doctest on `Config` | |
+| S006 | A zero `lease_ttl` lapses at the instant of grant | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_zero_lease_ttl_lapses_at_the_instant_of_grant` | |
+| S007 | Zero superseded and dead-letter TTLs decay at once | edge | `crates/libpachinko/tests/queue/decay.rs`, `zero_superseded_and_dead_letter_ttls_decay_at_once` | |
+| S008 | `max_pull_batch = 1` caps every pull at one record | edge | `crates/libpachinko/tests/queue/identity.rs`, `a_pull_batch_of_one_caps_every_pull_at_one_record` | |
+| S009 | A publisher joins once | core | `crates/libpachinko/tests/queue/identity.rs`, `a_publisher_joins_once` | |
+| S010 | A consumer joins once | core | `crates/libpachinko/tests/queue/identity.rs`, `a_consumer_joins_once` | |
+| S011 | Publish into a new pocket creates a queued pocket and record | core | `crates/libpachinko/tests/queue/publish.rs`, `a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record` | |
+| S012 | Publish of a new key appends to an existing pocket | core | `crates/libpachinko/tests/queue/publish.rs`, `a_publish_of_a_new_key_appends_to_an_existing_pocket` | |
+| S013 | The same record key in two pockets is two records | edge | `crates/libpachinko/tests/queue/publish.rs`, `the_same_record_key_in_two_pockets_is_two_records` | |
+| S014 | Supersede replaces rank and payload in place | core | `crates/libpachinko/tests/queue/publish.rs`, `a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser` | |
+| S015 | Repeated supersede keeps the first slot and sheds every loser | edge | `crates/libpachinko/tests/queue/publish.rs`, `repeated_supersede_keeps_the_first_slot_and_sheds_every_loser` | |
+| S016 | A stale publish is shed, not applied and not an error | core | `crates/libpachinko/tests/queue/publish.rs`, `a_stale_publish_is_shed_not_applied_and_not_an_error` | |
+| S017 | An equal-rank publish is rejected (OQ1 placeholder, labelled) | oq:1 | `crates/libpachinko/tests/queue/publish.rs`, `an_equal_rank_publish_is_rejected_as_the_open_question_1_placeholder` | |
+| S018 | Negative and zero ranks order like integers | edge | `crates/libpachinko/tests/queue/publish.rs`, `negative_and_zero_ranks_order_like_integers` | |
+| S019 | Large ranks keep full precision across supersede and stale | wire | `crates/libpachinko/tests/queue/publish.rs`, `large_ranks_keep_full_precision_across_supersede_and_stale` | `crates/pachinko/tests/http.rs`, `large_ranks_keep_full_precision_across_supersede_and_stale` (driver `large_ranks`) |
+| S020 | Payload bytes and keys round-trip unchanged | wire | `crates/libpachinko/tests/queue/publish.rs`, `payload_bytes_and_keys_round_trip_unchanged` | `crates/pachinko/tests/http.rs`, `payload_bytes_and_keys_round_trip_unchanged` (driver `round_trip`) |
+| S021 | Publishing into a leased pocket neither requeues it nor escapes the lease | core | `crates/libpachinko/tests/queue/publish.rs`, `publishing_into_a_leased_pocket_neither_requeues_it_nor_escapes_the_lease` | |
+| S022 | Publishing into a queued pocket does not move it in the pocket order | edge | `crates/libpachinko/tests/queue/publish.rs`, `publishing_into_a_queued_pocket_does_not_move_it_in_the_pocket_order` | |
+| S023 | A publish revives an idle pocket at the back | core | `crates/libpachinko/tests/queue/lease.rs`, `a_publish_revives_an_idle_pocket_at_the_back` | |
+| S024 | A supersede or a stale publish revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_or_a_stale_publish_revives_a_parked_pocket` | |
+| S025 | An equal-rank publish does not revive a parked pocket | oq:1 | `crates/libpachinko/tests/queue/expiry.rs`, `an_equal_rank_publish_does_not_revive_a_parked_pocket` | |
+| S026 | Only a publish revives a parked pocket (OQ7 as the rules stand) | oq:7 | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
+| S027 | A pull claims the front pocket, leases it and holds the batch | core | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch` | |
+| S028 | A positive limit returns at most that many, oldest first, and later pulls continue | core, wire | `crates/libpachinko/tests/queue/pull.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` | `crates/pachinko/tests/http.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` (driver `limit_pages`) |
+| S029 | A limit above `max_pull_batch` is capped | edge | `crates/libpachinko/tests/queue/pull.rs`, `a_limit_above_max_pull_batch_is_capped` | |
+| S030 | A limit above the queued count returns every queued record | edge | `crates/libpachinko/tests/queue/pull.rs`, `a_limit_above_the_queued_count_returns_every_queued_record` | |
+| S031 | A zero-limit pull claims a pocket and returns an empty batch | edge, wire | `crates/libpachinko/tests/queue/pull.rs`, `a_zero_limit_pull_claims_a_pocket_and_returns_an_empty_batch` | `crates/pachinko/tests/http.rs`, `a_zero_limit_pull_claims_a_pocket_and_returns_an_empty_batch` (driver `zero_limit`) |
+| S032 | A negative limit behaves like zero | edge | `crates/libpachinko/tests/queue/pull.rs`, `a_negative_limit_behaves_like_zero` | |
+| S033 | A pull with no queued pocket returns `NoPocketAvailable`, not an error | core, wire | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_with_no_queued_pocket_returns_no_pocket_available_not_an_error` | `crates/pachinko/tests/http.rs`, `a_pull_with_no_queued_pocket_returns_no_pocket_not_an_error` (driver `no_pocket`) |
+| S034 | Idle, parked and leased pockets are never claimed | edge | `crates/libpachinko/tests/queue/expiry.rs`, `idle_parked_and_leased_pockets_are_never_claimed` | |
+| S035 | A consumer with a lease never gets `NoPocketAvailable` or another pocket | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_consumer_with_a_lease_never_gets_no_pocket_available_or_another_pocket` | |
+| S036 | A pull under a lease extends the lease | core | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_under_a_lease_extends_the_lease` | |
+| S037 | A held record is not handed out again under the same lease | core | `crates/libpachinko/tests/queue/pull.rs`, `a_held_record_is_not_handed_out_again_under_the_same_lease` | |
+| S038 | Pockets are claimed in the order they entered | core | `crates/libpachinko/tests/queue/pull.rs`, `pockets_are_claimed_in_the_order_they_entered` | |
+| S039 | A second consumer never receives records from a leased pocket | core | `crates/libpachinko/tests/queue/pull.rs`, `a_second_consumer_never_receives_records_from_a_leased_pocket` | |
+| S040 | An ack settles a held record | core, wire | `crates/libpachinko/tests/queue/settle.rs`, `an_ack_settles_a_held_record` | `crates/pachinko/tests/http.rs`, `an_ack_settles_a_held_record_over_http` (driver `ack_settles`) |
+| S041 | An ack extends the lease | core | `crates/libpachinko/tests/queue/settle.rs`, `an_ack_extends_the_lease` | |
+| S042 | Rejected acks change nothing, not even the lease's expiry | edge | `crates/libpachinko/tests/queue/settle.rs`, `rejected_acks_change_nothing_not_even_the_leases_expiry` | |
+| S043 | A supersede while the key is held defers it on ack | edge | `crates/libpachinko/tests/queue/settle.rs`, `a_supersede_while_the_key_is_held_defers_it_on_ack` | |
+| S044 | A deferred record restarts at the back of its pocket | edge | `crates/libpachinko/tests/queue/settle.rs`, `a_deferred_record_restarts_at_the_back_of_its_pocket` | |
+| S045 | Two supersedes while held: both losers are shed and the held version is untouched | edge | `crates/libpachinko/tests/queue/settle.rs`, `two_supersedes_while_held_shed_both_losers_and_leave_the_held_version` | |
+| S046 | A stale check while held compares with the latest rank, not the held one | edge, oq:1 | `crates/libpachinko/tests/queue/settle.rs`, `a_stale_check_while_held_compares_with_the_latest_rank_not_the_held_one` | |
+| S047 | A nack dead-letters the held version on the first nack, without redelivery | core, wire | `crates/libpachinko/tests/queue/settle.rs`, `a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery` | `crates/pachinko/tests/http.rs`, `a_nack_does_not_redeliver_over_http` (driver `nack_dead_letters`) |
+| S048 | A supersede while the key is held defers it on nack, and the lapse frees it | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_while_held_is_deferred_on_nack_and_the_lapse_frees_it` | |
+| S049 | Rejected nacks change nothing and create no dead letter | edge | `crates/libpachinko/tests/queue/settle.rs`, `rejected_nacks_change_nothing_and_create_no_dead_letter` | |
+| S050 | A renew extends the lease to now plus `lease_ttl` | core, wire | `crates/libpachinko/tests/queue/lease.rs`, `a_renew_extends_the_lease_to_now_plus_lease_ttl` | `crates/pachinko/tests/http.rs`, `a_renew_answers_the_new_expiry_over_http` (driver `renew_extends`) |
+| S051 | Renewals do not stack | edge | `crates/libpachinko/tests/queue/lease.rs`, `renewals_do_not_stack` | |
+| S052 | A renew of an ended lease is rejected and moves nothing | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_renew_of_an_ended_lease_is_rejected_and_moves_nothing` | |
+| S053 | A release requeues the pocket at the back and its held records in place | core, wire | `crates/libpachinko/tests/queue/lease.rs`, `a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place` | `crates/pachinko/tests/http.rs`, `a_release_requeues_or_idles_the_pocket_over_http` (driver `release_requeues`) |
+| S054 | A release with only deferred records requeues the pocket rather than idling it | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_release_with_only_deferred_records_requeues_the_pocket_rather_than_idling_it` | |
+| S055 | A release idles an empty pocket | core | `crates/libpachinko/tests/queue/lease.rs`, `a_release_idles_an_empty_pocket` | |
+| S056 | A release resets the consecutive-expiry count | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_release_resets_the_consecutive_expiry_count` | |
+| S057 | A second release is rejected; a release at the grant instant is legal | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal` | |
+| S058 | A released lease never lapses afterwards | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_released_lease_never_lapses_afterwards` | |
+| S059 | A lease lapses exactly at `expires_at` | core | `crates/libpachinko/tests/queue/expiry.rs`, `a_lease_lapses_exactly_at_expires_at` | |
+| S060 | A lapse keeps the pocket at the front and requeues its records | core | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records` | |
+| S061 | A lapse with no records idles the pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_with_no_records_idles_the_pocket` | |
+| S062 | Three consecutive lapses park the pocket, and a publish revives it | edge | `crates/libpachinko/tests/queue/expiry.rs`, `three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it` | |
+| S063 | At the threshold an empty pocket parks rather than idling | edge | `crates/libpachinko/tests/queue/expiry.rs`, `at_the_threshold_an_empty_pocket_parks_rather_than_idling` | |
+| S064 | Progress under a lease does not reset the expiry count | edge | `crates/libpachinko/tests/queue/expiry.rs`, `progress_under_a_lease_does_not_reset_the_expiry_count` | |
+| S065 | A lapse fires once per lease | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_fires_once_per_lease` | |
+| S066 | A renew or release after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `a_renew_after_expires_at_but_before_the_lapse_succeeds`; release half: `a_release_after_expires_at_but_before_the_lapse_succeeds` | |
+| S067 | An ack or pull after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_after_expires_at_but_before_the_lapse_succeeds`; pull half: `a_pull_after_expires_at_but_before_the_lapse_extends_the_lease` | |
+| S068 | A consumer that re-claims the same pocket cannot use its old lease | edge, wire | `crates/libpachinko/tests/queue/lease.rs`, `a_consumer_that_re_claims_the_same_pocket_cannot_use_its_old_lease` | `crates/pachinko/tests/http.rs`, `an_old_lease_is_refused_after_the_pocket_is_claimed_again_over_http` (driver `old_lease_fenced`) |
+| S069 | After a lapse, the old lease is fenced even when the key has a newer rank | edge | `crates/libpachinko/tests/queue/expiry.rs`, `after_a_lapse_the_old_lease_is_fenced_even_when_the_key_has_a_newer_rank` | |
+| S070 | A consumer cannot act on another consumer's lease | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_consumer_cannot_act_on_another_consumers_lease` | |
+| S071 | A key acked, then published again within the same lease, is a new queued record (OQ9 as the rules stand, labelled) | oq:9 | `crates/libpachinko/tests/queue/settle.rs`, `oq9_a_key_acked_then_published_again_within_the_lease_is_a_new_queued_record` | |
+| S072 | A key nacked, then published again within the same lease, is a new queued record (OQ9 as the rules stand, labelled) | oq:9 | `crates/libpachinko/tests/queue/settle.rs`, `oq9_a_key_nacked_then_published_again_within_the_lease_is_a_new_queued_record` | |
+| S073 | Superseded entries decay at `shed_at` plus `superseded_ttl` | core | `crates/libpachinko/tests/queue/decay.rs`, `superseded_entries_decay_at_shed_at_plus_superseded_ttl` | |
+| S074 | Dead letters decay at `nacked_at` plus `dead_letter_ttl` | core | `crates/libpachinko/tests/queue/decay.rs`, `dead_letters_decay_at_nacked_at_plus_dead_letter_ttl` | |
+| S075 | Pockets and records form one strict, deterministic order | edge | `crates/libpachinko/tests/queue/expiry.rs`, `pockets_and_records_form_one_strict_deterministic_order` | |
+| S076 | The consumer view exposes only the active lease and its held versions | core | `crates/libpachinko/tests/queue/lease.rs`, `the_consumer_view_exposes_only_the_active_lease_and_its_held_versions` | |
 
 ## Coverage
 
@@ -261,6 +368,7 @@ be promoted to regression tests when domain targets arrive. See
 | In-module tests, `crates/libpachinko/src/lib.rs` | `the_version_is_the_manifests`: `version` returns the version the manifest states. |
 | Doctests | The example on `libpachinko::version`, which asserts the same value from outside the crate. |
 | In-module tests, `crates/pachinko/src/lib.rs` | `run_writes_the_name_and_the_library_version`: `run` writes `pachinko`, the library's version and a newline into a buffer. |
+| `crates/libpachinko/tests/queue/invariants.rs` | `every_invariant_holds_after_every_step_of_any_walk`: over 512 seeded walks every step's outcome and post-state are the ones the rules predict from the state before it, and all 25 invariants, the declared transitions and the `Consuming` batch guarantees hold after every step. `the_walk_reaches_every_state_and_every_outcome`: the same walks reach every pocket and record state, every outcome and refusal of every trigger, branch A on each lease action, and a renew and a release with the clock behind the queue's `now`. |
 | `crates/pachinko/tests/binary.rs` | `the_binary_prints_its_line_and_exits_zero`: the built binary exits zero, prints that line on standard output and writes nothing to standard error. |
 
 ## Related pages

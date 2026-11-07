@@ -495,7 +495,8 @@ fn extended_and_survives(second: &mut Fixture, lease: LeaseId) {
     assert_eq!(second.pocket("a").status, PocketStatus::Leased);
 }
 
-// scenario: S066 (renew)
+// scenario: S066
+// (the renew half; a_release_after_expires_at_but_before_the_lapse_succeeds is the release half)
 // obligation: guarantee.ExpiryRecoversWithinTtl
 #[test]
 fn a_renew_after_expires_at_but_before_the_lapse_succeeds() {
@@ -505,7 +506,7 @@ fn a_renew_after_expires_at_but_before_the_lapse_succeeds() {
     extended_and_survives(&mut second, lease);
 }
 
-// scenario: S066 (release)
+// S066's release half; the tag is on a_renew_after_expires_at_but_before_the_lapse_succeeds
 // obligation: transition-edge.Lease.active.released
 #[test]
 fn a_release_after_expires_at_but_before_the_lapse_succeeds() {
@@ -521,7 +522,8 @@ fn a_release_after_expires_at_but_before_the_lapse_succeeds() {
     assert_eq!(second.order(), ["b", "a"]);
 }
 
-// scenario: S067 (ack)
+// scenario: S067
+// (the ack half; a_pull_after_expires_at_but_before_the_lapse_extends_the_lease is the pull half)
 // obligation: rule-success.AckSettlesRecord
 #[test]
 fn an_ack_after_expires_at_but_before_the_lapse_succeeds() {
@@ -531,7 +533,7 @@ fn an_ack_after_expires_at_but_before_the_lapse_succeeds() {
     extended_and_survives(&mut second, lease);
 }
 
-// scenario: S067 (pull)
+// S067's pull half; the tag is on an_ack_after_expires_at_but_before_the_lapse_succeeds
 // obligation: rule-success.PullWithinLease
 #[test]
 fn a_pull_after_expires_at_but_before_the_lapse_extends_the_lease() {

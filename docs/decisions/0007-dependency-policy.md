@@ -73,6 +73,9 @@ T16 added divan 0.1.21 through `[workspace.dependencies]` as a library developme
 dependency only. It provides the benchmark harness and black box; it is outside the
 graph consumers resolve and cargo-deny’s `exclude-dev` graph. Its MSRV is 1.80.0,
 below the pinned compiler. Its transitive packages are committed in `Cargo.lock`.
+T28 added proptest 1.12.0 the same way, with `default-features = false` and the `std`
+feature, as a library development dependency only for the queue's invariant walk; its
+MSRV is 1.88.
 
 The unpublished `fuzz/` crate is excluded from the workspace. It names libfuzzer-sys
 0.4.13 directly because it cannot inherit workspace dependencies; this is the explicit

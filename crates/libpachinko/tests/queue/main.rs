@@ -30,6 +30,8 @@ mod fixture;
 #[cfg(test)]
 mod identity;
 #[cfg(test)]
+mod invariants;
+#[cfg(test)]
 mod lease;
 #[cfg(test)]
 mod publish;
@@ -37,3 +39,5 @@ mod publish;
 mod pull;
 #[cfg(test)]
 mod settle;
+#[cfg(test)]
+mod walk;

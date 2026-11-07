@@ -20,6 +20,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The invariant walk: a seeded proptest walk over every queue trigger that predicts each
+  step's outcome and post-state from the rules, checks all 25 invariants and every
+  declared transition after every step, and proves its generator reaches every state
+  and outcome; and the scenario catalog in the testing reference, mapping each of the
+  76 scenarios to the test that pins it.
 - Lease expiry and decay: `Queue::tick` lapses every active lease whose `expires_at`
   has passed, in the time of the leases due rather than active, and reports them in
   `TickReport` with the superseded records and dead letters it decayed. A lapse keeps a

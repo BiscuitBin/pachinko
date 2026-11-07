@@ -7,6 +7,10 @@ exclude = ["fuzz"]
 # only. It is outside consumer and cargo-deny graphs; MSRV 1.80 is below our pin.
 [workspace.dependencies]
 divan = "0.1.21"
+# Decision 0007: proptest drives the shrinking state-machine walk over the queue's
+# invariants, as a development dependency only; std has no generator or shrinker.
+# It is outside consumer and cargo-deny graphs; MSRV 1.88 is below our pin.
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 # Decision 0007: thiserror derives libpachinko's and pachinko's error enums
 # (invariant 10); a hand-written Display and Error per variant is what it saves.
 thiserror = "2.0.21"

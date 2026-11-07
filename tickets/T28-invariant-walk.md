@@ -502,13 +502,427 @@ with `just plan-spec pachinko`'s, and the mapping is in the hand-back.
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `1fdaab3`, in the fresh lane worktree `wave/t28` after `just initialize` (exit 0),
+`just check` (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked in the lane worktree `wave/t28` from `1fdaab3` (T22 to T27 and T29 landed), not
+  on `ticket/t28-invariant-walk` from `main`; `just initialize` run there once, as the
+  lead authorised. `git fetch origin` was run so `cb77f07` and `cf1a6b2` resolve.
+- `git diff main...HEAD` read as `git diff 1fdaab3...HEAD` plus the uncommitted change.
+- Step 7's fetch and merge of `origin/main`, push and pull request: not run: one pull
+  request at T31. The lead merges the lanes into `mvp-inimal-but-sufficient`; the
+  Verification block is requoted at that merge commit.
+- The §14 reviewers, triage and fix writer were run by the wave lead; this agent stopped
+  at T28-1 and T28-2 uncommitted. Step 2's lockfile was therefore not committed on its
+  own; it lands in the ticket's one commit.
+
+### Departures from the ticket text
+
+- No `src/queue.rs` change: `Queue::config()` already exists, public and not behind
+  `testing`, so the walk reads it as it is.
+- S066 and S067 are tagged `decision:0019`, not `oq:8`: decision 0019 closed open
+  question 8 in T22 (branch A), so they are no longer placeholders. The walk predicts
+  branch A as success.
+- Files touched deviation, approved by the lead: `crates/libpachinko/tests/queue/expiry.rs`
+  carried S066 and S067 on two tests each (one per half of the scenario). The tag stays on
+  `a_renew_after_expires_at_but_before_the_lapse_succeeds` and
+  `an_ack_after_expires_at_but_before_the_lapse_succeeds`; the release and pull halves now
+  carry a plain comment the pattern does not match, and the catalog row names both tests.
+  Comment-only.
+- The walk tags five obligations beyond the ticket's six header guards, because no test
+  carried them after T23 to T27. The walk's post-state prediction shows four of them:
+  `rule-failure.ReviveIdlePocket.1`, `rule-failure.RequeueHeldRecord.1`,
+  `rule-failure.RequeueDeferredRecord.1` (existence guards whose rejection is
+  unreachable) and `surface-provides.Consuming` (`LeaseNotActive` and `LeaseNotYours`
+  predicted over every lease choice). The fifth, `rule-failure.RequeueDeferredRecord.2`,
+  is reached on every freed held record, but no test can observe it: the rejection
+  leaves the same state as `RequeueHeldRecord`'s effect on the same `Freed`. Its tag
+  stays, with the header's caveat. It is not handed back to T25, which is done: the
+  wave lead recorded an exception, and it is an Open point for the maintainer. T28-1's
+  reviewers did not find the tags dishonest; the header says which is which.
+- The walk predicts the whole post-state, not only the outcome: each pre-state `Snapshot`
+  is projected into a model (records keyed by key, so the store's order cannot matter),
+  the step's rules are applied to it, and the post-state's projection must equal it. The
+  clock clamp is modelled at the queue's read points: an accepted step, a publish by a
+  joined publisher (`EqualRank` included) and a tick read the clock; a refused lease
+  action, a `NoPocketAvailable` pull, a join and an `Advance` do not.
+
+### Step 2: the dependency
+
+At `1fdaab3` plus the uncommitted change: `just lock-check` exit 0
+(`✔ Lock-file was already up-to-date`), `just deps-unused` exit 0 (`✓ no issues found`),
+`just deny` exit 0 (`bans ok, licenses ok, sources ok`), `just features` exit 0.
+`fuzz/Cargo.lock` did not move.
+
+### T28-1: the walk (step 3)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (codex-cli 0.166.0, exit 0), with separate triage
+and one writer, run by the wave lead; outputs under `ai_tmp/review/T28-1/`. 4 findings,
+4 valid, none high after triage, so no second round.
+
+| Id | Verdict | Reason |
+| --- | --- | --- |
+| C1 | valid, low | `walk.rs` reserved `1 << 64` and `u128::MAX` as sentinels in the lease-id space, which `LeaseIds` does not reserve; no source in the tree reaches them, so latent |
+| B1 | valid, low (from medium) | The same defect from the breakage lens |
+| C2 | valid, low | The header called `RequeueDeferredRecord.2`'s rejection unreachable; it is reached on every freed held record, but cannot be observed |
+| B2 | valid, low | The same header defect |
+
+Applied by the writer: a pending claim is held in `Model.pending` until the queue's
+answer names it, and the never-issued lease is the smallest id no pull has handed out,
+chosen each step (C1, B1); the header now separates the three unreachable existence
+guards from `RequeueDeferredRecord.2` (C2, B2). Handed back: nothing.
+
+Rerun after the fixes, at `1fdaab3` plus the uncommitted change: `just fmt-check`,
+`just clippy` and `just metrics` exit 0 (`Quality score: 100.0%` for both crates);
+`just lock-check`, `just deps-unused`, `just deny` and `just features` exit 0;
+`just test` exit 0:
+
+```text
+        PASS [   0.138s] (200/235) libpachinko::queue invariants::every_invariant_holds_after_every_step_of_any_walk
+     Summary [   0.625s] 235 tests run: 235 passed, 0 skipped
+```
+
+### Steps 4 and 5: reachability and shown to bite
+
+`the_walk_reaches_every_state_and_every_outcome` draws 512 walks from the walk's seeded
+generator and requires 61 labels: both join outcomes for each party; every publish
+outcome and refusal; a revive from idle and from parked; `NoPocketAvailable`,
+`UnknownConsumer`, a claim, a pull within a lease, an empty batch and a batch of several;
+settled, deferred and every refusal on ack and nack; a renew and a release accepted and
+refused; a release to queued and to idle; a lapse to queued, idle and parked; both
+decays; every pocket state and every record state in each pocket state the module
+allows; branch A on pull, ack, nack, renew and release; and a renew and a release with the
+clock behind the queue's `now`.
+
+The breaks, each on a scratch edit restored before the next, rerun at T28-2 at `1fdaab3`
+plus the uncommitted change by `ai_tmp/wave/T28/breaks-exit.sh` (scratch, not committed).
+Each runs the `$` command shown; its output is filtered to the first `panicked` line and
+the three after it (`grep -m1 -A3 'panicked'`) and to the `test result:` line, and the
+command's own exit status is recorded, not the filter's. Breaks 2 to 4 fire on the
+whole-state prediction; the `Model` dumps are cut here to their first 200 characters.
+After the restore, `git status --short crates/libpachinko/src` prints nothing,
+the three edited files match their pre-run checksums, and both commands rerun with exit 0:
+
+```text
+=== 1 supersede guard > to >=
+$ cargo test -p libpachinko --all-features --locked --test queue every_invariant
+thread 'invariants::every_invariant_holds_after_every_step_of_any_walk' (412974285) panicked at crates/libpachinko/tests/queue/walk.rs:864:5:
+assertion `left == right` failed: publish
+  left: Ok(Superseded)
+ right: Err(EqualRank { key: RecordKey("k2"), rank: Rank(3) })
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+exit 101
+=== 2 parking threshold >= to >
+$ cargo test -p libpachinko --all-features --locked --test queue every_invariant
+thread 'invariants::every_invariant_holds_after_every_step_of_any_walk' (413031353) panicked at crates/libpachinko/tests/queue/walk.rs:1110:5:
+assertion `left == right` failed: the state the rules predict
+  left: Model { next_position: Position(11), publishers: {PublisherId("p0"), PublisherId("p1")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): None, ConsumerId("c2"): Some(LeaseId(4))}, pockets: {Pock
+ right: Model { next_position: Position(11), publishers: {PublisherId("p0"), PublisherId("p1")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): None, ConsumerId("c2"): Some(LeaseId(4))}, pockets: {Pock
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.03s
+exit 101
+=== 3 ended lease left in the active registry
+$ cargo test -p libpachinko --all-features --locked --test queue every_invariant
+thread 'invariants::every_invariant_holds_after_every_step_of_any_walk' (413275351) panicked at crates/libpachinko/tests/queue/walk.rs:1110:5:
+assertion `left == right` failed: the state the rules predict
+  left: Model { next_position: Position(7), publishers: {PublisherId("p0"), PublisherId("p1")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): Some(LeaseId(2))}, pockets: {PocketKey("a"): ModelPocket {
+ right: Model { next_position: Position(7), publishers: {PublisherId("p0"), PublisherId("p1")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): Some(LeaseId(2))}, pockets: {PocketKey("a"): ModelPocket {
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+exit 101
+=== 4 release keeps the pocket's old position
+$ cargo test -p libpachinko --all-features --locked --test queue every_invariant
+thread 'invariants::every_invariant_holds_after_every_step_of_any_walk' (413524477) panicked at crates/libpachinko/tests/queue/walk.rs:1110:5:
+assertion `left == right` failed: the state the rules predict
+  left: Model { next_position: Position(2), publishers: {PublisherId("p0")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): None}, pockets: {PocketKey("a"): ModelPocket { status: Queued, position: Posi
+ right: Model { next_position: Position(3), publishers: {PublisherId("p0")}, consumers: {ConsumerId("c0"): None, ConsumerId("c1"): None}, pockets: {PocketKey("a"): ModelPocket { status: Queued, position: Posi
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+exit 101
+=== 5 generator: limits capped at 1 (no batch of several)
+$ cargo test -p libpachinko --all-features --locked --test queue the_walk_reaches
+thread 'invariants::the_walk_reaches_every_state_and_every_outcome' (413608744) panicked at crates/libpachinko/tests/queue/invariants.rs:459:5:
+assertion `left == right` failed: never reached
+  left: ["batch of several"]
+ right: []
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.17s
+exit 101
+=== restored
+$ git status --short crates/libpachinko/src
+$ cargo test -p libpachinko --all-features --locked --test queue every_invariant
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.15s
+exit 0
+$ cargo test -p libpachinko --all-features --locked --test queue the_walk_reaches
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.19s
+exit 0
+```
+
+Break 2: the prediction parks pocket `b` (`status: Parked`, out of the pocket order);
+the queue left it `Queued`. Break 3: lease 1 is predicted ended and gone; the queue kept
+it active. Break 4: the prediction moves the released pocket to position 2 with
+`next_position` 3; the queue kept position 0 and `next_position` 2. Break 5 removes a label
+from the generator's reach (limits capped at 1), and the reachability test names it.
+
+### Step 6: the catalog and the obligations
+
+`docs/reference/testing.md` gains the "Scenario catalog" (76 rows; the owning test by file
+and function, S005 by its `compile_fail` doctest on `Config`, the ten wire tests by their
+`#[tokio::test]` and the driver that carries the tag), the walk in "Tests from the
+specifications", the regression-file paragraph in "Layout" and two rows in "What the
+current suite proves". `configuration.md`, `maintain-dependencies.md` and decision 0007
+name proptest beside divan.
+
+`just plan-spec pachinko` prints 190 obligations, as at `611a86e`. Every one is tagged.
+`rg -o 'obligation: [^ ]+' ... | sort -u | wc -l` prints 200: the 190, the eight
+`guarantee.*` tags and two placeholder strings in `main.rs`'s doc comment
+(the tag-convention examples, read up to the closing backtick). Handed back: nothing.
+`rule-failure.RequeueDeferredRecord.2`, which the walk tags but no test can observe
+(T28-2 C1), would have gone back to T25, its owner. The wave lead recorded an exception
+instead, because T25 is done: the walk's tag and the header's caveat stand, and the
+question is an Open point for the maintainer, which the lead carries to T31. Obligations
+carried only by the
+walk: the six header guards (`PullWithinLease.2` is also on `pull.rs`), the five above,
+and `transition-rejected.Pocket.status` and `transition-rejected.Record.status`; the
+owning tickets decide whether they also want direct tests.
+
+The map, one id per line, each with every test that carries it:
+
+```text
+config-default.dead_letter_ttl -> crates/libpachinko/tests/queue/identity.rs::the_default_parking_threshold_and_decay_ttls_apply
+config-default.lease_ttl -> crates/libpachinko/tests/queue/identity.rs::the_default_lease_ttl_and_pull_batch_apply
+config-default.max_consecutive_expiries -> crates/libpachinko/tests/queue/identity.rs::the_default_parking_threshold_and_decay_ttls_apply
+config-default.max_pull_batch -> crates/libpachinko/tests/queue/identity.rs::the_default_lease_ttl_and_pull_batch_apply
+config-default.superseded_ttl -> crates/libpachinko/tests/queue/identity.rs::the_default_parking_threshold_and_decay_ttls_apply
+entity-fields.Consumer -> crates/libpachinko/tests/queue/identity.rs::a_consumer_joins_once
+entity-fields.DeadLetter -> crates/libpachinko/tests/queue/settle.rs::a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery
+entity-fields.Lease -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+entity-fields.Pocket -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+entity-fields.Publisher -> crates/libpachinko/tests/queue/identity.rs::a_publisher_joins_once
+entity-fields.Queue -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+entity-fields.Record -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+entity-fields.SupersededRecord -> crates/libpachinko/tests/queue/publish.rs::a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser
+entity-relationship.Consumer.leases -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+entity-relationship.Pocket.leases -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+entity-relationship.Pocket.records -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+invariant.DeadLetter.NackedBeforeExpiry -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/settle.rs::a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery
+invariant.DeadLetterTtlNonNegative -> crates/libpachinko/src/config.rs::Config; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.ExpiryLimitPositive -> crates/libpachinko/tests/queue/identity.rs::a_zero_expiry_limit_is_refused; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.Lease.EndedAfterGrant -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/lease.rs::a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal
+invariant.Lease.GrantedBeforeExpiry -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/pull.rs::every_lease_is_granted_before_it_expires
+invariant.LeaseTtlNonNegative -> crates/libpachinko/src/config.rs::Config; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.OneActiveLeasePerConsumer -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/pull.rs::each_pocket_and_each_consumer_has_at_most_one_active_lease
+invariant.OneActiveLeasePerPocket -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/pull.rs::each_pocket_and_each_consumer_has_at_most_one_active_lease
+invariant.OnePocketPerKey -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::one_pocket_per_key_holds_after_publishes_into_new_and_existing_pockets
+invariant.OneRecordPerKeyPerPocket -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::one_record_per_key_per_pocket_holds_after_new_keys_supersedes_and_stale_publishes
+invariant.OutstandingOnlyWhileLeased -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/pull.rs::held_records_exist_only_in_leased_pockets
+invariant.Pocket.ExpiriesWithinLimit -> crates/libpachinko/tests/queue/expiry.rs::progress_under_a_lease_does_not_reset_the_expiry_count; crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it; crates/libpachinko/tests/queue/invariants.rs::?
+invariant.Pocket.IdleHasNoRecords -> crates/libpachinko/tests/queue/invariants.rs::?; crates/libpachinko/tests/queue/lease.rs::a_release_idles_an_empty_pocket
+invariant.Pocket.LeasedHasOneActiveLease -> crates/libpachinko/tests/queue/invariants.rs::?; crates/libpachinko/tests/queue/pull.rs::a_leased_pocket_has_exactly_one_active_lease_and_no_other_pocket_has_one
+invariant.Pocket.UnleasedHasNoActiveLease -> crates/libpachinko/tests/queue/invariants.rs::?; crates/libpachinko/tests/queue/pull.rs::a_leased_pocket_has_exactly_one_active_lease_and_no_other_pocket_has_one
+invariant.PocketPositionsBelowNext -> crates/libpachinko/tests/queue/expiry.rs::pockets_and_records_form_one_strict_deterministic_order; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::pocket_positions_are_unique_and_below_next_after_publishes
+invariant.PullBatchPositive -> crates/libpachinko/tests/queue/identity.rs::a_zero_pull_batch_is_refused; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.Record.HeldVersionNotNewer -> crates/libpachinko/tests/queue/invariants.rs::?; crates/libpachinko/tests/queue/pull.rs::a_held_version_is_never_newer_than_the_record
+invariant.RecordPositionsBelowNext -> crates/libpachinko/tests/queue/expiry.rs::pockets_and_records_form_one_strict_deterministic_order; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::record_positions_are_unique_and_below_next_after_publishes
+invariant.SupersededRecord.ShedBeforeExpiry -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser; crates/libpachinko/tests/queue/publish.rs::every_shed_entry_is_shed_before_it_expires
+invariant.SupersededTtlNonNegative -> crates/libpachinko/src/config.rs::Config; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.UniqueConsumerId -> crates/libpachinko/tests/queue/identity.rs::a_consumer_joins_once; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.UniquePocketPosition -> crates/libpachinko/tests/queue/expiry.rs::pockets_and_records_form_one_strict_deterministic_order; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::pocket_positions_are_unique_and_below_next_after_publishes
+invariant.UniquePublisherId -> crates/libpachinko/tests/queue/identity.rs::a_publisher_joins_once; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+invariant.UniqueRecordPosition -> crates/libpachinko/tests/queue/expiry.rs::pockets_and_records_form_one_strict_deterministic_order; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/publish.rs::record_positions_are_unique_and_below_next_after_publishes
+projection.Consumer.active_leases -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+projection.Pocket.active_leases -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+projection.Pocket.deferred_records -> crates/libpachinko/tests/queue/settle.rs::a_supersede_while_the_key_is_held_defers_it_on_ack
+projection.Pocket.held_records -> crates/libpachinko/tests/queue/lease.rs::the_consumer_view_exposes_only_the_active_lease_and_its_held_versions; crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+projection.Pocket.queued_records -> crates/libpachinko/tests/queue/publish.rs::a_publish_of_a_new_key_appends_to_an_existing_pocket
+rule-entity-creation.ConsumerJoins.1 -> crates/libpachinko/tests/queue/identity.rs::a_consumer_joins_once
+rule-entity-creation.DropStalePublish.1 -> crates/libpachinko/tests/queue/publish.rs::a_stale_publish_is_shed_not_applied_and_not_an_error
+rule-entity-creation.NackDefersNewerVersion.1 -> crates/libpachinko/tests/queue/settle.rs::a_nack_of_a_superseded_held_version_dead_letters_it_and_defers_the_newer
+rule-entity-creation.NackSettlesRecord.1 -> crates/libpachinko/tests/queue/settle.rs::a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery
+rule-entity-creation.PublisherJoins.1 -> crates/libpachinko/tests/queue/identity.rs::a_publisher_joins_once
+rule-entity-creation.PublishIntoNewPocket.1 -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+rule-entity-creation.PublishIntoNewPocket.2 -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+rule-entity-creation.PublishNewKey.1 -> crates/libpachinko/tests/queue/publish.rs::a_publish_of_a_new_key_appends_to_an_existing_pocket
+rule-entity-creation.PullClaimsFrontPocket.1 -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+rule-entity-creation.Supersede.1 -> crates/libpachinko/tests/queue/publish.rs::a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser
+rule-failure.AckDefersNewerVersion.1 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckDefersNewerVersion.2 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckDefersNewerVersion.3 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckDefersNewerVersion.4 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckDefersNewerVersion.5 -> crates/libpachinko/tests/queue/settle.rs::an_ack_settles_a_held_record
+rule-failure.AckSettlesRecord.1 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_that_re_claims_the_same_pocket_cannot_use_its_old_lease; crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckSettlesRecord.2 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_cannot_act_on_another_consumers_lease; crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckSettlesRecord.3 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckSettlesRecord.4 -> crates/libpachinko/tests/queue/settle.rs::rejected_acks_change_nothing_not_even_the_leases_expiry
+rule-failure.AckSettlesRecord.5 -> crates/libpachinko/tests/queue/settle.rs::a_supersede_while_the_key_is_held_defers_it_on_ack
+rule-failure.ConsumerJoins.1 -> crates/libpachinko/tests/queue/identity.rs::a_consumer_joins_once
+rule-failure.DropStalePublish.1 -> crates/libpachinko/tests/queue/publish.rs::one_pocket_per_key_holds_after_publishes_into_new_and_existing_pockets
+rule-failure.DropStalePublish.2 -> crates/libpachinko/tests/queue/publish.rs::one_record_per_key_per_pocket_holds_after_new_keys_supersedes_and_stale_publishes
+rule-failure.DropStalePublish.3 -> crates/libpachinko/tests/queue/expiry.rs::an_equal_rank_publish_does_not_revive_a_parked_pocket; crates/libpachinko/tests/queue/publish.rs::an_equal_rank_publish_is_rejected_as_the_open_question_1_placeholder; crates/libpachinko/tests/queue/publish.rs::negative_and_zero_ranks_order_like_integers
+rule-failure.HoldRecord.1 -> crates/libpachinko/tests/queue/pull.rs::a_held_record_is_not_handed_out_again_under_the_same_lease
+rule-failure.HoldRecord.2 -> crates/libpachinko/tests/queue/pull.rs::a_held_record_is_not_handed_out_again_under_the_same_lease
+rule-failure.LeaseExpiryIdlesEmptyPocket.1 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_fires_once_per_lease
+rule-failure.LeaseExpiryIdlesEmptyPocket.2 -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+rule-failure.LeaseExpiryIdlesEmptyPocket.3 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.LeaseExpiryIdlesEmptyPocket.4 -> crates/libpachinko/tests/queue/expiry.rs::at_the_threshold_an_empty_pocket_parks_rather_than_idling
+rule-failure.LeaseExpiryIdlesEmptyPocket.5 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records
+rule-failure.LeaseExpiryKeepsPocketAtFront.1 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_fires_once_per_lease
+rule-failure.LeaseExpiryKeepsPocketAtFront.2 -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+rule-failure.LeaseExpiryKeepsPocketAtFront.3 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.LeaseExpiryKeepsPocketAtFront.4 -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+rule-failure.LeaseExpiryKeepsPocketAtFront.5 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_with_no_records_idles_the_pocket
+rule-failure.LeaseExpiryParksPocket.1 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_fires_once_per_lease
+rule-failure.LeaseExpiryParksPocket.2 -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+rule-failure.LeaseExpiryParksPocket.3 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.LeaseExpiryParksPocket.4 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records
+rule-failure.LeaseLapses.1 -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_fires_once_per_lease
+rule-failure.NackDefersNewerVersion.1 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackDefersNewerVersion.2 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackDefersNewerVersion.3 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackDefersNewerVersion.4 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackDefersNewerVersion.5 -> crates/libpachinko/tests/queue/settle.rs::a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery
+rule-failure.NackSettlesRecord.1 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackSettlesRecord.2 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_cannot_act_on_another_consumers_lease; crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackSettlesRecord.3 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackSettlesRecord.4 -> crates/libpachinko/tests/queue/settle.rs::rejected_nacks_change_nothing_and_create_no_dead_letter
+rule-failure.NackSettlesRecord.5 -> crates/libpachinko/tests/queue/settle.rs::a_nack_of_a_superseded_held_version_dead_letters_it_and_defers_the_newer
+rule-failure.PublisherJoins.1 -> crates/libpachinko/tests/queue/identity.rs::a_publisher_joins_once
+rule-failure.PublishIntoNewPocket.1 -> crates/libpachinko/tests/queue/publish.rs::a_publish_of_a_new_key_appends_to_an_existing_pocket; crates/libpachinko/tests/queue/publish.rs::the_same_record_key_in_two_pockets_is_two_records
+rule-failure.PublishNewKey.1 -> crates/libpachinko/tests/queue/publish.rs::the_same_record_key_in_two_pockets_is_two_records
+rule-failure.PublishNewKey.2 -> crates/libpachinko/tests/queue/publish.rs::a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser
+rule-failure.PullClaimsFrontPocket.1 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_with_a_lease_never_gets_no_pocket_available_or_another_pocket; crates/libpachinko/tests/queue/pull.rs::a_pull_under_a_lease_extends_the_lease
+rule-failure.PullClaimsFrontPocket.2 -> crates/libpachinko/tests/queue/expiry.rs::idle_parked_and_leased_pockets_are_never_claimed; crates/libpachinko/tests/queue/pull.rs::a_pull_with_no_queued_pocket_returns_no_pocket_available_not_an_error
+rule-failure.PullClaimsFrontPocket.3 -> crates/libpachinko/tests/queue/pull.rs::a_leased_pocket_has_exactly_one_active_lease_and_no_other_pocket_has_one
+rule-failure.PullFindsNoPocket.1 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_with_a_lease_never_gets_no_pocket_available_or_another_pocket; crates/libpachinko/tests/queue/pull.rs::a_pull_with_no_queued_pocket_returns_no_pocket_available_not_an_error
+rule-failure.PullFindsNoPocket.2 -> crates/libpachinko/tests/queue/pull.rs::a_second_consumer_never_receives_records_from_a_leased_pocket
+rule-failure.PullWithinLease.1 -> crates/libpachinko/tests/queue/pull.rs::a_pull_under_a_lease_extends_the_lease
+rule-failure.PullWithinLease.2 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/pull.rs::a_leased_pocket_has_exactly_one_active_lease_and_no_other_pocket_has_one
+rule-failure.ReleaseIdlesEmptyPocket.1 -> crates/libpachinko/tests/queue/lease.rs::a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal
+rule-failure.ReleaseIdlesEmptyPocket.2 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_cannot_act_on_another_consumers_lease
+rule-failure.ReleaseIdlesEmptyPocket.3 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.ReleaseIdlesEmptyPocket.4 -> crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+rule-failure.ReleaseRequeuesPocket.1 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_that_re_claims_the_same_pocket_cannot_use_its_old_lease; crates/libpachinko/tests/queue/lease.rs::a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal
+rule-failure.ReleaseRequeuesPocket.2 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_cannot_act_on_another_consumers_lease
+rule-failure.ReleaseRequeuesPocket.3 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.ReleaseRequeuesPocket.4 -> crates/libpachinko/tests/queue/lease.rs::a_release_idles_an_empty_pocket
+rule-failure.Renew.1 -> crates/libpachinko/tests/queue/lease.rs::a_consumer_that_re_claims_the_same_pocket_cannot_use_its_old_lease; crates/libpachinko/tests/queue/lease.rs::a_renew_of_an_ended_lease_is_rejected_and_moves_nothing
+rule-failure.Renew.2 -> crates/libpachinko/tests/queue/expiry.rs::after_a_lapse_the_old_lease_is_fenced_even_when_the_key_has_a_newer_rank; crates/libpachinko/tests/queue/lease.rs::a_consumer_cannot_act_on_another_consumers_lease
+rule-failure.RequeueDeferredRecord.1 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.RequeueDeferredRecord.2 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.RequeueHeldRecord.1 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.RequeueHeldRecord.2 -> crates/libpachinko/tests/queue/lease.rs::a_release_with_only_deferred_records_requeues_the_pocket_rather_than_idling_it
+rule-failure.ReviveIdlePocket.1 -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+rule-failure.ReviveIdlePocket.2 -> crates/libpachinko/tests/queue/lease.rs::a_publish_revives_an_idle_pocket_at_the_back
+rule-failure.ReviveParkedPocket.1 -> crates/libpachinko/tests/queue/expiry.rs::a_supersede_or_a_stale_publish_revives_a_parked_pocket
+rule-failure.ReviveParkedPocket.2 -> crates/libpachinko/tests/queue/expiry.rs::only_a_publish_revives_a_parked_pocket
+rule-failure.Supersede.1 -> crates/libpachinko/tests/queue/publish.rs::one_pocket_per_key_holds_after_publishes_into_new_and_existing_pockets
+rule-failure.Supersede.2 -> crates/libpachinko/tests/queue/publish.rs::one_record_per_key_per_pocket_holds_after_new_keys_supersedes_and_stale_publishes
+rule-failure.Supersede.3 -> crates/libpachinko/tests/queue/expiry.rs::an_equal_rank_publish_does_not_revive_a_parked_pocket; crates/libpachinko/tests/queue/publish.rs::a_stale_publish_is_shed_not_applied_and_not_an_error
+rule-success.AckDefersNewerVersion -> crates/libpachinko/tests/queue/settle.rs::a_supersede_while_the_key_is_held_defers_it_on_ack
+rule-success.AckSettlesRecord -> crates/libpachinko/tests/queue/expiry.rs::an_ack_after_expires_at_but_before_the_lapse_succeeds; crates/libpachinko/tests/queue/settle.rs::an_ack_extends_the_lease; crates/libpachinko/tests/queue/settle.rs::an_ack_settles_a_held_record
+rule-success.ConsumerJoins -> crates/libpachinko/tests/queue/identity.rs::a_consumer_joins_once
+rule-success.DeadLetterDecays -> crates/libpachinko/tests/queue/decay.rs::dead_letters_decay_at_nacked_at_plus_dead_letter_ttl; crates/libpachinko/tests/queue/decay.rs::zero_superseded_and_dead_letter_ttls_decay_at_once
+rule-success.DropStalePublish -> crates/libpachinko/tests/queue/publish.rs::a_stale_publish_is_shed_not_applied_and_not_an_error; crates/libpachinko/tests/queue/settle.rs::a_stale_check_while_held_compares_with_the_latest_rank_not_the_held_one
+rule-success.HoldRecord -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+rule-success.LeaseExpiryIdlesEmptyPocket -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_with_no_records_idles_the_pocket
+rule-success.LeaseExpiryKeepsPocketAtFront -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records
+rule-success.LeaseExpiryParksPocket -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+rule-success.LeaseLapses -> crates/libpachinko/tests/queue/expiry.rs::a_zero_lease_ttl_lapses_at_the_instant_of_grant
+rule-success.NackDefersNewerVersion -> crates/libpachinko/tests/queue/settle.rs::a_nack_of_a_superseded_held_version_dead_letters_it_and_defers_the_newer
+rule-success.NackSettlesRecord -> crates/libpachinko/tests/queue/settle.rs::a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery
+rule-success.PublisherJoins -> crates/libpachinko/tests/queue/identity.rs::a_publisher_joins_once
+rule-success.PublishIntoNewPocket -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+rule-success.PublishNewKey -> crates/libpachinko/tests/queue/publish.rs::a_publish_of_a_new_key_appends_to_an_existing_pocket
+rule-success.PullClaimsFrontPocket -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+rule-success.PullFindsNoPocket -> crates/libpachinko/tests/queue/pull.rs::a_pull_with_no_queued_pocket_returns_no_pocket_available_not_an_error
+rule-success.PullWithinLease -> crates/libpachinko/tests/queue/expiry.rs::a_pull_after_expires_at_but_before_the_lapse_extends_the_lease; crates/libpachinko/tests/queue/lease.rs::a_consumer_with_a_lease_never_gets_no_pocket_available_or_another_pocket; crates/libpachinko/tests/queue/pull.rs::a_pull_under_a_lease_extends_the_lease
+rule-success.ReleaseIdlesEmptyPocket -> crates/libpachinko/tests/queue/lease.rs::a_release_idles_an_empty_pocket
+rule-success.ReleaseRequeuesPocket -> crates/libpachinko/tests/queue/expiry.rs::a_release_resets_the_consecutive_expiry_count; crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place; crates/libpachinko/tests/queue/lease.rs::a_release_with_only_deferred_records_requeues_the_pocket_rather_than_idling_it
+rule-success.Renew -> crates/libpachinko/tests/queue/lease.rs::a_renew_extends_the_lease_to_now_plus_lease_ttl; crates/libpachinko/tests/queue/lease.rs::renewals_do_not_stack
+rule-success.RequeueDeferredRecord -> crates/libpachinko/tests/queue/expiry.rs::a_supersede_while_held_is_deferred_on_nack_and_the_lapse_frees_it; crates/libpachinko/tests/queue/lease.rs::a_release_with_only_deferred_records_requeues_the_pocket_rather_than_idling_it; crates/libpachinko/tests/queue/settle.rs::a_deferred_record_restarts_at_the_back_of_its_pocket
+rule-success.RequeueHeldRecord -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records; crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+rule-success.ReviveIdlePocket -> crates/libpachinko/tests/queue/lease.rs::a_publish_revives_an_idle_pocket_at_the_back
+rule-success.ReviveParkedPocket -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+rule-success.Supersede -> crates/libpachinko/tests/queue/publish.rs::a_supersede_replaces_rank_and_payload_in_place_and_sheds_the_loser; crates/libpachinko/tests/queue/settle.rs::two_supersedes_while_held_shed_both_losers_and_leave_the_held_version
+rule-success.SupersededRecordDecays -> crates/libpachinko/tests/queue/decay.rs::superseded_entries_decay_at_shed_at_plus_superseded_ttl; crates/libpachinko/tests/queue/decay.rs::zero_superseded_and_dead_letter_ttls_decay_at_once
+surface-actor.Consuming -> crates/libpachinko/tests/queue/identity.rs::a_pull_or_lease_read_by_a_consumer_that_never_joined_is_refused_and_changes_nothing
+surface-actor.Publishing -> crates/libpachinko/tests/queue/identity.rs::a_publish_by_a_publisher_that_never_joined_is_refused_and_changes_nothing
+surface-exposure.Consuming -> crates/libpachinko/tests/queue/lease.rs::the_consumer_view_exposes_only_the_active_lease_and_its_held_versions; crates/libpachinko/tests/queue/pull.rs::a_pull_under_a_lease_extends_the_lease
+surface-provides.Consuming -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+surface-provides.Publishing -> crates/libpachinko/tests/queue/publish.rs::a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record
+temporal.DeadLetterDecays -> crates/libpachinko/tests/queue/decay.rs::dead_letters_decay_at_nacked_at_plus_dead_letter_ttl
+temporal.LeaseLapses -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+temporal.SupersededRecordDecays -> crates/libpachinko/tests/queue/decay.rs::superseded_entries_decay_at_shed_at_plus_superseded_ttl
+transition-edge.Lease.active.expired -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+transition-edge.Lease.active.released -> crates/libpachinko/tests/queue/expiry.rs::a_release_after_expires_at_but_before_the_lapse_succeeds; crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+transition-edge.Pocket.idle.queued -> crates/libpachinko/tests/queue/lease.rs::a_publish_revives_an_idle_pocket_at_the_back
+transition-edge.Pocket.leased.idle -> crates/libpachinko/tests/queue/lease.rs::a_release_idles_an_empty_pocket
+transition-edge.Pocket.leased.parked -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+transition-edge.Pocket.leased.queued -> crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+transition-edge.Pocket.parked.queued -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+transition-edge.Pocket.queued.leased -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+transition-edge.Record.deferred.queued -> crates/libpachinko/tests/queue/settle.rs::a_deferred_record_restarts_at_the_back_of_its_pocket
+transition-edge.Record.held.deferred -> crates/libpachinko/tests/queue/settle.rs::a_supersede_while_the_key_is_held_defers_it_on_ack
+transition-edge.Record.held.queued -> crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+transition-edge.Record.queued.held -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+transition-rejected.Lease.status -> crates/libpachinko/tests/queue/expiry.rs::a_released_lease_never_lapses_afterwards; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+transition-rejected.Pocket.status -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+transition-rejected.Record.status -> crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk
+transition-terminal.Lease.status -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_fires_once_per_lease; crates/libpachinko/tests/queue/invariants.rs::every_invariant_holds_after_every_step_of_any_walk; crates/libpachinko/tests/queue/lease.rs::a_renew_of_an_ended_lease_is_rejected_and_moves_nothing; crates/libpachinko/tests/queue/lease.rs::a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal
+when-presence.Lease.ended_at -> crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+when-presence.Record.held_payload -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+when-presence.Record.held_rank -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+when-set.HoldRecord.Record.held_payload -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+when-set.HoldRecord.Record.held_rank -> crates/libpachinko/tests/queue/pull.rs::a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch
+when-set.LeaseExpiryIdlesEmptyPocket.Lease.ended_at -> crates/libpachinko/tests/queue/expiry.rs::a_lapse_with_no_records_idles_the_pocket
+when-set.LeaseExpiryKeepsPocketAtFront.Lease.ended_at -> crates/libpachinko/tests/queue/expiry.rs::a_lease_lapses_exactly_at_expires_at
+when-set.LeaseExpiryParksPocket.Lease.ended_at -> crates/libpachinko/tests/queue/expiry.rs::three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it
+when-set.ReleaseIdlesEmptyPocket.Lease.ended_at -> crates/libpachinko/tests/queue/lease.rs::a_release_idles_an_empty_pocket
+when-set.ReleaseRequeuesPocket.Lease.ended_at -> crates/libpachinko/tests/queue/lease.rs::a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place
+```
+
+### T28-2: the whole diff (step 7)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead; outputs under `ai_tmp/review/T28-2/`. 3 findings, 2 valid, none
+high, so no second round.
+
+| Id | Verdict | Reason |
+| --- | --- | --- |
+| B1 | invalid, low | The walk's `RequeueDeferredRecord.2` tag: no observable state goes unverified, and the header and hand-back already state the limit |
+| C1 | valid, low (from medium) | The hand-back said the walk's prediction shows `RequeueDeferredRecord.2` and handed nothing back, though step 6 sends an unobservable id to its owner |
+| C2 | valid, low | The break quotations lacked each command and its exit status (§11) |
+
+Applied by the writer: the hand-back separates `RequeueDeferredRecord.2` from the four the
+prediction shows (C1); the five breaks were rerun and quoted with each command, its
+`exit 101` and the restored tree's `exit 0` (C2). Handed back: nothing. On C1 the wave
+lead recorded an exception: `RequeueDeferredRecord.2` is not handed back to T25, which is
+done, and is an Open point for the maintainer with its mirror `RequeueHeldRecord.2`,
+carried to T31.
+
+Rerun after the fixes, at `1fdaab3` plus the uncommitted change, `just check` (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
+- `rule-failure.RequeueDeferredRecord.2` and its mirror `rule-failure.RequeueHeldRecord.2`
+  are obligations whose rejection no test can observe. `Freed` is emitted for every held
+  and every deferred record, so the rule for the other status is always reached and
+  rejected, and a wrongly accepted rule would leave the record queued, which is the state
+  the matching rule produces anyway. A specification-level question for the maintainer:
+  record them as equivalent obligations, or narrow each rule's trigger so the guard is
+  not needed. The wave lead recorded this exception in place of a hand-back to T25,
+  which is done, and carries it to T31. The walk tags `.2` and T25's S054 test tags the
+  mirror; both tags stay.
 - `docs/reference/testing.md` says today that a property test's failing case is written
   to a `proptest-regressions/` file and committed. The walk persists nothing, so that a
   red run never writes into the worktree a read-only recipe is snapshotting, and
