@@ -53,8 +53,10 @@ page's module table to reflect its new responsibility.
 
 Record domain terms in [Terminology](../project/terminology.md). Run both spec
 gates and plan the new module, then follow the test and implementation loop above.
-The root's obligations are not covered by any test yet: the first implementation
-change derives them with `propagate` and brings its tests with it.
+The root's obligations are covered by the tests under `crates/libpachinko/tests/queue/`
+and `crates/pachinko/tests/http.rs`, each tagged `// obligation:` or `scenario:`. A
+change to the root updates those tests and tags any new obligation instead of deriving
+a fresh suite with `propagate`.
 
 ## Handle an open question
 

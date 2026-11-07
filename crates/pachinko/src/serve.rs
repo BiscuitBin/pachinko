@@ -14,7 +14,9 @@
 //! one more grace period; only then is any of the scope's tasks still running
 //! aborted, at its next yield point. The owner yields between commands, so `serve`
 //! returns within two grace periods plus the one command or tick the owner was
-//! applying, and releasing the queue's state when the owner ends.
+//! applying, and releasing the queue's state when the owner ends. A zero grace
+//! period cuts at once and joins the tasks for at most one second before aborting
+//! what is left.
 //!
 //! Every task in the scope must end once the shutdown begins, on the lifecycle's
 //! `shutdown` watch or on the owner ending, without waiting for the cut: the cut is
@@ -260,7 +262,8 @@ fn task_result(joined: Result<TaskResult, JoinError>) -> TaskResult {
 /// read or write, which the cut fails. An error a task ended with inside the grace
 /// period is returned; failing that, the overrun's own error. A task that fails
 /// after the cut is logged. A zero grace period cuts at once and is no overrun: the
-/// tasks, which end on the cut, are joined without a bound and none is aborted.
+/// tasks, which end on the cut, are joined for at most [`ZERO_GRACE_BACKSTOP`], and
+/// whatever is still running after it is aborted.
 async fn drain(
     tasks: &mut JoinSet<TaskResult>,
     cut: &watch::Sender<bool>,
@@ -269,8 +272,13 @@ async fn drain(
     let mut first = Ok(());
     if grace.is_zero() {
         cut.send_replace(true);
-        join_into(tasks, &mut first).await;
-        return first;
+        if timeout(ZERO_GRACE_BACKSTOP, join_into(tasks, &mut first))
+            .await
+            .is_ok()
+        {
+            return first;
+        }
+        return abort(tasks, first, ZERO_GRACE_BACKSTOP).await;
     }
     if timeout(grace, join_into(tasks, &mut first)).await.is_ok() {
         return first;
@@ -284,6 +292,17 @@ async fn drain(
     if timeout(grace, join_logging(tasks)).await.is_ok() {
         return first.and(Err(overran));
     }
+    abort(tasks, first, grace).await
+}
+
+/// How long a zero grace period waits, after its immediate cut, for the tasks to end
+/// before aborting them: the backstop the second grace period gives any other grace.
+const ZERO_GRACE_BACKSTOP: Duration = Duration::from_secs(1);
+
+/// Aborts the tasks still running `waited` after the cut, keeping `first`, an error a
+/// task ended with before then.
+async fn abort(tasks: &mut JoinSet<TaskResult>, first: TaskResult, waited: Duration) -> TaskResult {
+    let millis = waited.as_millis();
     let aborted = ServeError::Task(format!(
         "shutdown took longer than {millis}ms; open connections were cut, and {} tasks \
         still running {millis}ms later were aborted",
@@ -1024,6 +1043,19 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
         assert_eq!(drained, Ok(()));
         assert!(*cut.borrow(), "the connections were cut");
         assert_eq!(tasks.len(), 0, "every task is joined");
+    }
+
+    #[tokio::test]
+    async fn a_task_that_ignores_the_cut_under_a_zero_grace_period_is_aborted_after_the_backstop() {
+        let (cut, _cutting) = watch::channel(false);
+        let mut tasks = JoinSet::new();
+        tasks.spawn(std::future::pending::<Result<(), ServeError>>());
+        let drained = timeout(BOUND, drain(&mut tasks, &cut, Duration::ZERO))
+            .await
+            .expect("drain returned within the bound");
+        assert!(matches!(drained, Err(ServeError::Task(_))), "{drained:?}");
+        assert!(*cut.borrow(), "the connections were cut");
+        assert_eq!(tasks.len(), 0, "the parked task was aborted");
     }
 
     #[tokio::test]

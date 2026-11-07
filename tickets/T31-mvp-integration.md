@@ -332,7 +332,12 @@ Files touched widened, each approved by the lead:
   `just toml-check` exit 0).
 - `rustqual.toml`'s comment and `docs/reference/configuration.md:101` (T31-1 C2).
 - `crates/pachinko/src/serve.rs` and `crates/pachinko/src/actor.rs`: the code changes for
-  `code-review` run 2's findings 2 and 10.
+  `code-review` run 2's findings 2 and 10, and `serve.rs` again for T31-1 round 2's
+  C1/B1 backstop.
+- `docs/reference/http-api.md`: `code-review` run 2's findings 1, 2 and 6, and the
+  round-2 backstop sentence.
+- `docs/explanation/specifications.md:43-46`, the "no test yet covers" claim (T31-1
+  round 2, beside C2).
 
 Edits within own files beyond the line ranges the rows name: `AGENTS.md:9-10`;
 `repository-map.md`'s tree block and the `libpachinko/tests` row; `purpose-and-scope.md`'s
@@ -418,21 +423,27 @@ open-question count), each settled in step 3 or 4.
 
 ### Step 3: the ownership sweep
 
-At `0927fe5` with uncommitted changes (the sweep that became A). Each of the 61 rules,
-invariants and guarantees in libpachinko's columns prints at least one `// obligation:`
+At `0927fe5` with uncommitted changes (the sweep that became A), each of the 61 rules,
+invariants and guarantees in libpachinko's columns printed at least one `// obligation:`
 tag under `crates/libpachinko` (`ai_tmp/wave/T31/step3-sweep.txt`, one line per name);
-`NeverRefusedForCapacity` prints none there, as N-1 expected. The scenario, route, flag
-and code lines, with their positive controls (`ai_tmp/wave/T31/step3-verif.txt`, the
-flag-arm listing trimmed):
+`NeverRefusedForCapacity` printed none there, as N-1 expected. `git diff 0927fe5 HEAD --
+crates` adds or removes no `obligation:`, `scenario:` or `guarantee:` tag, so that sweep
+stands at the final commit.
+
+The scenario, route, flag and code lines with their positive controls, the `plan-spec`
+count and the adjusted `NeverRefusedForCapacity` search were requoted after the T31-1
+round 2 fixes (§11), replacing the quote taken at `0927fe5`.
+At `d3fef5c` with uncommitted changes (`docs/how-to/work-with-the-specs.md`, `tickets/T31-mvp-integration.md`),
+from `ai_tmp/wave/T31/requote-final.txt`:
 
 ```text
-== HEAD 0927fe5
+== HEAD d3fef5c, uncommitted: docs/how-to/work-with-the-specs.md tickets/T31-mvp-integration.md
 $ rg -c scenario counts
 crates/libpachinko/tests/queue/expiry.rs:19
 crates/libpachinko/tests/queue/lease.rs:12
 crates/libpachinko/tests/queue/publish.rs:12
-crates/libpachinko/src/config.rs:1
 crates/libpachinko/tests/queue/identity.rs:7
+crates/libpachinko/src/config.rs:1
 crates/libpachinko/tests/queue/pull.rs:11
 crates/libpachinko/tests/queue/settle.rs:11
 crates/libpachinko/tests/queue/decay.rs:3
@@ -455,7 +466,8 @@ $ routes
 106:        .route("/leases/{lease_id}/renew", post(leases::renew))
 107:        .route("/leases/{lease_id}/release", post(leases::release))
 749:            Router::new().route("/never", get(std::future::pending::<()>)),
-13
+$ routes before #[cfg(test)]
+12
 $ flags
 13
 exit 0
@@ -476,54 +488,49 @@ exit 1
 $ plan-spec obligation count
 190
 $ catalog rows 76
-ids exactly S001..S076: True
-```
-
-The flag arms are `config.rs:267-288`, 13 `"--name" =>` lines. The catalog check's one
-"unparsed" row is S005, whose owner is the `compile_fail` doctest on `Config`
-(`config.rs:45-46`, `// scenario: S005`), which names no `file`, `fn` pair. The 190 is
-`obligations[]` in `just plan-spec pachinko`'s output (`ai_tmp/wave/T31/plan-spec.txt`),
-as T22, T25 and T28 quoted.
-
-The adjusted `NeverRefusedForCapacity` search, at `40ff3e7`:
-
-```text
-$ rg -n 'NeverRefusedForCapacity' crates; echo "exit $?"
+$ NeverRefusedForCapacity
 crates/pachinko/src/actor.rs:833:    // guarantee: NeverRefusedForCapacity
 crates/pachinko/tests/batch_publish.rs:259:// guarantee: NeverRefusedForCapacity
 exit 0
 ```
 
-No name was missing, so no lane reopened. Steps 3 to 5 ran before A2, which changed
-`serve.rs` and `actor.rs`; at A2 the fresh clone's `just check` (step 7) is the gate.
+The flag arms are `config.rs:267-288`, 13 `"--name" =>` lines. The catalog check's one
+"unparsed" row at `0927fe5` was S005, whose owner is the `compile_fail` doctest on `Config`
+(`config.rs:45-46`, `// scenario: S005`), which names no `file`, `fn` pair. The 190 is
+`obligations[]` in `just plan-spec pachinko`'s output, as T22, T25 and T28 quoted.
+
+No name was missing, so no lane reopened. Steps 3 and 4 were requoted at `d3fef5c`
+above; step 5's `review-change` ran before A2 and is not requoted, and `just effects`
+at A2 is the fresh clone's `just check` (step 7).
 
 ### Step 4: the handbook sweep
 
-At `0927fe5` with uncommitted changes (the sweep that became A), from
-`ai_tmp/wave/T31/step4-verif.txt`. The positive control is `git grep` at `611a86e`, with
-no checkout; long lines are cut at `...`:
+Requoted with step 3 (§11).
+At `d3fef5c` with uncommitted changes (`docs/how-to/work-with-the-specs.md`, `tickets/T31-mvp-integration.md`),
+from `ai_tmp/wave/T31/requote-final.txt`. The positive control is `git grep` at
+`611a86e`, with no checkout; long lines are cut at 100 columns:
 
 ```text
-== positive control at 611a86e (git grep, no checkout)
-611a86e:AGENTS.md:5:The workspace holds a library, `libpachinko`, and a service, `pachinko`, built around it. Their domain is not defined yet. ...
-611a86e:AGENTS.md:13:- `docs/specs/` holds the Allium specifications; today it holds one placeholder module.
-611a86e:README.md:10:The domain is not defined yet. The Allium specifications under `docs/specs/` decide
-611a86e:README.md:11:behaviour; today they contain one placeholder module with no declarations. The library
-611a86e:crates/libpachinko/src/lib.rs:4://! The domain is not defined yet, so this crate holds one item. When it grows, it
-611a86e:crates/pachinko/README.md:8:The domain is not defined yet. The Allium specifications under `docs/specs/` will
-611a86e:crates/pachinko/README.md:10:of the library's effect traits. No runtime, transport or HTTP stack has been chosen.
-611a86e:docs/explanation/architecture.md:160:The service has no async runtime, transport or HTTP stack, and none is chosen. Choosing
-611a86e:docs/project/purpose-and-scope.md:44:  no async runtime, transport or HTTP stack. Choosing them before the specifications say
-611a86e:docs/project/repository-map.md:89:| `docs/specs/` | The Allium specifications. ... which declares no behaviour. |
-611a86e:docs/project/terminology.md:49:| Service | `pachinko`, under `crates/pachinko/`: a minimal binary built around the library, ...
+== positive control at 611a86e (git grep, no checkout; cut at 100 columns)
+611a86e:AGENTS.md:5:The workspace holds a library, `libpachinko`, and a service, `pachinko`, built a
+611a86e:AGENTS.md:13:- `docs/specs/` holds the Allium specifications; today it holds one placeholder
+611a86e:README.md:10:The domain is not defined yet. The Allium specifications under `docs/specs/` de
+611a86e:README.md:11:behaviour; today they contain one placeholder module with no declarations. The
+611a86e:crates/libpachinko/src/lib.rs:4://! The domain is not defined yet, so this crate holds one i
+611a86e:crates/pachinko/README.md:8:The domain is not defined yet. The Allium specifications under `
+611a86e:crates/pachinko/README.md:10:of the library's effect traits. No runtime, transport or HTTP s
+611a86e:docs/explanation/architecture.md:160:The service has no async runtime, transport or HTTP sta
+611a86e:docs/project/purpose-and-scope.md:44:  no async runtime, transport or HTTP stack. Choosing t
+611a86e:docs/project/repository-map.md:89:| `docs/specs/` | The Allium specifications. Behaviour is
+611a86e:docs/project/terminology.md:49:| Service | `pachinko`, under `crates/pachinko/`: a minimal b
 611a86e:docs/reference/configuration.md:156:declares nothing, so the code mirrors no figure; see
-611a86e:docs/reference/testing.md:84:states no behaviour, so `just plan-spec pachinko` has nothing to ask for.
-611a86e:docs/tutorials/first-change.md:61:entity, rule, surface or invariant: the domain is not defined yet, and the first change
+611a86e:docs/reference/testing.md:84:states no behaviour, so `just plan-spec pachinko` has nothing t
+611a86e:docs/tutorials/first-change.md:61:entity, rule, surface or invariant: the domain is not defi
 exit 0
-== working tree on top of 0927fe5
+== working tree
 exit 1
 == rg -n 0014 docs
-docs/manifest.yml:51:    {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: ...", ...},
+docs/manifest.yml:51:    {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: The service runtime waits for the specificati
 docs/decisions/0008-std-library.md:32:([decision 0014](0014-service-runtime-deferred.md)). `rust-toolchain.toml` names no
 docs/decisions/0008-std-library.md:138:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
 docs/decisions/0001-library-and-service.md:40:specifications ([decision 0014](0014-service-runtime-deferred.md)).
@@ -540,12 +547,10 @@ docs/decisions/0019-service-runtime-tokio-and-http.md:11:This record supersedes 
 docs/decisions/0019-service-runtime-tokio-and-http.md:16:Decision 0014 chose no async runtime, transport or HTTP stack and named its trigger: the
 docs/decisions/0019-service-runtime-tokio-and-http.md:19:that trigger. The spike 0014 called for then ran as three prototypes, each building the
 docs/decisions/0019-service-runtime-tokio-and-http.md:102:**This record.** It is one fresh record, 0019, that supersedes 0014 and cites PR 38 at
-docs/decisions/0019-service-runtime-tokio-and-http.md:297:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
+docs/decisions/0019-service-runtime-tokio-and-http.md:297:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-def
 == rg -c '^open question' (ticket's rg -c 'open question' prints:)
 13
 8
-== routes before #[cfg(test)]
-12
 ```
 
 The working-tree sweep prints nothing (exit 1). `rg -n '0014' docs` prints only the
@@ -615,7 +620,8 @@ against the tree:
   SIGTERMs after start ("shutdown took longer than 0ms"), and a unit test was red
   (`Err(Task(..0ms..))` against `Ok`). Fixed test-first in A2 (lead-approved `serve.rs`
   deviation): a zero grace cuts at once and joins the tasks unbounded, aborting none, so
-  it is no overrun; a grace above zero is unchanged.
+  it is no overrun; a grace above zero is unchanged. T31-1 round 2 (C1/B1, below) found
+  the unbounded join dropped T29's backstop; C bounds it at 1 second.
   `a_zero_grace_period_cuts_at_once_and_joins_the_tasks_that_end_on_the_cut` went red,
   then green; `a_stop_with_a_zero_grace_period_ends_serve_with_ok` passed before the
   fix too and stays as the `serve`-level guard. After the fix, 30 of 30 SIGTERMs after
@@ -784,10 +790,44 @@ Rerun after the fixes: `just check-docs`, `just metrics` and `just toml-check` e
 the uncommitted fix; at A2 the fresh clone's `just check` above runs all three
 ("Validated 46 pages and 47 canonical topics."; "Quality score: 100.0%").
 
+### T31-1 round 2
+
+Same lenses and harness, `codex exec -m gpt-6-astra -s read-only` (exit 0 each);
+verdicts in `ai_tmp/review/T31-1/verdicts-2.md`. Applied, one writer, in order:
+
+- C2 and B2, `docs/how-to/work-with-the-specs.md:56-57`, a sweep repair: "The root's
+  obligations are not covered by any test yet" was the bootstrap claim step 4's search
+  does not match. C2's wording went in first and B2's replaced it: the obligations are
+  covered by the tagged tests under `crates/libpachinko/tests/queue/` and
+  `crates/pachinko/tests/http.rs`, and a change to the root extends them. The row's
+  Content names only the open-question list; the line is a one-line sweep correction in
+  a listed file. `just check-docs`: "Validated 46 pages and 47 canonical topics."
+- C3: steps 3 and 4 requoted at the final tree (§11), above.
+- C1 and B1, medium (re-rated from high by both triages): A2's zero-grace branch of
+  `drain` joined the tasks with no bound, so a task that ignored the cut would hang
+  shutdown forever, against T29's backstop. Valid; applied by this agent test-first as a
+  lead-approved `serve.rs` deviation. A zero grace still cuts at once and is no
+  overrun, but joins for at most `ZERO_GRACE_BACKSTOP`, 1 second, then falls through to
+  the abort T29's path uses (now the shared `abort`); a grace above zero is unchanged.
+  The new test
+  `a_task_that_ignores_the_cut_under_a_zero_grace_period_is_aborted_after_the_backstop`
+  (a `std::future::pending()` task under `Duration::ZERO`) was red first, hanging to the
+  test's 10-second bound (`FAIL [ 10.011s]`, panicked at "drain returned within the
+  bound"), then green; the two earlier zero-grace tests stay green, and the 18 shutdown
+  tests pass. `configuration.md:47`, the HTTP API's Shutdown section, the module doc
+  and `drain`'s doc comment state the backstop.
+- The stale claim C2 named on a second page, `docs/explanation/specifications.md:43-46`
+  ("Its test plan carries obligations no test yet covers"), was handed back outside
+  Files touched; the lead approved the widened row and this agent rewrote it to say
+  `libpachinko` implements the module and its tests carry the tags.
+
+Two rounds is §14's cap, so no third round ran; the lead reviews the C diff before the
+push.
+
 ### Final `just check`
 
-On `40ff3e7` with this commit's content uncommitted, which is the tree committed as B
-(`git status --short` printed only this file and `tickets/README.md`), exit 0:
+On `d3fef5c` with the round-2 fixes uncommitted, which is the tree committed as C,
+exit 0:
 
 ```text
 All checks passed and the worktree is unchanged.

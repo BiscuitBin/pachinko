@@ -192,8 +192,8 @@ On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener
 accepting, and requests in flight finish. Connections still open after
 `--shutdown-grace-ms` (5000 by default) are cut without a reply, and the owner stops
 taking commands. Anything still running one more grace period later is aborted, and
-`serve` exits non-zero. A grace of 0 cuts at once, waits for the server's tasks to end on
-the cut and aborts none, so a clean stop still exits 0. A client that sees a 503, a refused connection or a cut
+`serve` exits non-zero. A grace of 0 cuts at once and waits up to 1 second for the server's
+tasks to end on the cut before aborting what is left, so a clean stop still exits 0. A client that sees a 503, a refused connection or a cut
 connection during the window retries once the service is back. The queue is in memory,
 so a restarted service starts empty.
 

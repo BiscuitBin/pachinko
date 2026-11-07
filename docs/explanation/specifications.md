@@ -40,10 +40,11 @@ lapses park the pocket until a publish revives it; superseded records and dead
 letters stay visible until they decay. It imports nothing, and
 [Terminology](../project/terminology.md) holds its words.
 
-None of it is implemented. Empty diagnostics and findings say the module is valid,
-not that the library does any of it. Its test plan carries obligations no test yet
-covers; the first implementation change derives those tests, confirms they fail,
-and builds until they pass. Behaviour that outgrows the root's Scope goes in a
+`libpachinko` implements it, and the service serves it over HTTP. Empty diagnostics
+and findings say the module is valid, not that the library does any of it: the tests
+do, each tagged `// obligation:` or `scenario:` with the clause it proves, and
+[Testing](../reference/testing.md) catalogs the scenarios. A change to the root
+updates those tests and tags each new obligation. Behaviour that outgrows the root's Scope goes in a
 module it imports, with explicit boundaries so that each behaviour has an owner.
 
 ## Open questions are a feature

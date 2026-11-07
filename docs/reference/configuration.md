@@ -44,7 +44,7 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | `--max-body-bytes` | `16777216` (16 MiB) | The largest request body any route reads; more is 413 `body_too_large`. At least the minimum above. |
 | `--log-level` | `info` | The most detailed log line written to standard error: `error`, `warn`, `info`, `debug` or `trace`, lower case. Each request writes one line at `debug`. |
 | `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; at least 1. |
-| `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once and then waits for the server's tasks, which end on the cut, aborting none. |
+| `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once, then waits up to 1 second for the server's tasks, which end on the cut, before aborting what is left. |
 | `--sweep-ms` | `1000` (1 second) | How long the ticker waits after each sweep before the next; each sweep lapses the leases and decays the shed entries whose `expires_at` has passed; at least 1. |
 
 The five specification values' defaults are the specification's, which decision 0019
