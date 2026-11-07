@@ -1,7 +1,7 @@
 ---
 id: T30
 title: "Performance evidence, never gated"
-status: todo
+status: done
 depends_on: [T26, T27]
 parallel_with: [T28]
 branch: ticket/t30-performance-evidence
@@ -804,6 +804,74 @@ recorded before and after: `just bench` and the six workloads above. Decision 00
 quotes only the re-measured figures, and the first run's logs stay in
 `ai_tmp/wave/T30/old/`. Every re-measured workload started at a 1-minute load between
 2.32 and 3.99.
+
+### The merge into the wave branch
+
+The lane commit is `1dc708e` on `wave/t30`. The lead had this agent merge it into
+`mvp-inimal-but-sufficient` at `852481c`, where T28 had already merged, with
+`git merge --no-ff wave/t30`, giving the merge commit `462c71a`. Three files conflicted
+with T28's lines, and each kept both lanes' lines:
+
+- `CHANGELOG.md`: both libpachinko Added entries.
+- `docs/how-to/maintain-dependencies.md`: proptest beside the loadgen dependencies.
+- `docs/reference/configuration.md`: T28's proptest development dependency beside the
+  `workloads` bench and the `loadgen/` exclude.
+
+`Cargo.lock` did not conflict, so `just lock` was not run.
+
+The Verification block was rerun at `462c71a`, without the five-run measurements, by
+`ai_tmp/wave/T30/merge-verify.sh`. The figures stand from the lane, measured at `1fdaab3`
+plus this change: the service's source is the same, and T28 changes no service or loadgen
+file. The script quotes each command's last lines and its exit status:
+
+```text
+== 462c71a
+$ just lock-check
+     Locking 0 packages to highest Rust 1.99 compatible versions
+pixi lock --check --offline --dry-run
+✔ Lock-file was already up-to-date
+exit 0
+$ just fmt-check
+cargo fmt --all --check
+cargo fmt --manifest-path fuzz/Cargo.toml --check
+cargo fmt --manifest-path loadgen/Cargo.toml --check
+exit 0
+$ just clippy
+    Checking ureq v3.5.1
+    Checking pachinko-loadgen v0.0.0 (/Users/scutting/.supacode/repos/pachinko/mvp-inimal-but-sufficient/loadgen)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.71s
+exit 0
+$ just build
+   Compiling libpachinko v0.1.0 (/Users/scutting/.supacode/repos/pachinko/mvp-inimal-but-sufficient/crates/libpachinko)
+   Compiling pachinko v0.1.0 (/Users/scutting/.supacode/repos/pachinko/mvp-inimal-but-sufficient/crates/pachinko)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.82s
+exit 0
+$ just test-loadgen
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit 0
+$ just loadgen --help
+    --pockets        1000, the pockets keys spread over round-robin
+    --payload-bytes  64
+    --fill           1000000, the records a consume run's fill publishes
+exit 0
+$ just loadgen publish --base-url http://127.0.0.1:1 --seconds 1 --runs 1
+publish against http://127.0.0.1:1: C=64 b=1 P=1000 payload 64 bytes, 1 runs, 1s each
+run 1: 64 errors, no rate
+error: recipe `loadgen` failed on line 116 with exit code 1
+exit 1
+$ rg -n 'three lock' docs/
+docs/decisions/0016-release-process.md:63:The recipe checks all three locks first and runs offline because cargo-semver-checks
+exit 0
+$ just check-docs
+lychee...................................................................Passed
+bg-validate-docs
+Validated 46 pages and 47 canonical topics.
+exit 0
+```
+
+The `rg` line is C3 of T30-2, handed back to T31.
 
 ## Open points
 
