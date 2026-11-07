@@ -93,6 +93,29 @@ impl Client {
     fn lease(&self, consumer: &str) -> (u16, Value) {
         self.send("GET", &format!("/consumers/{consumer}/lease"), None)
     }
+
+    /// `POST /leases/{lease}/{action}` with `body`.
+    fn act(&self, lease: &str, action: &str, body: &Value) -> (u16, Value) {
+        self.json("POST", &format!("/leases/{lease}/{action}"), body)
+    }
+
+    fn ack(&self, consumer: &str, lease: &str, key: &str) -> (u16, Value) {
+        let body = json!({"consumer_id": consumer, "record_key": key});
+        self.act(lease, "ack", &body)
+    }
+
+    fn nack(&self, consumer: &str, lease: &str, key: &str) -> (u16, Value) {
+        let body = json!({"consumer_id": consumer, "record_key": key});
+        self.act(lease, "nack", &body)
+    }
+
+    fn renew(&self, consumer: &str, lease: &str) -> (u16, Value) {
+        self.act(lease, "renew", &json!({"consumer_id": consumer}))
+    }
+
+    fn release(&self, consumer: &str, lease: &str) -> (u16, Value) {
+        self.act(lease, "release", &json!({"consumer_id": consumer}))
+    }
 }
 
 /// `text` with every byte outside the URL's unreserved set percent-encoded.
@@ -348,4 +371,203 @@ fn bad_requests(client: &Client) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_request_that_cannot_be_read_is_bad_request() {
     serve_while(bad_requests).await;
+}
+
+/// The lease id a batch reply names.
+fn lease_of(batch: &Value) -> String {
+    batch["lease_id"].as_str().unwrap().to_owned()
+}
+
+/// A well-formed lease id no pull has handed out.
+const UNKNOWN_LEASE: &str = "0123456789abcdef0123456789abcdef";
+
+// scenario: S040 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.AckSettlesRecord
+fn ack_settles(client: &Client) {
+    joined(client, &["c1"]);
+    assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
+    let lease = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(
+        client.ack("c1", &lease, "k"),
+        (200, json!({"outcome": "settled"}))
+    );
+    assert_eq!(client.lease("c1").1["records"], json!([]));
+    assert_eq!(
+        refused(client.ack("c1", &lease, "k"), 404),
+        "record_not_held"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ack_settles_a_held_record_over_http() {
+    serve_while(ack_settles).await;
+}
+
+// scenario: S047 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.NackSettlesRecord
+fn nack_dead_letters(client: &Client) {
+    joined(client, &["c1"]);
+    assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
+    let lease = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(
+        client.nack("c1", &lease, "k"),
+        (200, json!({"outcome": "settled"}))
+    );
+    let (status, again) = client.pull("c1", 10);
+    assert_eq!((status, lease_of(&again)), (200, lease));
+    assert_eq!(again["records"], json!([]), "no redelivery");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_nack_does_not_redeliver_over_http() {
+    serve_while(nack_dead_letters).await;
+}
+
+// scenario: S050 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.Renew
+fn renew_extends(client: &Client) {
+    joined(client, &["c1"]);
+    assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
+    let batch = client.pull("c1", 10).1;
+    let lease = lease_of(&batch);
+    // The server reads a real millisecond clock: step past the pull's millisecond.
+    std::thread::sleep(Duration::from_millis(5));
+    let (status, renewed) = client.renew("c1", &lease);
+    assert_eq!(status, 200);
+    let expires_at = renewed["expires_at"].as_u64().unwrap();
+    assert!(
+        expires_at > batch["expires_at"].as_u64().unwrap(),
+        "renew extends the lease"
+    );
+    assert_eq!(client.lease("c1").1["expires_at"], json!(expires_at));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_renew_answers_the_new_expiry_over_http() {
+    serve_while(renew_extends).await;
+}
+
+// scenario: S053 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.ReleaseRequeuesPocket
+// obligation: rule-success.ReleaseIdlesEmptyPocket
+fn release_requeues(client: &Client) {
+    joined(client, &["c1"]);
+    for (pocket, key) in [("a", "a1"), ("a", "a2"), ("b", "b1")] {
+        assert_eq!(client.publish(pocket, key, 1, key.as_bytes()).0, 200);
+    }
+    let lease = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(client.ack("c1", &lease, "a1").0, 200);
+    assert_eq!(
+        client.release("c1", &lease),
+        (200, json!({"pocket": "queued"}))
+    );
+    assert_eq!(client.lease("c1"), (204, Value::Null));
+    let (_, next) = client.pull("c1", 10);
+    assert_eq!(next["pocket_key"], json!("b"));
+    let b = lease_of(&next);
+    assert_eq!(client.ack("c1", &b, "b1").0, 200);
+    assert_eq!(client.release("c1", &b), (200, json!({"pocket": "idle"})));
+    let (_, again) = client.pull("c1", 10);
+    assert_eq!(again["pocket_key"], json!("a"));
+    assert_eq!(records(&again), [record("a2", 1, b"a2")]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_release_requeues_or_idles_the_pocket_over_http() {
+    serve_while(release_requeues).await;
+}
+
+// scenario: S068 (exercised over HTTP; the library test owns it)
+// obligation: guarantee.ActionsNameTheirLease
+fn old_lease_fenced(client: &Client) {
+    joined(client, &["c1", "c2"]);
+    assert_eq!(client.publish("pk", "k", 1, b"v1").0, 200);
+    let old = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(client.release("c1", &old).0, 200);
+    let new = lease_of(&client.pull("c1", 10).1);
+    assert_ne!(new, old);
+    assert_eq!(
+        refused(client.ack("c1", &old, "k"), 409),
+        "lease_not_active"
+    );
+    assert_eq!(
+        refused(client.nack("c1", &old, "k"), 409),
+        "lease_not_active"
+    );
+    assert_eq!(refused(client.renew("c1", &old), 409), "lease_not_active");
+    assert_eq!(refused(client.release("c1", &old), 409), "lease_not_active");
+    assert_eq!(refused(client.ack("c2", &new, "k"), 403), "lease_not_yours");
+    assert_eq!(
+        client.ack("c1", &new, "k"),
+        (200, json!({"outcome": "settled"}))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_old_lease_is_refused_after_the_pocket_is_claimed_again_over_http() {
+    serve_while(old_lease_fenced).await;
+}
+
+/// `act` by a consumer that never joined, on a well-formed unknown lease, is 404
+/// `unknown_consumer`: the consumer is checked before any lease guard.
+fn unjoined(client: &Client, act: fn(&Client) -> (u16, Value)) {
+    joined(client, &["c1"]);
+    assert_eq!(refused(act(client), 404), "unknown_consumer");
+}
+
+fn ack_unjoined(client: &Client) {
+    unjoined(client, |c| c.ack("nobody", UNKNOWN_LEASE, "k"));
+}
+
+fn nack_unjoined(client: &Client) {
+    unjoined(client, |c| c.nack("nobody", UNKNOWN_LEASE, "k"));
+}
+
+fn renew_unjoined(client: &Client) {
+    unjoined(client, |c| c.renew("nobody", UNKNOWN_LEASE));
+}
+
+fn release_unjoined(client: &Client) {
+    unjoined(client, |c| c.release("nobody", UNKNOWN_LEASE));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ack_by_an_unjoined_consumer_is_unknown_consumer() {
+    serve_while(ack_unjoined).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_nack_by_an_unjoined_consumer_is_unknown_consumer() {
+    serve_while(nack_unjoined).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_renew_by_an_unjoined_consumer_is_unknown_consumer() {
+    serve_while(renew_unjoined).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_release_by_an_unjoined_consumer_is_unknown_consumer() {
+    serve_while(release_unjoined).await;
+}
+
+fn malformed_lease_ids(client: &Client) {
+    joined(client, &["c1"]);
+    let upper = UNKNOWN_LEASE.to_uppercase();
+    for lease in ["xyz", &upper, "0123456789abcdef0123456789abcdef0"] {
+        assert_eq!(
+            refused(client.renew("c1", lease), 400),
+            "bad_request",
+            "{lease}"
+        );
+        assert_eq!(
+            refused(client.ack("nobody", lease, "k"), 400),
+            "bad_request"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_malformed_lease_id_is_bad_request() {
+    serve_while(malformed_lease_ids).await;
 }

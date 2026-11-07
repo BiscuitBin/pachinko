@@ -5,11 +5,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::types::{PocketStatus, Publication, PublishOutcome, ShedReason, SupersededRecord};
+use super::types::{
+    PocketFate, PocketStatus, Publication, PublishOutcome, SettleOutcome, ShedReason,
+    SupersededRecord,
+};
 use crate::clock::Timestamp;
 use crate::error::PublishError;
 use crate::ids::{Payload, PocketKey, Position, Rank, RecordKey};
-use crate::records::{HeldRecord, PocketRecords};
+use crate::records::{HeldRecord, PocketRecords, RecordStatus};
 
 /// One pocket.
 #[derive(Clone, Debug)]
@@ -54,9 +57,10 @@ const fn take_position(next_position: &mut Position) -> Position {
 }
 
 /// The `PocketTouched` dispatch every publish into an existing pocket ends in. A
-/// queued or leased pocket is untouched. The idle arm is `ReviveIdlePocket` (owned
-/// by T25) and the parked arm `ReviveParkedPocket` (owned by T26): either way the
-/// pocket rejoins the order at the back with its expiry count reset.
+/// queued or leased pocket is untouched. The idle arm is `ReviveIdlePocket`, which
+/// a release that idles a pocket first makes reachable, and the parked arm
+/// `ReviveParkedPocket` (owned by T26): either way the pocket rejoins the order at
+/// the back with its expiry count reset.
 fn touch<R>(
     key: &PocketKey,
     pocket: &mut Pocket<R>,
@@ -190,6 +194,63 @@ impl<R: PocketRecords> Pockets<R> {
             .get(key)
             .map(|pocket| pocket.records.held())
             .unwrap_or_default()
+    }
+
+    /// Whether the pocket holds the record `key`: the ack and nack rules' last two
+    /// guards, `exists record` and `record.status = held`.
+    pub(super) fn is_held(&self, pocket_key: &PocketKey, key: &RecordKey) -> bool {
+        self.by_key
+            .get(pocket_key)
+            .and_then(|pocket| pocket.records.lookup(key))
+            .is_some_and(|record| matches!(record.status, RecordStatus::Held { .. }))
+    }
+
+    /// The ack and nack rules' split on a held record: with `held_rank = rank` the
+    /// record is removed (`AckSettlesRecord`, `NackSettlesRecord`); with
+    /// `held_rank < rank` it is deferred at a fresh position from `next_position`
+    /// (`AckDefersNewerVersion`, `NackDefersNewerVersion`). Returns the rule taken
+    /// and the held version, or `None`, changing nothing, when the record is not
+    /// held.
+    pub(super) fn settle(
+        &mut self,
+        pocket_key: &PocketKey,
+        key: &RecordKey,
+    ) -> Option<(SettleOutcome, HeldRecord)> {
+        let pocket = self.by_key.get_mut(pocket_key)?;
+        let record = pocket.records.lookup(key)?;
+        let RecordStatus::Held {
+            rank: held_rank, ..
+        } = record.status
+        else {
+            return None;
+        };
+        if held_rank == record.rank {
+            let held = pocket.records.settle(key)?;
+            return Some((SettleOutcome::Settled, held));
+        }
+        let position = take_position(&mut self.next_position);
+        let held = pocket.records.defer(key, position)?;
+        Some((SettleOutcome::Deferred, held))
+    }
+
+    /// A release's pocket step: every held and deferred record back to queued at
+    /// its own position in one `free_held` (`RequeueHeldRecord`,
+    /// `RequeueDeferredRecord`); then, with records left, the pocket rejoins the
+    /// order at the back (`ReleaseRequeuesPocket`), and with none it goes idle
+    /// (`ReleaseIdlesEmptyPocket`). Either way its expiry count resets. `None`
+    /// when no such pocket exists.
+    pub(super) fn release(&mut self, pocket_key: &PocketKey) -> Option<PocketFate> {
+        let pocket = self.by_key.get_mut(pocket_key)?;
+        pocket.records.free_held();
+        pocket.consecutive_expiries = 0;
+        if pocket.records.record_count() == 0 {
+            pocket.status = PocketStatus::Idle;
+            return Some(PocketFate::Idle);
+        }
+        pocket.status = PocketStatus::Queued;
+        pocket.position = take_position(&mut self.next_position);
+        self.order.insert((pocket.position, pocket_key.clone()));
+        Some(PocketFate::Queued)
     }
 
     /// The specification's `Queue.next_position`.

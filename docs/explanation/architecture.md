@@ -144,7 +144,7 @@ checks in order.
 | `lease_ids` | `LeaseId`, an opaque `u128` written as 32 lower-case hex digits; the `LeaseIds` trait; `CountingLeaseIds` |
 | `ids` | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `Position` |
 | `config` | `Config`, the specification's five values with its defaults, and `Config::check` |
-| `error` | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `ConfigError` |
+| `error` | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError` |
 | `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the `contract` behind `testing` |
 | `queue` | `Queue`, its operations and the values they take and return |
 
@@ -175,11 +175,27 @@ lease registry indexed by expiry, the shed queue of superseded records, and the 
 share only what the clock and lease-id source share between clones. Behind `testing`,
 `Queue::snapshot` shows every entity as values, for tests.
 
+**The lease actions and fencing.** `ack`, `nack`, `renew` and `release` each name the
+lease they act under, and check, in the order of the rules' `requires` and before any
+effect, that the consumer has joined, that the lease is in the active registry, that it
+is the consumer's, and, for ack and nack, that its pocket holds the record. A refused
+action changes nothing, its lease's `expires_at` included. The registry holds only
+active leases: an ended lease leaves both its id index and its expiry index and is
+returned to the caller as it ended, never kept. So an ended lease is unknown rather than
+remembered, one refusal covers a lease that ended and one that never existed, the
+registry and the lapse sweep T26 adds stay the size of the live leases, and an action
+for an old lease cannot land on a new lease over the same pocket, because the new lease
+has a new id. No action compares `expires_at` with the clock: a lease the registry
+holds is active, and the owner's serialization orders a late action against a lapse
+(decision 0019). A nack's dead letter sits in the shed queue beside the superseded
+records, keyed by expiry and arrival for the decay.
+
 **A rule's code may land before its owner.** A rule is owned by the ticket whose test
 pins it. Every publish into an existing pocket ends in the `PocketTouched` dispatch, and
 its idle and parked arms, `ReviveIdlePocket` and `ReviveParkedPocket`, landed with
-publish in T23, although no pocket can be idle or parked until T25 and T26 add release
-and expiry; those tickets own the two rules and their tests.
+publish in T23. A release first makes a pocket idle, and T25 owns `ReviveIdlePocket`
+and its test; no pocket can be parked until T26 adds expiry, and T26 owns
+`ReviveParkedPocket`.
 
 ## What crosses the boundary
 

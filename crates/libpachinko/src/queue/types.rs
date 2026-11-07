@@ -285,3 +285,79 @@ pub struct SupersededRecord {
     /// When it decays: `shed_at` plus `superseded_ttl`.
     pub expires_at: Timestamp,
 }
+
+/// Which rule took an ack or nack.
+///
+/// ```
+/// use libpachinko::queue::SettleOutcome;
+/// assert_ne!(SettleOutcome::Settled, SettleOutcome::Deferred);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SettleOutcome {
+    /// `AckSettlesRecord` or `NackSettlesRecord`: the held version was the latest,
+    /// and the record is gone.
+    Settled,
+    /// `AckDefersNewerVersion` or `NackDefersNewerVersion`: a newer version arrived
+    /// while the key was held, so the record is deferred at a fresh position until
+    /// the lease ends.
+    Deferred,
+}
+
+/// Where a release left the pocket.
+///
+/// ```
+/// use libpachinko::queue::PocketFate;
+/// assert_ne!(PocketFate::Queued, PocketFate::Idle);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PocketFate {
+    /// `ReleaseRequeuesPocket`: it had records, held, deferred or queued, and is
+    /// back in the pocket order at the back.
+    Queued,
+    /// `ReleaseIdlesEmptyPocket`: it had no records and is idle until a publish
+    /// revives it.
+    Idle,
+}
+
+/// A nacked payload, kept visible until it decays.
+///
+/// ```
+/// use libpachinko::queue::{PullOutcome, SettleOutcome};
+/// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
+/// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+/// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
+/// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
+/// # let publisher = PublisherId::new("p");
+/// # queue.publisher_joins(publisher.clone()).unwrap();
+/// # let consumer = ConsumerId::new("c");
+/// # queue.consumer_joins(consumer.clone()).unwrap();
+/// # let publication = Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(1), Payload::default());
+/// queue.publish(&publisher, publication).unwrap();
+/// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&consumer, 1) else { panic!() };
+/// assert_eq!(queue.nack(&consumer, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Settled));
+/// # #[cfg(feature = "testing")] {
+/// let letter = &queue.snapshot().dead_letters[0];
+/// assert_eq!(letter.nacked_by, consumer);
+/// assert!(letter.nacked_at <= letter.expires_at);
+/// # }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct DeadLetter {
+    /// The pocket the record was in.
+    pub pocket_key: PocketKey,
+    /// The record key.
+    pub key: RecordKey,
+    /// The held rank that was nacked.
+    pub rank: Rank,
+    /// The held payload that was nacked.
+    pub payload: Payload,
+    /// The consumer that nacked it.
+    pub nacked_by: ConsumerId,
+    /// When it was nacked.
+    pub nacked_at: Timestamp,
+    /// When it decays: `nacked_at` plus `dead_letter_ttl`.
+    pub expires_at: Timestamp,
+}

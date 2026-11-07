@@ -8,12 +8,12 @@ use std::time::Duration;
 
 use libpachinko::clock::{FakeClock, Timestamp};
 use libpachinko::config::Config;
-use libpachinko::error::{PublishError, PullError};
+use libpachinko::error::{LeaseActionError, PublishError, PullError};
 use libpachinko::ids::{ConsumerId, Payload, PocketKey, Position, PublisherId, Rank, RecordKey};
 use libpachinko::lease_ids::{CountingLeaseIds, LeaseId};
 use libpachinko::queue::{
-    LeaseStatus, LeaseView, PocketStatus, PocketView, Publication, PublishOutcome, PullOutcome,
-    Queue, Snapshot,
+    Lease, LeaseStatus, LeaseView, PocketFate, PocketStatus, PocketView, Publication,
+    PublishOutcome, PullOutcome, Queue, SettleOutcome, Snapshot,
 };
 use libpachinko::records::{HeldRecord, MemoryRecords, RecordStatus, RecordView};
 
@@ -25,6 +25,9 @@ pub(crate) const LEASE_TTL: Duration = Duration::from_millis(1_000);
 
 /// A short superseded TTL.
 pub(crate) const SUPERSEDED_TTL: Duration = Duration::from_millis(5_000);
+
+/// A short dead-letter TTL, unlike the other two so a mix-up shows.
+pub(crate) const DEAD_LETTER_TTL: Duration = Duration::from_millis(7_000);
 
 pub(crate) type TestQueue = Queue<MemoryRecords, FakeClock, CountingLeaseIds>;
 
@@ -47,6 +50,7 @@ pub(crate) fn config() -> Config {
     let mut config = Config::default();
     config.lease_ttl = LEASE_TTL;
     config.superseded_ttl = SUPERSEDED_TTL;
+    config.dead_letter_ttl = DEAD_LETTER_TTL;
     config
 }
 
@@ -143,6 +147,59 @@ impl Fixture {
             .unwrap_or_else(|| panic!("no record {record_key} in {pocket_key}"))
     }
 
+    pub(crate) fn ack(
+        &mut self,
+        consumer_id: &str,
+        lease: LeaseId,
+        record_key: &str,
+    ) -> Result<SettleOutcome, LeaseActionError> {
+        self.queue
+            .ack(&consumer(consumer_id), lease, &RecordKey::new(record_key))
+    }
+
+    pub(crate) fn nack(
+        &mut self,
+        consumer_id: &str,
+        lease: LeaseId,
+        record_key: &str,
+    ) -> Result<SettleOutcome, LeaseActionError> {
+        self.queue
+            .nack(&consumer(consumer_id), lease, &RecordKey::new(record_key))
+    }
+
+    pub(crate) fn renew(
+        &mut self,
+        consumer_id: &str,
+        lease: LeaseId,
+    ) -> Result<Timestamp, LeaseActionError> {
+        self.queue.renew(&consumer(consumer_id), lease)
+    }
+
+    pub(crate) fn release(
+        &mut self,
+        consumer_id: &str,
+        lease: LeaseId,
+    ) -> Result<(PocketFate, Lease), LeaseActionError> {
+        self.queue.release(&consumer(consumer_id), lease)
+    }
+
+    /// Runs `action`, which must be refused with `expected`, and checks that the
+    /// queue's snapshot is the same after as before.
+    pub(crate) fn refused<T: std::fmt::Debug>(
+        &mut self,
+        expected: &LeaseActionError,
+        action: impl FnOnce(&mut Self) -> Result<T, LeaseActionError>,
+    ) {
+        let before = self.snapshot();
+        let outcome = action(self);
+        assert_eq!(outcome.unwrap_err(), *expected);
+        assert_eq!(
+            self.snapshot(),
+            before,
+            "a refused action changed the queue"
+        );
+    }
+
     /// The pocket keys in the pocket order, front first.
     pub(crate) fn order(&self) -> Vec<String> {
         self.snapshot()
@@ -168,7 +225,9 @@ fn distinct<T: Ord>(items: impl IntoIterator<Item = T>) -> bool {
 
 /// Every state invariant this ticket owns, each by its specification name.
 pub(crate) mod invariants {
-    use super::{BTreeSet, LeaseStatus, PocketStatus, Position, RecordStatus, Snapshot, distinct};
+    use super::{
+        BTreeSet, Lease, LeaseStatus, PocketStatus, Position, RecordStatus, Snapshot, distinct,
+    };
 
     pub(crate) fn unique_publisher_id(s: &Snapshot) {
         assert!(distinct(s.publishers.iter()), "UniquePublisherId");
@@ -359,5 +418,63 @@ pub(crate) mod invariants {
             s.pocket_order, queued,
             "the pocket order is the queued pockets"
         );
+    }
+
+    pub(crate) fn idle_has_no_records(s: &Snapshot) {
+        for pocket in s.pockets.iter().filter(|p| p.status == PocketStatus::Idle) {
+            assert!(
+                pocket.records.is_empty(),
+                "IdleHasNoRecords: {}",
+                pocket.key
+            );
+        }
+    }
+
+    pub(crate) fn nacked_before_expiry(s: &Snapshot) {
+        for letter in &s.dead_letters {
+            assert!(
+                letter.nacked_at <= letter.expires_at,
+                "NackedBeforeExpiry: {}",
+                letter.key
+            );
+        }
+    }
+
+    /// `EndedAfterGrant` over a lease as it ended: the registry keeps no ended
+    /// lease, so the check reads the one an end returned.
+    pub(crate) fn ended_after_grant(lease: &Lease) {
+        match lease.status {
+            LeaseStatus::Released { ended_at } | LeaseStatus::Expired { ended_at } => {
+                assert!(
+                    ended_at >= lease.granted_at,
+                    "EndedAfterGrant: {}",
+                    lease.id
+                );
+            }
+            _ => panic!("EndedAfterGrant: {} has not ended", lease.id),
+        }
+    }
+
+    /// Every state invariant, for a test that wants them all after its steps.
+    pub(crate) fn all(s: &Snapshot) {
+        unique_publisher_id(s);
+        unique_consumer_id(s);
+        one_pocket_per_key(s);
+        one_record_per_key_per_pocket(s);
+        unique_pocket_position(s);
+        unique_record_position(s);
+        pocket_positions_below_next(s);
+        record_positions_below_next(s);
+        leased_has_one_active_lease(s);
+        unleased_has_no_active_lease(s);
+        one_active_lease_per_pocket(s);
+        one_active_lease_per_consumer(s);
+        granted_before_expiry(s);
+        held_version_not_newer(s);
+        outstanding_only_while_leased(s);
+        shed_before_expiry(s);
+        order_is_the_queued_pockets(s);
+        idle_has_no_records(s);
+        nacked_before_expiry(s);
     }
 }

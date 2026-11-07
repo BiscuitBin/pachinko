@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::types::{Lease, LeaseStatus};
 use crate::clock::Timestamp;
+use crate::error::LeaseActionError;
 use crate::ids::{ConsumerId, PocketKey};
 use crate::lease_ids::LeaseId;
 
@@ -15,21 +17,7 @@ use crate::lease_ids::LeaseId;
 #[derive(Clone, Debug)]
 pub(super) struct Active {
     pub(super) pocket_key: PocketKey,
-    #[cfg_attr(
-        not(feature = "testing"),
-        expect(
-            dead_code,
-            reason = "read by the snapshot today; T25's fencing and T26's lapse report read it"
-        )
-    )]
     pub(super) consumer_id: ConsumerId,
-    #[cfg_attr(
-        not(feature = "testing"),
-        expect(
-            dead_code,
-            reason = "read by the snapshot today; T25's fencing and T26's lapse report read it"
-        )
-    )]
     pub(super) granted_at: Timestamp,
     pub(super) expires_at: Timestamp,
 }
@@ -68,6 +56,46 @@ impl Leases {
         Some(lease.pocket_key.clone())
     }
 
+    /// The fencing guards, in rule order: the lease is active
+    /// ([`LeaseActionError::LeaseNotActive`], which an ended lease and one that
+    /// never existed share), then it is `consumer_id`'s
+    /// ([`LeaseActionError::LeaseNotYours`]). Returns its pocket key.
+    pub(super) fn check(
+        &self,
+        id: LeaseId,
+        consumer_id: &ConsumerId,
+    ) -> Result<PocketKey, LeaseActionError> {
+        let lease = self
+            .active
+            .get(&id)
+            .ok_or(LeaseActionError::LeaseNotActive(id))?;
+        if &lease.consumer_id != consumer_id {
+            return Err(LeaseActionError::LeaseNotYours(id));
+        }
+        Ok(lease.pocket_key.clone())
+    }
+
+    /// Ends the active lease `id` as released at `ended_at`: it leaves both
+    /// indexes and is returned as it ended, its `expires_at` untouched.
+    pub(super) fn end(&mut self, id: LeaseId, ended_at: Timestamp) -> Option<Lease> {
+        let lease = self.active.remove(&id)?;
+        self.by_expiry.remove(&(lease.expires_at, id));
+        Some(Lease {
+            id,
+            pocket_key: lease.pocket_key,
+            consumer_id: lease.consumer_id,
+            status: LeaseStatus::Released { ended_at },
+            granted_at: lease.granted_at,
+            expires_at: lease.expires_at,
+        })
+    }
+
+    /// The expiry index, earliest first.
+    #[cfg(test)]
+    pub(super) fn by_expiry(&self) -> Vec<(Timestamp, LeaseId)> {
+        self.by_expiry.iter().copied().collect()
+    }
+
     /// Every active lease, by id.
     #[cfg(feature = "testing")]
     pub(super) fn all(&self) -> impl Iterator<Item = (&LeaseId, &Active)> {
@@ -79,8 +107,10 @@ impl Leases {
 mod tests {
     use super::{Active, Leases};
     use crate::clock::Timestamp;
+    use crate::error::LeaseActionError;
     use crate::ids::{ConsumerId, PocketKey};
     use crate::lease_ids::LeaseId;
+    use crate::queue::types::LeaseStatus;
 
     fn lease(pocket: &str, expires_at: u64) -> Active {
         Active {
@@ -114,6 +144,46 @@ mod tests {
         assert_eq!(
             leases.extend(LeaseId::from_u128(3), Timestamp::from_millis(1)),
             None
+        );
+    }
+
+    #[test]
+    fn check_reports_not_active_before_not_yours() {
+        let mut leases = Leases::default();
+        let (one, gone) = (LeaseId::from_u128(1), LeaseId::from_u128(2));
+        leases.grant(one, lease("a", 10));
+        let (mine, theirs) = (ConsumerId::new("c"), ConsumerId::new("d"));
+        assert_eq!(leases.check(one, &mine), Ok(PocketKey::new("a")));
+        assert_eq!(
+            leases.check(one, &theirs),
+            Err(LeaseActionError::LeaseNotYours(one))
+        );
+        assert_eq!(
+            leases.check(gone, &theirs),
+            Err(LeaseActionError::LeaseNotActive(gone))
+        );
+    }
+
+    #[test]
+    fn an_ended_lease_leaves_both_indexes_and_keeps_its_expiry() {
+        let mut leases = Leases::default();
+        let (one, two) = (LeaseId::from_u128(1), LeaseId::from_u128(2));
+        leases.grant(one, lease("a", 10));
+        leases.grant(two, lease("b", 10));
+        let ended = leases.end(one, Timestamp::from_millis(4)).unwrap();
+        assert_eq!(
+            ended.status,
+            LeaseStatus::Released {
+                ended_at: Timestamp::from_millis(4)
+            }
+        );
+        assert_eq!(ended.expires_at, Timestamp::from_millis(10));
+        assert!(!leases.is_active(one));
+        assert_eq!(leases.by_expiry(), [(Timestamp::from_millis(10), two)]);
+        assert_eq!(leases.end(one, Timestamp::from_millis(5)), None);
+        assert_eq!(
+            leases.check(one, &ConsumerId::new("c")),
+            Err(LeaseActionError::LeaseNotActive(one))
         );
     }
 }

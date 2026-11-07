@@ -12,9 +12,13 @@
 //! owner applies the pull, keeps the lease until it lapses (T26); the reply is then
 //! dropped, as every unwanted reply is.
 
-use libpachinko::error::{JoinError, PublishError, PullError};
-use libpachinko::ids::{ConsumerId, PublisherId};
-use libpachinko::queue::{LeaseView, Publication, PublishOutcome, PullOutcome, Queue};
+use libpachinko::clock::Timestamp;
+use libpachinko::error::{JoinError, LeaseActionError, PublishError, PullError};
+use libpachinko::ids::{ConsumerId, PublisherId, RecordKey};
+use libpachinko::lease_ids::LeaseId;
+use libpachinko::queue::{
+    Lease, LeaseView, PocketFate, Publication, PublishOutcome, PullOutcome, Queue, SettleOutcome,
+};
 use libpachinko::records::MemoryRecords;
 use tokio::sync::{mpsc, oneshot};
 
@@ -62,6 +66,33 @@ pub(crate) enum Command {
     LeaseView {
         consumer_id: ConsumerId,
         reply: Reply<Result<Option<LeaseView>, PullError>>,
+    },
+    /// `Ack` of `record_key` under `lease`.
+    Ack {
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        record_key: RecordKey,
+        reply: Reply<Result<SettleOutcome, LeaseActionError>>,
+    },
+    /// `Nack` of `record_key` under `lease`.
+    Nack {
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        record_key: RecordKey,
+        reply: Reply<Result<SettleOutcome, LeaseActionError>>,
+    },
+    /// `Renew` of `lease`: the answer is the new `expires_at`.
+    Renew {
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        reply: Reply<Result<Timestamp, LeaseActionError>>,
+    },
+    /// `Release` of `lease`: the answer is where the pocket went and the lease as
+    /// it ended.
+    Release {
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        reply: Reply<Result<(PocketFate, Lease), LeaseActionError>>,
     },
 }
 
@@ -150,6 +181,66 @@ impl QueueHandle {
         self.ask(|reply| Command::LeaseView { consumer_id, reply })
             .await
     }
+
+    /// `Ack` of `record_key` under `lease` by `consumer_id`.
+    pub(crate) async fn ack(
+        &self,
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        record_key: RecordKey,
+    ) -> Result<Result<SettleOutcome, LeaseActionError>, Stopped> {
+        self.ask(|reply| Command::Ack {
+            consumer_id,
+            lease,
+            record_key,
+            reply,
+        })
+        .await
+    }
+
+    /// `Nack` of `record_key` under `lease` by `consumer_id`.
+    pub(crate) async fn nack(
+        &self,
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+        record_key: RecordKey,
+    ) -> Result<Result<SettleOutcome, LeaseActionError>, Stopped> {
+        self.ask(|reply| Command::Nack {
+            consumer_id,
+            lease,
+            record_key,
+            reply,
+        })
+        .await
+    }
+
+    /// `Renew` of `lease` by `consumer_id`.
+    pub(crate) async fn renew(
+        &self,
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+    ) -> Result<Result<Timestamp, LeaseActionError>, Stopped> {
+        self.ask(|reply| Command::Renew {
+            consumer_id,
+            lease,
+            reply,
+        })
+        .await
+    }
+
+    /// `Release` of `lease` by `consumer_id`.
+    pub(crate) async fn release(
+        &self,
+        consumer_id: ConsumerId,
+        lease: LeaseId,
+    ) -> Result<Result<(PocketFate, Lease), LeaseActionError>, Stopped> {
+        self.ask(|reply| Command::Release {
+            consumer_id,
+            lease,
+            reply,
+        })
+        .await
+    }
 }
 
 /// The handle to `queue`'s owner and the owner itself, a future the caller spawns
@@ -210,6 +301,28 @@ fn apply(
         Command::LeaseView { consumer_id, reply } => {
             answer(reply, queue.lease_view(&consumer_id));
         }
+        Command::Ack {
+            consumer_id,
+            lease,
+            record_key,
+            reply,
+        } => answer(reply, queue.ack(&consumer_id, lease, &record_key)),
+        Command::Nack {
+            consumer_id,
+            lease,
+            record_key,
+            reply,
+        } => answer(reply, queue.nack(&consumer_id, lease, &record_key)),
+        Command::Renew {
+            consumer_id,
+            lease,
+            reply,
+        } => answer(reply, queue.renew(&consumer_id, lease)),
+        Command::Release {
+            consumer_id,
+            lease,
+            reply,
+        } => answer(reply, queue.release(&consumer_id, lease)),
     }
     Ok(())
 }

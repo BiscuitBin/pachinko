@@ -15,13 +15,16 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use libpachinko::error::{JoinError, PublishError, PullError};
+use libpachinko::error::{JoinError, LeaseActionError, PublishError, PullError};
 use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
+use libpachinko::lease_ids::LeaseId;
 use libpachinko::queue::{LeaseView, Publication, PublishOutcome, PullOutcome};
 use libpachinko::records::HeldRecord;
 use serde::{Deserialize, Serialize};
 
 use crate::actor::{QueueHandle, Stopped};
+
+mod leases;
 
 /// What every handler shares: the handle to the queue's owner.
 #[derive(Clone, Debug)]
@@ -38,6 +41,10 @@ pub(crate) fn router(queue: QueueHandle) -> Router {
         .route("/pockets/{pocket_key}/records/{record_key}", put(publish))
         .route("/consumers/{consumer_id}/pull", post(pull))
         .route("/consumers/{consumer_id}/lease", get(lease))
+        .route("/leases/{lease_id}/ack", post(leases::ack))
+        .route("/leases/{lease_id}/nack", post(leases::nack))
+        .route("/leases/{lease_id}/renew", post(leases::renew))
+        .route("/leases/{lease_id}/release", post(leases::release))
         .layer(middleware::from_fn(log_request))
         .with_state(AppState { queue })
 }
@@ -71,6 +78,15 @@ pub(crate) enum Refusal {
         /// The rank both the stored record and the publish carry.
         rank: Rank,
     },
+    /// A lease action named a lease that has ended or never existed.
+    #[error("lease {0} is not active")]
+    LeaseNotActive(LeaseId),
+    /// A lease action named another consumer's active lease.
+    #[error("lease {0} is not this consumer's")]
+    LeaseNotYours(LeaseId),
+    /// An ack or nack named a record the lease's pocket does not hold.
+    #[error("record {0} is not held under this lease")]
+    RecordNotHeld(RecordKey),
     /// The request could not be read: a malformed body, path or payload.
     #[error("{0}")]
     BadRequest(String),
@@ -84,10 +100,14 @@ impl Refusal {
     /// The status the refusal is answered with.
     pub(crate) const fn status(&self) -> StatusCode {
         match self {
-            Self::PublisherExists(_) | Self::ConsumerExists(_) | Self::EqualRank { .. } => {
-                StatusCode::CONFLICT
+            Self::PublisherExists(_)
+            | Self::ConsumerExists(_)
+            | Self::EqualRank { .. }
+            | Self::LeaseNotActive(_) => StatusCode::CONFLICT,
+            Self::UnknownPublisher(_) | Self::UnknownConsumer(_) | Self::RecordNotHeld(_) => {
+                StatusCode::NOT_FOUND
             }
-            Self::UnknownPublisher(_) | Self::UnknownConsumer(_) => StatusCode::NOT_FOUND,
+            Self::LeaseNotYours(_) => StatusCode::FORBIDDEN,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotReady(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
@@ -101,6 +121,9 @@ impl Refusal {
             Self::UnknownPublisher(_) => "unknown_publisher",
             Self::UnknownConsumer(_) => "unknown_consumer",
             Self::EqualRank { .. } => "equal_rank",
+            Self::LeaseNotActive(_) => "lease_not_active",
+            Self::LeaseNotYours(_) => "lease_not_yours",
+            Self::RecordNotHeld(_) => "record_not_held",
             Self::BadRequest(_) => "bad_request",
             Self::NotReady(_) => "not_ready",
         }
@@ -144,6 +167,18 @@ impl From<PullError> for Refusal {
     fn from(error: PullError) -> Self {
         match error {
             PullError::UnknownConsumer(id) => Self::UnknownConsumer(id),
+            other => unmapped(&other),
+        }
+    }
+}
+
+impl From<LeaseActionError> for Refusal {
+    fn from(error: LeaseActionError) -> Self {
+        match error {
+            LeaseActionError::UnknownConsumer(id) => Self::UnknownConsumer(id),
+            LeaseActionError::LeaseNotActive(id) => Self::LeaseNotActive(id),
+            LeaseActionError::LeaseNotYours(id) => Self::LeaseNotYours(id),
+            LeaseActionError::RecordNotHeld(key) => Self::RecordNotHeld(key),
             other => unmapped(&other),
         }
     }
@@ -386,8 +421,9 @@ mod tests {
     use axum::body::to_bytes;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
-    use libpachinko::error::{JoinError, PublishError, PullError};
+    use libpachinko::error::{JoinError, LeaseActionError, PublishError, PullError};
     use libpachinko::ids::{ConsumerId, PocketKey, PublisherId, Rank, RecordKey};
+    use libpachinko::lease_ids::LeaseId;
     use serde_json::{Value, json};
 
     use super::Refusal;
@@ -446,6 +482,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lease_not_active_is_409() {
+        let refusal = Refusal::LeaseNotActive(LeaseId::from_u128(1));
+        assert_answered(refusal, StatusCode::CONFLICT, "lease_not_active").await;
+    }
+
+    #[tokio::test]
+    async fn lease_not_yours_is_403() {
+        let refusal = Refusal::LeaseNotYours(LeaseId::from_u128(1));
+        assert_answered(refusal, StatusCode::FORBIDDEN, "lease_not_yours").await;
+    }
+
+    #[tokio::test]
+    async fn record_not_held_is_404() {
+        let refusal = Refusal::RecordNotHeld(RecordKey::new("k"));
+        assert_answered(refusal, StatusCode::NOT_FOUND, "record_not_held").await;
+    }
+
+    #[tokio::test]
     async fn bad_request_is_400() {
         let refusal = Refusal::BadRequest(String::from("not JSON"));
         assert_answered(refusal, StatusCode::BAD_REQUEST, "bad_request").await;
@@ -462,6 +516,7 @@ mod tests {
     fn every_library_refusal_has_its_own_mapping() {
         let (p, c) = (PublisherId::new("p"), ConsumerId::new("c"));
         let (pocket, key, rank) = (PocketKey::new("q"), RecordKey::new("k"), Rank::new(1));
+        let lease = LeaseId::from_u128(7);
         let cases = [
             (
                 Refusal::from(JoinError::PublisherExists(p.clone())),
@@ -491,7 +546,23 @@ mod tests {
             ),
             (
                 Refusal::from(PullError::UnknownConsumer(c.clone())),
+                Refusal::UnknownConsumer(c.clone()),
+            ),
+            (
+                Refusal::from(LeaseActionError::UnknownConsumer(c.clone())),
                 Refusal::UnknownConsumer(c),
+            ),
+            (
+                Refusal::from(LeaseActionError::LeaseNotActive(lease)),
+                Refusal::LeaseNotActive(lease),
+            ),
+            (
+                Refusal::from(LeaseActionError::LeaseNotYours(lease)),
+                Refusal::LeaseNotYours(lease),
+            ),
+            (
+                Refusal::from(LeaseActionError::RecordNotHeld(RecordKey::new("h"))),
+                Refusal::RecordNotHeld(RecordKey::new("h")),
             ),
         ];
         for (converted, expected) in cases {

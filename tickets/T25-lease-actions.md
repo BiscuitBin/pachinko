@@ -337,10 +337,172 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `538cc10`, in the fresh lane worktree after `just initialize` (exit 0), `just check`
+(exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked in the lane worktree `wave/t25` from `538cc10` (T24 done), not on
+  `ticket/t25-lease-actions` from `main`; `just initialize` run there once, as the lead
+  authorised. `git fetch origin` was run so the prototypes at `cb77f07` resolve.
+- `git diff main...HEAD` read as `git diff 538cc10...HEAD` plus the uncommitted change.
+- Step 9's fetch and merge of `origin/main`, push and pull request: not run: one pull
+  request at T31. The lead merges the lanes into `mvp-inimal-but-sufficient`; the
+  Verification block is requoted at that merge commit, and `status:` is set then.
+- The §14 reviewers, triage and fix writer were run by the wave lead; this agent stopped
+  at T25-1 uncommitted and reran the Verification block after the fixes.
+
+### Files touched deviations
+
+Approved by the wave lead; each forced, none adds behaviour beyond the rules here.
+
+- `crates/libpachinko/src/queue/pockets.rs`: `is_held`, `settle` and `release`, the
+  record and pocket steps of the ten rules. They need `Pockets`' private `by_key`,
+  `order` and `next_position`; T23 split `queue.rs` into submodules after the ticket was
+  written. Its `touch` doc comment now says T25 owns `ReviveIdlePocket`.
+- `crates/libpachinko/src/queue/snapshot.rs`: the `dead_letters` field, since step 3 has
+  `NackedBeforeExpiry` asserted on the snapshot. Same reason.
+- `crates/libpachinko/src/queue/types.rs`: `SettleOutcome`, `PocketFate` and
+  `DeadLetter`, beside `PullOutcome` as the ticket's own clause asks.
+- `crates/pachinko/src/http/leases.rs` (new): the four handlers with their bodies and
+  replies. With them inline, `http.rs` tripped rustqual's SRP module-length finding
+  (422 lines, 6 clusters) and `just metrics` failed. `http.rs` keeps the four route
+  lines and the `Refusal` arms.
+
+### The plan against T23's and T24's names (step 2)
+
+- `ReviveIdlePocket` needed no code: the idle arm of `PocketTouched` already lived in
+  `pockets.rs` `touch` from T23. S023 is a test only.
+- `lease_view` already returned held versions through `PocketRecords::held`; S076 is a
+  test only.
+- Signatures: `ack` and `nack` take `(&ConsumerId, LeaseId, &RecordKey)` and return
+  `SettleOutcome`; `renew` takes `(&ConsumerId, LeaseId)` and returns the new
+  `Timestamp`; `release` returns `(PocketFate, Lease)`, the lease with
+  `LeaseStatus::Released { ended_at }` and its `expires_at` untouched. All four return
+  `LeaseActionError`.
+- A nack reads `now` once: the extension, `nacked_at` and the dead letter's `expires_at`
+  are all measured from it. Dead letters share the shed queue's arrival counter with the
+  superseded records, so T26's decay sees one arrival order.
+- `PublishNewKey` into an idle pocket takes its record position first and the revive the
+  next one, so the revived pocket's position is `next_position + 1` (S023 asserts both).
+
+### Shown to bite (steps 3 and 4, the red step)
+
+Each break was applied alone, the library suite run, and the source restored, at `538cc10`
+plus the uncommitted change; every one failed at least one test:
+
+| Break | Tests that failed |
+| --- | --- |
+| `LeaseNotYours` check removed | S070, S042, S049, `check_reports_not_active_before_not_yours` |
+| `LeaseNotYours` before `LeaseNotActive` | S042, S049, `check_reports_not_active_before_not_yours` |
+| `UnknownConsumer` check removed | S042, S049, `an_unknown_consumer_is_refused_before_any_lease_guard` |
+| `RecordNotHeld` checked only after the extension | S042, S049 |
+| ack always settles | S043, S044, S045, S054, the deferring-nack test |
+| ack always defers | S040, S047, S055, S023, S068, S071, S072 |
+| release keeps the consumer's lease | S035, S044, S052, S053, S054, S055, S023, S068 |
+| release frees nothing | S044, S053, S054, S068 |
+| release always queues | S055, S023 |
+| release keeps the pocket's position | S035, S053 |
+| nack keeps no dead letter | S047, S072, the deferring-nack test |
+| renew stacks on the old expiry | S050, S051, `the_expiry_index_holds_one_entry_per_lease_after_each_extension` |
+| no idle arm in `touch` | S023 |
+| defer reuses the held position | S043, S044, the deferring-nack test |
+| an ended lease stays in `by_expiry` | `an_ended_lease_leaves_both_indexes_and_keeps_its_expiry`, the expiry-index test |
+
+### Obligations the T25 tests cover
+
+From `just plan-spec pachinko` (190 obligations, 0 diagnostics), carried by
+`tests/queue/settle.rs` and `tests/queue/lease.rs`:
+
+- `rule-success`: `AckSettlesRecord`, `AckDefersNewerVersion`, `NackSettlesRecord`,
+  `NackDefersNewerVersion`, `Renew`, `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket`,
+  `RequeueHeldRecord`, `RequeueDeferredRecord`, `ReviveIdlePocket`, and, re-exercised,
+  `PullWithinLease`, `Supersede`, `DropStalePublish`.
+- `rule-failure`: `AckSettlesRecord.1`-`.5`, `AckDefersNewerVersion.1`-`.5`,
+  `NackSettlesRecord.1`-`.5`, `NackDefersNewerVersion.1`-`.5`, `Renew.1`-`.2`,
+  `ReleaseRequeuesPocket.1`, `.2`, `.4`, `ReleaseIdlesEmptyPocket.1`, `.2`, `.4`,
+  `RequeueHeldRecord.2`, `ReviveIdlePocket.2`, `PullClaimsFrontPocket.1`,
+  `PullFindsNoPocket.1`.
+- `rule-entity-creation`: `NackSettlesRecord.1`, `NackDefersNewerVersion.1`.
+- `invariant`: `Pocket.IdleHasNoRecords`, `Lease.EndedAfterGrant`,
+  `DeadLetter.NackedBeforeExpiry`.
+- `transition-edge`: `Pocket.leased.queued`, `Pocket.leased.idle`, `Pocket.idle.queued`,
+  `Record.held.queued`, `Record.held.deferred`, `Record.deferred.queued`,
+  `Lease.active.released`; `transition-terminal.Lease.status`.
+- `when-set.ReleaseRequeuesPocket.Lease.ended_at`,
+  `when-set.ReleaseIdlesEmptyPocket.Lease.ended_at`, `when-presence.Lease.ended_at`,
+  `entity-fields.DeadLetter`, `projection.Pocket.deferred_records`,
+  `projection.Pocket.held_records`, `surface-exposure.Consuming`.
+- Guarantees, by T23's `guarantee.<Name>` convention: `ActionsNameTheirLease`,
+  `OneVisitPerKeyPerLease`, `NothingLostWhileHeld`, `ExclusivePocket`.
+
+Not covered here, because they are unreachable through a lease action: `rule-failure`
+`ReleaseRequeuesPocket.3`, `ReleaseIdlesEmptyPocket.3` (an active lease's pocket is
+always leased) and `RequeueHeldRecord.1`, `RequeueDeferredRecord.1`-`.2` (`free_held`
+visits only outstanding records).
+
+Each of the 23 scenarios has exactly one library test tagged `// scenario:`. S071 and
+S072 are named `oq9_...` and their comments say they pin the rules as they stand. S040,
+S047, S050, S053 and S068 are exercised over HTTP in `crates/pachinko/tests/http.rs`, with
+one `unknown_consumer` test per route and one malformed-lease-id test.
+
+### T25-1: the whole diff (step 8)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (codex-cli 0.166.0, exit 0), with separate triage
+and one writer, run by the wave lead; outputs under `ai_tmp/review/T25-1/`. 5 findings, 4
+valid, none high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, low | The S050 wire test asserted `>=`, so a service that answered renew without extending would pass |
+| C2 | valid, medium | S047's "the nack extended it" read the expiry after a pull, which extends on its own |
+| C3 | invalid, low | `guarantee.<Name>` tags follow T23's documented convention in `tests/queue/main.rs` |
+| B1 | valid, low | Same as C1, from the breakage side |
+| B2 | valid, low | Same as C2, and the deferring-nack test never checked the extension |
+
+Applied by the writer: `renew_extends` sleeps 5 ms after the pull and asserts a strictly
+later `expires_at` (C1, B1); both nack tests assert the lease's expiry right after the
+nack, before any pull, the deferring one after advancing the clock 20 ms (C2, B2).
+Handed back: nothing.
+
+Rerun after the fixes, at `538cc10` plus the uncommitted change, every recipe exit 0:
+
+```text
+just plan-spec pachinko   190 obligations, 0 diagnostics
+just fmt-check            cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy               Finished `dev` profile [unoptimized + debuginfo] target(s)
+just test                 Summary [   0.291s] 151 tests run: 151 passed, 0 skipped
+just doc                  Generated .../target/doc/libpachinko/index.html and 1 other file
+just effects              effects: the fixture trips every ban exactly once, and pachinko trips none.
+just coverage             TOTAL ... 98.96% lines (queue/settle.rs 98.25%, queue/renew.rs 98.67%, http.rs 97.40%)
+just check-docs           Validated 46 pages and 47 canonical topics.
+```
+
+### Step 9
+
+`review-change` over the diff: no further findings. Every new public type
+(`LeaseActionError`, `SettleOutcome`, `PocketFate`, `DeadLetter`) is `Clone`, `Debug`,
+`Send + Sync + 'static` and `#[non_exhaustive]`, and has a doctest, as do the four
+methods. No new dependency and no `unsafe`. The library reads the time only through
+`Queue::now`, which goes through the `Clock` trait. `status()` and `code()` have no
+wildcard arm.
+
+Note for the merge: the `Command` doc comment in `actor.rs` still reads "T25 adds the
+lease actions, T26 the `Tick` lane and T27 `PublishBatch`", left alone so the lanes do
+not conflict on it; the last lane to merge drops the delivered names.
+
+At `538cc10` plus the uncommitted change, hand-back notes included, `just check` (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
