@@ -155,6 +155,30 @@ the two lanes apart (see Open points).
      max }` and `BodyTooLarge { max }`, each with its arm in `status()` and `code()`,
      which stay exhaustive with no wildcard. A handler whose owner has stopped answers
      503 `not_ready` as T24's do.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the uncommitted diff of steps 1 to 4
+   against this ticket's Goal, Files touched, the refusal table above, the decision table
+   in T22's Context and the `Publishing` surface of `docs/specs/pachinko.allium`.
+   `Command::PublishBatch`, `RowOutcome`, the refusal order and the three new `Refusal`
+   variants are what step 5's tests and the other lanes' merges build on. Ask: whether
+   any whole-request refusal can be decided after a row has applied; whether another
+   command can run between two rows; whether `publish_each` returning an error for the
+   batch can leave earlier rows applied, and whether the module and PR 38 line 385 say it
+   may; whether the body limit replaces axum's default on every route, and whether one
+   maximum payload still fits a single `PUT` and a one-row batch under the default
+   `--max-body-bytes`; whether the length-limit rejection is told apart from the other
+   `Json` rejections by its type rather than its message; whether `status()` or `code()`
+   gained a wildcard arm; and whether a new public type misses invariant 3 or
+   `#[non_exhaustive]`. Two reviewer subagents with fresh contexts run in parallel, one
+   lens each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra -s
+   read-only -C <worktree> -o ai_tmp/review/T27-1/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T27-1/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 5. **The tests.** Decision 0009 for placement; every wait is bounded and fails on
    timeout, and no claim below is satisfied by a timeout.
    - Unit, `actor.rs`: `publish_each` over rows that yield `created`, `new_key`,
@@ -227,19 +251,26 @@ the two lanes apart (see Open points).
 7. **The review.** Use the `review-change` skill over the whole diff against `main`.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the whole diff, uncommitted, against
-   this ticket's Goal, Files touched and Acceptance criteria, the decision table in
-   T22's Context and the `Publishing` surface of `docs/specs/pachinko.allium`. Ask:
-   whether a limit test passes because the body was rejected for another reason (a
-   413 asserted without its code, or a positive control missing); whether a batch test's
-   rows are all `created`, so that order and independence go unexercised; whether the
-   channel-full test can pass on a timeout, or passes when the owner never ran; whether
-   a row can apply before a whole-request refusal is decided; whether a request can be
-   refused for anything but its shape; whether `status()` or `code()` gained a wildcard
-   arm; whether the load check can be satisfied by a body cap that still refuses one
-   maximum payload; whether the single `PUT` and the batch route disagree on a cap; and
-   whether a line in a shared file belongs to T25 or T29. Codex `gpt-6-astra` reviewers
-   run read-only with fresh contexts, one lens each; separate triage subagents write
-   verdicts; valid fixes are applied one writer at a time; two rounds at most.
+   this ticket's Goal, Files touched and Acceptance criteria, the decision table in T22's
+   Context and the `Publishing` surface of `docs/specs/pachinko.allium`. Ask: whether a
+   limit test passes because the body was rejected for another reason (a 413 asserted
+   without its code, or a positive control missing); whether a batch test's rows are all
+   `created`, so that order and independence go unexercised; whether the channel-full
+   test can pass on a timeout, or passes when the owner never ran; whether a row can
+   apply before a whole-request refusal is decided; whether a request can be refused for
+   anything but its shape; whether `status()` or `code()` gained a wildcard arm; whether
+   the load check can be satisfied by a body cap that still refuses one maximum payload;
+   whether the single `PUT` and the batch route disagree on a cap; and whether a line in
+   a shared file belongs to T25 or T29. Two reviewer subagents with fresh contexts run in
+   parallel, one lens each, `conformance` and `breakage`, each running `codex exec -m
+   gpt-6-astra -s read-only -C <worktree> -o ai_tmp/review/T27-2/findings-<lens>.md
+   "<brief>" < /dev/null` (§14's command; `-o` writes only the reviewer's last message,
+   and a read-only reviewer writes no file of its own); separate triage subagents check
+   every finding against the tree and write `ai_tmp/review/T27-2/verdicts.md`, each
+   finding valid with its fix or invalid with the reason; one writer applies the valid
+   fixes one at a time, only within Files touched, and hands back any fix outside it; if
+   a high-severity finding was valid, a second round reviews the fix diff and writes
+   beside the first with a `-2` suffix; two rounds at most.
 8. Use the `project-check` skill: `just check`, with `fix-quality` for any recipe that
    fails, then commit on the ticket branch with the hand-back notes quoting each output
    headed by the commit it ran at. Then the wave-2 rule (`CONVENTIONS.md` §11): run
@@ -277,7 +308,7 @@ the two lanes apart (see Open points).
 - The verification quoted in the hand-back ran at the commit that merges `origin/main`,
   after the lanes that landed first.
 - `just check-docs` and `just check` are green.
-- The adversarial review in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
 ## Verification

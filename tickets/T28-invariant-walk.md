@@ -318,6 +318,30 @@ verification rerun and requoted.
 
    The walk test is `every_invariant_holds_after_every_step_of_any_walk`. Run
    `just test` and quote the `queue` target's lines.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the walk, uncommitted, against the
+   properties above, the catalog in Context and `docs/specs/pachinko.allium`, before step
+   4's reachability test and step 5's breaks build on it. Ask: whether any prediction
+   reads the queue's answer to the step rather than deriving it from the pre-state
+   `Snapshot` and the rules' guards; whether the ack, nack, renew and release refusals
+   follow the rules' `requires` order; whether branch A is predicted as success and would
+   fail under the rejected reading; whether the tick prediction orders due leases by
+   `(expires_at, lease id)` and gives each the fate the three expiry rules decide;
+   whether any limit or TTL comes from the test's helper rather than from the queue;
+   whether a uniqueness check runs over a set; whether a transition the module does not
+   declare would pass the edge check; whether the strategy can reach, within 80 steps,
+   every step kind, a lease past `expires_at` with no tick between, a parked pocket and a
+   dead letter; and whether the walk is generic over `R`, `C` and `L` as stated. Two
+   reviewer subagents with fresh contexts run in parallel, one lens each, `conformance`
+   and `breakage`, each running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T28-1/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T28-1/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most.
 4. **The reachability test.** `the_walk_reaches_every_state_and_every_outcome` draws 512
    walks from the same seeded generator and asserts that every label in a `WANTED` list
    was reached, naming the missing ones, as PR 39 line 877 does. The list covers at
@@ -378,18 +402,25 @@ verification rerun and requoted.
      name divan. `CHANGELOG.md`: libpachinko Unreleased, Added. Run `just check-docs`.
 7. **Adversarial review** (`CONVENTIONS.md` §14): the whole diff against this ticket's
    Goal, Files touched and Acceptance criteria, the properties listed in step 3, the
-   catalog in Context and `docs/specs/pachinko.allium`. Ask: whether any walk check cannot
-   fail (an assertion on a constant, a prediction that copies the queue's answer, a
-   `Duration` compared with zero); whether a scenario is tagged on a test that does not
+   catalog in Context and `docs/specs/pachinko.allium`. Ask: whether any walk check
+   cannot fail (an assertion on a constant, a prediction that copies the queue's answer,
+   a `Duration` compared with zero); whether a scenario is tagged on a test that does not
    exercise it; whether any limit or TTL is read from the test's own helper rather than
    from the queue; whether a reachability label is one nothing produces, or one so weak
    that a generator missing a state would still pass; whether the branch-A prediction
    would also pass under the rejected reading; whether a transition the module does not
    declare could pass the edge check; whether an obligation id is tagged on a test that
-   does not prove it; and whether coverage is counted on test code. Codex `gpt-6-astra`
-   reviewers run read-only with fresh contexts, one lens each; separate triage subagents
-   write verdicts; valid fixes are applied one writer at a time; two rounds at most.
-   Then `just coverage` (at or above 90% of lines over `crates/*/src/**`) and
+   does not prove it; and whether coverage is counted on test code. Two reviewer
+   subagents with fresh contexts run in parallel, one lens each, `conformance` and
+   `breakage`, each running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T28-2/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T28-2/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most. Then `just coverage` (at or above 90% of lines over `crates/*/src/**`) and
    `just check`, and commit on the ticket branch with the hand-back notes quoting each
    output headed by the commit it ran at. Before the push: `git fetch origin` (network,
    authorised by this step), merge `origin/main` if T30 landed first, regenerate
@@ -423,7 +454,7 @@ verification rerun and requoted.
   handed back with its owner.
 - `just coverage` reports at or above 90% of lines over `crates/*/src/**`.
 - `just check-docs` and `just check` are green.
-- The adversarial review in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
 ## Verification

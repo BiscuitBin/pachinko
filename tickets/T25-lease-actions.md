@@ -274,10 +274,17 @@ placed `PullOutcome` in a `types` submodule rather than `queue.rs`, `SettleOutco
    `lease_not_active`, or `record_not_held` before either; whether any scenario test
    passes with its rule's guard removed; whether a rejected action moves `expires_at`;
    whether any action reads `expires_at` against `now`, so that T26's branch-A order
-   could fail; whether a wire test passes against the library alone; and whether any
-   file outside Files touched changed. Codex `gpt-6-astra` reviewers run read-only with
-   fresh contexts, one lens each; separate triage subagents write verdicts; valid fixes
-   are applied one writer at a time; two rounds at most.
+   could fail; whether a wire test passes against the library alone; and whether any file
+   outside Files touched changed. Two reviewer subagents with fresh contexts run in
+   parallel, one lens each, `conformance` and `breakage`, each running `codex exec -m
+   gpt-6-astra -s read-only -C <worktree> -o ai_tmp/review/T25-1/findings-<lens>.md
+   "<brief>" < /dev/null` (§14's command; `-o` writes only the reviewer's last message,
+   and a read-only reviewer writes no file of its own); separate triage subagents check
+   every finding against the tree and write `ai_tmp/review/T25-1/verdicts.md`, each
+   finding valid with its fix or invalid with the reason; one writer applies the valid
+   fixes one at a time, only within Files touched, and hands back any fix outside it; if
+   a high-severity finding was valid, a second round reviews the fix diff and writes
+   beside the first with a `-2` suffix; two rounds at most.
 9. **Review, merge and gate.** Use the `review-change` skill over the diff, then the
    `project-check` skill: `just check`, with `fix-quality` for any failing recipe. Run
    `git fetch origin` (network, authorised by this step) and merge `origin/main`: T27

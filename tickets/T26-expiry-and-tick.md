@@ -325,13 +325,20 @@ this ticket edits only its own lines in each.
    crosses an `.await`; whether a lease can lapse twice, or lapse after a release;
    whether parking can skip a revive, or a revive leave the count above 0; whether the
    tick lane starves under a command backlog, commands starve under ticks, or the select
-   spins when the ticker is gone; whether
-   the O(due) test passes when the tick is O(n); whether the both-order tests pass with
-   the lapse removed, or with the action's guard changed to read `expires_at`; whether
-   the wire lapse test passes on its deadline; and whether any file outside Files
-   touched changed. Codex `gpt-6-astra` reviewers run read-only with fresh contexts,
-   one lens each; separate triage subagents write verdicts; valid fixes are applied one
-   writer at a time; two rounds at most.
+   spins when the ticker is gone; whether the O(due) test passes when the tick is O(n);
+   whether the both-order tests pass with the lapse removed, or with the action's guard
+   changed to read `expires_at`; whether the wire lapse test passes on its deadline; and
+   whether any file outside Files touched changed. Two reviewer subagents with fresh
+   contexts run in parallel, one lens each, `conformance` and `breakage`, each running
+   `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T26-1/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T26-1/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most.
 9. **Review, merge and gate.** Use the `review-change` skill over the diff, then the
    `project-check` skill: `just check`, with `fix-quality` for any failing recipe. Run
    `git fetch origin` (network, authorised by this step) and merge `origin/main`

@@ -236,6 +236,28 @@ is green.
    at its root. Run `just plan-spec pachinko`: 190 obligations are expected, since no
    rule, invariant, transition or surface clause changes. A different count is reconciled
    in the hand-back notes, clause by clause, never hidden.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the uncommitted diff of
+   `docs/specs/pachinko.allium` against the five edits above, the decision table in
+   Context and the module's rules, before the handbook repeats it. Ask: whether any edit
+   changes a rule, invariant, entity, config value, surface or guarantee clause rather
+   than a comment or the guarantee's prose; whether branch A as written contradicts a
+   rule's `requires`, so that a late action the comment says succeeds would be refused by
+   its guard; whether removing the eighth block or extending the third silently resolves
+   another `open question`, or answers the third rather than adding one sentence; whether
+   `oq:1`, `oq:7`, `oq:9` or "see open question 9" now names the wrong question; whether
+   `just plan-spec pachinko` could print 190 while an obligation id changed, since a
+   count is not a diff of the ids; and whether T23 to T31 can be written against the
+   module as it now reads. Two reviewer subagents with fresh contexts run in parallel,
+   one lens each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra
+   -s read-only -C <worktree> -o ai_tmp/review/T22-1/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T22-1/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 4. **The handbook ripple.** Use the `review-docs` skill. `docs/explanation/architecture.md`
    "What is deferred": the runtime is decided by 0019 and built by T23 to T31; the
    section may be renamed if the rename keeps every link green.
@@ -259,10 +281,17 @@ is green.
    clamp and branch A included; whether the module's text now contradicts branch A
    anywhere, the guarantee, the comment and the Vocabulary included; whether a page
    outside Files touched now says something false, the ones that cite 0014 first; and
-   whether `just plan-spec pachinko` could print 190 while a clause changed. Codex
-   `gpt-6-astra` reviewers run read-only with fresh contexts, one lens each; separate
-   triage subagents write verdicts; valid fixes are applied one writer at a time; two
-   rounds at most.
+   whether `just plan-spec pachinko` could print 190 while a clause changed. Two reviewer
+   subagents with fresh contexts run in parallel, one lens each, `conformance` and
+   `breakage`, each running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T22-2/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T22-2/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most.
 6. Use the `review-change` skill over the diff, then `project-check` for the full gate:
    `just check`, and commit on the ticket branch with the hand-back notes quoting each
    output headed by the commit it ran at. Pushing and opening a pull request are
@@ -290,7 +319,7 @@ is green.
   0008 and 0015 cite 0014 historically and are not edited; `docs/project/terminology.md`
   line 49 no longer says that no runtime, transport or HTTP stack is chosen.
 - `just check-docs` and `just check` are green.
-- The adversarial review in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
 ## Verification

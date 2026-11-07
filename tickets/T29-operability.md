@@ -210,6 +210,29 @@ run and stop it.
    with a stalled request open (a head promising a body, the body never sent, as PR 39
    `crates/pachinko/src/serve.rs` line 395 stalls one) under `--shutdown-grace-ms 100`
    exits non-zero within five seconds with the cut named on standard error.
+
+   **Adversarial review** (`CONVENTIONS.md` §14): the uncommitted diff of steps 1 to 7
+   against this ticket's Goal table, Files touched, the order above and T24's `serve`,
+   before the image and the docs repeat it. The shutdown order and its two bounds are
+   what T26's ticker joins. Ask: whether any task can be aborted before the second bound;
+   whether readiness goes `Stopping` before the listener stops accepting; whether the
+   owner can be told to stop while an in-flight request still awaits its reply, so that
+   it answers 500 rather than 503; whether a task's own error inside the grace is still
+   the one `serve` returns; whether the second bound can be skipped when the grace
+   elapses with tasks still running; whether any task can fail to reach a yield point, so
+   that `JoinSet::shutdown` waits without bound; whether the stated bound, two grace
+   periods plus one application, is what the code does; whether a test here passes when
+   its timeout elapses; and whether T26's ticker can join the same watch without a change
+   to this step. Two reviewer subagents with fresh contexts run in parallel, one lens
+   each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra -s
+   read-only -C <worktree> -o ai_tmp/review/T29-1/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T29-1/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 8. **The image.** Run `just image` (network, authorised by this step: the build pulls the
    digest-pinned bases and fetches the crates inside the container), start the container
    with `serve --listen 0.0.0.0:8080` as run arguments and the port published, read
@@ -248,12 +271,19 @@ run and stop it.
     whether a request can answer 500 by any path once the owner is gone; whether the
     idle-timeout test closes the connection itself; whether a task is aborted before the
     second bound; whether any line in a shared file belongs to T25 or T27; whether a page
-    outside Files touched now says something false. Codex `gpt-6-astra` reviewers run
-    read-only with fresh contexts, one lens each; separate triage subagents write
-    verdicts; valid fixes are applied one writer at a time; two rounds at most. Then
-    `just check` (`project-check` skill; a failing recipe goes to `fix-quality`) and
-    commit on the ticket branch, the hand-back notes quoting each output headed by the
-    commit it ran at.
+    outside Files touched now says something false. Two reviewer subagents with fresh
+    contexts run in parallel, one lens each, `conformance` and `breakage`, each running
+    `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+    ai_tmp/review/T29-2/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+    writes only the reviewer's last message, and a read-only reviewer writes no file of
+    its own); separate triage subagents check every finding against the tree and write
+    `ai_tmp/review/T29-2/verdicts.md`, each finding valid with its fix or invalid with
+    the reason; one writer applies the valid fixes one at a time, only within Files
+    touched, and hands back any fix outside it; if a high-severity finding was valid, a
+    second round reviews the fix diff and writes beside the first with a `-2` suffix; two
+    rounds at most. Then `just check` (`project-check` skill; a failing recipe goes to
+    `fix-quality`) and commit on the ticket branch, the hand-back notes quoting each
+    output headed by the commit it ran at.
 11. **Merge `origin/main`.** `git fetch origin` (network, authorised by this step) and
     merge `origin/main`, which may now carry T25 or T27 (`CONVENTIONS.md` §11, the wave-2
     rule). Resolve conflicts in the shared modules by keeping both lanes' lines; never
@@ -285,7 +315,7 @@ run and stop it.
 - `docs/operations/troubleshooting.md` has the four entries; `configuration.md` has the
   three rows; `http-api.md` documents `/readyz`, both codes and the 408 retry paragraph.
 - `just check-docs` and `just check` are green, requoted at the merge commit.
-- The adversarial review in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
 ## Verification

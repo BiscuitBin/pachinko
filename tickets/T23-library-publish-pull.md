@@ -316,15 +316,22 @@ frozen frontmatter and nothing else. `crates/libpachinko/benches/version.rs` and
    and T28 tickets that build on them. Ask: whether a `PocketRecords` implementation can
    break `OneRecordPerKeyPerPocket` or hand out a held record twice without
    `check_contract` seeing it; whether two leases can share an `expires_at` in
-   `by_expiry` and whether the key then still finds each; whether `free_held` can be
-   O(n) for a store that satisfies the contract; whether any public type misses
-   invariant 3 or `#[non_exhaustive]`; whether `LeaseId`'s `Display` and `FromStr`
-   round-trip every `u128` and reject a 31- or 33-digit string; whether T25's four
-   actions, T26's `tick` and T28's walk can be written against `Snapshot` and the
-   signatures as they stand, or need a change that would break T24's wire; and whether
-   `Queue`'s `Clone` can leave two queues sharing a store. Codex `gpt-6-astra` reviewers
-   run read-only with fresh contexts, one lens each; separate triage subagents write
-   verdicts; valid fixes are applied one writer at a time; two rounds at most.
+   `by_expiry` and whether the key then still finds each; whether `free_held` can be O(n)
+   for a store that satisfies the contract; whether any public type misses invariant 3 or
+   `#[non_exhaustive]`; whether `LeaseId`'s `Display` and `FromStr` round-trip every
+   `u128` and reject a 31- or 33-digit string; whether T25's four actions, T26's `tick`
+   and T28's walk can be written against `Snapshot` and the signatures as they stand, or
+   need a change that would break T24's wire; and whether `Queue`'s `Clone` can leave two
+   queues sharing a store. Two reviewer subagents with fresh contexts run in parallel,
+   one lens each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra
+   -s read-only -C <worktree> -o ai_tmp/review/T23-1/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T23-1/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 7. **The rules.** Fill in the ten rules against the module, reading each rule's
    `requires` as the refusal and its `ensures` as the effect:
    - `PublisherJoins` and `ConsumerJoins`: a second join of the same id is the error;
@@ -374,18 +381,26 @@ frozen frontmatter and nothing else. `crates/libpachinko/benches/version.rs` and
    example kept. Run `just check-docs`.
 9. **Adversarial review** (`CONVENTIONS.md` §14): the whole diff against this ticket's
    Owns tables, Files touched and acceptance criteria, `docs/specs/pachinko.allium` and
-   the decision table in T22's Context. Ask: whether every rule, invariant, guarantee
-   and scenario in Owns has a test whose tags name it, and whether any tag names a
-   scenario the test does not exercise; whether any owned rule's guard can be removed
-   with every test still passing; whether the `PocketTouched` idle and parked arms are
-   reachable here, so that a tag claims them; whether coverage counts test code or
-   `testing`-only code toward the floor in a way that hides an untested branch; whether
-   a doctest asserts anything or only compiles; whether `FakeClock` or anything under
-   `src/` reaches `std::time` or another effect `just effects` does not probe; whether
-   a page outside Files touched now says the domain is unimplemented; and whether the
-   hand-back's obligation list names an id no test carries. Codex `gpt-6-astra`
-   reviewers run read-only with fresh contexts, one lens each; separate triage subagents
-   write verdicts; valid fixes are applied one writer at a time; two rounds at most.
+   the decision table in T22's Context. Ask: whether every rule, invariant, guarantee and
+   scenario in Owns has a test whose tags name it, and whether any tag names a scenario
+   the test does not exercise; whether any owned rule's guard can be removed with every
+   test still passing; whether the `PocketTouched` idle and parked arms are reachable
+   here, so that a tag claims them; whether coverage counts test code or `testing`-only
+   code toward the floor in a way that hides an untested branch; whether a doctest
+   asserts anything or only compiles; whether `FakeClock` or anything under `src/`
+   reaches `std::time` or another effect `just effects` does not probe; whether a page
+   outside Files touched now says the domain is unimplemented; and whether the
+   hand-back's obligation list names an id no test carries. Two reviewer subagents with
+   fresh contexts run in parallel, one lens each, `conformance` and `breakage`, each
+   running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T23-2/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T23-2/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most.
 10. Use the `review-change` skill over the diff, then `project-check` for the full gate:
     `just check`, and commit on the ticket branch with the hand-back notes quoting each
     output headed by the commit it ran at. A failing recipe is fixed at its root under

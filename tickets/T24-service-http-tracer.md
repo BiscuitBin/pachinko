@@ -248,8 +248,8 @@ layout is described in `architecture.md`.
      T22's Context records.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the uncommitted diff of steps 3 to 5
-   against this ticket's Goal, Files touched and the decision table in T22's Context,
-   PR 38 `crates/pachinko/src/actor.rs` and PR 39 `crates/pachinko/src/http.rs`. The
+   against this ticket's Goal, Files touched and the decision table in T22's Context, PR
+   38 `crates/pachinko/src/actor.rs` and PR 39 `crates/pachinko/src/http.rs`. The
    `Command` enum and its reply types, the `Refusal` enum and the exhaustiveness of
    `status()` and `code()`, and the handle's back-pressure are what T25, T27 and T29
    build on. Ask: whether a reply can be dropped so that a lease is granted to nobody,
@@ -259,9 +259,16 @@ layout is described in `architecture.md`.
    whether a full channel can refuse rather than wait; whether `EpochSerialLeaseIds` can
    reissue an id or the owner can grant one after exhaustion; whether any public type
    misses invariant 3; and whether a dependency, feature or version departs from the
-   table in step 3. Codex `gpt-6-astra` reviewers run read-only with fresh contexts, one
-   lens each; separate triage subagents write verdicts; valid fixes are applied one
-   writer at a time; two rounds at most.
+   table in step 3. Two reviewer subagents with fresh contexts run in parallel, one lens
+   each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra -s
+   read-only -C <worktree> -o ai_tmp/review/T24-1/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T24-1/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 6. **The remaining handlers, the server and the binary.** Use the `rust-change` skill.
    - The handlers, in `http.rs`. Keys travel in the path and are percent-decoded by
      axum's `Path`; bodies are JSON; payloads are base64 (the standard alphabet with
@@ -378,18 +385,25 @@ layout is described in `architecture.md`.
 9. **The review.** Use the `review-change` skill over the whole diff against `main`.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the whole diff, uncommitted, against
-   this ticket's Goal, Files touched and Acceptance criteria, the decision table in
-   T22's Context and `docs/specs/pachinko.allium`. Ask: whether a wire test passes
-   against the library alone, that is, without the server having answered (a scenario
-   whose assertions never read a reply); whether a binary test passes when the server
-   never listened; whether a signal test passes on timeout; whether a test tagged with a
-   scenario id exercises that scenario's description; whether a handler answers a
-   refusal under a code the error table does not carry; whether a page outside Files
-   touched now says the service listens on nothing, has no flags or has no HTTP stack;
-   whether coverage is counted on test code; and whether the lockfile, the manifests
-   and the 0007 notes agree. Codex `gpt-6-astra` reviewers run read-only with fresh
-   contexts, one lens each; separate triage subagents write verdicts; valid fixes are
-   applied one writer at a time; two rounds at most.
+   this ticket's Goal, Files touched and Acceptance criteria, the decision table in T22's
+   Context and `docs/specs/pachinko.allium`. Ask: whether a wire test passes against the
+   library alone, that is, without the server having answered (a scenario whose
+   assertions never read a reply); whether a binary test passes when the server never
+   listened; whether a signal test passes on timeout; whether a test tagged with a
+   scenario id exercises that scenario's description; whether a handler answers a refusal
+   under a code the error table does not carry; whether a page outside Files touched now
+   says the service listens on nothing, has no flags or has no HTTP stack; whether
+   coverage is counted on test code; and whether the lockfile, the manifests and the 0007
+   notes agree. Two reviewer subagents with fresh contexts run in parallel, one lens
+   each, `conformance` and `breakage`, each running `codex exec -m gpt-6-astra -s
+   read-only -C <worktree> -o ai_tmp/review/T24-2/findings-<lens>.md "<brief>" <
+   /dev/null` (§14's command; `-o` writes only the reviewer's last message, and a
+   read-only reviewer writes no file of its own); separate triage subagents check every
+   finding against the tree and write `ai_tmp/review/T24-2/verdicts.md`, each finding
+   valid with its fix or invalid with the reason; one writer applies the valid fixes one
+   at a time, only within Files touched, and hands back any fix outside it; if a
+   high-severity finding was valid, a second round reviews the fix diff and writes beside
+   the first with a `-2` suffix; two rounds at most.
 10. Use the `project-check` skill: `just check`, with `fix-quality` for any recipe that
     fails, then commit on the ticket branch with the hand-back notes quoting each output
     headed by the commit it ran at. Run `git fetch origin` (network, authorised by this

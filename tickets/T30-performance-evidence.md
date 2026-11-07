@@ -248,6 +248,28 @@ regenerated and never merged by hand, verification rerun and requoted.
      clamp, so the two are comparable to a millisecond. Repeated `--runs` times; p50 and
      max printed. The probe's expected floor is the sweep interval, and 0019 says so.
 
+   **Adversarial review** (`CONVENTIONS.md` §14): the load generator, uncommitted,
+   against this ticket's Goal, Files touched and Acceptance criteria, the workloads above
+   and the routes T24 and T27 serve, before any figure is measured: every number 0019
+   gains rests on it. Ask: whether a reply can count without a 2xx status and a parsed
+   body carrying the expected outcome; whether a run with any error can print a rate or
+   exit zero; whether a batch counts rows the reply did not carry; whether the timed
+   region includes the joins, the fill or other setup; whether ids can collide across
+   runs or processes; whether the lapse probe's pocket can lose the front, or B's claim
+   instant and `expires_at` come from clocks that cannot be compared; whether every
+   client is closed-loop on its own keep-alive connection as stated; and whether
+   `loadgen/Cargo.toml`'s lint tables match the root's and `fuzz/`'s. Two reviewer
+   subagents with fresh contexts run in parallel, one lens each, `conformance` and
+   `breakage`, each running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T30-1/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T30-1/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most.
+
    Start the service in a second shell with `cargo run --release --locked -p pachinko --
    serve` and the flags the run needs, or the recipe T24 added if one exists, and record
    the flags beside each figure. Run every workload in the Verification block, five runs
@@ -283,12 +305,19 @@ regenerated and never merged by hand, verification rerun and requoted.
    `just loadgen` or a bench reached `check`'s recipe list, a CI job or a hook; whether
    `loadgen/Cargo.toml`'s lint tables match the root's and `fuzz/`'s; whether the three
    gate recipes and the four lock recipes each name `loadgen/Cargo.toml`; and whether a
-   page outside Files touched still counts three lockfiles. Codex `gpt-6-astra`
-   reviewers run read-only with fresh contexts, one lens each; separate triage subagents
-   write verdicts; valid fixes are applied one writer at a time; two rounds at most.
-   Then `just check`, and commit on the ticket branch with the hand-back notes quoting
-   each output headed by the commit it ran at. Before the push: `git fetch origin`
-   (network, authorised by this step), merge `origin/main` if T28 landed first,
+   page outside Files touched still counts three lockfiles. Two reviewer subagents with
+   fresh contexts run in parallel, one lens each, `conformance` and `breakage`, each
+   running `codex exec -m gpt-6-astra -s read-only -C <worktree> -o
+   ai_tmp/review/T30-2/findings-<lens>.md "<brief>" < /dev/null` (§14's command; `-o`
+   writes only the reviewer's last message, and a read-only reviewer writes no file of
+   its own); separate triage subagents check every finding against the tree and write
+   `ai_tmp/review/T30-2/verdicts.md`, each finding valid with its fix or invalid with the
+   reason; one writer applies the valid fixes one at a time, only within Files touched,
+   and hands back any fix outside it; if a high-severity finding was valid, a second
+   round reviews the fix diff and writes beside the first with a `-2` suffix; two rounds
+   at most. Then `just check`, and commit on the ticket branch with the hand-back notes
+   quoting each output headed by the commit it ran at. Before the push: `git fetch
+   origin` (network, authorised by this step), merge `origin/main` if T28 landed first,
    regenerate `Cargo.lock` with `just lock` (network, authorised by this step) if the
    merge touched it, rerun the Verification block and requote it. **Authorisation
    required: push and open a pull request.** Stop and ask.
@@ -314,7 +343,7 @@ regenerated and never merged by hand, verification rerun and requoted.
 - Every page Files touched names counts four lockfiles, and `rg -n 'three lock' docs/`
   finds no lockfile sentence.
 - `just check-docs` and `just check` are green.
-- The adversarial review in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
+- The adversarial reviews in Steps ran (`CONVENTIONS.md` §14), and every valid finding is
   fixed or handed back.
 
 ## Verification

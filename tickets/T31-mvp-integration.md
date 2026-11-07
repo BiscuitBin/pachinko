@@ -194,19 +194,25 @@ nothing to do, recorded as such in the hand-back.
    ledger in Context, the hand-back dispositions of step 2 and the sweep searches of
    steps 3 and 4 beside it. Ask: whether every rule, invariant, guarantee, scenario,
    route, flag and code in the ledger is in the tree and tagged, and whether a missing
-   one was parked as an Open point rather than handed back and repaired; whether any
-   page still describes the prototype branches, the bootstrap
-   binary that printed one line, or a runtime that is not chosen; whether a page cites
-   0014 as current; whether the open-question list matches the module's `open question`
-   blocks one for one; whether a disposition in step 2 cites a gate that does not run the
-   item; whether the fresh-clone quote came from the commit it names; whether a search
-   that must print nothing was run without its positive control. Codex `gpt-6-astra`
-   reviewers run read-only with fresh contexts, one lens each; separate triage subagents
-   write verdicts; valid fixes are applied one writer at a time; two rounds at most. A
-   fix after the clone makes step 7's quotes stale: rerun step 7. Then `just check`
-   (`project-check` skill; a failing recipe goes to `fix-quality`), set `status: done`,
-   and commit B with the hand-back notes, each quoted output headed by the commit it ran
-   at.
+   one was parked as an Open point rather than handed back and repaired; whether any page
+   still describes the prototype branches, the bootstrap binary that printed one line, or
+   a runtime that is not chosen; whether a page cites 0014 as current; whether the
+   open-question list matches the module's `open question` blocks one for one; whether a
+   disposition in step 2 cites a gate that does not run the item; whether the fresh-clone
+   quote came from the commit it names; whether a search that must print nothing was run
+   without its positive control. Two reviewer subagents with fresh contexts run in
+   parallel, one lens each, `conformance` and `breakage`, each running `codex exec -m
+   gpt-6-astra -s read-only -C <worktree> -o ai_tmp/review/T31-1/findings-<lens>.md
+   "<brief>" < /dev/null` (§14's command; `-o` writes only the reviewer's last message,
+   and a read-only reviewer writes no file of its own); separate triage subagents check
+   every finding against the tree and write `ai_tmp/review/T31-1/verdicts.md`, each
+   finding valid with its fix or invalid with the reason; one writer applies the valid
+   fixes one at a time, only within Files touched, and hands back any fix outside it; if
+   a high-severity finding was valid, a second round reviews the fix diff and writes
+   beside the first with a `-2` suffix; two rounds at most. A fix after the clone makes
+   step 7's quotes stale: rerun step 7. Then `just check` (`project-check` skill; a
+   failing recipe goes to `fix-quality`), set `status: done`, and commit B with the
+   hand-back notes, each quoted output headed by the commit it ran at.
 9. **Fetch, push and the pull request.** `git fetch origin` (network, authorised by this
    step); if `origin/main` moved, merge it, re-clone as step 7 says, rerun the
    Verification block and `just check`, requote at the merge commit, commit. Delete
