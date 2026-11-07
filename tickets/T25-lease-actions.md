@@ -1,7 +1,7 @@
 ---
 id: T25
 title: "Ack, nack, renew, release and fencing"
-status: todo
+status: done
 depends_on: [T24]
 parallel_with: [T27, T29]
 branch: ticket/t25-lease-actions
@@ -499,6 +499,29 @@ lease actions, T26 the `Tick` lane and T27 `PublishBatch`", left alone so the la
 not conflict on it; the last lane to merge drops the delivered names.
 
 At `538cc10` plus the uncommitted change, hand-back notes included, `just check` (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### At the merge commit
+
+The lead merged `wave/t25` into `mvp-inimal-but-sufficient` at `1496d31` with no
+conflicts. The Verification block at `1496d31`, every recipe exit 0:
+
+```text
+just plan-spec pachinko   190 obligations, 0 diagnostics
+just fmt-check            cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy               Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+just test                 Summary [   0.357s] 151 tests run: 151 passed, 0 skipped
+just doc                  Generated .../target/doc/libpachinko/index.html and 1 other file
+just effects              effects: the fixture trips every ban exactly once, and pachinko trips none.
+just coverage             TOTAL ... 98.88% lines
+just check-docs           Validated 46 pages and 47 canonical topics.
+```
+
+`just check` at `1496d31` plus this ticket's `status:` and these notes (exit 0), and
+`git status --short` empty once they were committed:
 
 ```text
 All checks passed and the worktree is unchanged.
