@@ -216,6 +216,40 @@ A hook whose `rev` changed still runs its old environment. Clear prek's cache wi
 `pixi run --frozen prek cache clean`, then run `just install-hooks` again to prepare
 every environment from the current configuration.
 
+## `pachinko serve` answers 503 `not_ready`
+
+`GET /readyz` answers 503 with the message `starting` until the queue's owner has
+started, before it takes any command, and `stopping` from the moment shutdown begins;
+poll it rather than `/healthz` before sending traffic. Any other route answering 503 with
+`the queue's owner has stopped` means the owner task has ended: the server is shutting
+down, and standard error carries the task's error as `pachinko: <error>` when the
+process exits. Restart the service; the queue is in memory and starts empty.
+
+## `pachinko serve` answers 408 `request_timeout`
+
+The handler ran past `--request-timeout-ms` (30000 by default). The usual cause is an
+owner far behind on its commands. The command may still be applied after the 408, so a
+retried publish can come back `stale`, or 409 `equal_rank` at the same rank, which means
+a record at that rank or higher is stored, by the first attempt or by another publish.
+Raise the timeout only when the load behind it is expected; otherwise find what is
+flooding the owner.
+
+## `pachinko: binding the listener: Address already in use`
+
+Another process holds the `--listen` address, often an earlier `serve` that is still
+running. Stop it, or choose another port with `--listen`. Tests pass port 0 and read the
+`listening on <address>` line for the port the system picked.
+
+## `shutdown took longer than <n>ms`
+
+`pachinko: server task: shutdown took longer than <n>ms; open connections were cut`
+means a request was still in flight when `--shutdown-grace-ms` ran out, usually a client
+that stalled mid-request, so its connection was cut without a reply and the process
+exited 1. The longer form ending `tasks still running <n>ms later were aborted` means
+something ignored the cut for a second grace period too. Raise the grace if clients
+are slow but honest; a container's stop timeout must then exceed twice the grace, as
+[Build the container image](../how-to/build-the-container-image.md) explains.
+
 ## Related pages
 
 - [Test and debug](../how-to/test-and-debug.md)

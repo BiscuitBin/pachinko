@@ -73,6 +73,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   (1 MiB) and `--max-body-bytes` (16 MiB, replacing axum's 2 MiB default on every route),
   refused as 413 `too_many_rows`, `payload_too_large` and `body_too_large` before any
   row applies, never for want of room.
+- Operability for `pachinko serve`: `GET /readyz`, 204 while serving and 503
+  `not_ready` while starting or stopping; `--log-level` (default `info`, `RUST_LOG`
+  ignored), with the per-request line at `debug`; `--request-timeout-ms` (default
+  30000), answering 408 `request_timeout` and closing idle connections; and
+  `--shutdown-grace-ms` (default 5000), after which open connections are cut and,
+  one more grace period later, anything left is aborted.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

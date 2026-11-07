@@ -135,6 +135,12 @@ Whether and how to bound it is the specification's third open question, and the
 prototype's resident memory, 8,191 MiB after ten seconds of batch publishing (decision
 0019's evidence), is the reason it needs an answer.
 
+Time is bounded apart from shape. `--request-timeout-ms` (30 seconds) answers a handler
+that runs past it 408 `request_timeout` and closes a connection that sends nothing for
+that long, so an idle client cannot hold a connection open. A client that trickles a
+byte at least every two timeouts still can, until shutdown cuts it: no trickle or
+slowloris bound exists ([HTTP API](../reference/http-api.md#request-timeout)).
+
 ## What is out of scope
 
 What a consumer does with the library's output, and what it passes in through the

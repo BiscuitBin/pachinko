@@ -571,3 +571,36 @@ fn malformed_lease_ids(client: &Client) {
 async fn a_malformed_lease_id_is_bad_request() {
     serve_while(malformed_lease_ids).await;
 }
+
+/// Polls `GET /readyz` until it answers 204, failing on a deadline or on any
+/// answer but 503 `not_ready` `starting` before it.
+fn wait_until_ready(client: &Client) {
+    let deadline = Instant::now() + REQUEST_BOUND;
+    loop {
+        match client.send("GET", "/readyz", None) {
+            (204, Value::Null) => return,
+            (503, body) => assert_eq!(body, json!({"error": "not_ready", "message": "starting"})),
+            other => panic!("readyz answered {other:?}"),
+        }
+        assert!(Instant::now() < deadline, "never ready");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn ready_then_publish(client: &Client) {
+    wait_until_ready(client);
+    assert_eq!(client.send("GET", "/readyz", None), (204, Value::Null));
+    joined(client, &[]);
+    // The positive control for the request timeout: under the default bound a
+    // publish answers as it always has.
+    assert_eq!(
+        client.publish("pk", "k", 1, b"x"),
+        (200, json!({"outcome": "created"}))
+    );
+    assert_eq!(client.send("GET", "/healthz", None), (200, json!("ok")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn readyz_answers_204_while_serving_and_a_publish_answers_under_the_default_timeout() {
+    serve_while(ready_then_publish).await;
+}

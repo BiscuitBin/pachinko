@@ -32,6 +32,7 @@ exposes. The flags `serve` takes are in [Configuration](configuration.md#service
 | `POST /leases/{lease_id}/renew` | `{"consumer_id": "c1"}` | `Renew` | 200 `{"expires_at": 1762500300000}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 400 `bad_request` |
 | `POST /leases/{lease_id}/release` | `{"consumer_id": "c1"}` | `Release` | 200 `{"pocket": "queued"}` or `{"pocket": "idle"}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 400 `bad_request` |
 | `GET /healthz` | none | none | 200 `ok` as text |
+| `GET /readyz` | none | none | 204 with no body while serving; 503 `not_ready` otherwise |
 
 `rank` is a JSON integer read as a signed 64-bit number, so every value from
 `-9223372036854775808` to `9223372036854775807` round-trips exactly. A `limit` of zero or
@@ -131,6 +132,48 @@ payloads would be about 1.3 GiB and is refused as `body_too_large`. The load che
 guarantees only that one maximum payload fits in a one-row batch or a single `PUT`
 ([Configuration](configuration.md#service-flags)).
 
+## `GET /readyz`
+
+`GET /healthz` is liveness: 200 whenever the process serves HTTP. `GET /readyz` is
+readiness, the route a load balancer or an orchestrator's probe should read. It reports
+the queue owner's state:
+
+| State | Reply |
+| --- | --- |
+| `starting` | 503 `{"error": "not_ready", "message": "starting"}`: the listener is bound but the owner has not begun taking commands. |
+| `serving` | 204 with no body. |
+| `stopping` | 503 `{"error": "not_ready", "message": "stopping"}`: shutdown has begun, or a task of the server has ended. |
+
+Neither probe is bounded by the request timeout, and neither is logged above `debug`.
+
+## Request timeout
+
+Every route but `/healthz` and `/readyz` is bounded by `--request-timeout-ms` (30000 by
+default). A handler still running at the bound is dropped and answered 408
+`request_timeout`. A command the handler already sent to the owner is not withdrawn: the
+owner still applies it. A client whose publish timed out may therefore find the record
+applied. Retrying is safe. A `stale` outcome, or on the single `PUT` a 409 `equal_rank`
+at the same rank, means a record at that rank or higher is already stored, whether the
+first attempt or another publish stored it. It does not prove the first attempt landed:
+a 408 can come before the command reaches the owner, for example while the body is still
+being read. The usual cause is an owner far behind on its commands.
+
+The same flag bounds idle connections. A connection that sends nothing for one timeout
+is closed. One that has sent bytes and is still owed a reply is closed two timeouts
+after its last byte if no reply has been written. A request whose head arrived in full
+always gets its 408 first. A head that never completes gets no reply; the connection is
+just closed.
+
+## Shutdown
+
+On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener stops
+accepting, and requests in flight finish. Connections still open after
+`--shutdown-grace-ms` (5000 by default) are cut without a reply, and the owner stops
+taking commands. Anything still running one more grace period later is aborted, and
+`serve` exits non-zero. A client that sees a 503, a refused connection or a cut
+connection during the window retries once the service is back. The queue is in memory,
+so a restarted service starts empty.
+
 ## Errors
 
 Every refusal has the body `{"error": "<code>", "message": "<text>"}`, and one
@@ -150,7 +193,8 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 | `too_many_rows` | 413 | A batch carries more rows than `--max-batch-rows`. |
 | `payload_too_large` | 413 | A payload decodes to more bytes than `--max-payload-bytes`; the message names the row. |
 | `body_too_large` | 413 | The request body is longer than `--max-body-bytes`. |
-| `not_ready` | 503 | The queue's owner has stopped, or the library refused with a variant the map does not know, which is also logged as an error. T29 adds readiness. |
+| `not_ready` | 503 | `GET /readyz` while the service is starting or stopping; any other route once the queue's owner has stopped; or the library refused with a variant the map does not know, which is also logged as an error. No route answers 500. |
+| `request_timeout` | 408 | The handler ran past `--request-timeout-ms`. A command it sent may still be applied; see [Request timeout](#request-timeout). |
 
 ## Not exposed
 
