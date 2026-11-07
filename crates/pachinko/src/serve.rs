@@ -1,9 +1,9 @@
 //! The server: one structured task scope over the queue's owner (decision 0019).
 //!
-//! The scope is one [`JoinSet`] holding three tasks: the queue's owner, the HTTP
-//! listener and the shutdown signal. The first to end, for whatever reason, starts
-//! the shutdown; all of them are joined before `serve` returns, and the first error
-//! is the one returned. No other task is spawned here; axum spawns one task per
+//! The scope is one [`JoinSet`] holding four tasks: the queue's owner, its ticker,
+//! the HTTP listener and the shutdown signal. The first to end, for whatever
+//! reason, starts the shutdown; all of them are joined before `serve` returns, and
+//! the first error is the one returned. No other task is spawned here; axum spawns one task per
 //! connection outside the scope, which the cut ends at its next read or write.
 //!
 //! Shutdown runs in this order. Readiness goes `Stopping`, so `GET /readyz` answers
@@ -30,11 +30,11 @@ use std::time::Duration;
 use libpachinko::queue::Queue;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::{Instant, Sleep, sleep_until, timeout};
 
-use crate::actor::{self, QueueHandle, Readiness, ServiceQueue};
+use crate::actor::{self, QueueHandle, Readiness, ServiceQueue, Tick};
 use crate::http::{Limits, router};
 use crate::{EpochSerialLeaseIds, ServeConfig, ServeError, SystemClock};
 
@@ -47,32 +47,39 @@ type Owner<F> = (QueueHandle, F);
 /// What the scope shares with the owner, its bounds and the router's request-shape
 /// limits (T27): the readiness the owner
 /// sets to `Serving` and the scope to `Stopping`; the shutdown, which turns true
-/// when the shutdown begins and which every task beside the owner ends on; and the
-/// cut, which ends the open connections and tells the owner to stop.
+/// when the shutdown begins and which every task beside the owner ends on; the
+/// cut, which ends the open connections and tells the owner to stop; and the tick
+/// lane, whose sender the ticker holds and whose receiver the owner takes.
 pub(crate) struct Lifecycle {
     readiness: watch::Sender<Readiness>,
     shutdown: watch::Sender<bool>,
     cut: watch::Sender<bool>,
     bounds: Bounds,
     limits: Limits,
+    lane: mpsc::Sender<Tick>,
+    ticks: Option<mpsc::Receiver<Tick>>,
 }
 
 impl Lifecycle {
     /// A lifecycle `Starting`, not shutting down, not cut, with the bounds and the
     /// limits `config` sets.
     pub(crate) fn new(config: &ServeConfig) -> Self {
+        let (lane, ticks) = actor::tick_lane();
         Self {
             readiness: watch::channel(Readiness::Starting).0,
             shutdown: watch::channel(false).0,
             cut: watch::channel(false).0,
             bounds: Bounds::of(config),
             limits: Limits::from(config),
+            lane,
+            ticks: Some(ticks),
         }
     }
 
-    /// The owner of `queue`, reporting to this lifecycle and stopping on its cut.
+    /// The owner of `queue`, reporting to this lifecycle, stopping on its cut and
+    /// taking its ticks. A second start gets a tick lane whose ticker has gone.
     pub(crate) fn start(
-        &self,
+        &mut self,
         queue: ServiceQueue,
         lease_ids: EpochSerialLeaseIds,
     ) -> Owner<impl Future<Output = TaskResult> + Send + 'static> {
@@ -81,6 +88,7 @@ impl Lifecycle {
             lease_ids,
             self.readiness.clone(),
             self.cut.subscribe(),
+            self.ticks.take().unwrap_or_else(|| actor::tick_lane().1),
         )
     }
 }
@@ -92,6 +100,8 @@ struct Bounds {
     grace: Duration,
     /// `--request-timeout-ms`: each handler, and each connection's idle read.
     request: Duration,
+    /// `--sweep-ms`: the ticker's sleep between one tick's answer and the next.
+    sweep: Duration,
 }
 
 impl Bounds {
@@ -100,6 +110,7 @@ impl Bounds {
         Self {
             grace: config.shutdown_grace(),
             request: config.request_timeout(),
+            sweep: config.sweep(),
         }
     }
 }
@@ -127,7 +138,7 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         let signals = install_signals()?;
         announce(&listener, out)?;
         let (_never_sent, stop) = watch::channel(());
-        let lifecycle = Lifecycle::new(config);
+        let mut lifecycle = Lifecycle::new(config);
         let owner = lifecycle.start(queue, lease_ids);
         scope(listener, owner, lifecycle, stop, signals).await
     })
@@ -166,7 +177,7 @@ pub async fn serve(
 ) -> Result<(), ServeError> {
     let (queue, lease_ids) = service_queue(config)?;
     let signals = install_signals()?;
-    let lifecycle = Lifecycle::new(config);
+    let mut lifecycle = Lifecycle::new(config);
     let owner = lifecycle.start(queue, lease_ids);
     scope(listener, owner, lifecycle, stop, signals).await
 }
@@ -190,8 +201,8 @@ fn announce(listener: &TcpListener, out: &mut impl Write) -> Result<(), ServeErr
         .map_err(ServeError::io("writing the bound address"))
 }
 
-/// The task scope over `owner`, the listener under its limits and the signals, in
-/// `lifecycle`.
+/// The task scope over `owner`, its ticker, the listener under its limits and the
+/// signals, in `lifecycle`.
 pub(crate) async fn scope<F>(
     listener: TcpListener,
     owner: Owner<F>,
@@ -209,6 +220,8 @@ where
         cut,
         bounds,
         limits,
+        lane,
+        ticks: _,
     } = lifecycle;
     let shutting_down = shutdown.subscribe();
     let connections = Connections {
@@ -219,6 +232,7 @@ where
     let routes = router(handle, readiness.subscribe(), bounds.request, limits);
     let mut tasks = JoinSet::new();
     tasks.spawn(owner);
+    tasks.spawn(actor::ticker(lane, bounds.sweep, shutting_down.clone()));
     tasks.spawn(listen(connections, routes, shutting_down.clone()));
     tasks.spawn(signal(signals, stop, shutting_down));
     let first = tasks.join_next().await.map_or(Ok(()), task_result);
@@ -577,7 +591,7 @@ expect: 100-continue\r\n\r\n";
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
         let (queue, lease_ids) = service_queue(&config).unwrap();
-        let lifecycle = Lifecycle::new(&config);
+        let mut lifecycle = Lifecycle::new(&config);
         let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
         let (_stop, stopped) = watch::channel(());
         let owner = (handle, panicking_owner());
@@ -605,7 +619,7 @@ expect: 100-continue\r\n\r\n";
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
         let (queue, lease_ids) = service_queue(&config).unwrap();
-        let lifecycle = Lifecycle::new(&config);
+        let mut lifecycle = Lifecycle::new(&config);
         let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
         // The owner's place is taken by a future parked at a yield point that never
         // looks at the cut, so only the abort can end it.
@@ -627,6 +641,24 @@ expect: 100-continue\r\n\r\n";
             started.elapsed() >= config.shutdown_grace() * 2,
             "aborted before the second grace period ended: {:?}",
             started.elapsed()
+        );
+    }
+
+    // The ticker ends when the shutdown begins, not on the cut: a sweep far longer
+    // than the grace period still stops cleanly, inside the first grace period.
+    #[tokio::test]
+    async fn a_sweep_longer_than_the_grace_period_still_stops_cleanly() {
+        let config = config(&["--sweep-ms", "3600000", "--shutdown-grace-ms", "2000"]);
+        let listener = TcpListener::bind(config.listen()).await.unwrap();
+        let (stop, stopped) = watch::channel(());
+        drop(stop);
+        let served = timeout(
+            config.shutdown_grace(),
+            super::serve(listener, &config, stopped),
+        );
+        assert_eq!(
+            served.await.expect("serve stopped inside the grace period"),
+            Ok(())
         );
     }
 
@@ -672,7 +704,7 @@ expect: 100-continue\r\n\r\n";
             let client =
                 async move { tokio::task::block_in_place(|| stall_a_request(address, stop)) };
             let (queue, lease_ids) = service_queue(&config).unwrap();
-            let lifecycle = Lifecycle::new(&config);
+            let mut lifecycle = Lifecycle::new(&config);
             let owner = lifecycle.start(queue, lease_ids);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             timeout(BOUND, async { tokio::join!(server, client) })
@@ -750,7 +782,7 @@ expect: 100-continue\r\n\r\n";
                 tokio::task::block_in_place(|| wait_for_the_close(address, sent, stop))
             };
             let (queue, lease_ids) = service_queue(&config).unwrap();
-            let lifecycle = Lifecycle::new(&config);
+            let mut lifecycle = Lifecycle::new(&config);
             let owner = lifecycle.start(queue, lease_ids);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             timeout(BOUND, async { tokio::join!(server, client) })
@@ -797,13 +829,15 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (_stop, stopped) = watch::channel(());
-            let lifecycle = Lifecycle::new(&config);
+            let mut lifecycle = Lifecycle::new(&config);
             let readiness = lifecycle.readiness.subscribe();
+            let ticks = lifecycle.ticks.take().unwrap();
             // The owner's stop is the test's to send: the same watch and the same
             // branch of the owner loop the scope's cut reaches.
             let (stop_owner, owner_stop) = watch::channel(false);
             let (queue, lease_ids) = service_queue(&config).unwrap();
-            let owner = actor::start(queue, lease_ids, lifecycle.readiness.clone(), owner_stop);
+            let readiness_sender = lifecycle.readiness.clone();
+            let owner = actor::start(queue, lease_ids, readiness_sender, owner_stop, ticks);
             // On a blocking thread of its own: it waits for `Stopping`, which the
             // scope sends, so it must not hold the task the scope runs on.
             let client = tokio::task::spawn_blocking(move || {
@@ -844,7 +878,7 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
             let (queue, lease_ids) = service_queue(&config).unwrap();
-            let lifecycle = Lifecycle::new(&config);
+            let mut lifecycle = Lifecycle::new(&config);
             // The real owner is kept but never run, so the command is never answered
             // and the handler outlives the bound; the connection's read stays pending
             // for as long, which must not close it first.
@@ -905,7 +939,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
                 String::from_utf8_lossy(&reply[..read]).into_owned()
             });
             let (queue, lease_ids) = service_queue(&config).unwrap();
-            let lifecycle = Lifecycle::new(&config);
+            let mut lifecycle = Lifecycle::new(&config);
             let owner = lifecycle.start(queue, lease_ids);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             let client = async { client.await.unwrap() };

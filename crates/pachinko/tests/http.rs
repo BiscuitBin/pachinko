@@ -163,7 +163,14 @@ fn joined(client: &Client, consumers: &[&str]) {
 /// Serves on port 0 while `drive` runs against it, then stops the server through
 /// the stop channel and checks that it returned `Ok` in time.
 async fn serve_while(drive: fn(&Client)) {
-    let config = ServeConfig::parse(["--listen", "127.0.0.1:0"]).unwrap();
+    serve_with_while(&[], drive).await;
+}
+
+/// [`serve_while`], with `flags` added to the server's command line.
+async fn serve_with_while(flags: &[&str], drive: fn(&Client)) {
+    let mut args = vec!["--listen", "127.0.0.1:0"];
+    args.extend_from_slice(flags);
+    let config = ServeConfig::parse(args).unwrap();
     let listener = TcpListener::bind(config.listen()).await.unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = watch::channel(());
@@ -603,4 +610,38 @@ fn ready_then_publish(client: &Client) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn readyz_answers_204_while_serving_and_a_publish_answers_under_the_default_timeout() {
     serve_while(ready_then_publish).await;
+}
+
+// The sweep lapses a lease nobody renews: the consumer's lease view turns 204
+// within the deadline, which is the assertion, and a second consumer receives the
+// record. No elapsed-time bound is asserted.
+// obligation: guarantee.ExpiryRecoversWithinTtl
+fn lapse_over_http(client: &Client) {
+    joined(client, &["c1", "c2"]);
+    assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
+    let (status, batch) = client.pull("c1", 10);
+    assert_eq!(status, 200);
+    assert_eq!(records(&batch), [record("k", 1, b"v")]);
+    let deadline = Instant::now() + REQUEST_BOUND;
+    loop {
+        let answer = client.lease("c1");
+        assert!(Instant::now() < deadline, "the lease never lapsed");
+        if answer == (204, Value::Null) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (status, batch) = client.pull("c2", 10);
+    assert_eq!(status, 200);
+    assert_eq!(batch["pocket_key"], json!("pk"));
+    assert_eq!(records(&batch), [record("k", 1, b"v")]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_lease_nobody_renews_lapses_and_its_record_goes_to_another_consumer() {
+    serve_with_while(
+        &["--lease-ttl-ms", "50", "--sweep-ms", "10"],
+        lapse_over_http,
+    )
+    .await;
 }

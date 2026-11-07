@@ -183,19 +183,28 @@ action changes nothing, its lease's `expires_at` included. The registry holds on
 active leases: an ended lease leaves both its id index and its expiry index and is
 returned to the caller as it ended, never kept. So an ended lease is unknown rather than
 remembered, one refusal covers a lease that ended and one that never existed, the
-registry and the lapse sweep T26 adds stay the size of the live leases, and an action
+registry and a tick's lapse walk stay the size of the live leases, and an action
 for an old lease cannot land on a new lease over the same pocket, because the new lease
 has a new id. No action compares `expires_at` with the clock: a lease the registry
 holds is active, and the owner's serialization orders a late action against a lapse
 (decision 0019). A nack's dead letter sits in the shed queue beside the superseded
 records, keyed by expiry and arrival for the decay.
 
+**The tick.** `Queue::tick` is the clock's trigger. It reads `now` once, walks the
+expiry index from its earliest entry and stops at the first one later than `now`, so a
+tick costs the leases due, never the leases active. Each due lease ends as expired and
+leaves the registry, so it lapses once; its pocket's expiry count rises, its held and
+deferred records return to queued, and the pocket parks at `max_consecutive_expiries`,
+keeps its position, which is the front, with records, or goes idle without. Then both
+shed queues decay by removing entries from the front while their `expires_at` has
+passed, stopping at the first that has not. A tick is
+one operation like any other, so it never interleaves with an action.
+
 **A rule's code may land before its owner.** A rule is owned by the ticket whose test
 pins it. Every publish into an existing pocket ends in the `PocketTouched` dispatch, and
 its idle and parked arms, `ReviveIdlePocket` and `ReviveParkedPocket`, landed with
 publish in T23. A release first makes a pocket idle, and T25 owns `ReviveIdlePocket`
-and its test; no pocket can be parked until T26 adds expiry, and T26 owns
-`ReviveParkedPocket`.
+and its test; a lapse first parks one, and T26 owns `ReviveParkedPocket`.
 
 ## What crosses the boundary
 
@@ -220,16 +229,25 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
 - **The owner task.** One task owns the `Queue<MemoryRecords, SystemClock,
   EpochSerialLeaseIds>` and applies every command synchronously, in arrival order, from
   a bounded channel of 1,024 commands, each with a `oneshot` reply. There is no `Mutex`:
-  a handler holds only a `QueueHandle`, a clone of the channel's sender, so a lapse (T26)
+  a handler holds only a `QueueHandle`, a clone of the channel's sender, so a lapse
   and a consumer's action are totally ordered. A full channel makes a handler wait, never
   refuses it. A pull whose requester has gone before the owner reaches it is skipped.
+- **The tick lane.** A ticker task sleeps `--sweep-ms`, sends one tick on a channel of
+  its own that holds one, waits for the owner to apply it and answer, then sleeps
+  again. The owner polls that lane before the commands, so a tick waits behind at most
+  the command being applied. It is not the command channel because a tick queued there
+  waits behind the whole backlog: PR 38's tick did, and its lapse lag grew to seconds
+  under load (decision 0019). The ticker never has a second tick in flight, so commands
+  get at least a full sweep between two ticks however long one takes. A tick that
+  lapsed or decayed anything logs one `info` line with its three counts. The ticker
+  ends when the shutdown begins.
 - **The real effects.** `SystemClock` reads `SystemTime` in milliseconds since the Unix
   epoch, behind the queue's clamp, which never lets the queue's time step back;
   `EpochSerialLeaseIds` draws a 64-bit epoch from the operating system's random source
   once and pairs it with a serial from 1. `serve` refuses to start when the clock reads
   before the epoch or the random source fails, and the owner stops rather than reissue a
   lease id once the serial is exhausted.
-- **The task scope.** `serve` holds the owner, the listener and the signal task in one
+- **The task scope.** `serve` holds the owner, the ticker, the listener and the signal task in one
   `JoinSet`. The first to end starts the shutdown: the listener stops accepting, lets
   in-flight requests finish, cuts connections still open after a 5-second grace, and
   drops the router, whose handle was the owner's last sender, so the owner ends too. A
@@ -240,7 +258,7 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
 
 The tests sit in three places. Unit tests live in the modules: the flag parser, the
 clock, the lease ids, the owner's ordering, skipping, back-pressure and exhaustion, the
-error map with one test per code, and the task scope's panic, stop and cut paths.
+tick lane under a command backlog and the ticker's ends, the error map with one test per code, and the task scope's panic, stop and cut paths.
 `tests/http.rs` starts `serve` in-process on port 0 and drives every route with a
 blocking client. `tests/binary.rs` runs the built binary: its version line, a usage
 error, and `serve` answering `/healthz` and exiting 0 on SIGTERM and on SIGINT.

@@ -3,9 +3,11 @@
 //!
 //! `Queue` is plain data with `&mut self` methods. It performs no effect: it reads
 //! the time only through its [`Clock`] and draws lease ids only from its
-//! [`LeaseIds`]. Whoever owns it applies one operation at a time, so a lapse and a
-//! consumer's action meet in one stream, as decision 0019 requires.
+//! [`LeaseIds`]. Whoever owns it applies one operation at a time, so a lapse, which
+//! [`Queue::tick`] processes, and a consumer's action meet in one stream, as
+//! decision 0019 requires.
 
+mod expiry;
 mod leases;
 mod pockets;
 mod publish;
@@ -30,6 +32,7 @@ use leases::Leases;
 use pockets::Pockets;
 use shed::Shed;
 
+pub use expiry::TickReport;
 #[cfg(feature = "testing")]
 pub use snapshot::{PocketView, Snapshot};
 pub use types::{

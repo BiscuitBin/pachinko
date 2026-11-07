@@ -20,8 +20,9 @@
 //!   passes.
 //! - [`queue`]: `Queue`, with the publisher and consumer joins, publish, pull, the
 //!   lease view, and the four lease actions, ack, nack, renew and release, each
-//!   fenced to the lease it names; and, behind `testing`, the `Snapshot`
-//!   inspection seam.
+//!   fenced to the lease it names; the tick, which lapses the leases whose
+//!   `expires_at` has passed and decays the superseded records and dead letters
+//!   whose own has; and, behind `testing`, the `Snapshot` inspection seam.
 //!
 //! See `docs/explanation/architecture.md`.
 

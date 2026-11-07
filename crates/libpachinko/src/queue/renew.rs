@@ -7,7 +7,7 @@
 //! succeeds (decision 0019, the specification's Lease expiry comment).
 
 use super::Queue;
-use super::types::{Lease, PocketFate};
+use super::types::{Lease, LeaseStatus, PocketFate};
 use crate::clock::{Clock, Timestamp};
 use crate::error::LeaseActionError;
 use crate::ids::{ConsumerId, PocketKey};
@@ -94,7 +94,7 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         let now = self.now();
         let ended = self
             .leases
-            .end(lease, now)
+            .end(lease, LeaseStatus::Released { ended_at: now })
             .ok_or(LeaseActionError::LeaseNotActive(lease))?;
         self.consumers.insert(consumer_id.clone(), None);
         // A lease's pocket always exists: no rule removes a pocket.

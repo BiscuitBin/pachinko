@@ -45,10 +45,11 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | `--log-level` | `info` | The most detailed log line written to standard error: `error`, `warn`, `info`, `debug` or `trace`, lower case. Each request writes one line at `debug`. |
 | `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; at least 1. |
 | `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once. |
+| `--sweep-ms` | `1000` (1 second) | How long the ticker waits after each sweep before the next; each sweep lapses the leases and decays the shed entries whose `expires_at` has passed; at least 1. |
 
 The five specification values' defaults are the specification's, which decision 0019
 confirms; the request-shape limits' defaults are the comparables decision 0019's
-evidence lists. T26 adds the sweep's flag. The log level comes from `--log-level`
+evidence lists. The log level comes from `--log-level`
 alone: `RUST_LOG` is ignored. The routes, the timeout and the shutdown window are in
 [HTTP API](http-api.md).
 

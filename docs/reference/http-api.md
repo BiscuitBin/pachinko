@@ -67,6 +67,23 @@ held and deferred records to queued in place, and requeues the pocket at the bac
 No action checks `expires_at` against the clock: a late action the owner applies before
 the lapse succeeds (decision 0019).
 
+A lease nobody pulls under, acks, nacks or renews lapses: the service sweeps every
+`--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, returns its
+held and deferred records to queued in place and keeps the pocket at the front of the
+queue, so the next pull claims it. After `--max-consecutive-expiries` lapses in a row
+the pocket parks instead and no pull claims it until a publish into it; a pocket whose
+records were all acked or nacked goes idle below that count. The sweep is not instant:
+a lease can stay active past `expires_at` for up to one sweep, plus the application of
+the sweep in progress and of the command the owner is applying, and a sweep reads the
+time once, so a lease expiring while one runs waits for the next. A pull, ack, nack or
+renew the owner applies in that window, before the lapse, succeeds and extends the lease,
+and a release applied in it succeeds by ending the lease and freeing its records; neither
+is refused for being late (decision 0019). Arrival does not decide: a sweep the owner
+takes up first ends the lease, and an action already waiting then gets
+`lease_not_active`. Recovery after a consumer dies therefore takes `--lease-ttl-ms` plus
+that window. Once the lapse is applied, the old lease is `lease_not_active` to every
+route, and `GET /consumers/{consumer_id}/lease` answers 204.
+
 A lease route checks, in this order, the order of the rules' `requires`: the path's
 `lease_id` parses as 32 lower-case hexadecimal digits (400 `bad_request`, before
 anything reaches the owner), the consumer has joined (404 `unknown_consumer`), the lease
@@ -78,7 +95,7 @@ Every command reaches the queue through one owner task, in arrival order. A pull
 client has disconnected before the owner reaches it is skipped, so no lease is granted
 to nobody; a client that disconnects while its pull is being applied leaves a lease that
 nobody acts on: its lease id never reached the client, and the lease read does not
-carry one, so no route ends it until lapses arrive with T26.
+carry one, so no route ends it and it lapses at its `expires_at`.
 
 A request body any route reads is at most `--max-body-bytes`, 16 MiB unless set: a longer
 body is refused with 413 `body_too_large`, by its `Content-Length` before it is read, or,
@@ -198,9 +215,9 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 
 ## Not exposed
 
-The superseded records and the dead letters nacks create are kept; they decay only once T26's sweep
-arrives, so until then they stay in memory for the life of the process. No route reads
-them: who reads them is the specification's second open question. A publish is never refused
+The superseded records and the dead letters nacks create are kept until they decay, at
+`--superseded-ttl-ms` and `--dead-letter-ttl-ms` after they were shed or nacked, on the
+first sweep after that. No route reads them: who reads them is the specification's second open question. A publish is never refused
 for want of room (the specification's `NeverRefusedForCapacity`): a service under load
 makes the request wait for the owner, and the 413s above refuse a request's shape only.
 A pull is never refused for want of a pocket.

@@ -1,7 +1,7 @@
 ---
 id: T26
 title: "Lease expiry, decay and the tick lane"
-status: todo
+status: done
 depends_on: [T25]
 parallel_with: []
 branch: ticket/t26-expiry-and-tick
@@ -399,10 +399,179 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `e3ef219` (T25, T27 and T29 merged), `just check` exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked on branch `mvp-inimal-but-sufficient` in the lead's worktree from `e3ef219`,
+  not on `ticket/t26-expiry-and-tick` from `main`; `just initialize` was not run (the
+  worktree was initialized). The prototype heads were already readable locally, so
+  `git fetch origin` was not run.
+- `git fetch origin`, merging `origin/main`, `just lock`, push and pull request: not run:
+  one pull request at T31. The lead merges the lanes into the wave branch.
+- The §14 reviewers, triage and fix writer were run by the wave lead; this agent stopped
+  at the checkpoint uncommitted and reran the checks after the fixes.
+
+### The plan (step 2)
+
+The specification already says branch A (T22), so no spec change. The plan is in
+`ai_tmp/wave/T26/plan.md`. Where the tree differed from the ticket:
+
+- T23 split the queue into `queue/` submodules, so the lapse's pocket step is
+  `Pockets::lapse` in `queue/pockets.rs`, outside Files touched (approved in advance for
+  `queue/` submodules). `ReviveParkedPocket` was already the parked arm of
+  `PocketTouched` in `queue/pockets.rs::touch` (T23); this ticket adds its tests, not
+  the `queue.rs` line the table names.
+- `Leases::end` now takes the ending status, so the lapse reuses T25's path, as T25's
+  hand-back asked; its one caller is `queue/renew.rs`, outside Files touched.
+- The owner's select polls T29's stop first, then the tick lane, then the commands, and
+  yields after a tick as after a command. The tick lane lives in T29's `Lifecycle`
+  (`scope` is at clippy's five-parameter limit): `Lifecycle::new` builds it,
+  `Lifecycle::start` (now `&mut self`) hands the receiver to the owner, `Bounds` carries
+  `--sweep-ms`, and `scope` spawns `actor::ticker`, which ends on the `shutdown` watch,
+  never on the cut (T29's "For T26's ticker"). So T29's serve.rs tests now read
+  `let mut lifecycle`, the 503 test passes the lifecycle's tick receiver to
+  `actor::start`, and one test helper in `crates/pachinko/src/http.rs` (outside Files
+  touched) passes a closed lane.
+- The `actor.rs` module and `Command` docs no longer name T26 as still to come.
+
+### Shown to bite (steps 3 to 5, the red step)
+
+Each break was applied alone to the source, the suite run, and the source restored
+(`ai_tmp/wave/T26/bite.py`, `bite-svc.py`), at `e3ef219` plus the uncommitted change.
+Library suite, `cargo nextest run -p libpachinko --all-features`:
+
+- `due` as a filter over the whole index (rerun after T26-1's fixes):
+
+  ```text
+  FAIL libpachinko::queue expiry::a_tick_examines_only_what_is_due
+  assertion `left == right` failed: the three due and the one that stopped the walk
+    left: 200
+   right: 4
+  ```
+
+- The decay as a `retain` that counts what it visits (rerun after T26-1's B1 fix):
+
+  ```text
+  FAIL libpachinko::queue expiry::a_tick_examines_only_what_is_due
+  assertion `left == right` failed: the superseded backlog's one stopper; the dead letters are empty
+    left: 500
+   right: 1
+  ```
+
+- The lapse removed from `tick`: 22 failed, both orders of S066 and S067 among them.
+- An action guard reading `expires_at` in `authorise`: the renew, release and ack
+  late-action tests failed (3); `PullWithinLease` reading it: the S067 pull test failed.
+- Parking checked after the record count: S063 failed. A lapse taking a fresh position:
+  15 failed. A revive keeping the count: S024 and S062 failed.
+
+Service suite, `cargo nextest run --workspace --all-features`: commands polled before
+the tick lane failed `neither_lane_starves_the_other_when_both_stay_ready` (a first,
+round-based version of that test did not bite, because the inbox drained between rounds;
+the senders now resend as soon as they are answered, so the inbox never drains); the
+`if ticks_open` guard removed: 47 failed on the spinning select; the ticker ignoring the
+shutdown while asleep: 4 failed, `a_sweep_longer_than_the_grace_period_still_stops_cleanly`
+among them; the ticker never spawned: the wire lapse test failed at its deadline.
+
+### Obligations the tests carry
+
+`tests/queue/expiry.rs`, `tests/queue/decay.rs` and the wire test, with the ids T26-1's
+C3 added (S007, S025, S034, S056, S064, S066 release, S067 ack, S075) included:
+
+`rule-success.LeaseLapses`, `temporal.LeaseLapses`, `rule-failure.LeaseLapses.1`;
+`rule-success.LeaseExpiryParksPocket`, `rule-failure.LeaseExpiryParksPocket.1`, `.2`,
+`.4`; `rule-success.LeaseExpiryKeepsPocketAtFront`,
+`rule-failure.LeaseExpiryKeepsPocketAtFront.1`, `.2`, `.4`, `.5`;
+`rule-success.LeaseExpiryIdlesEmptyPocket`, `rule-failure.LeaseExpiryIdlesEmptyPocket.1`,
+`.2`, `.4`, `.5`; `when-set.LeaseExpiryParksPocket.Lease.ended_at`,
+`when-set.LeaseExpiryKeepsPocketAtFront.Lease.ended_at`,
+`when-set.LeaseExpiryIdlesEmptyPocket.Lease.ended_at`; `rule-success.ReviveParkedPocket`,
+`rule-failure.ReviveParkedPocket.1`, `.2`; `rule-success.SupersededRecordDecays`,
+`temporal.SupersededRecordDecays`, `rule-success.DeadLetterDecays`,
+`temporal.DeadLetterDecays`; `invariant.Pocket.ExpiriesWithinLimit`;
+`transition-edge.Lease.active.expired`, `transition-edge.Lease.active.released`,
+`transition-edge.Pocket.leased.parked`, `transition-edge.Pocket.parked.queued`,
+`transition-rejected.Lease.status`, `transition-terminal.Lease.status`;
+`rule-success.RequeueHeldRecord`, `rule-success.RequeueDeferredRecord`,
+`rule-success.PullWithinLease`, `rule-success.AckSettlesRecord`,
+`rule-success.ReleaseRequeuesPocket`, `rule-failure.Renew.2`,
+`rule-failure.PullClaimsFrontPocket.2`, `rule-failure.Supersede.3`,
+`rule-failure.DropStalePublish.3`; `invariant.UniquePocketPosition`,
+`invariant.UniqueRecordPosition`, `invariant.PocketPositionsBelowNext`,
+`invariant.RecordPositionsBelowNext`; `guarantee.ExpiryRecoversWithinTtl`. Every id but
+the guarantee is in `just plan-spec pachinko`'s output. S026 is labelled open question 7.
+Not covered: `rule-failure.LeaseExpiry*.3`, a lapse on a pocket that is not leased, which
+`LeasedHasOneActiveLease` makes unreachable through the API; the guard in
+`Pockets::lapse` has a unit test.
+
+### T26-1: the whole diff (step 8)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead; outputs under `ai_tmp/review/T26-1/`. 6 findings, 6 valid, none
+high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, low | The wire lapse loop checked its deadline only after a non-204, so a 204 arriving past the deadline passed |
+| C2 | valid, low | `http-api.md` said an action that *arrives* in the lapse window succeeds; processing order decides, and a tick taken first refuses an action already queued |
+| C3 | valid, low | Eight scenario tests carried no `// obligation:` tag, which step 4 asks of each |
+| B1 | valid, low | `shed_examined` was the literal 0 of the `split_off` design, so a `retain` decay passed the O(due) test unless the mutant counted honestly |
+| B2 | valid, low | Same as C1, from the breakage side |
+| B3 | valid, medium | The wire test's `lease == 200` read raced a 50 ms lease on a slow runner and could fail a correct service |
+
+Applied by the writer: the deadline is checked after every poll (C1, B2); the 200 read is
+gone (B3); the lapse-window paragraph says the owner's processing order decides and
+arrival does not (C2); the obligation ids above (C3); and B1 replaced the `split_off`
+design with a counted walk. `take_due` now takes `first_entry` while its key is due and
+counts every entry it reads, the stopper included. That makes `shed_examined` measure
+the walk, the due entries plus one stopper per non-empty queue, so a full-scan or
+`retain` rewrite that counts in its own loop reports the backlog. The cost goes from
+O(due) plus a tree split to O(due log n). `a_tick_examines_only_what_is_due` now expects
+`shed_examined` 1 (the superseded backlog's stopper; the dead letters are empty), and
+the step 3 and 4 text that says "zero when `split_off` does the work" no longer
+describes the code. The writer also edited this ticket's body to match. That was
+reverted, since a ticket changes only `status:` and these notes. After the fixes, this
+agent updated the architecture page's decay sentence, which still said "splitting off".
+Handed back: nothing.
+
+Rerun after the fixes, at `e3ef219` plus the uncommitted change, every recipe exit 0:
+
+```text
+just plan-spec pachinko   (192 obligations, no diagnostics)
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+just test          Summary [   0.621s] 234 tests run: 234 passed, 0 skipped
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just effects       effects: the fixture trips every ban exactly once, and pachinko trips none.
+just coverage      TOTAL ... 99.01% lines
+just check-docs    Validated 46 pages and 47 canonical topics.
+```
+
+### Step 9: `review-change`
+
+The invariants hold: no new dependency; `TickReport` is `Clone`, `Debug`,
+`Send + Sync + 'static` and `#[non_exhaustive]` with asserting doctests, as are
+`TickReport::is_empty` and `ServeConfig::sweep`; libpachinko reads the time only through
+its clamped `Clock` once per tick, and `just effects` reports `pachinko trips none`; no
+`unsafe`; suppressions are `expect` with a reason (`Decay.examined` is read only under
+`testing`). The one judgement: `tests/queue/counting.rs` logs calls in a thread-local,
+because the queue builds each pocket's store with `Default`. It replaces no effect
+trait (`PocketRecords` is the store seam), and the wrapper passes the records contract.
+No action reads `expires_at`, so branch A holds as the specification's lapse section
+says. Scope: the files outside Files touched are listed under the plan.
+
+At `e3ef219` plus the uncommitted change, hand-back notes included, `just check` (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 

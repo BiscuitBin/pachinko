@@ -1,7 +1,7 @@
 //! The lease registry: the active leases by id and an index of them by expiry.
 //!
 //! An ended lease leaves both, so the registry holds exactly the active leases and
-//! a lapse sweep (T26) reads the `by_expiry` prefix that is due, never the whole.
+//! a tick reads the `by_expiry` prefix that is due, never the whole.
 //! Two leases may share an `expires_at`; the index key carries the id beside it, so
 //! each keeps its own entry.
 
@@ -20,6 +20,15 @@ pub(super) struct Active {
     pub(super) consumer_id: ConsumerId,
     pub(super) granted_at: Timestamp,
     pub(super) expires_at: Timestamp,
+}
+
+/// What [`Leases::due`] found.
+#[derive(Debug, Default)]
+pub(super) struct Due {
+    /// The due leases, earliest first.
+    pub(super) ids: Vec<LeaseId>,
+    /// The index entries the walk read, the one that stopped it included.
+    pub(super) examined: usize,
 }
 
 /// The active leases by id, indexed by expiry.
@@ -75,19 +84,36 @@ impl Leases {
         Ok(lease.pocket_key.clone())
     }
 
-    /// Ends the active lease `id` as released at `ended_at`: it leaves both
-    /// indexes and is returned as it ended, its `expires_at` untouched.
-    pub(super) fn end(&mut self, id: LeaseId, ended_at: Timestamp) -> Option<Lease> {
+    /// Ends the active lease `id` with `status`, released by a release or expired
+    /// by a lapse: it leaves both indexes and is returned as it ended, its
+    /// `expires_at` untouched.
+    pub(super) fn end(&mut self, id: LeaseId, status: LeaseStatus) -> Option<Lease> {
         let lease = self.active.remove(&id)?;
         self.by_expiry.remove(&(lease.expires_at, id));
         Some(Lease {
             id,
             pocket_key: lease.pocket_key,
             consumer_id: lease.consumer_id,
-            status: LeaseStatus::Released { ended_at },
+            status,
             granted_at: lease.granted_at,
             expires_at: lease.expires_at,
         })
+    }
+
+    /// The leases due at `now`: the `by_expiry` prefix with `expires_at <= now`,
+    /// earliest first. The walk stops at the first later entry, so it reads the
+    /// due entries and at most one more, never the whole index; `examined` counts
+    /// what it read.
+    pub(super) fn due(&self, now: Timestamp) -> Due {
+        let mut due = Due::default();
+        for &(expires_at, id) in &self.by_expiry {
+            due.examined += 1;
+            if expires_at > now {
+                break;
+            }
+            due.ids.push(id);
+        }
+        due
     }
 
     /// The expiry index, earliest first.
@@ -170,20 +196,34 @@ mod tests {
         let (one, two) = (LeaseId::from_u128(1), LeaseId::from_u128(2));
         leases.grant(one, lease("a", 10));
         leases.grant(two, lease("b", 10));
-        let ended = leases.end(one, Timestamp::from_millis(4)).unwrap();
-        assert_eq!(
-            ended.status,
-            LeaseStatus::Released {
-                ended_at: Timestamp::from_millis(4)
-            }
-        );
+        let released = LeaseStatus::Released {
+            ended_at: Timestamp::from_millis(4),
+        };
+        let ended = leases.end(one, released).unwrap();
+        assert_eq!(ended.status, released);
         assert_eq!(ended.expires_at, Timestamp::from_millis(10));
         assert!(!leases.is_active(one));
         assert_eq!(leases.by_expiry(), [(Timestamp::from_millis(10), two)]);
-        assert_eq!(leases.end(one, Timestamp::from_millis(5)), None);
+        assert_eq!(leases.end(one, released), None);
         assert_eq!(
             leases.check(one, &ConsumerId::new("c")),
             Err(LeaseActionError::LeaseNotActive(one))
         );
+    }
+
+    #[test]
+    fn due_reads_the_due_prefix_and_the_entry_that_stops_it() {
+        let mut leases = Leases::default();
+        let ids: Vec<_> = (1..=4).map(LeaseId::from_u128).collect();
+        for (id, expires_at) in ids.iter().zip([10, 10, 20, 30]) {
+            leases.grant(*id, lease("a", expires_at));
+        }
+        let due = leases.due(Timestamp::from_millis(9));
+        assert_eq!((due.ids.len(), due.examined), (0, 1));
+        let due = leases.due(Timestamp::from_millis(20));
+        assert_eq!(due.ids, ids[..3]);
+        assert_eq!(due.examined, 4);
+        let due = leases.due(Timestamp::from_millis(30));
+        assert_eq!((due.ids.len(), due.examined), (4, 4));
     }
 }

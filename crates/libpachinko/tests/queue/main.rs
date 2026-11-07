@@ -20,6 +20,12 @@
 // Every module is `#[cfg(test)]`, which is what clippy reads as test code: the
 // fixture and the helpers may unwrap and panic as the tests themselves do.
 #[cfg(test)]
+mod counting;
+#[cfg(test)]
+mod decay;
+#[cfg(test)]
+mod expiry;
+#[cfg(test)]
 mod fixture;
 #[cfg(test)]
 mod identity;

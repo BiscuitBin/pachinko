@@ -1,6 +1,6 @@
 //! The `serve` command's flags: where to listen and the specification's five config
 //! values, each with its default; then T27's request-shape limits and T29's log
-//! level, request timeout and shutdown grace. T26 adds its flag here.
+//! level, request timeout and shutdown grace; and T26's sweep interval.
 
 use std::num::NonZeroUsize;
 use std::time::Duration;
@@ -37,6 +37,10 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// aborts what is left, unless `--shutdown-grace-ms` says otherwise.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
+/// How often the ticker sweeps for lapsed leases and decayed entries unless
+/// `--sweep-ms` says otherwise.
+const DEFAULT_SWEEP: Duration = Duration::from_secs(1);
+
 /// The configuration `serve` runs with: the address to listen on and the queue's
 /// [`Config`], checked.
 ///
@@ -60,6 +64,7 @@ pub struct ServeConfig {
     log_level: Level,
     request_timeout: Duration,
     shutdown_grace: Duration,
+    sweep: Duration,
 }
 
 impl ServeConfig {
@@ -68,8 +73,9 @@ impl ServeConfig {
     /// `--max-consecutive-expiries` (3), `--max-pull-batch` (100),
     /// `--superseded-ttl-ms` (43200000) and `--dead-letter-ttl-ms` (43200000); the
     /// request-shape limits `--max-batch-rows` (1000), `--max-payload-bytes`
-    /// (1048576) and `--max-body-bytes` (16777216); and `--log-level` (`info`),
-    /// `--request-timeout-ms` (30000) and `--shutdown-grace-ms` (5000).
+    /// (1048576) and `--max-body-bytes` (16777216); `--log-level` (`info`),
+    /// `--request-timeout-ms` (30000) and `--shutdown-grace-ms` (5000); and
+    /// `--sweep-ms` (1000).
     ///
     /// # Errors
     ///
@@ -77,7 +83,8 @@ impl ServeConfig {
     /// value, a value that is not an unsigned integer, a limit of 0, a
     /// `--max-body-bytes` below the base64 size of one maximum payload plus the batch
     /// envelope, a log level that is not one of `error`, `warn`, `info`, `debug` and
-    /// `trace`, or a request timeout of zero, which would time every request out;
+    /// `trace`, a request timeout of zero, which would time every request out, or a
+    /// sweep of zero, which would tick without pause;
     /// [`ServeError::Config`] when the library's config check refuses the values.
     ///
     /// ```
@@ -100,6 +107,7 @@ impl ServeConfig {
             log_level: DEFAULT_LOG_LEVEL,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
+            sweep: DEFAULT_SWEEP,
         };
         let mut args = args.into_iter();
         while let Some(name) = args.next() {
@@ -235,6 +243,23 @@ impl ServeConfig {
         self.shutdown_grace
     }
 
+    /// How long the ticker sleeps after each tick's answer before it sends the
+    /// next: the sweep for lapsed leases and decayed entries.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// assert_eq!(pachinko::ServeConfig::parse(Vec::<String>::new())?.sweep(), Duration::from_secs(1));
+    /// let config = pachinko::ServeConfig::parse(["--sweep-ms", "10"])?;
+    /// assert_eq!(config.sweep(), Duration::from_millis(10));
+    /// assert!(pachinko::ServeConfig::parse(["--sweep-ms", "0"]).is_err());
+    /// # Ok::<(), pachinko::ServeError>(())
+    /// ```
+    #[must_use]
+    pub const fn sweep(&self) -> Duration {
+        self.sweep
+    }
+
     /// Sets the flag `name` to `value`.
     fn set(&mut self, name: &str, value: &str) -> Result<(), ServeError> {
         let queue = &mut self.queue;
@@ -260,6 +285,7 @@ impl ServeConfig {
             "--log-level" => self.log_level = level(name, value)?,
             "--request-timeout-ms" => self.request_timeout = positive_millis(name, value)?,
             "--shutdown-grace-ms" => self.shutdown_grace = millis(name, value)?,
+            "--sweep-ms" => self.sweep = positive_millis(name, value)?,
             _ => return Err(ServeError::Usage(format!("unknown flag {name}"))),
         }
         Ok(())

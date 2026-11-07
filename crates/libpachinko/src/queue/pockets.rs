@@ -58,8 +58,8 @@ const fn take_position(next_position: &mut Position) -> Position {
 
 /// The `PocketTouched` dispatch every publish into an existing pocket ends in. A
 /// queued or leased pocket is untouched. The idle arm is `ReviveIdlePocket`, which
-/// a release that idles a pocket first makes reachable, and the parked arm
-/// `ReviveParkedPocket` (owned by T26): either way the pocket rejoins the order at
+/// a release or a lapse that idles a pocket makes reachable, and the parked arm
+/// `ReviveParkedPocket`, which a lapse that parks one makes reachable: either way the pocket rejoins the order at
 /// the back with its expiry count reset.
 fn touch<R>(
     key: &PocketKey,
@@ -251,6 +251,34 @@ impl<R: PocketRecords> Pockets<R> {
         pocket.position = take_position(&mut self.next_position);
         self.order.insert((pocket.position, pocket_key.clone()));
         Some(PocketFate::Queued)
+    }
+
+    /// A lapse's pocket step, the three rules that process `LeaseLapsed` in their
+    /// order: the expiry count rises by one; every held and deferred record goes
+    /// back to queued at its own position in one `free_held` (`RequeueHeldRecord`,
+    /// `RequeueDeferredRecord`); then a pocket whose count has reached `limit`
+    /// parks (`LeaseExpiryParksPocket`), checked before its records are counted,
+    /// so an empty one parks too; else one with records rejoins the order at the
+    /// position it was claimed from, which keeps it at the front
+    /// (`LeaseExpiryKeepsPocketAtFront`); else it goes idle
+    /// (`LeaseExpiryIdlesEmptyPocket`). A pocket that is not leased is left alone.
+    pub(super) fn lapse(&mut self, pocket_key: &PocketKey, limit: u32) {
+        let Some(pocket) = self.by_key.get_mut(pocket_key) else {
+            return;
+        };
+        if pocket.status != PocketStatus::Leased {
+            return;
+        }
+        pocket.consecutive_expiries = pocket.consecutive_expiries.saturating_add(1);
+        pocket.records.free_held();
+        if pocket.consecutive_expiries >= limit {
+            pocket.status = PocketStatus::Parked;
+        } else if pocket.records.record_count() > 0 {
+            pocket.status = PocketStatus::Queued;
+            self.order.insert((pocket.position, pocket_key.clone()));
+        } else {
+            pocket.status = PocketStatus::Idle;
+        }
     }
 
     /// The specification's `Queue.next_position`.

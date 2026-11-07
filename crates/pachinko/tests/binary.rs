@@ -30,6 +30,23 @@ fn a_command_line_it_does_not_read_exits_one_with_the_reason_on_stderr() {
     assert_eq!(output.stderr, b"pachinko: usage: unknown flag --bogus\n");
 }
 
+#[test]
+fn a_zero_or_negative_sweep_is_a_usage_error() {
+    for value in ["0", "-5"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_pachinko"))
+            .args(["serve", "--sweep-ms", value])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "--sweep-ms {value}");
+        assert_eq!(output.stdout, b"");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.starts_with("pachinko: usage: --sweep-ms "),
+            "--sweep-ms {value}: {stderr}"
+        );
+    }
+}
+
 #[cfg(unix)]
 mod serve {
     use std::io::{BufRead, BufReader, Read, Write};

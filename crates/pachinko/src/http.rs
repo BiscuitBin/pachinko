@@ -708,7 +708,8 @@ mod tests {
         )
         .unwrap();
         let (_stop, stopping) = watch::channel(false);
-        let (handle, owner) = actor::start(queue, lease_ids, readiness.clone(), stopping);
+        let ticks = actor::tick_lane().1;
+        let (handle, owner) = actor::start(queue, lease_ids, readiness.clone(), stopping, ticks);
         let limits = Limits::from(&ServeConfig::parse(Vec::<&str>::new()).unwrap());
         (router(handle, readiness.subscribe(), bound, limits), owner)
     }

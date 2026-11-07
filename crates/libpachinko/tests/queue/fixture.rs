@@ -13,7 +13,7 @@ use libpachinko::ids::{ConsumerId, Payload, PocketKey, Position, PublisherId, Ra
 use libpachinko::lease_ids::{CountingLeaseIds, LeaseId};
 use libpachinko::queue::{
     Lease, LeaseStatus, LeaseView, PocketFate, PocketStatus, PocketView, Publication,
-    PublishOutcome, PullOutcome, Queue, SettleOutcome, Snapshot,
+    PublishOutcome, PullOutcome, Queue, SettleOutcome, Snapshot, TickReport,
 };
 use libpachinko::records::{HeldRecord, MemoryRecords, RecordStatus, RecordView};
 
@@ -51,6 +51,14 @@ pub(crate) fn config() -> Config {
     config.lease_ttl = LEASE_TTL;
     config.superseded_ttl = SUPERSEDED_TTL;
     config.dead_letter_ttl = DEAD_LETTER_TTL;
+    config
+}
+
+/// The fixture's configuration with `lease_ttl` of `millis`, for the lapse tests
+/// that count in single milliseconds.
+pub(crate) fn short_lease(millis: u64) -> Config {
+    let mut config = config();
+    config.lease_ttl = Duration::from_millis(millis);
     config
 }
 
@@ -198,6 +206,27 @@ impl Fixture {
             before,
             "a refused action changed the queue"
         );
+    }
+
+    /// Sets the clock to `millis` after [`T0`].
+    pub(crate) fn at(&self, millis: u64) {
+        self.clock.set(T0.saturating_add_millis(millis));
+    }
+
+    /// One tick, after which every state invariant and `ExpiriesWithinLimit`
+    /// are checked.
+    pub(crate) fn tick(&mut self) -> TickReport {
+        let report = self.queue.tick();
+        self.check();
+        report
+    }
+
+    /// Every state invariant and `ExpiriesWithinLimit` at the queue's limit, over
+    /// a fresh snapshot.
+    pub(crate) fn check(&self) {
+        let snapshot = self.snapshot();
+        invariants::all(&snapshot);
+        invariants::expiries_within_limit(&snapshot, self.queue.config().max_consecutive_expiries);
     }
 
     /// The pocket keys in the pocket order, front first.
@@ -453,6 +482,36 @@ pub(crate) mod invariants {
             }
             _ => panic!("EndedAfterGrant: {} has not ended", lease.id),
         }
+    }
+
+    /// `ExpiriesWithinLimit`, at the queue's `max_consecutive_expiries`, which the
+    /// snapshot does not carry.
+    pub(crate) fn expiries_within_limit(s: &Snapshot, limit: u32) {
+        for pocket in &s.pockets {
+            assert!(
+                pocket.consecutive_expiries <= limit,
+                "ExpiriesWithinLimit: {}",
+                pocket.key
+            );
+        }
+    }
+
+    /// One strict, deterministic order: the pocket positions and the record
+    /// positions are each distinct and below `next_position`, and the pocket order
+    /// is the queued pockets sorted by position.
+    pub(crate) fn one_strict_order(s: &Snapshot) {
+        unique_pocket_position(s);
+        pocket_positions_below_next(s);
+        for pocket in &s.pockets {
+            assert!(
+                distinct(pocket.records.iter().map(|r| r.position)),
+                "record positions in {}",
+                pocket.key
+            );
+        }
+        unique_record_position(s);
+        record_positions_below_next(s);
+        order_is_the_queued_pockets(s);
     }
 
     /// Every state invariant, for a test that wants them all after its steps.

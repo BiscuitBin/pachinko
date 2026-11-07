@@ -20,6 +20,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- Lease expiry and decay: `Queue::tick` lapses every active lease whose `expires_at`
+  has passed, in the time of the leases due rather than active, and reports them in
+  `TickReport` with the superseded records and dead letters it decayed. A lapse keeps a
+  pocket with records at the front, idles an empty one, and parks one after
+  `max_consecutive_expiries` lapses in a row, until a publish revives it.
 - The lease actions: `Queue::ack`, `Queue::nack`, `Queue::renew` and `Queue::release`,
   each fenced to the lease it names and refusing, in rule order, with
   `LeaseActionError` (`UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`,
@@ -64,6 +69,9 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `GET /healthz`; six flags for the listen address and the specification's five config
   values; the real `SystemClock` and `EpochSerialLeaseIds`; and a clean shutdown on
   SIGTERM or SIGINT (decision 0019).
+- The tick lane: a ticker sweeps every `--sweep-ms` (default 1000), on a lane the
+  owner polls before its commands, lapsing leases and decaying superseded records and
+  dead letters; each sweep that did anything logs one `info` line with its counts.
 - The four lease routes, `POST /leases/{lease_id}/ack`, `/nack`, `/renew` and
   `/release`, with the error codes `lease_not_active` (409), `lease_not_yours` (403)
   and `record_not_held` (404), and a 400 `bad_request` for a malformed lease id.
