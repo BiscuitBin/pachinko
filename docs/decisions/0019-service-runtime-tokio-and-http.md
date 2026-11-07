@@ -189,6 +189,91 @@ The caveats:
   neither prototype ships.
 - HTTP batch publish was never measured, which is why T30 exists.
 
+## Evidence from the MVP
+
+T30 measured the MVP as T23 to T27 and T29 built it. The machine is one Apple silicon Mac
+(Apple M5 Pro, macOS 26.4, Darwin 25.4.0, 18 CPUs), with rustc 1.99.1. The measurements
+were taken on 2026-11-07. The end-to-end runs go over loopback with closed-loop clients,
+and each figure is the median of 5 runs. Payloads are 64 bytes and P = 1,000 pockets
+unless a row says otherwise. The service measured is the source at `1fdaab3`, which T30
+does not change. It is the release binary (`cargo build --release --locked -p pachinko`),
+started per workload as `pachinko serve --listen 127.0.0.1:8090` with the flags each row
+names and every other flag at its default. The default log level, `info`, writes no
+per-request line (T29). The load generator is `just loadgen` (`loadgen/`, closed-loop
+`ureq` clients on std threads, one keep-alive connection each). A reply counts only when
+it is 2xx and carries the expected outcome, and every run quoted here had zero errors. The
+in-process benches are `just bench` (`crates/libpachinko/benches/workloads.rs`). They are
+single-thread over the library's `Queue<MemoryRecords, FakeClock, CountingLeaseIds>` with
+`Config::default()`. The figure is divan's median over 20 samples, each sample one queue.
+
+Before each workload, and before `just bench`, the harness waited until `uptime`'s
+1-minute load average was at or below 4. It then recorded the load before and after the
+five runs, and each row gives the 1-minute figure as before / after. Every workload
+started at or below 4. The after figures are higher because the 64 client threads and the
+service run on the same machine as the measurement.
+
+**In process.** Every figure here is in ops/s, and the unit of one op is one library call
+on the queue: a `publish`, `pull`, `ack`, `release` or `tick`. W3 is 18 calls a cycle, W4
+22 calls a round and W5 2 calls a cycle. W5's fake-clock step is timed but not counted.
+The prototypes' unit is not recorded, so read each comparison as an order of magnitude,
+not a ratio.
+
+| Workload | P=10 | P=1,000 | P=100,000 | Prototype at P=1,000, `MemoryRecords` (`ArrowRecords`) |
+| --- | --- | --- | --- | --- |
+| W1 publish | 5,220,000 | 11,580,000 | 3,402,000 | 4,246,025 (287,895) |
+| W2 supersede | 11,540,000 | 8,712,000 | 3,693,000 | 6,118,040 (781,874) |
+| W3 pull 16, ack, release | 3,380,000 | 3,177,000 | 2,697,000 | 2,550,028 (460,431) |
+| W4 publish with every fifth op a consume step | 4,336,000 | 3,729,000 | 2,568,000 | 2,831,593 (301,528) |
+| W5 pull then lapse on tick | 7,461,000 | 6,052,000 | 3,807,000 | 801,351 (257,835) |
+
+divan prints these to four significant figures (for example 11.58 Mitem/s), and the table
+writes them out in full. Load 2.32 / 2.94.
+
+**Over loopback.**
+
+| Workload | Service flags | Load | MVP | Prototype |
+| --- | --- | --- | --- | --- |
+| Single-record publish, C=64 | none | 2.70 / 8.43 | 60,439 records/s | PR 39 99,161 as shipped (INFO log), 157,715 with the log capped at WARN; PR 38 76,058 (`ArrowRecords`), 77,920 (`MemoryRecords`) |
+| Batch publish, C=8, 256 rows per batch | none | 3.99 / 4.37 | 904,824 rows/s | PR 38 121,394 as shipped; 1,565,592 with `MemoryRecords` |
+| Batch publish, C=64, 1,024 rows per batch | `--max-batch-rows 1024` | 3.72 / 5.52 | 870,269 rows/s | PR 38 139,374 as shipped; 2,100,471 with `MemoryRecords` |
+| Consume, C=64: pull 100, ack each, release | none | 3.94 / 7.73 | 58,094 records acked/s, after an untimed fill of 1,000,000 records | none measured |
+| Mix, C=64: 32 clients publish single records, 32 consume as above | none | 3.73 / 8.19 | 30,238 records published/s and 29,320 acked/s | none measured |
+| Lapse lag under batch load (b=256, C=8) | `--lease-ttl-ms 2000 --sweep-ms 1000` | 3.94 / 12.89 | p50 288 ms, max 843 ms | PR 38 as shipped 2,038 ms (max 3,257 ms), re-run 2,411 ms; PR 38 with `MemoryRecords` 439 ms; T21 560 ms; 315 to 689 ms in the other probe runs |
+| RSS after one 10 s batch run (b=256, C=8, 11,734,528 rows) | none | 3.53 / 3.76 | 4,617,840 KiB (4,510 MiB), about 0.39 KiB per row | PR 38 with `MemoryRecords` 8,191 MiB after 10 s |
+
+The batch figures fall from run to run as the queue fills: the C=8 runs measured 1,193,283,
+966,035, 904,824, 864,404 and 797,480 rows/s. The service keeps every record, since
+nothing consumes them. After those five runs (47,274,752 rows), RSS was 9,549,952 KiB,
+about 0.20 KiB per row. The RSS figures are observations: nothing bounds them
+(`NeverRefusedForCapacity`, open question 3).
+
+The quotient for the Flight reopen trigger is the MVP's batch rate at b=256, C=8 over the
+`MemoryRecords` prototype figure: 904,824 / 1,565,592 = 0.58. The maintainer's ratio,
+when set, is read against that number. This section decides nothing.
+
+The lapse probe ends a run when B claims the probe pocket. The ticker lapses a lease at
+the first tick after its `expires_at`, and ticks are `--sweep-ms` apart, so the sweep
+interval, here 1,000 ms, is the most the lag should be without load. Anything beyond it is
+the owner's queueing under load. B's claim instant and `expires_at` are both read from the
+system clock of the one machine. Each probe run then drains the queue untimed, so that
+the next run's probe pocket is the front.
+
+The caveats:
+
+- One machine, and nothing measured on Linux.
+- Closed-loop clients understate tail latency.
+- The `MemoryRecords` and WARN-log prototype variants are scratch variants, one change
+  each, that neither prototype ships.
+- The prototypes' unit of an in-process op is not recorded. This section's unit is one
+  library call, so the in-process comparison is an order of magnitude, not a ratio.
+- The MVP's default log level writes no per-request line, so its single-record publish is
+  read against both PR 39 figures.
+- The load generator shares the machine with the service, so the client threads compete
+  with the service for the 18 CPUs; the after-load figures show it. Every workload started
+  at a 1-minute load at or below 4, with no other lane and no `just check` running. A
+  load average does not say which process caused the load, so other background load, at
+  that level or starting during a run, is not ruled out.
+
 ## What would reopen this
 
 - Columnar producers become a requirement, or T30's JSON batch rate falls below the

@@ -49,3 +49,7 @@ proptest = { workspace = true }
 [[bench]]
 name = "version"
 harness = false
+
+[[bench]]
+name = "workloads"
+harness = false

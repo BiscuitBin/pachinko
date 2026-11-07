@@ -23,7 +23,7 @@
       "groupName": "github actions"
     },
     {
-      "description": "The toolchain in three places, every one read from the same tags of the rust image on Docker Hub, the -slim-bookworm variant the Dockerfile builds on: channel in rust-toolchain.toml, rust-version in Cargo.toml and fuzz/Cargo.toml, and the Dockerfile's build stage. The two regex managers keep only -slim-bookworm tags through extractVersionTemplate, and docker versioning keeps the Dockerfile on its suffix, so no member moves to a release whose image is not on Docker Hub; this is the tag-set option, not a minimumReleaseAge. Docker versioning keeps the component count: channel and the Dockerfile tag read x.y.z-slim-bookworm and move on a patch, rust-version reads x.y-slim-bookworm and moves only on a minor; the official image pushes both tags from one build. A digest-only Dockerfile update, when the image is rebuilt under the same tag, moves only the digest, which is harmless. Held for dashboard approval, because a toolchain moves the clippy lint set; a vulnerability-fix pull request skips that approval.",
+      "description": "The toolchain in four places, every one read from the same tags of the rust image on Docker Hub, the -slim-bookworm variant the Dockerfile builds on: channel in rust-toolchain.toml, rust-version in Cargo.toml, fuzz/Cargo.toml and loadgen/Cargo.toml, and the Dockerfile's build stage. The two regex managers keep only -slim-bookworm tags through extractVersionTemplate, and docker versioning keeps the Dockerfile on its suffix, so no member moves to a release whose image is not on Docker Hub; this is the tag-set option, not a minimumReleaseAge. Docker versioning keeps the component count: channel and the Dockerfile tag read x.y.z-slim-bookworm and move on a patch, rust-version reads x.y-slim-bookworm and moves only on a minor; the official image pushes both tags from one build. A digest-only Dockerfile update, when the image is rebuilt under the same tag, moves only the digest, which is harmless. Held for dashboard approval, because a toolchain moves the clippy lint set; a vulnerability-fix pull request skips that approval.",
       "matchDatasources": ["docker"],
       "matchDepNames": ["rust"],
       "groupName": "rust toolchain",
@@ -105,8 +105,8 @@
     },
     {
       "customType": "regex",
-      "description": "rust-version in the workspace and fuzz manifests, the channel's major.minor, from the rust image's x.y-slim-bookworm tags (see the rust toolchain rule).",
-      "managerFilePatterns": ["/^Cargo\\.toml$/", "/^fuzz/Cargo\\.toml$/"],
+      "description": "rust-version in the workspace, fuzz and loadgen manifests, the channel's major.minor, from the rust image's x.y-slim-bookworm tags (see the rust toolchain rule).",
+      "managerFilePatterns": ["/^Cargo\\.toml$/", "/^fuzz/Cargo\\.toml$/", "/^loadgen/Cargo\\.toml$/"],
       "matchStrings": ["rust-version = \"(?<currentValue>\\d+\\.\\d+)\""],
       "depNameTemplate": "rust",
       "datasourceTemplate": "docker",

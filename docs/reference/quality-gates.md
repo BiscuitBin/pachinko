@@ -17,11 +17,11 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
-| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `loadgen/Cargo.toml` with `loadgen/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
 | 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
-| 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` | Every Rust file, the fuzz crate's included, is as rustfmt would write it. |
+| 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every Rust file, the fuzz and loadgen crates' included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
-| 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz crate's copy of it over the fuzz targets, for the host platform, with warnings as errors. |
+| 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz and loadgen crates' copies of it over their targets, for the host platform, with warnings as errors. |
 | 7 | `metrics` | rustqual, once per crate | Every function is within the complexity, length, nesting and parameter thresholds and none that holds logic calls itself, every struct within the cohesion and size thresholds, every file within the length threshold, and every module within the coupling thresholds, in `crates/libpachinko` and in `crates/pachinko`. |
 | 8 | `effects` | `scripts/check-effects.sh` | libpachinko's normal dependency tree, on every target, names no banned crate; libpachinko calls no banned std API in what clippy compiles for the host with every feature, with none, and with every feature in the release profile; and the probe fixture trips every ban once while pachinko trips none. |
 | 9 | `features` | `cargo hack check --feature-powerset` | Every feature combination compiles. |
@@ -42,9 +42,11 @@ The table leaves out `--locked`, which the recipes
 not, and `snapshots-check` cannot pass it through cargo-insta, which is why it runs
 `lock-check` first.
 
-`fuzz/` is a workspace of its own, so gates 2, 4 and 6 name its manifest beside the
-root one. Its clippy pass stays inside `just check` by the maintainer's choice on
-2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s warm.
+`fuzz/` and `loadgen/` are each a workspace of their own, so gates 2, 4 and 6 name their
+manifests beside the root one. The fuzz crate's clippy pass stays inside `just check` by
+the maintainer's choice on 2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s
+warm. The loadgen crate is checked the same way (T30); only running it, by `just loadgen`,
+and its unit tests, by `just test-loadgen`, stay outside the gate.
 
 Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
 The duplication is deliberate: a regression names itself in the list of gates rather than
@@ -132,8 +134,8 @@ choice on 2026-10-24, so a test that needs a real effect belongs under
 
 ## Outside the gate
 
-`test`, `build`, `audit`, `mutants`, `bench`, `fuzz`, `semver`, `image`, `site`, `plan-spec`
-and `check-links-online` are recipes that `just check` does not run. `test` runs nextest
+`test`, `build`, `audit`, `mutants`, `bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`,
+`image`, `site`, `plan-spec` and `check-links-online` are recipes that `just check` does not run. `test` runs nextest
 and the doctests in one go, which `coverage` and `test-doc` already cover between them;
 `build` compiles what `clippy` and `features` already compile; `site` builds the API
 reference that `doc` has proved, for
@@ -142,8 +144,8 @@ suggestion list for tests, which nothing asserts on. `check-links-online` needs 
 network, and a check that can fail because a third party is down is not a gate. `audit`
 is missing for the same reason: it reads the RustSec advisory database, and runs in a
 workflow of its own. Mutation testing is a report because runtime grows with the
-workspace and survivors require judgement; there is no score threshold. Benchmarks run
-by hand, because machine load makes a timing no gate, and fuzzing runs weekly in a
+workspace and survivors require judgement; there is no score threshold. Benchmarks and the
+load generator run by hand, because machine load makes a timing no gate, and fuzzing runs weekly in a
 workflow of its own ([decision 0017](../decisions/0017-mutation-bench-and-fuzz.md));
 `semver` is advisory before 1.0 ([decision 0016](../decisions/0016-release-process.md));
 and `image` needs Docker, which the source gate does not, so CI's `image` job builds the

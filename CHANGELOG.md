@@ -20,6 +20,10 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Added
 
+- The queue's workloads as divan benches, W1 publish, W2 supersede, W3 pull 16, ack and
+  release, W4 publish with every fifth op a consume step, and W5 pull then lapse on
+  tick, each at 10, 1,000 and 100,000 pockets in ops per second, one op a library call;
+  `just bench` runs them by hand, never in CI or the gate.
 - The invariant walk: a seeded proptest walk over every queue trigger that predicts each
   step's outcome and post-state from the rules, checks all 25 invariants and every
   declared transition after every step, and proves its generator reaches every state
@@ -92,6 +96,10 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   30000), answering 408 `request_timeout` and closing idle connections; and
   `--shutdown-grace-ms` (default 5000), after which open connections are cut and,
   one more grace period later, anything left is aborted.
+- A closed-loop load generator and lapse probe, `just loadgen`, in the excluded
+  `loadgen/` crate with its own lockfile: publish, batch, consume and mix workloads and
+  the lapse lag against a running `pachinko serve`, failing closed on any error. It
+  runs by hand, never in CI or the gate, and decision 0019 records its figures.
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

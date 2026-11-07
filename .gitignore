@@ -65,3 +65,4 @@ mutants.out*/
 /fuzz/corpus/
 /fuzz/artifacts/
 /fuzz/coverage/
+/loadgen/target/

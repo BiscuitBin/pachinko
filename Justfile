@@ -58,15 +58,17 @@ install-tools:
 install-allium:
     bg-install-allium
 
-# All three lockfiles, exactly as committed. Never rewrites any.
+# All four lockfiles, exactly as committed. Never rewrites any.
 sync:
     cargo fetch --locked
     cargo fetch --locked --manifest-path fuzz/Cargo.toml
+    cargo fetch --locked --manifest-path loadgen/Cargo.toml
     pixi install --frozen
 
 lock:
     cargo update --workspace
     cargo update --workspace --manifest-path fuzz/Cargo.toml
+    cargo update --workspace --manifest-path loadgen/Cargo.toml
     pixi lock
 
 # Within the manifest's constraints only; every direct pin is exact, so this
@@ -75,6 +77,7 @@ lock:
 lock-upgrade:
     cargo update
     cargo update --manifest-path fuzz/Cargo.toml
+    cargo update --manifest-path loadgen/Cargo.toml
     pixi update
 
 # Offline, like every gate recipe: a cold Cargo cache fails rather than
@@ -84,6 +87,7 @@ lock-upgrade:
 lock-check:
     cargo update --workspace --locked --offline
     cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
+    cargo update --workspace --locked --offline --manifest-path loadgen/Cargo.toml
     pixi lock --check --offline --dry-run
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
@@ -105,6 +109,16 @@ install-hooks:
 # Timings measure the machine: run manually, never in CI or the gate.
 bench *args:
     cargo bench --workspace --all-features --locked --bench '*' "$@"
+
+# The load generator and lapse probe against a running `pachinko serve`, from
+# the excluded loadgen/ crate. Timings measure the machine: never a gate.
+loadgen *args:
+    cargo run --manifest-path loadgen/Cargo.toml --release --locked -- "$@"
+
+# The excluded loadgen/ crate's own unit tests, which `test` cannot reach: the
+# crate is outside the workspace. Run by hand, outside `check`, like the crate.
+test-loadgen:
+    cargo test --manifest-path loadgen/Cargo.toml --locked
 
 # cargo-fuzz has no --locked: validate locks first, then run offline. The host
 # target avoids the x86 default of cargo-fuzz's macOS binary on Apple silicon.
@@ -178,6 +192,7 @@ snapshots-accept: lock-check
 format:
     cargo fmt --all
     cargo fmt --manifest-path fuzz/Cargo.toml
+    cargo fmt --manifest-path loadgen/Cargo.toml
     taplo fmt
 
 # Automatic repairs. The fix config is run twice because a
@@ -186,8 +201,10 @@ fix:
     -prek run --all-files --config .pre-commit-fix.yaml
     prek run --all-files --config .pre-commit-fix.yaml
     cargo fmt --manifest-path fuzz/Cargo.toml
+    cargo fmt --manifest-path loadgen/Cargo.toml
     cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged
     cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
+    cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
     just lint
 
 # ------------------------------------------------------------------ check ---
@@ -198,6 +215,7 @@ lint:
 fmt-check:
     cargo fmt --all --check
     cargo fmt --manifest-path fuzz/Cargo.toml --check
+    cargo fmt --manifest-path loadgen/Cargo.toml --check
 
 toml-check:
     taplo fmt --check
@@ -208,6 +226,7 @@ toml-check:
 clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
     cargo clippy --manifest-path fuzz/Cargo.toml --all-targets --locked -- -D warnings
+    cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked -- -D warnings
 
 # Gate 7: complexity, cohesion and coupling, through rustqual against
 # rustqual.toml, once per crate. The version check comes first: rustqual's
