@@ -53,7 +53,7 @@ snapshot.
 | T28 | Invariant walk and the conformance catalog | `T28-invariant-walk.md` | T26, T27 | T30 | done |
 | T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | done |
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | done |
-| T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | todo |
+| T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | done |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that

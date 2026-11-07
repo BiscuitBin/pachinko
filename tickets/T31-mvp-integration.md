@@ -1,7 +1,7 @@
 ---
 id: T31
 title: "Integration and hand-back"
-status: todo
+status: done
 depends_on: [T28, T29, T30]
 parallel_with: []
 branch: ticket/t31-mvp-integration
@@ -284,10 +284,541 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `0927fe5` (T22 to T30 merged into the wave branch), `just check` on the untouched
+worktree (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+Commit A is `5faacc0` (the sweep); commit A2 is `40ff3e7` (the T31-1 and `code-review`
+fixes); commit B carries this section and `status:`.
+
+### Wave overrides
+
+- Worked on the wave branch `mvp-inimal-but-sufficient` from `0927fe5`, not on
+  `ticket/t31-mvp-integration` from `main`. Wherever the ticket says
+  `git diff main...HEAD`, the diff was taken against the start commit plus the
+  uncommitted changes.
+- `git fetch origin`, merging `origin/main`, push and pull request: not run: one pull
+  request at T31. That pull request is the wave's, and the lead opens it (step 9).
+- Step 7 clones the wave branch, `mvp-inimal-but-sufficient`, not
+  `ticket/t31-mvp-integration`.
+- Step 9 stops before `git push`: the lead pushes, opens the single pull request
+  (authorised) and reads its CI run.
+- Step 10 drafts the two `CONVENTIONS.md` sentences below and stops; the edit is a
+  separate `main` pull request.
+- Beside `review-change` at step 5, the lead asked for the `code-review` skill over the
+  wave. This agent invoked it twice; each run reported to the lead, who forwarded its
+  findings, and this agent dispositioned them (below).
+- The §14 reviews, triage and the fix writer were run by the wave lead; this agent
+  stopped uncommitted at the checkpoint, read the fix diff and reran its checks.
+
+### Deviations from Files touched and the steps
+
+Files touched widened, each approved by the lead:
+
+- `docs/tutorials/first-change.md` §2 to §5, beyond "lines 60 to 62": the tutorial no
+  longer compiles as written. It targeted the old `run(out) -> io::Result<()>`; the
+  version line is now built in `crates/pachinko/src/lib.rs`'s private `fn version`
+  (step 2's D-T24-5, so it is not an Open point). The exercise is quoted under step 4.
+- `docs/explanation/layering.md:20-31` (`review-change` class 3, item 1) and `:72-76`
+  (T31-1 C2).
+- `docs/how-to/test-and-debug.md:98`, "The ack and release lines arrive with T25"
+  (`review-change` class 3, item 2).
+- `crates/pachinko/Cargo.toml:7`, the package description (`just lock-check` and
+  `just toml-check` exit 0).
+- `rustqual.toml`'s comment and `docs/reference/configuration.md:101` (T31-1 C2).
+- `crates/pachinko/src/serve.rs` and `crates/pachinko/src/actor.rs`: the code changes for
+  `code-review` run 2's findings 2 and 10.
+
+Edits within own files beyond the line ranges the rows name: `AGENTS.md:9-10`;
+`repository-map.md`'s tree block and the `libpachinko/tests` row; `purpose-and-scope.md`'s
+intro; `docs/README.md`'s Understand bullet; `CHANGELOG.md:62`; `terminology.md`'s
+Library and Effect trait rows; `crates/libpachinko/README.md`'s `Queue` sentence;
+`api.md:36`; `security-model.md`'s "What there is to protect" bullet.
+
+Rows with nothing to do:
+
+- `docs/reference/testing.md:83-84`: a lane had already replaced the placeholder
+  sentence.
+- `crates/pachinko/README.md`: T24 replaced the file; it describes tokio, axum and 0019.
+- `docs/project/terminology.md:49`: the 0014 half was already gone (T22); the "minimal
+  binary" half was fixed in A.
+- Decisions 0014 and 0019: the cross-references were already correct (0014 line 11,
+  "Decision 0019 supersedes this record"; 0019 line 11, "This record supersedes
+  decision 0014").
+- `tickets/README.md`'s "Review of the ticket set" bullet is not "Pending": line 134
+  reads "were reviewed on". Step 6's condition did not fire, and the bullet was left
+  alone.
+
+The step 7 clone is not at `ai_tmp/fresh`. A clone nested in the worktree makes cargo
+resolve `fuzz/Cargo.toml` against the outer worktree's workspace ("current package
+believes it's in a workspace"), so `just initialize` failed at `sync`. The clone went to
+the session's scratch directory instead (its path is in the quotes below).
+
+Ticket commands adjusted, each quoted below:
+
+- Routes: `rg -n '\.route\(' crates/pachinko/src/http.rs` prints 13. The 13th is the
+  test router at `http.rs:749`, under `#[cfg(test)]`, so the routes are counted before
+  `#[cfg(test)]`: 12.
+- Open questions: `rg -c 'open question'` prints 13, because five are comment mentions;
+  `rg -c '^open question'` prints 8, the blocks at `pachinko.allium:886-893`.
+- `NeverRefusedForCapacity`: the ledger assigns it to T27, which tagged it in
+  `crates/pachinko` as `// guarantee:`, so the search runs over `crates`, not
+  `crates/libpachinko`.
+
+### Step 2: the hand-backs reconciled
+
+The full reconciliation, with every quote, source and tree check, is
+`ai_tmp/wave/T31/step2-reconcile.md`, read-only at `0927fe5`.
+
+| Disposition | Count |
+| --- | --- |
+| (a) fix in T31 | 14 (A-1 to A-14) |
+| (b) closed by evidence another ticket quoted | 27 (B-1 to B-27), plus D-T30-9 and L-1 |
+| (c) missing MVP obligation | 0 |
+| (d) open with an owner | 50 |
+
+The (a) rows and their outcome:
+
+- A-1 `README.md:10-12`, the domain undefined and the placeholder module: fixed in A.
+- A-2 `AGENTS.md:5` and `:13`: fixed in A; `just check-agents` green.
+- A-3 `docs/README.md:15-21`, the intro and the placeholder paragraph: fixed in A.
+- A-4 `docs/project/purpose-and-scope.md:40-47`, "Until T24 builds it": fixed in A.
+- A-5 `docs/project/terminology.md:49`, "a minimal binary": fixed in A; the 0014 half
+  had nothing to do.
+- A-6 `docs/project/repository-map.md:89` and `:95`, the `version()`-only library and
+  "declares no behaviour": fixed in A.
+- A-7 `docs/tutorials/first-change.md:61`: fixed in A, with §2 to §5 (deviations).
+- A-8 `docs/explanation/architecture.md:252`, T24's "5-second grace": fixed in A, with
+  readiness and `--shutdown-grace-ms` and a pointer to the HTTP API's shutdown section.
+- A-9 `CHANGELOG.md:54` and `:57-58`, "not yet implemented" and "awaits its
+  implementation": fixed in A, and `:62`'s placeholder module.
+- A-10 `docs/reference/configuration.md:196-197`, "declares nothing": fixed in A.
+- A-11 `tickets/README.md`, T22, T23, T25, T26 and T28 `todo`: fixed in A; T31's own row
+  goes with its `status:` at commit B.
+- A-12 `crates/pachinko/README.md`: nothing to do (T24 replaced it).
+- A-13 `crates/libpachinko/README.md:7-8`, the `Queue` sentence leaving out the lease
+  actions and `tick`: completed in A.
+- A-14 `docs/explanation/security-model.md`: "What is deferred" was already renamed by a
+  lane; the Related pages' 0014 link was dropped in A.
+
+The (b) rows close by the ticket and section each names: B-1 to B-27 in
+`step2-reconcile.md`; no green gate is cited for an item it does not run (`plan-spec`,
+`test-loadgen`, `image`, `bench` and `loadgen` are outside `check`). The wave-override
+"not run" group (fetch, merge, push and pull request in T22 to T30, `just initialize` in
+T22, T23, T24 and T26) closes with this ticket's step 7 and the lead's step 9. Every (d)
+row not already in Open points is carried there with its owner. No hand-back reported a
+missing MVP obligation; the near-misses are N-1 (`NeverRefusedForCapacity`'s location),
+N-2 (T26-1's "192 obligations", a transcription slip; the count is 190) and N-3 (the
+open-question count), each settled in step 3 or 4.
+
+### Step 3: the ownership sweep
+
+At `0927fe5` with uncommitted changes (the sweep that became A). Each of the 61 rules,
+invariants and guarantees in libpachinko's columns prints at least one `// obligation:`
+tag under `crates/libpachinko` (`ai_tmp/wave/T31/step3-sweep.txt`, one line per name);
+`NeverRefusedForCapacity` prints none there, as N-1 expected. The scenario, route, flag
+and code lines, with their positive controls (`ai_tmp/wave/T31/step3-verif.txt`, the
+flag-arm listing trimmed):
+
+```text
+== HEAD 0927fe5
+$ rg -c scenario counts
+crates/libpachinko/tests/queue/expiry.rs:19
+crates/libpachinko/tests/queue/lease.rs:12
+crates/libpachinko/tests/queue/publish.rs:12
+crates/libpachinko/src/config.rs:1
+crates/libpachinko/tests/queue/identity.rs:7
+crates/libpachinko/tests/queue/pull.rs:11
+crates/libpachinko/tests/queue/settle.rs:11
+crates/libpachinko/tests/queue/decay.rs:3
+exit 0
+$ diff
+exit 0
+$ dup
+exit 0
+$ routes
+80:        .route("/healthz", get(healthz))
+81:        .route("/readyz", get(readyz))
+95:        .route("/publishers/{publisher_id}", post(publisher_joins))
+96:        .route("/consumers/{consumer_id}", post(consumer_joins))
+97:        .route("/pockets/{pocket_key}/records/{record_key}", put(publish))
+98:        .route(
+102:        .route("/consumers/{consumer_id}/pull", post(pull))
+103:        .route("/consumers/{consumer_id}/lease", get(lease))
+104:        .route("/leases/{lease_id}/ack", post(leases::ack))
+105:        .route("/leases/{lease_id}/nack", post(leases::nack))
+106:        .route("/leases/{lease_id}/renew", post(leases::renew))
+107:        .route("/leases/{lease_id}/release", post(leases::release))
+749:            Router::new().route("/never", get(std::future::pending::<()>)),
+13
+$ flags
+13
+exit 0
+$ codes: arms in code()
+14
+wildcard-exit 1
+$ positive control: diff against S001..S077 (must print and exit 1)
+76a77
+> scenario: S077
+exit 1
+$ positive control: uniq -d with S001 doubled (must print)
+scenario: S001
+exit 0
+$ positive control: the pattern takes the whole token (S0761 must fail diff)
+77d76
+< scenario: S0761
+exit 1
+$ plan-spec obligation count
+190
+$ catalog rows 76
+ids exactly S001..S076: True
+```
+
+The flag arms are `config.rs:267-288`, 13 `"--name" =>` lines. The catalog check's one
+"unparsed" row is S005, whose owner is the `compile_fail` doctest on `Config`
+(`config.rs:45-46`, `// scenario: S005`), which names no `file`, `fn` pair. The 190 is
+`obligations[]` in `just plan-spec pachinko`'s output (`ai_tmp/wave/T31/plan-spec.txt`),
+as T22, T25 and T28 quoted.
+
+The adjusted `NeverRefusedForCapacity` search, at `40ff3e7`:
+
+```text
+$ rg -n 'NeverRefusedForCapacity' crates; echo "exit $?"
+crates/pachinko/src/actor.rs:833:    // guarantee: NeverRefusedForCapacity
+crates/pachinko/tests/batch_publish.rs:259:// guarantee: NeverRefusedForCapacity
+exit 0
+```
+
+No name was missing, so no lane reopened. Steps 3 to 5 ran before A2, which changed
+`serve.rs` and `actor.rs`; at A2 the fresh clone's `just check` (step 7) is the gate.
+
+### Step 4: the handbook sweep
+
+At `0927fe5` with uncommitted changes (the sweep that became A), from
+`ai_tmp/wave/T31/step4-verif.txt`. The positive control is `git grep` at `611a86e`, with
+no checkout; long lines are cut at `...`:
+
+```text
+== positive control at 611a86e (git grep, no checkout)
+611a86e:AGENTS.md:5:The workspace holds a library, `libpachinko`, and a service, `pachinko`, built around it. Their domain is not defined yet. ...
+611a86e:AGENTS.md:13:- `docs/specs/` holds the Allium specifications; today it holds one placeholder module.
+611a86e:README.md:10:The domain is not defined yet. The Allium specifications under `docs/specs/` decide
+611a86e:README.md:11:behaviour; today they contain one placeholder module with no declarations. The library
+611a86e:crates/libpachinko/src/lib.rs:4://! The domain is not defined yet, so this crate holds one item. When it grows, it
+611a86e:crates/pachinko/README.md:8:The domain is not defined yet. The Allium specifications under `docs/specs/` will
+611a86e:crates/pachinko/README.md:10:of the library's effect traits. No runtime, transport or HTTP stack has been chosen.
+611a86e:docs/explanation/architecture.md:160:The service has no async runtime, transport or HTTP stack, and none is chosen. Choosing
+611a86e:docs/project/purpose-and-scope.md:44:  no async runtime, transport or HTTP stack. Choosing them before the specifications say
+611a86e:docs/project/repository-map.md:89:| `docs/specs/` | The Allium specifications. ... which declares no behaviour. |
+611a86e:docs/project/terminology.md:49:| Service | `pachinko`, under `crates/pachinko/`: a minimal binary built around the library, ...
+611a86e:docs/reference/configuration.md:156:declares nothing, so the code mirrors no figure; see
+611a86e:docs/reference/testing.md:84:states no behaviour, so `just plan-spec pachinko` has nothing to ask for.
+611a86e:docs/tutorials/first-change.md:61:entity, rule, surface or invariant: the domain is not defined yet, and the first change
+exit 0
+== working tree on top of 0927fe5
+exit 1
+== rg -n 0014 docs
+docs/manifest.yml:51:    {"path": "decisions/0014-service-runtime-deferred.md", "title": "Decision 0014: ...", ...},
+docs/decisions/0008-std-library.md:32:([decision 0014](0014-service-runtime-deferred.md)). `rust-toolchain.toml` names no
+docs/decisions/0008-std-library.md:138:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
+docs/decisions/0001-library-and-service.md:40:specifications ([decision 0014](0014-service-runtime-deferred.md)).
+docs/decisions/0001-library-and-service.md:92:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
+docs/decisions/0014-service-runtime-deferred.md:2:title: "Decision 0014: The service runtime waits for the specifications"
+docs/decisions/0014-service-runtime-deferred.md:9:# Decision 0014: The service runtime waits for the specifications
+docs/decisions/README.md:37:| [0014](0014-service-runtime-deferred.md) | The service runtime waits for the specifications |
+docs/decisions/README.md:45:0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019,
+docs/decisions/README.md:46:which replaces its deferral with the runtime the prototypes chose; 0014's consequences
+docs/decisions/README.md:57:reference names. Three entries were new at the foundation: 0001, 0008 and 0014. Nothing
+docs/decisions/0015-container-image.md:16:[decision 0014](0014-service-runtime-deferred.md) leaves its eventual surface to the
+docs/decisions/0015-container-image.md:54:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
+docs/decisions/0019-service-runtime-tokio-and-http.md:11:This record supersedes [decision 0014](0014-service-runtime-deferred.md), which deferred
+docs/decisions/0019-service-runtime-tokio-and-http.md:16:Decision 0014 chose no async runtime, transport or HTTP stack and named its trigger: the
+docs/decisions/0019-service-runtime-tokio-and-http.md:19:that trigger. The spike 0014 called for then ran as three prototypes, each building the
+docs/decisions/0019-service-runtime-tokio-and-http.md:102:**This record.** It is one fresh record, 0019, that supersedes 0014 and cites PR 38 at
+docs/decisions/0019-service-runtime-tokio-and-http.md:297:- [Decision 0014: The service runtime waits for the specifications](0014-service-runtime-deferred.md)
+== rg -c '^open question' (ticket's rg -c 'open question' prints:)
+13
+8
+== routes before #[cfg(test)]
+12
+```
+
+The working-tree sweep prints nothing (exit 1). `rg -n '0014' docs` prints only the
+survivors step 4 names: 0014 itself, the decisions index's row and foundation sentence,
+0019's citations, the manifest entry, and 0001, 0008 and 0015 citing it historically.
+`docs/how-to/work-with-the-specs.md` lists the eight questions in module numbering.
+
+The tutorial exercise: with `first-change.md` §2 to §5's edit applied as written, then
+reverted. The three expected failures (`ai_tmp/wave/T31/tut-nextest.log` and
+`tut-doc.log`, trimmed; the logs carry no commit line, and they ran on the uncommitted
+sweep before A):
+
+```text
+     Summary [   0.632s] 236 tests run: 234 passed, 2 failed, 0 skipped
+        FAIL [   0.006s] (183/236) pachinko tests::run_writes_the_name_and_the_library_version
+        FAIL [   0.302s] (227/236) pachinko::binary the_binary_prints_its_line_and_exits_zero
+error: test run failed
+exit 100
+failures:
+    crates/pachinko/src/lib.rs - run (line 47)
+test result: FAILED. 26 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+error: doctest failed, to rerun pass `-p pachinko --doc`
+error: recipe `test-doc` failed on line 144 with exit code 101
+exit 101
+```
+
+### Step 5: `review-change` over the wave
+
+Over `git diff 611a86e` at `0927fe5` plus the uncommitted sweep
+(`ai_tmp/wave/T31/review-change.md`). The ten invariants hold; `just effects` exit 0
+("libpachinko names none of 8 banned crates and uses none of 121 banned std APIs";
+"pachinko trips none"); coverage 99.01% of lines. Class 2, a missing MVP obligation:
+none.
+
+- Class 1, all low, applied in A: `architecture.md` restated the shutdown contract the
+  HTTP API page owns; `api.md:37` named only `run` and `exit_code` as items with
+  examples; `security-model.md:133-134`'s "the prototype's resident memory" now names
+  PR 38's prototype.
+- Class 3: `layering.md:20-31` (medium) and `test-and-debug.md:98` (low) were fixed in
+  A under the widened Files touched; `counting.rs`'s `thread_local!` (T26) and the flag
+  defaults restated on five pages (T27, T29) are in Open points.
+
+### `code-review` beside step 5
+
+Run 1, level medium, hit the wrong target: commit `611a86e` against its first parent, so
+it reviewed T19's specification, not the wave (`ai_tmp/wave/T31/code-review-run1.md`).
+Dispositions:
+
+- 1, 2, 4 and 5 are questions about the specification's behaviour, so product decisions:
+  Open points for the maintainer as proposed open questions. The specification was not
+  edited.
+- 3: already fixed by T22 (branch A, the `lease_ttl = 0` caveat).
+- 6, "consumer" used for the library's caller: still stale at `5faacc0` in
+  `architecture.md:13`, `:211` and `:217`, `api.md:68` and `:70`,
+  `configuration.md:135`, `security-model.md:145` and `testing.md:31`; fixed in A2.
+- 7, the domain-undefined prose: fixed in A.
+- 8, 9 and 10, low: Open points.
+
+Run 2, level medium, over the branch against `main` with the uncommitted changes,
+`crates/` included (`ai_tmp/wave/T31/code-review-run2.md`). Each finding was verified
+against the tree:
+
+- 1, `http-api.md:98`, lost-batch recovery: verified (`PullOutcome::Batch` carries the
+  lease id, a pull within the lease returns only newly held records, and the limit
+  clamps to 0); the page now gives the recovery. Fixed in A2.
+- 2, `serve.rs`, `--shutdown-grace-ms 0`: reproduced. The binary exited 1 on 1 of 5
+  SIGTERMs after start ("shutdown took longer than 0ms"), and a unit test was red
+  (`Err(Task(..0ms..))` against `Ok`). Fixed test-first in A2 (lead-approved `serve.rs`
+  deviation): a zero grace cuts at once and joins the tasks unbounded, aborting none, so
+  it is no overrun; a grace above zero is unchanged.
+  `a_zero_grace_period_cuts_at_once_and_joins_the_tasks_that_end_on_the_cut` went red,
+  then green; `a_stop_with_a_zero_grace_period_ends_serve_with_ok` passed before the
+  fix too and stays as the `serve`-level guard. After the fix, 30 of 30 SIGTERMs after
+  the ready line exited 0. `configuration.md:47` and the HTTP API's Shutdown section say
+  so.
+- 3, the lease-id exhaustion guard and the redraw loop: Open point (an API change).
+- 4, a forward step of the wall clock lapses every lease: Open point; the trade-off is
+  decided in 0019 (lines 84 to 88 and 287).
+- 5, `loadgen/` returns `String` errors: Open point for the maintainer.
+- 6, `http-api.md:64` named `--lease-ttl`: now `--lease-ttl-ms`, fixed in A2; `rg` over
+  `docs`, `crates` and `README.md` found no other flag spelled without its unit.
+- 7 and 8, `yield_now` per command and a clock read per batch row: Open points (perf).
+  Changing either now would invalidate T30's figures.
+- 9, `Lifecycle::start`'s fallback tick lane: Open point (latent; no second start
+  exists).
+- 10, `actor.rs:536` hand-wrote the reply: now uses `answer()`, fixed in A2.
+
+After the fixes, with the content of A2 uncommitted on A: `just fmt-check` exit 0,
+`just test` 238 of 238 and the doctests, `just check` green. The fresh clone's quotes
+below are the requote at A2.
+
+### Step 6: `tickets/README.md`
+
+T22, T23, T25, T26 and T28 were set to `done` in A; T24, T27, T29 and T30 already read
+`done`. Each matches its ticket's `status:`. T31's row goes with its `status:` at B.
+
+### Step 7: the fresh clone
+
+The first run, at A (`5faacc0`), is superseded. The clone at `ai_tmp/fresh` failed (see
+deviations); the clone in the scratch directory was green online. A2 then made those
+quotes stale (§11), so step 7 was rerun at A2.
+
+At A2, `40ff3e7`, cloned from the local repository into the session's scratch directory.
+`just initialize` (`ai_tmp/wave/T31/fresh2-init.log`, trimmed):
+
+```text
+== clone HEAD 40ff3e741f485a140a3898c2a6d0d962ffae060f
+== 40ff3e7 just initialize (/private/tmp/claude-501/-Users-scutting--supacode-repos-pachinko-mvp-inimal-but-sufficient/edc3394f-8bfd-4b33-b4c0-37cc80e6e50a/scratchpad/fresh)
+sh scripts/initialize.sh
+...
+Installed Git hook at `.git/hooks/pre-commit`
+prek prepare-hooks --config .pre-commit-fix.yaml
+RUSTUP_AUTO_INSTALL=0 prek run lychee --files README.md
+lychee...................................................................Passed
+
+Ready. Next: just check.
+Nothing has been formatted, staged, committed, tagged, or pushed.
+exit 0
+```
+
+`just check` online (`ai_tmp/wave/T31/fresh2-check.log`, 1,159 lines, trimmed to its
+recipes' summary lines and its end):
+
+```text
+== 40ff3e7 just check
+bg-project-check run
+...
+::notice::Quality score: 100.0% (410 functions analyzed)
+::notice::Quality score: 100.0% (346 functions analyzed)
+...
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+...
+TOTAL                                      7199               132    98.17%         603                 5    99.17%        4339                40    99.08%           0                 0         -
+...
+Validated 46 pages and 47 canonical topics.
+...
+Validated AGENTS.md, 2 adapters, and 14 skills.
+...
+        PASS [   0.541s] (238/238) pachinko http::tests::the_api_routes_are_bounded_and_the_probes_answer_beside_them
+────────────
+     Summary [   0.634s] 238 tests run: 238 passed, 0 skipped
+info: no unreferenced snapshots found
+info: no snapshots to review
+
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+Under §11's literal macOS profile (`ai_tmp/wave/T31/fresh2-denied-strict.log`, trimmed),
+`just check` fails at `coverage`: four of `pachinko`'s in-process HTTP tests cannot bind
+127.0.0.1.
+
+```text
+== 40ff3e7 profile strict: (version 1)(allow default)(deny network*)
+$ curl static.rust-lang.org (must fail)
+curl: (6) Could not resolve host: static.rust-lang.org
+exit 6
+$ curl 1.1.1.1 (must fail)
+curl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server
+exit 7
+$ curl static.rust-lang.org without the profile
+exit 0
+$ curl 1.1.1.1 without the profile
+exit 0
+$ just check
+...
+    thread 'http::tests::the_api_routes_are_bounded_and_the_probes_answer_beside_them' (456003195) panicked at crates/pachinko/src/http.rs:643:63:
+    called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+...
+     Summary [   0.175s] 172/238 tests run: 168 passed, 4 failed, 0 skipped
+        FAIL [   0.009s] (155/238) pachinko http::tests::a_handler_that_never_completes_answers_408_with_the_body
+        FAIL [   0.010s] (162/238) pachinko http::tests::a_streamed_body_over_the_cap_is_413_before_its_content_type_is_checked
+        FAIL [   0.008s] (167/238) pachinko http::tests::readyz_is_503_until_serving_204_while_serving_and_503_once_stopping
+        FAIL [   0.007s] (168/238) pachinko http::tests::the_api_routes_are_bounded_and_the_probes_answer_beside_them
+...
+error: recipe `coverage` failed on line 269 with exit code 100
+error: recipe `check` failed on line 348 with exit code 100
+exit 100
+```
+
+The lead's decision: a profile that denies everything but loopback satisfies §11, whose
+Linux form keeps `lo` in the namespace. Under it (`ai_tmp/wave/T31/fresh2-denied-lo.log`,
+trimmed), both negative controls fail and `just check` is green:
+
+```text
+== 40ff3e7 profile lo: (version 1)(allow default)(deny network*)(allow network-bind (local ip "localhost:*"))(allow network-inbound (local ip "localhost:*"))(allow network-outbound (remote ip "localhost:*"))
+$ curl static.rust-lang.org (must fail)
+curl: (6) Could not resolve host: static.rust-lang.org
+exit 6
+$ curl 1.1.1.1 (must fail)
+curl: (7) Failed to connect to 1.1.1.1 port 443 after 0 ms: Couldn't connect to server
+exit 7
+$ curl static.rust-lang.org without the profile
+exit 0
+$ curl 1.1.1.1 without the profile
+exit 0
+$ just check
+...
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+A looser profile was tried first and discarded:
+`(version 1)(allow default)(deny network*)(allow network* (local ip "localhost:*"))(allow
+network* (remote ip "localhost:*"))` let `curl --noproxy '*' https://1.1.1.1` through
+(exit 0), so it is no denial. The gap in §11 is in Open points.
+
+### T31-1: the whole diff (step 8)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec` v0.166.0 `-m gpt-6-astra -s read-only` (exit 0), with separate triage and
+one writer, run by the wave lead; outputs under `ai_tmp/review/T31-1/`. The breakage
+reviewer's sandbox could not run `just check` or the pinned toolchain, so it read the
+logs under `ai_tmp/wave/T31/` and the clone at A; it reported no findings. 2 findings,
+2 valid, none high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | valid, low (re-rated from medium) | `security-model.md:23`, "Nothing is collected or stored", contradicted the in-memory queue the same page describes |
+| C2 | valid, low | `layering.md:72-76`, `configuration.md:101` and `rustqual.toml:27` explained the missing pattern rules by "no modules", against the seven Rust modules the page now lists |
+
+Applied: C1 by the lead's writer ("Nothing is persisted or sent elsewhere"). C2 lay
+outside Files touched and was handed back; the lead approved it as a deviation and this
+agent applied it ("several specification modules"). Handed back: nothing open.
+
+Rerun after the fixes: `just check-docs`, `just metrics` and `just toml-check` exit 0 on
+the uncommitted fix; at A2 the fresh clone's `just check` above runs all three
+("Validated 46 pages and 47 canonical topics."; "Quality score: 100.0%").
+
+### Final `just check`
+
+On `40ff3e7` with this commit's content uncommitted, which is the tree committed as B
+(`git status --short` printed only this file and `tickets/README.md`), exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+`just check-docs` (`Validated 46 pages and 47 canonical topics.`) and `just check-agents`
+(`Validated AGENTS.md, 2 adapters, and 14 skills.`) run inside it.
+
+### Step 9: fetch, push and the pull request
+
+Not run by this agent: `git fetch origin` was not run, and the lead pushes, opens the
+pull request and reads its CI run (wave overrides). The CI run URL and the tested merge
+commit are the lead's to record. The step 7 clone in the session's scratch directory,
+which stands for `ai_tmp/fresh`, was deleted after the quotes above.
+
+### Step 10: the `CONVENTIONS.md` hand-back
+
+Drafted here and not edited on the lane; the edit lands through a separate `main` pull
+request.
+
+§0, line 32, replacing "The domain is undefined: no ticket here writes domain code,
+domain prose or a behavioural specification.":
+
+> The bootstrap tickets, T00 to T18, wrote no domain code, domain prose or behavioural
+> specification; T19 specified the domain in `docs/specs/pachinko.allium`, and the MVP
+> wave, T22 to T31, implemented it.
+
+§1, decision 1, after "No ticket names a domain noun.":
+
+> (2026-11-07: T19 defined the domain in `docs/specs/pachinko.allium`, and T22 to T31
+> implemented it; the decision governed the foundation tickets, T00 to T18.)
 
 ## Open points
 
@@ -301,3 +832,125 @@ was handed back (`CONVENTIONS.md` §14).
 - `tickets/README.md`'s "Review of the ticket set" bullet, if still "Pending" when this
   ticket runs.
 - The two `CONVENTIONS.md` sentences, until their `main` pull request merges.
+- `docs/decisions/0016-release-process.md:63`, "three locks", and
+  `docs/decisions/0018-renovate.md:49`, "three places" (D-T30-7): decision records, which
+  Non-goals forbid editing here, so T30's acceptance criterion that `rg -n 'three lock'
+  docs/` prints no lockfile sentence stays unmet until the maintainer amends both or
+  rules them historical. Owner: maintainer.
+- §11's macOS denial profile predates tests that bind loopback: `pachinko`'s in-process
+  HTTP tests fail under it (step 7). The lead ruled the loopback-only profile satisfies
+  §11, as the Linux form keeps `lo`; §11 should say so. Owner: maintainer, through a
+  `main` pull request; not a T24 finding.
+- Proposed open question (`code-review` run 1, finding 1): a supersede of a held record
+  sheds the payload the consumer still holds, so a later nack dead-letters it too and it
+  sits in both shed queues. Owner: maintainer.
+- Proposed open question (run 1, finding 2): `DropStalePublish` still touches the
+  pocket, so a stale publish revives a parked pocket and resets its expiry count. Owner:
+  maintainer.
+- Proposed open question (run 1, finding 4): `PullWithinLease` extends the lease on an
+  empty batch, so a consumer pulling in a loop holds an emptied pocket. Owner:
+  maintainer.
+- Proposed open question (run 1, finding 5): only a release or a revive resets
+  `consecutive_expiries`, so a steadily drained pocket can park after three lapses.
+  Owner: maintainer.
+- Specification design, low (run 1, findings 8 to 10):
+  `docs/explanation/specifications.md` restates the open-question list beside the
+  module; `ReviveIdlePocket` and `ReviveParkedPocket` duplicate each other; redundant
+  guards give obligations no test can falsify. Owner: maintainer.
+- The lease-id exhaustion guard in `actor.rs` stops the service even for a pull that
+  needs no new id, and `fresh_lease_id`'s redraw loop spins on a source that repeats an
+  active id; the fix is a fallible `LeaseIds::next`, an API change (`code-review` run 2,
+  finding 3). Owner: T23 and T24, so the maintainer.
+- A forward step of the wall clock lapses every lease at once (run 2, finding 4): the
+  trade-off 0019 records at lines 84 to 88 and 287; it waits on the suspend-aware clock
+  above. Owner: maintainer.
+- `loadgen/` returns `String` errors: whether invariant 10 ("Errors are `thiserror`
+  enums") covers the excluded dev crates is open; `fuzz/fuzz_targets` defines no error
+  type (run 2, finding 5). Owner: maintainer.
+- Throughput, not changed because it would invalidate T30's figures: the owner's
+  `yield_now` after every command and a clock read per batch row (run 2, findings 7 and
+  8). Owner: maintainer.
+- `Lifecycle::start`'s fallback tick lane drops its sender, so a second start would never
+  tick; latent, as no second start exists, and documented at `serve.rs:80` (run 2,
+  finding 9). Owner: maintainer.
+- `crates/libpachinko/tests/queue/counting.rs` logs store calls through a
+  `thread_local!`, against the `review-change` skill's rule; its header gives the cause.
+  Owner: T26, so the maintainer accepts it or asks for an injectable spy.
+- Flag defaults are restated outside `configuration.md`, which owns them, in
+  `http-api.md`, `security-model.md`, `troubleshooting.md` and
+  `build-the-container-image.md`, so a default change touches five pages; they agree
+  today (`review-change` class 3). Owner: T27 and T29, so the maintainer.
+- The surviving open questions keep T19's numbers with a gap at eight; this ticket's
+  Context adopts "does not compact", and renumbering would be a `spec-change` (D-T22-4).
+  Owner: maintainer.
+- T21's branch `ticket/t21-pocket-log-records` (0019 cites `94fc9b8`) is local; no gate
+  dereferences it, and pushing it needs authorisation (D-T22-5). Owner: maintainer.
+- No gate runs doctests with default features: `test` and `test-doc` pass
+  `--all-features`, and `features` only builds (D-T23-2). Owner: maintainer.
+- The hook gate's `prek run --all-files` reads tracked files only, so a new file's
+  EditorConfig fault surfaces only at commit, as in T23 and T30 (D-T23-3). Owner:
+  maintainer.
+- The lease view carries no lease id, as the spec's `surface Consuming` exposes none; a
+  consumer that lost its batch reply recovers the id with a pull of limit 0, and whether
+  a route should expose a lease by its id is a product decision (D-T24-1, D-T25-5).
+  Owner: maintainer.
+- A requester that disconnects between the owner's `is_closed` check and the grant holds
+  a lease nobody acts on until it lapses; `http-api.md` documents it (D-T24-2). Owner:
+  maintainer.
+- The forced arm in each library-error conversion answers 503 `not_ready`; a dedicated
+  code is the maintainer's choice (D-T24-3).
+- `--listen 0.0.0.0:<port>` opens the surface without a warning; whether it should warn
+  is the maintainer's (D-T24-4).
+- A zero TTL is admitted and pinned (S006, S007) with no positive floor; whether any TTL
+  needs one (D-T26-3). Owner: maintainer.
+- `TickReport` carries the lapsed leases in full, if a `debug` line per lease is ever
+  wanted; no ticket asks for it (D-T26-5, low). Owner: maintainer.
+- With the defaults, a 1,000-row batch of 1 MiB payloads exceeds `--max-body-bytes`; the
+  three defaults are the comparables' figures (D-T27-3). Owner: maintainer.
+- An empty `records` array is 400 `bad_request`, not `{"outcomes": []}` (D-T27-4).
+  Owner: maintainer.
+- `tests/batch_publish.rs` and `tests/http.rs` each carry a client helper; folding them
+  into `tests/common/mod.rs` is a test refactor this ticket declined (D-T27-5). Owner: a
+  later ticket.
+- `a_lease_action_body_over_the_cap_is_body_too_large` was not shown to bite separately
+  at T27's merge (D-T27-7). Owner: T27's lane, so the maintainer.
+- `rule-failure.RequeueDeferredRecord.2` and `rule-failure.RequeueHeldRecord.2` are
+  tagged, but no test can observe their rejection; a specification-level question
+  (D-T28-1). Owner: maintainer.
+- `testing.md` says proptest persists no regression file; whether to commit them instead
+  is the maintainer's preference (D-T28-2).
+- The invariant walk's domains are small on purpose; a wider walk is a later choice
+  (D-T28-3, low). Owner: maintainer.
+- Obligations whose only test is the walk are listed in T28's hand-back; whether each
+  wants a direct test is for T23, T25 and T26, so the maintainer (D-T28-4).
+- Running the walk over `LogRecords` is a one-line instantiation when T21's store lands
+  (D-T28-5, low). Owner: a later ticket.
+- Whether a service far behind on its command channel should report not ready, beside
+  open question 3 (D-T29-1). Owner: maintainer.
+- The idle timeout and the handler timeout share one flag (D-T29-2, low). Owner:
+  maintainer, on an operator's request.
+- The grace period, its second bound, the owner's longest step and `docker stop`'s ten
+  seconds are aligned by hand, and the owner's overrun past the second bound is measured
+  by no test (D-T29-3). Owner: maintainer.
+- A metrics endpoint and a structured log format are planned by no ticket (D-T29-5,
+  low). Owner: maintainer.
+- A client trickling one byte per bound keeps a connection open until the shutdown's
+  cut; `security-model.md` documents it (D-T29-6). Owner: maintainer.
+- Docker Desktop on the maintainer's machine hangs removing containers, and clearing the
+  `Dead` ones needs a daemon restart (D-T29-7). Owner: maintainer; the local
+  environment, not the repository.
+- `build-the-container-image.md:61-66` says a stop needs the release of the queue's
+  state; a sharper sentence that a large queue lengthens `docker stop -t` (T29 saw over
+  10 s after about 45M rows) is outside this ticket (D-T29-8, low). Owner: maintainer.
+- The in-process unit of an op is T30's definition, to be read as an order of magnitude
+  (D-T30-2, low). Owner: maintainer.
+- Nothing is measured on Linux (D-T30-3). Owner: maintainer or a later ticket.
+- Closed-loop clients understate tail latency; an open-loop generator and a latency
+  histogram are a later ticket (D-T30-4, low). Owner: maintainer.
+- The `version` smoke bench from T16 stays until the maintainer removes it (D-T30-5,
+  low).
+- `just test-loadgen` runs only by hand; whether a gate runs it is open (D-T30-6).
+  Owner: maintainer.
+- `renovate.json`'s toolchain description says "four places" over five files, and
+  `maintain-dependencies.md:82-83` says "three places" (D-T30-8, low). Owner:
+  maintainer.
