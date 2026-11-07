@@ -109,12 +109,14 @@ for tests are never a source to use where unpredictability matters.
 
 ## What is deferred
 
-**The service's network surface.** The service is a minimal std binary with no async
-runtime, transport or HTTP stack, and so it listens on nothing. Which of those it gets,
-and therefore what it exposes and to whom, waits for the specifications to say what the
-service must do ([decision 0014](../decisions/0014-service-runtime-deferred.md)). This
-page describes that surface, its authentication and its limits when the decision that
-follows the specifications records them.
+**The service's network surface.** The surface is decided and not yet built: an
+HTTP/1.1 JSON listener, on loopback by default, with no authentication and no TLS, and
+request-shape limits on rows, bytes and timeouts that are never capacity refusals
+([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which supersedes
+[decision 0014](../decisions/0014-service-runtime-deferred.md)). Until T24 lands, the
+service is a minimal std binary that listens on nothing. T24 adds the listener and T27
+the limits, and each describes on this page what it exposes, to whom, and how it is
+bounded.
 
 ## What is out of scope
 
@@ -133,3 +135,4 @@ See `SECURITY.md` at the repository root.
 - [Quality gates](../reference/quality-gates.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
 - [Decision 0014](../decisions/0014-service-runtime-deferred.md)
+- [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)

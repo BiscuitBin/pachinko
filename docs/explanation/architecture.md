@@ -155,15 +155,18 @@ its exit status and that it writes nothing to standard error.
 [Test and debug](../how-to/test-and-debug.md) shows how to tell those two tests' failures
 apart.
 
-## What is deferred
+## The service runtime
 
-The service has no async runtime, transport or HTTP stack, and none is chosen. Choosing
-one before the specifications say what the service must expose would be a guess. The
-trigger is the first specification that names a surface the service exposes; a spike
-then compares the options and a decision record supersedes
-[decision 0014](../decisions/0014-service-runtime-deferred.md). Until then the service is
-`run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md) records the
-rest of what this repository deliberately does not do.
+The runtime is decided and not yet built.
+[Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md) supersedes
+[decision 0014](../decisions/0014-service-runtime-deferred.md), whose trigger fired when
+the specification named the `Publishing` and `Consuming` surfaces: the service will speak
+HTTP/1.1 JSON through axum, and one tokio task will own the queue and apply every command
+and every lapse in one serialized order. The clock and the lease ids stay traits the
+library defines, with fakes beside them, and the service supplies the real ones. Tickets
+T23 to T31 build it, the library first (T23) and the service next (T24); until T24 lands
+the service is `run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md)
+records the rest of what this repository deliberately does not do.
 
 ## What wave 2 added
 

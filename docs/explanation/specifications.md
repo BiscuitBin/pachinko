@@ -52,17 +52,19 @@ An `open question` records a product decision nobody has made yet. An unwritten
 gap is easily filled by whoever writes the code first; a written one stays visible
 until someone entitled to decide answers it.
 
-The root carries nine: equal-rank publishes, who reads the superseded and
+The root carries eight: equal-rank publishes, who reads the superseded and
 dead-letter queues, capacity beyond shedding the decaying queues, routing by pool
 or priority, an adaptive lease TTL, a pocket jumping the queue, reviving a parked
-pocket other than by a publish, a consumer's action that arrives after its lease's
-time has passed but before the lapse is processed, and a key published again under
-the lease that removed its record. Seven mark decisions the maintainer declined to
-make in the elicitation and the last two gaps that writing and reviewing the rules
-exposed; where the rules' reading matters meanwhile, the question says what it is,
-and no code answers one. A change that reaches an unanswered decision adds a
-question rather than guessing. A low count is normal for a settled module, but it
-is not a reason to hide uncertainty.
+pocket other than by a publish, and a key published again under the lease that
+removed its record. Seven mark decisions the maintainer declined to make in the
+elicitation and the last a gap that writing and reviewing the rules exposed. The
+eighth by number, a consumer's action processed after its lease's time has passed
+but before the lapse, was closed by
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md): such an action
+succeeds, and the surviving questions keep their numbers. Where the rules' reading
+matters meanwhile, the question says what it is, and no code answers one. A change
+that reaches an unanswered decision adds a question rather than guessing. A low count
+is normal for a settled module, but it is not a reason to hide uncertainty.
 
 ## What a specification is not
 

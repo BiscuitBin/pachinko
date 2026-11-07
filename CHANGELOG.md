@@ -11,6 +11,13 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ## libpachinko [Unreleased][libpachinko-unreleased]
 
+### Changed
+
+- The specification closes open question 8 by decision 0019: a pull, ack, nack, renew or
+  release processed after its lease's `expires_at` but before the lapse succeeds. The
+  root module keeps eight open questions, and decision 0019 confirms its five
+  configuration defaults for the MVP.
+
 ### Added
 
 - The first behavioural specification, `docs/specs/pachinko.allium`: pockets holding one

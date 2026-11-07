@@ -8,6 +8,13 @@ requires: []
 
 # Decision 0014: The service runtime waits for the specifications
 
+[Decision 0019](0019-service-runtime-tokio-and-http.md) supersedes this record. The
+trigger below fired when T19's specification named the `Publishing` and `Consuming`
+surfaces, the spike ran as three prototypes, and 0019 replaces the deferral with tokio,
+one owner task and HTTP/JSON.
+What stands in this record is its consequences on the effects boundary: the runtime
+belongs in `pachinko`, and `just effects` and the clippy bans keep it out of the library.
+
 ## Context
 
 The workspace holds a library and a service

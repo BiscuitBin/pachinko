@@ -9,9 +9,10 @@ requires: []
 # Configuration
 
 Neither crate has runtime configuration yet: no file either reads, no variable either
-consults, no flag the binary parses. The service writes one line and exits; what it will
-read arrives with the specifications and with the runtime decision 0014 waits for. Neither
-crate declares a Cargo feature, so a consumer has nothing to choose there either.
+consults, no flag the binary parses. The service writes one line and exits. The runtime
+is decided ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)), and
+the service's flags arrive with T24, which documents them here. Neither crate declares a
+Cargo feature, so a consumer has nothing to choose there either.
 Everything else on this page configures the tools that build and check the workspace.
 
 ## Environment

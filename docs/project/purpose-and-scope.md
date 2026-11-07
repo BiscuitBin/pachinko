@@ -40,10 +40,11 @@ the library's yet, however obvious it looks.
   The implementation follows the specification, tests first, and until it lands the
   library's public API is `version()` alone. [Terminology](terminology.md) holds the
   domain's words.
-- **No runtime or transport for the service.** The service is a minimal std binary with
-  no async runtime, transport or HTTP stack. Choosing them before the specifications say
-  what the service must do would be a guess; a spike and a further decision follow the
-  specifications ([decision 0014](../decisions/0014-service-runtime-deferred.md)).
+- **No runtime or transport for the service yet.** The runtime is decided, not
+  deferred: tokio, one owner task and HTTP/JSON
+  ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which supersedes
+  [decision 0014](../decisions/0014-service-runtime-deferred.md)). Until T24 builds it,
+  the service is a minimal std binary with no async runtime, transport or HTTP stack.
 - **No publishing to a registry.** Both crates are `publish = false`, so neither reaches
   a package registry. The API reference is the one thing deployed, to GitHub Pages
   ([decision 0013](../decisions/0013-api-reference-on-github-pages.md)); the container

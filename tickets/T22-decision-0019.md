@@ -1,7 +1,7 @@
 ---
 id: T22
 title: "Decision 0019 and the settled questions"
-status: todo
+status: done
 depends_on: [T19]
 parallel_with: []
 branch: ticket/t22-decision-0019
@@ -335,10 +335,155 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Wave overrides
+
+The maintainer approved these overrides to this ticket's per-branch flow for the MVP
+wave:
+
+- Step 1 ran in the wave worktree on branch `mvp-inimal-but-sufficient` from start
+  commit `3115d68`, not in a worktree on `ticket/t22-decision-0019` from `main`; no
+  `just initialize` ran.
+- `git diff main...HEAD` reads as `git diff 3115d68...HEAD` plus the uncommitted changes.
+- `git fetch origin`, the merge of `origin/main`, the push and the pull request: not run:
+  one pull request at T31.
+- The §14 reviews ran from the lead, not from this agent: the lead ran the reviewers,
+  the triage and the single writer under `ai_tmp/review/T22-<n>/`, and this agent read
+  the fix diff, reran the checkpoint's checks and records them here.
+
+### Baseline: `3115d68`
+
+The lead ran the full gate at `3115d68` (over `f4a5250` and the ticket edits of
+`3115d68`), and this agent quotes it rather than rerunning it:
+
+```text
+just check
+All checks passed and the worktree is unchanged.
+```
+
+All four prototype heads, `cb77f07`, `cf1a6b2`, `0fa614e` and `94fc9b8`, resolved in the
+worktree, so step 1's `git fetch origin` did not run and nothing reached the network.
+`git show cb77f07:crates/libpachinko/src/queue.rs` shows the monotonic clamp, `fn now`,
+at lines 198 to 202.
+
+The full `just plan-spec pachinko` output at `3115d68`, before any spec edit, was saved
+to `ai_tmp/wave/T22/plan-spec-before.txt`: 190 obligations, 190 distinct ids.
+
+### The record and the specification: `3115d68` with uncommitted changes
+
+Step 2 wrote `docs/decisions/0019-service-runtime-tokio-and-http.md` and registered it;
+step 3 made the five edits to `docs/specs/pachinko.allium`, with a numbering comment
+above the Open Questions section. No rule, entity, config value or surface clause
+changed.
+
+### Adversarial review T22-1: `3115d68` with uncommitted changes
+
+- **Harness and model:** two lenses, `conformance` and `breakage`, each
+  `codex exec -m gpt-6-astra -s read-only`, both exit 0; separate triage; one writer.
+- **Findings:** C1 (medium, conformance) and B1 (medium, breakage, re-rated low in
+  triage): the lapse comment and 0019 promised success to an action that *arrives*
+  before the lapse is processed, but the owner's biased `select!` polls the tick lane
+  first, so a ready tick can lapse a lease ahead of an action already queued, and the
+  action then fails `requires: lease.status = active`; only processing order is
+  guaranteed.
+- **Verdicts:** C1 valid: the arrival wording is a promise the executor 0019 decides
+  cannot keep. B1 valid, low: the same gap; rules and guarantee are right, only prose
+  overpromises.
+- **Applied:** the writer applied C1, which covers B1: the lapse section's comment in
+  `docs/specs/pachinko.allium` and 0019's open question 8 paragraph now state processing
+  order ("processes after `expires_at` but before the lapse ... arrival order does not
+  decide"), and 0019 says a ready tick can apply a lapse ahead of an action queued
+  earlier. This agent reflowed one line of that 0019 paragraph.
+- **Handed back:** none. This ticket's Context table still says "arrives"; the table is
+  outside Files touched and is left as written, and the handbook ripple (step 4) uses
+  the processing wording.
+- **Round 2:** not run, because no finding was high-severity.
+- **Rerun after the fix:**
+
+```text
+just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just plan-spec pachinko
+190 obligations; the sorted ids equal plan-spec-before.txt's, and the whole plan
+is identical once every source_span is removed.
+Exit status: 0
+```
+
+The spec has eight `open question` blocks.
+
+### The handbook ripple: `3115d68` with uncommitted changes
+
+Step 4 edited the pages Files touched lists, using the processing-order wording for the
+late action. Architecture's "What is deferred" section is renamed "The service runtime";
+no page linked its anchor. Security model keeps its "What is deferred" heading, because
+the page still waits for T24 and T27 to describe the surface. `grep -rln 0014 docs/` was
+read page by page: 0001, 0008 and 0015 cite 0014 historically and are not edited, as
+the acceptance criteria say.
+
+Handed back, outside Files touched: `crates/pachinko/README.md` line 10 says "No
+runtime, transport or HTTP stack has been chosen.", which is now false; T24 replaces
+that file.
+
+```text
+just check-docs
+Validated 45 pages and 46 canonical topics.
+Exit status: 0
+```
+
+### Adversarial review T22-2: `3115d68` with uncommitted changes
+
+- **Harness and model:** two lenses, `conformance` and `breakage`, each
+  `codex exec -m gpt-6-astra -s read-only`, both exit 0; separate triage; one writer.
+- **Findings and verdicts:**
+  - C1 (low) and B1 (medium): 0019 said an action that a ready tick overtakes "then
+    fails as if it came after the lapse", which is wrong for a pull: a pull after the
+    lapse is one from a consumer with no active lease, so it claims the front queued
+    pocket or finds none. Both valid; B1 superseded by C1.
+  - C2 (low): 0019's Consequences left out that T24 also adds `thiserror` to the
+    service. Valid.
+  - B2 (low): the lapse comment and `ExpiryRecoversWithinTtl` said a late action always
+    stops the lapse, but a processed action sets `expires_at` to `now + lease_ttl`,
+    which has already passed when `lease_ttl` is 0. Valid.
+  - C3 and B3 (low): `crates/pachinko/README.md` line 10 still says no runtime is
+    chosen. Valid, out of scope.
+- **Applied:** C1 to 0019's open question 8 paragraph (an ack, nack, renew or release
+  is rejected because its lease has ended; a pull claims or finds none); C2 to 0019's
+  Consequences; B2 to the spec's lapse comment and `ExpiryRecoversWithinTtl`. This agent
+  rewrapped the writer's long lines in both files without changing a word.
+- **Handed back:** C3 and B3, the service README, which T24 replaces; the lead tracks it.
+- **Round 2:** not run, because no finding was high-severity.
+- **Rerun after the fix:**
+
+```text
+just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+Exit status: 0
+
+just plan-spec pachinko
+190 obligations; the sorted ids equal plan-spec-before.txt's, and the whole plan
+is identical once every source_span is removed.
+Exit status: 0
+
+just check-docs
+Validated 45 pages and 46 canonical topics.
+Exit status: 0
+```
+
+### Review and the gate
+
+`review-change` over the whole diff: no Rust, no dependency, no `Cargo.lock` change and
+no effect, so invariants 2 to 9 are not touched. Invariant 1 holds because the
+specification moved first, no rule changed, and the plan is identical. Every changed
+path is in Files touched. No finding.
 
 ## Open points
 
@@ -362,6 +507,12 @@ was handed back (`CONVENTIONS.md` §14).
 - T21's branch `ticket/t21-pocket-log-records` is local to the maintainer's checkout and
   not on `origin`; 0019 cites its head `94fc9b8` as a reopen option that a fresh clone
   cannot read until the branch is pushed.
+- `tickets/T28-invariant-walk.md` tags S066 and S067 `oq:8`, which T28 defines as a
+  labelled placeholder for an open question; question 8 is now closed by decision 0019,
+  so T28 should retag them (for example as `decision:0019`). Outside this ticket's Files
+  touched; the lead carries it to T28.
+- `crates/pachinko/README.md` line 10 still says no runtime is chosen (T22-2's C3 and
+  B3); T24 replaces the file.
 - The surviving open questions keep T19's numbers with a gap at eight; renumbering them
   is a `spec-change` for a later ticket once T25 and T26 have landed their `oq:` tags,
   or never, if the maintainer prefers stable numbers.

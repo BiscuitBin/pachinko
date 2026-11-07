@@ -59,7 +59,7 @@ change derives them with `propagate` and brings its tests with it.
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-carries nine today, listed at its end; each marks a decision the maintainer has not
+carries eight today, listed at its end; each marks a decision the maintainer has not
 made, and none is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.

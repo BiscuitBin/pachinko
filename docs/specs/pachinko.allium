@@ -17,8 +17,8 @@
 --
 -- Excludes
 --   - Storage, snapshots, replication and recovery: implementation.
---   - Transport, wire format and client authentication: the spike
---     decision 0014 names, triggered by the surfaces below.
+--   - Transport, wire format and client authentication: decision 0019
+--     records them, triggered by the surfaces below.
 --   - Memory bounds, disk spill and autoscaling: deployment; see the
 --     capacity open question.
 --   - Topics: a deployment is one queue; separate concerns run separate
@@ -220,8 +220,8 @@ entity Lease {
 -- Config
 ------------------------------------------------------------
 
--- The defaults are the maintainer's sketch's, except max_pull_batch, a
--- placeholder nobody has chosen; a deployment sets its own.
+-- The five defaults are the maintainer's, confirmed for the MVP by
+-- decision 0019; a deployment sets its own.
 config {
     lease_ttl: Duration = 5.minutes
     max_consecutive_expiries: Integer = 3
@@ -590,10 +590,17 @@ rule ReleaseIdlesEmptyPocket {
 -- passed; the three rules below process it with disjoint guards. The
 -- lapse is handled in the same stream as the consumer's actions: a
 -- release processed first ends the lease, a renewal, ack, nack or pull
--- processed first moves expires_at, and either way the lapse stops at
--- its guards. Whether such a late action should succeed at all is the
--- eighth open question. position is untouched on the queued path, so
--- the pocket keeps its place at the front.
+-- processed first moves expires_at to now + lease_ttl, and the lapse
+-- stops at its guards unless that new expires_at has also passed by the
+-- time the lapse is processed, as it always has when lease_ttl is 0. A
+-- pull, ack, nack, renew or release that the implementation processes
+-- after expires_at but before the lapse therefore succeeds, as
+-- long as its other guards hold; arrival order does not decide, since the
+-- owner may apply a lapse ahead of an already-queued action. The
+-- implementation applies the lapse and every action from one serialized
+-- stream (decision 0019), so the guards above decide in either order.
+-- position is untouched on the queued path, so the pocket keeps its
+-- place at the front.
 
 rule LeaseLapses {
     when: lease: Lease.expires_at <= now
@@ -852,9 +859,13 @@ surface Consuming {
 
     @guarantee ExpiryRecoversWithinTtl
         -- A consumer whose pulls, acks, nacks and renewals all stop loses
-        -- its lease when expires_at passes, lease_ttl after the last of
-        -- them; its held and deferred records return to queued and, unless
-        -- that lapse parks the pocket, are pullable again at once. A pocket
+        -- its lease when the lapse is processed: lease_ttl after the last
+        -- of them, plus the delay before the lapse is processed. A late
+        -- pull, ack, nack or renew processed before the lapse extends the
+        -- lease instead, unless the extended expires_at has also passed
+        -- when the lapse is processed. Once a lapse is processed, its held
+        -- and deferred records return to queued and, unless that lapse
+        -- parks the pocket, are pullable again at once. A pocket
         -- with no records has nothing to recover; it parks at the threshold
         -- like any other, and below it LeaseExpiryIdlesEmptyPocket says
         -- where it goes.
@@ -866,13 +877,17 @@ surface Consuming {
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
+-- The questions keep the numbers T19 gave them, counted in the order
+-- below. The eighth, a late action after expires_at but before the
+-- lapse is processed, was closed by decision 0019 (see the Lease expiry
+-- comment), and the last below is still the ninth: scenario tags and
+-- OneVisitPerKeyPerLease name it so.
 
 open question "Equal rank, different payload for one key: reject the publish, last arrival wins, keep both for the consumer to reconcile, or make it configurable? Decide from the conflict-resolution literature and from what comparable queues and databases do and what their users expect. Until then no rule covers rank = stored rank, so the checker treats that publish as rejected; that is a placeholder, not a decision."
 open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
-open question "Capacity beyond shedding the decaying queues first: which superseded records and dead letters shed first, a bound on records, disk spill, a back-pressure signal to publishers, or none?"
+open question "Capacity beyond shedding the decaying queues first: which superseded records and dead letters shed first, a bound on records, disk spill, a back-pressure signal to publishers, or none? Request-shape limits (rows, bytes, timeouts) are not capacity refusals."
 open question "Routing by worker pool or priority (standard against high-memory workers, newly onboarded tenants first, spot against reserved): separate deployments, or a property of pockets?"
 open question "Adaptive lease TTL: should lease_ttl be derived from observed lease durations to shorten recovery after a consumer dies?"
 open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
 open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"
-open question "A pull, ack, nack, renew or release that arrives after the lease's expires_at but before the lapse is processed: does it succeed and extend the lease, as the rules allow today because they guard on status alone, or is it rejected as if the lapse had been processed first? The processing order decides until then."
 open question "A key acked or nacked under a lease, its record removed, is published again before that lease ends: is the new record pullable in the same lease, as the rules allow today because publish creates it queued, or does one visit per key per lease hold for the key itself, so that it waits for the lease to end?"
