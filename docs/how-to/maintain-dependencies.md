@@ -128,8 +128,9 @@ move. Both recipes reach the network. Read every lockfile diff before accepting 
 
 The one normal workspace dependency is still the service's path dependency on
 `libpachinko`, and libpachinko gains its first when the specifications define a domain
-that needs one. The first external dependencies are harnesses: divan, libpachinko's
-development dependency for its benchmark, and libfuzzer-sys in the excluded `fuzz/`
+that needs one. The first external dependencies are harnesses: divan and proptest,
+libpachinko's development dependencies for its benchmark and its invariant walk, and
+libfuzzer-sys in the excluded `fuzz/`
 crate ([decision 0007](../decisions/0007-dependency-policy.md)).
 
 1. A version lives in one place: the root `Cargo.toml`'s `[workspace.dependencies]`
