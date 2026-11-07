@@ -46,7 +46,7 @@ snapshot.
 | T19 | Pachinko domain: the first behavioural module | `T19-pachinko-domain.md` | T18 | none | done |
 | T22 | Decision 0019 and the settled questions | `T22-decision-0019.md` | T19 | none | todo |
 | T23 | Library tracer: effects, the store seam, publish and pull | `T23-library-publish-pull.md` | T22 | none | todo |
-| T24 | Service tracer: the owner task and HTTP join, publish one record, pull | `T24-service-http-tracer.md` | T23 | none | todo |
+| T24 | Service tracer: the owner task and HTTP join, publish one record, pull | `T24-service-http-tracer.md` | T23 | none | done |
 | T25 | Ack, nack, renew, release and fencing | `T25-lease-actions.md` | T24 | T27, T29 | todo |
 | T26 | Lease expiry, decay and the tick lane | `T26-expiry-and-tick.md` | T25 | none | todo |
 | T27 | Batch publish with per-row outcomes and request-shape limits | `T27-batch-publish.md` | T24 | T25, T29 | todo |

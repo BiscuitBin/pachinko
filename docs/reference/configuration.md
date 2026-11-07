@@ -8,19 +8,42 @@ requires: []
 
 # Configuration
 
-Neither crate has runtime configuration yet: no file either reads, no variable either
-consults, no flag the binary parses. The service writes one line and exits. The runtime
-is decided ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)), and
-the service's flags arrive with T24, which documents them here. Neither crate declares a
-Cargo feature, so a consumer has nothing to choose there either.
-Everything else on this page configures the tools that build and check the workspace.
+The service's runtime configuration is the flags `pachinko serve` takes, listed under
+[Service flags](#service-flags); it reads no file and no variable
+([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). libpachinko's one
+Cargo feature, `testing`, exposes the records contract and the queue snapshot to tests and
+is off in every normal build. Everything else on this page configures the tools that
+build and check the workspace.
+
+## Service flags
+
+`pachinko serve` reads `--name value` pairs. An unknown flag, a flag without a value, or
+a value that is not an unsigned integer is a usage error naming the flag, and the binary
+exits 1 with `pachinko: usage: <reason>` on standard error. The five specification values
+then go through the library's config check, which refuses a zero
+`--max-consecutive-expiries` or `--max-pull-batch` the same way, as
+`pachinko: invalid configuration: <reason>`.
+
+| Flag | Default | What it sets |
+| --- | --- | --- |
+| `--listen` | `127.0.0.1:8080` | The address the HTTP listener binds; loopback unless set. Port 0 picks a free port, which the `listening on <address>` line names. |
+| `--lease-ttl-ms` | `300000` (5 minutes) | `lease_ttl`: how long a lease lasts after its claim or its consumer's last pull. |
+| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many consecutive lease expiries park a pocket; at least 1. |
+| `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
+| `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
+| `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
+
+The defaults are the specification's, which decision 0019 confirms. T26 adds the sweep's
+flag, T27 the request-shape limits and T29 the log level, request timeout and shutdown
+grace; until T29 the shutdown grace is 5 seconds and the log level `info`. The routes are
+in [HTTP API](http-api.md).
 
 ## Environment
 
 libpachinko reads no environment variable, and never will: the environment is one of the
 effects it reaches only through a trait it defines, as
 [Architecture](../explanation/architecture.md) explains. The `env!` in its `version()` is
-read by the compiler, not at run time. The service reads none today. The tooling reads a
+read by the compiler, not at run time. The service reads none either. The tooling reads a
 few, each in one place:
 
 | Variable | Read by | Effect |
@@ -46,9 +69,9 @@ constants belong in source where they can be reviewed.
 | File | What it configures |
 | --- | --- |
 | `rust-toolchain.toml` | The compiler: an exact stable release, the minimal profile, and three components: rustfmt, clippy and `llvm-tools-preview` for coverage. Exact rather than `stable`, because clippy's lint set moves every six weeks and would break `-D warnings` with no diff here. No extra target, because libpachinko is a std library ([decision 0008](../decisions/0008-std-library.md)), and no `rust-src`, which served rust-analyzer only; a contributor who wants it runs `rustup component add rust-src`. Honoured only by rustup's proxy. |
-| `Cargo.toml` (root) | The workspace: resolver 3, every directory under `crates/` a member and `fuzz/` excluded, the package fields each crate inherits (edition, `rust-version`, licence, repository, homepage, authors, `publish = false`), the lint table, and the release and test profiles. The release profile builds with fat LTO and one codegen unit, kept by the maintainer's choice on 2026-10-24 after the container image's release build compiled in 6.24 s uncached for a 9.4 MB image; the test profile at `opt-level = 1`. The `[workspace.dependencies]` table holds one entry, divan, which libpachinko takes as a development dependency only ([decision 0007](../decisions/0007-dependency-policy.md)). |
-| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). No features and no normal dependencies; divan, from the workspace table, is its one development dependency, for the `version` bench under `benches/`. |
-| `crates/pachinko/Cargo.toml` | The service, in the same shape, with one dependency: `libpachinko`, by path and version. Cargo then enforces the direction, since libpachinko cannot name `pachinko` without a cycle; see [Layering](../explanation/layering.md). |
+| `Cargo.toml` (root) | The workspace: resolver 3, every directory under `crates/` a member and `fuzz/` excluded, the package fields each crate inherits (edition, `rust-version`, licence, repository, homepage, authors, `publish = false`), the lint table, and the release and test profiles. The release profile builds with fat LTO and one codegen unit, kept by the maintainer's choice on 2026-10-24 after the container image's release build compiled in 6.24 s uncached for a 9.4 MB image; the test profile at `opt-level = 1`. The `[workspace.dependencies]` table holds every third-party dependency, each with its note ([decision 0007](../decisions/0007-dependency-policy.md)): divan, which libpachinko takes as a development dependency only; thiserror, which both crates take; the service's tokio, axum, serde, base64, getrandom, tracing and tracing-subscriber; and serde_json and ureq, the service's development dependencies for its wire tests. |
+| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). One feature, `testing`, off by default, which exposes the records contract and the queue snapshot to tests; one normal dependency, thiserror; and divan, from the workspace table, as its one development dependency, for the `version` bench under `benches/`. |
+| `crates/pachinko/Cargo.toml` | The service, in the same shape: `libpachinko` by path and version, and the workspace entries above as `{ workspace = true }` lines ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). Cargo then enforces the direction, since libpachinko cannot name `pachinko` without a cycle; see [Layering](../explanation/layering.md). |
 | `fuzz/Cargo.toml` | The fuzz crate, `libpachinko-fuzz`: excluded from the workspace, so it is its own, with its own `fuzz/Cargo.lock`, a dependency on libfuzzer-sys and on libpachinko by path, and the `smoke` target. An excluded crate inherits nothing, so it restates `rust-version`, the workspace's two `forbid` lints and its clippy levels, which are kept in step with the root table by hand. |
 | `clippy.toml` | The restriction lints relaxed inside tests only (`allow-unwrap-in-tests` and its siblings for `expect`, `panic`, indexing, `dbg!` and printing), `HashMap` and `HashSet` disallowed, because their iteration order is not deterministic (the reason names `BTreeMap` and `BTreeSet`); and four thresholds, for cognitive complexity, nesting depth, function length and parameter count, whose numbers `rustqual.toml` repeats. [Decision 0012](../decisions/0012-metrics-gate.md) owns the numbers and says why each. |
 | `rustfmt.toml` | The 2024 style edition, a width of 100, Unix newlines, and the field-init and `?` shorthands. Stable options only. |

@@ -1,16 +1,23 @@
 # pachinko
 
-`pachinko` is the service crate of the pachinko workspace, a minimal std binary built
-around `libpachinko`. Its public API is one item, `run()`, which writes
-`pachinko <library version>` to a supplied writer. The binary calls it with standard
-output and exits.
+`pachinko` is the service crate of the pachinko workspace: an HTTP/1.1 JSON server over
+`libpachinko`'s queue, on tokio and axum, as
+[decision 0019](../../docs/decisions/0019-service-runtime-tokio-and-http.md) decided. One
+owner task holds the queue in memory and applies every command in arrival order; the
+service supplies the library's real effects, `SystemClock` and `EpochSerialLeaseIds`.
 
-The domain is not defined yet. The Allium specifications under `docs/specs/` will
-define it; as they introduce effects, this crate will supply the real implementations
-of the library's effect traits. No runtime, transport or HTTP stack has been chosen.
+From the repository root, `just build` builds both crates. Then:
 
-From the repository root, `just build` builds both crates. Run
-`./target/debug/pachinko` to print the current name and library version.
+- `./target/debug/pachinko` prints `pachinko <library version>` and exits.
+- `./target/debug/pachinko serve --listen 127.0.0.1:0` prints `listening on <address>`
+  and serves until SIGTERM or ctrl-c, then exits 0. Without `--listen` it binds
+  `127.0.0.1:8080`.
+
+The routes, bodies and error codes are in the
+[HTTP API](../../docs/reference/http-api.md) reference, the flags in
+[Configuration](../../docs/reference/configuration.md#service-flags), and a curl
+walkthrough in [Test and debug](../../docs/how-to/test-and-debug.md#run-the-service).
+There is no authentication or TLS; the surface is loopback by default.
 
 Read the [API reference for main](https://biscuitbin.github.io/pachinko/pachinko/),
 or run `just doc` and open `target/doc/pachinko/index.html`.

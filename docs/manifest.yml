@@ -28,6 +28,7 @@
     {"path": "reference/quality-gates.md", "title": "Quality gates", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_gate_reference"], "requires": []},
     {"path": "reference/documentation-contract.md", "title": "Documentation contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["documentation_contract"], "requires": []},
     {"path": "reference/agent-contract.md", "title": "Agent contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["agent_contract"], "requires": []},
+    {"path": "reference/http-api.md", "title": "HTTP API", "kind": "reference", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["http_api"], "requires": []},
     {"path": "reference/api.md", "title": "API reference", "kind": "reference", "audience": ["user", "contributor", "maintainer", "agent"], "canonical_for": ["api_reference"], "requires": []},
 
     {"path": "operations/maintenance.md", "title": "Maintenance", "kind": "operations", "audience": ["maintainer", "operator", "agent"], "canonical_for": ["maintenance_routine"], "requires": []},

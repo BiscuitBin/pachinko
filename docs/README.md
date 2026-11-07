@@ -56,6 +56,7 @@ Specifications, under Understand, to see how the two relate.
 - [Documentation contract](reference/documentation-contract.md)
 - [Agent contract](reference/agent-contract.md)
 - [API reference](reference/api.md)
+- [HTTP API](reference/http-api.md) — the service's routes, bodies and error codes.
 
 ## Run it
 

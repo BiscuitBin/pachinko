@@ -52,6 +52,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 ### Added
 
 - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
+- `pachinko serve`: an HTTP/1.1 JSON API over one owner task holding the queue, with
+  the publisher and consumer joins, single-record publish, pull and the lease read, and
+  `GET /healthz`; six flags for the listen address and the specification's five config
+  values; the real `SystemClock` and `EpochSerialLeaseIds`; and a clean shutdown on
+  SIGTERM or SIGINT (decision 0019).
 - A digest-pinned container image, `just image`, and a required CI build and run without publication.
 - Independent crate releases through cargo-release and a guarded GitHub Release workflow.
   The crate is not published to crates.io.

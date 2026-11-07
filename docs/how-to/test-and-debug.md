@@ -45,20 +45,59 @@ Framework configuration and conventions are described in
 
 `crates/pachinko/tests/binary.rs` runs the built service as a user would. Cargo builds
 the `pachinko` binary before it runs that crate's integration tests and hands the test
-its path as `CARGO_BIN_EXE_pachinko`; the test asserts that the binary exits zero, prints
-`pachinko`, a space, `libpachinko::version()` and one newline on standard output and
-writes nothing to standard error. Run it alone with:
+its path as `CARGO_BIN_EXE_pachinko`. The tests assert that the binary with no argument
+exits zero, prints `pachinko`, a space, `libpachinko::version()` and one newline, and
+writes nothing to standard error; that `serve --bogus 1` exits 1 with
+`pachinko: usage: unknown flag --bogus`; and that `serve --listen 127.0.0.1:0` announces
+its address, answers `GET /healthz` with `ok` there, and exits 0 on SIGTERM and on
+SIGINT within a bounded wait. Run them alone with:
 
 ```console
 INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test binary
 ```
 
-The line has two tests: the unit test beside `run` in `crates/pachinko/src/lib.rs`
-writes into a buffer, and the binary test reads the real standard output. A change to
-the line fails both, and both are updated together, as
+The version line has two tests: the unit test beside `run` in
+`crates/pachinko/src/lib.rs` writes into a buffer, and the binary test reads the real
+standard output. A change to the line fails both, and both are updated together, as
 [Make your first change](../tutorials/first-change.md) walks through. When only the
 binary test fails, the fault is between `run` and the process: `main.rs`, its exit
-status, or something written to standard error.
+status, the signal handling, or something written to standard error. The wire tests in
+`crates/pachinko/tests/http.rs` start the server in-process instead; run them with
+`--test http` in place of `--test binary`.
+
+## Run the service
+
+Start the service on a free port; it prints the address it bound:
+
+```console
+$ cargo run -p pachinko --locked -- serve --listen 127.0.0.1:0
+listening on 127.0.0.1:53817
+```
+
+In another terminal, with `ADDR` set to that address, join a publisher and a consumer,
+publish `hello` (`aGVsbG8=` in base64), pull it, read the lease, and check health:
+
+```console
+$ ADDR=127.0.0.1:53817
+$ curl -i -X POST "http://$ADDR/publishers/p1"
+$ curl -i -X POST "http://$ADDR/consumers/c1"
+$ curl -s -X PUT "http://$ADDR/pockets/tenant-a/records/k1" \
+    -H 'content-type: application/json' \
+    -d '{"publisher_id": "p1", "rank": 1, "payload": "aGVsbG8="}'
+{"outcome":"created"}
+$ curl -s -X POST "http://$ADDR/consumers/c1/pull" \
+    -H 'content-type: application/json' -d '{"limit": 10}'
+{"outcome":"batch","lease_id":"…","pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+$ curl -s "http://$ADDR/consumers/c1/lease"
+{"pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+$ curl -s "http://$ADDR/healthz"
+ok
+```
+
+The joins answer `201 Created` with no body. Press ctrl-c in the first terminal; the
+service shuts down and exits 0. The ack and release lines arrive with T25. Every route,
+body and error code is in [HTTP API](../reference/http-api.md); the request log is at
+`debug`, which the default `info` level does not print.
 
 ## Narrow down a failing test
 
@@ -155,3 +194,4 @@ deliberately; never run `cargo update` from inside a fix for something else.
 - [Quality gates](../reference/quality-gates.md)
 - [Troubleshooting](../operations/troubleshooting.md)
 - [Architecture](../explanation/architecture.md)
+- [HTTP API](../reference/http-api.md)

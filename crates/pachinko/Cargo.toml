@@ -23,6 +23,19 @@ workspace = true
 # Invariant 5: the service depends on the library, never the reverse. Without the
 # version beside the path, deny.toml's `wildcards = "deny"` rejects the dependency.
 libpachinko = { path = "../libpachinko", version = "0.1.0" }
+# Each line below has its decision-0007 note in the workspace manifest.
+axum = { workspace = true }
+base64 = { workspace = true }
+getrandom = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+ureq = { workspace = true }
 
 # The same `--cfg docsrs` and features `just doc` builds with, so a docs.rs build
 # would match the gate.

@@ -8,12 +8,13 @@ requires: []
 
 # Security model
 
-This workspace is a library and a minimal service binary. The library holds no data
-about anyone and performs no effect itself, and the service, today, writes one line to
-standard output and exits. That removes most of the attack surface software usually
-has, and it is worth being precise about what remains rather than claiming the problem
-away: the supply chain that builds both crates, the code handed to whoever consumes the
-library, and a network surface for the service that no decision has drawn yet.
+This workspace is a library and a service. The library holds no data about anyone and
+performs no effect itself, and the service keeps its queue in memory, writes nothing to
+disk and listens on loopback unless told otherwise. That removes much of the attack
+surface software usually has, and it is worth being precise about what remains rather
+than claiming the problem away: the supply chain that builds both crates, the code
+handed to whoever consumes the library, and the service's unauthenticated HTTP surface,
+described under [The network surface](#the-network-surface).
 
 ## What there is to protect
 
@@ -107,16 +108,20 @@ for tests are never a source to use where unpredictability matters.
 - **Credential leakage.** `ripsecrets` scans every commit, and its output is redacted so
   a match never copies the matched value into a log.
 
-## What is deferred
+## The network surface
 
-**The service's network surface.** The surface is decided and not yet built: an
-HTTP/1.1 JSON listener, on loopback by default, with no authentication and no TLS, and
-request-shape limits on rows, bytes and timeouts that are never capacity refusals
+`pachinko serve` listens for HTTP/1.1 on `--listen`, which is `127.0.0.1:8080` unless
+set, so by default only the host itself can reach it
 ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which supersedes
-[decision 0014](../decisions/0014-service-runtime-deferred.md)). Until T24 lands, the
-service is a minimal std binary that listens on nothing. T24 adds the listener and T27
-the limits, and each describes on this page what it exposes, to whom, and how it is
-bounded.
+[decision 0014](../decisions/0014-service-runtime-deferred.md)). There is no
+authentication, no TLS and no rate limiting: anyone who can reach the address can join
+under any id, publish into any pocket and pull any record. `--listen 0.0.0.0:<port>`
+opens that to the network, and the service does not warn; put it behind a proxy or a
+firewall that decides who reaches it. The only bound on a request today is axum's
+default 2 MiB body limit; T27 adds the service's own limits on rows, bytes and timeouts,
+which are never capacity refusals, and describes them here. Nothing bounds the memory
+the queue holds, by the specification's `NeverRefusedForCapacity`.
+[HTTP API](../reference/http-api.md) lists every route.
 
 ## What is out of scope
 
@@ -136,3 +141,4 @@ See `SECURITY.md` at the repository root.
 - [Decision 0007](../decisions/0007-dependency-policy.md)
 - [Decision 0014](../decisions/0014-service-runtime-deferred.md)
 - [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)
+- [HTTP API](../reference/http-api.md)

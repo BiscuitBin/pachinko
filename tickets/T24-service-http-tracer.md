@@ -1,7 +1,7 @@
 ---
 id: T24
 title: "Service tracer: the owner task and HTTP join, publish one record, pull"
-status: todo
+status: done
 depends_on: [T23]
 parallel_with: []
 branch: ticket/t24-service-http-tracer
@@ -459,10 +459,192 @@ git status --short
 
 ## Hand-back notes
 
-Not started. The executing agent writes this section: each quoted output headed by the
-commit it ran at, with its exit status (`CONVENTIONS.md` §11), and for each adversarial
-checkpoint the harness and model, the findings, each verdict, what was applied and what
-was handed back (`CONVENTIONS.md` §14).
+### Baseline
+
+At `f64b671`, `just check` (run by the wave lead on the untouched worktree, exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+### Wave overrides
+
+- Worked on branch `mvp-inimal-but-sufficient` in the lead's worktree from `f64b671`,
+  not on `ticket/t24-service-http-tracer` from `main`; `just initialize` not run. The
+  prototype heads `cb77f07` and `cf1a6b2` already resolved, so step 2's `git fetch
+  origin` was not needed.
+- `git fetch origin`, merging `origin/main`, push and pull request: not run: one pull
+  request at T31.
+- The §14 reviews, triage and the fix writer were run by the wave lead; this agent
+  stopped at each checkpoint uncommitted and reran its checks after the fixes.
+
+### The plan against T23's names (step 2)
+
+T23's public API differs from this ticket's names in these places; the code uses T23's:
+
+- `ConfigError::MaxConsecutiveExpiriesZero` and `MaxPullBatchZero`, not
+  `ExpiryLimitPositive` and `PullBatchPositive`, which name the invariants in the
+  messages.
+- `Config` has public fields and `check()`, no constructor or accessors: `ServeConfig`
+  sets the fields on `Config::default()` and calls `check()`.
+- `PublishError::EqualRank { key, rank }` carries no pocket key, so `Refusal::EqualRank
+  { pocket_key, record_key, rank }` is built by `Refusal::from_publish(error,
+  &pocket_key)`, not by a `From<PublishError>` (T24-1, C2).
+- `PullOutcome::Batch { lease, pocket_key, expires_at, records }` and `HeldRecord { key,
+  rank, payload }`; `queue.publish(&publisher_id, Publication)`.
+- `LeaseIds::next(&self)`: `EpochSerialLeaseIds` shares its serial between clones through
+  an `Arc<AtomicU64>`, with 0 as the exhausted mark (issued serials start at 1).
+
+Dependencies: every version is the ticket's except `ureq`, re-pinned from 3.5.0 to the
+current 3.5.1. No library change was needed.
+
+### T24-1: the Command, Refusal and handle design (steps 3 to 5)
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead; outputs under `ai_tmp/review/T24-1/`. 4 findings, 2 valid, none
+high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | invalid, low | `next()` repeats the serial-0 id only after exhaustion, which the owner checks before every pull and which `new()` reaches only after 2^64 - 1 ids |
+| C2 | valid, low | `Refusal::EqualRank` lacked the `pocket_key` this ticket fixes for T25 and T27 |
+| B1 | invalid, low | Same as C1, from the breakage side |
+| B2 | valid, low | The clock unit test asserted the system time never steps back, which `SystemClock` does not promise |
+
+Applied by the writer: `Refusal::EqualRank` carries `pocket_key`, and
+`Refusal::from_publish(error, &pocket_key)` replaces `From<PublishError>` (C2); the clock
+test asserts only that `now()` is after the epoch, renamed `now_is_after_the_epoch` (B2).
+Handed back: nothing.
+
+At T24-1, before the fixes, `just clippy` was red on dead code only (the router and the
+owner are wired by step 6) and `just deps-unused` on `base64`, `tracing-subscriber` and
+`ureq` (used in steps 6 and 7); both are green from step 7 on. The rerun after the fixes
+is the step 7 run below, which includes the fixed tests.
+
+### Steps 6 to 8
+
+At `f64b671` plus the uncommitted change, every recipe exit 0:
+
+```text
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+just effects       effects: the fixture trips every ban exactly once, and pachinko trips none.
+just metrics       ::notice::Quality score: 100.0% (160 functions analyzed)
+just deps-unused   ✓ no issues found
+just deny          bans ok, licenses ok, sources ok
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just test          Summary [   0.358s] 110 tests run: 110 passed, 0 skipped
+just coverage      TOTAL ... 98.81% lines (pachinko: serve.rs 98.18%, http.rs 97.29%, lib.rs 94.44%)
+just check-docs    Validated 46 pages and 47 canonical topics.
+just check         All checks passed and the worktree is unchanged.
+```
+
+Shown to bite: with the pull reply's tag renamed (`no_pocket` to `no-pocket`) and
+`unknown_consumer` answered 410, `tests/http.rs` failed 2 of 7 (the S033 test and the
+refusals test); restored, 7 of 7 pass.
+
+Scenarios exercised over HTTP, not owned (T23 owns the library tests), each a test in
+`crates/pachinko/tests/http.rs` with its `// scenario:` comment: S019
+(`large_ranks_keep_full_precision_across_supersede_and_stale`), S020
+(`payload_bytes_and_keys_round_trip_unchanged`), S028
+(`a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue`), S031
+(`a_zero_limit_pull_claims_a_pocket_and_returns_an_empty_batch`), S033
+(`a_pull_with_no_queued_pocket_returns_no_pocket_not_an_error`).
+
+The manual smoke run, `./target/debug/pachinko serve --listen 127.0.0.1:0` (the binary
+`cargo run -p pachinko --locked` builds), the walkthrough from `test-and-debug.md`, then
+SIGINT, from `ai_tmp/wave/T24/smoke.sh`:
+
+```text
+listening on 127.0.0.1:51885
+HTTP/1.1 201 Created
+HTTP/1.1 201 Created
+{"outcome":"created"}
+{"outcome":"batch","lease_id":"4b7ee695d25cb9680000000000000001","pocket_key":"tenant-a","expires_at":1794057142479,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+{"pocket_key":"tenant-a","expires_at":1794057142479,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+ok
+exit status 0
+stderr:
+2026-11-07T13:07:22.494652Z  INFO pachinko::serve: signal received; shutting down
+```
+
+Notes for the reviewers and the lead:
+
+- No T24 route takes a lease id, so the lease-id parse to `bad_request` is not wired;
+  T25's actions add it with the routes that need it.
+- A path that cannot be read is also `bad_request`.
+- `tests/http.rs` and `tests/binary.rs` are `#![cfg(test)]` at the root, as PR 39's
+  were, so clippy treats their helpers as test code; `binary.rs` drops its
+  `tests_outside_test_module` expectation, which no longer fires.
+- `docs/reference/configuration.md` also had T23-stale manifest rows (the workspace
+  table "holds one entry, divan"; libpachinko "no features and no normal dependencies";
+  the service "with one dependency"); they are corrected with this ticket's lines.
+- Handed back, outside Files touched: `docs/project/purpose-and-scope.md` lines 43 to 47
+  still say "Until T24 builds it, the service is a minimal std binary with no async
+  runtime, transport or HTTP stack", and `docs/project/terminology.md` line 49 calls
+  the service "a minimal binary ... whose `main` calls a tested `run()` and nothing
+  else". `tickets/README.md` still shows T23 as `todo`.
+
+### T24-2: the whole diff (step 9)
+
+`review-change` over the whole diff (`git diff f64b671` plus the new files) found
+nothing to fix before the adversarial review.
+
+Harness and model: two reviewer lenses, `conformance` and `breakage`, each
+`codex exec -m gpt-6-astra -s read-only` (exit 0), with separate triage and one writer,
+run by the wave lead; outputs under `ai_tmp/review/T24-2/`. 10 findings, 6 valid, none
+high, so no second round.
+
+| Finding | Verdict | One-line reason |
+| --- | --- | --- |
+| C1 | invalid, low | Coverage counts in-module test code by the gate's design (invariant 7, decision 0009); recomputed without test modules it still clears the floor |
+| C2 | invalid, low | The ticket bounds the binary test's exit wait, and a hang never passes; overtaken by B1's fix anyway |
+| C3 | valid, low | The cut test awaited `serve` and the client with no outer deadline, so a cut regression would hang rather than fail |
+| C4 | valid, low, outside Files touched | `docs/project/purpose-and-scope.md:43-47` still says the service has no runtime, transport or HTTP stack |
+| C5 | valid, low, outside Files touched | `docs/tutorials/first-change.md` §2 to §5 still targets the old `run(out) -> io::Result<()>` |
+| B1 | valid, low | `start()` in `tests/binary.rs` read the announcement with no bound |
+| B2 | invalid, low | Same as C1 |
+| B3 | invalid, low | The smoke run is the ticket's manual run, quoted for a reader to check, not a fail-closed gate |
+| B4 | valid, low, outside Files touched | Same pages as C4 and C5 |
+| B5 | valid, low | `http-api.md` said superseded records and dead letters decay, but nothing decays them until T26's sweep |
+
+Applied by the writer: the cut test in `serve.rs` is bounded by `timeout` (C3);
+`tests/binary.rs` reads the announcement on a thread with `recv_timeout` and connects
+for `/healthz` with `connect_timeout` (B1); `http-api.md` says they decay only once
+T26's sweep runs (B5). Handed back, carried by the lead to T31, and known stale at this
+commit: `docs/project/purpose-and-scope.md:43-47` (C4, B4) and
+`docs/tutorials/first-change.md` §2 to §5 (C5, B4); also `docs/project/terminology.md`
+line 49 ("a minimal binary") and T23's `todo` row in `tickets/README.md`.
+
+The Verification block, rerun after the fixes at `f64b671` plus the uncommitted change,
+every recipe exit 0:
+
+```text
+just lock-check    ✔ Lock-file was already up-to-date
+just fmt-check     cargo fmt --manifest-path fuzz/Cargo.toml --check
+just clippy        Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+just effects       effects: the fixture trips every ban exactly once, and pachinko trips none.
+just test          Summary [   0.272s] 110 tests run: 110 passed, 0 skipped
+                   test result: ok. 20 passed; 0 failed (pachinko doctests)
+just coverage      TOTAL 3762 regions 97.69%, 359 functions 99.16%, 2358 lines 98.81%
+just doc           Generated .../target/doc/libpachinko/index.html and 1 other file
+just deny          bans ok, licenses ok, sources ok
+just deps-unused   ✓ no issues found
+just check-docs    Validated 46 pages and 47 canonical topics.
+```
+
+### Step 10
+
+`just check` before the commit, at `f64b671` plus the change (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+Not run under the wave overrides: `git fetch origin`, merging `origin/main`, push and
+pull request (one pull request at T31). The commit's own `just check` and
+`git status --short` are quoted in the lead's record of this commit.
 
 ## Open points
 

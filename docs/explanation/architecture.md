@@ -192,28 +192,45 @@ and struct is `#[non_exhaustive]`: the service may move a value between threads,
 or print it, and a new field or variant must not break a consumer that matched on the
 old ones. `AGENTS.md` states this as invariant 3.
 
-## The service today
+## The service
 
-`pachinko::run` takes any writer and writes one line, `pachinko <version>`, with the
-library's version. `main` calls it on locked standard output and turns the result into
-the process's exit status, and does nothing else. A unit test in `src/lib.rs` checks the
-line against a buffer, and `tests/binary.rs` runs the built binary and checks its output,
-its exit status and that it writes nothing to standard error.
-[Test and debug](../how-to/test-and-debug.md) shows how to tell those two tests' failures
-apart.
+`pachinko serve` is an HTTP/1.1 JSON server over one in-memory queue, built as
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md) decided, which
+supersedes [decision 0014](../decisions/0014-service-runtime-deferred.md). `main` makes
+one call, `exit_code(run(args, stdout), stderr)`: with no argument `run` writes
+`pachinko <version>`; with `serve` and its flags ([Configuration](../reference/configuration.md#service-flags))
+it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
 
-## The service runtime
+- **The owner task.** One task owns the `Queue<MemoryRecords, SystemClock,
+  EpochSerialLeaseIds>` and applies every command synchronously, in arrival order, from
+  a bounded channel of 1,024 commands, each with a `oneshot` reply. There is no `Mutex`:
+  a handler holds only a `QueueHandle`, a clone of the channel's sender, so a lapse (T26)
+  and a consumer's action are totally ordered. A full channel makes a handler wait, never
+  refuses it. A pull whose requester has gone before the owner reaches it is skipped.
+- **The real effects.** `SystemClock` reads `SystemTime` in milliseconds since the Unix
+  epoch, behind the queue's clamp, which never lets the queue's time step back;
+  `EpochSerialLeaseIds` draws a 64-bit epoch from the operating system's random source
+  once and pairs it with a serial from 1. `serve` refuses to start when the clock reads
+  before the epoch or the random source fails, and the owner stops rather than reissue a
+  lease id once the serial is exhausted.
+- **The task scope.** `serve` holds the owner, the listener and the signal task in one
+  `JoinSet`. The first to end starts the shutdown: the listener stops accepting, lets
+  in-flight requests finish, cuts connections still open after a 5-second grace, and
+  drops the router, whose handle was the owner's last sender, so the owner ends too. A
+  task that panicked comes back as an error, and the binary exits 1.
+- **The wire.** axum routes each request to one command and maps every refusal through
+  one exhaustive table of codes; [HTTP API](../reference/http-api.md) owns the routes,
+  bodies and codes. Each request is logged at `debug`, below the default `info`.
 
-The runtime is decided and not yet built.
-[Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md) supersedes
-[decision 0014](../decisions/0014-service-runtime-deferred.md), whose trigger fired when
-the specification named the `Publishing` and `Consuming` surfaces: the service will speak
-HTTP/1.1 JSON through axum, and one tokio task will own the queue and apply every command
-and every lapse in one serialized order. The clock and the lease ids stay traits the
-library defines, with fakes beside them, and the service supplies the real ones. Tickets
-T23 to T31 build it, the library first (T23) and the service next (T24); until T24 lands
-the service is `run()` over a writer. [Purpose and scope](../project/purpose-and-scope.md)
-records the rest of what this repository deliberately does not do.
+The tests sit in three places. Unit tests live in the modules: the flag parser, the
+clock, the lease ids, the owner's ordering, skipping, back-pressure and exhaustion, the
+error map with one test per code, and the task scope's panic, stop and cut paths.
+`tests/http.rs` starts `serve` in-process on port 0 and drives every route with a
+blocking client. `tests/binary.rs` runs the built binary: its version line, a usage
+error, and `serve` answering `/healthz` and exiting 0 on SIGTERM and on SIGINT.
+[Test and debug](../how-to/test-and-debug.md) shows how to run each.
+[Purpose and scope](../project/purpose-and-scope.md) records what this repository
+deliberately does not do.
 
 ## What wave 2 added
 
@@ -232,3 +249,4 @@ and cuts a GitHub Release, with `publish = false` kept
 - [Quality gates](../reference/quality-gates.md)
 - [Test and debug](../how-to/test-and-debug.md)
 - [API reference](../reference/api.md)
+- [HTTP API](../reference/http-api.md)
