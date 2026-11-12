@@ -18,36 +18,96 @@ question. Neither crate is published to crates.io.
 
 ## How it works
 
-A consumer with no lease claims the earliest queued pocket; while it holds the lease,
-its pulls take more records from that pocket alone.
+Publishers put keyed, ranked records into pockets, and each consumer works through one
+pocket at a time under an exclusive lease.
 
 ```mermaid
 flowchart LR
-    subgraph Q ["pachinko serve: one queue of pockets"]
-        direction TB
-        A["pocket tenant-a<br/>leased to consumer c1"]
-        B["pocket tenant-b<br/>queued"]
-        X["pocket tenant-c<br/>parked after repeated lapses"]
+    P["Publishers"] -- "(1) PUT record at rank N<br/>a higher rank replaces it" --> A
+    subgraph S ["pachinko serve"]
+        A["pocket tenant-a"]
+        T(["lease timer"])
+        T -. "(4) or 5 min with no pull, ack, nack or renew (by default):<br/>the lease lapses, the pocket keeps its place" .-> A
     end
-    P1["Publisher"] -- "(1) PUT record at rank N<br/>a higher rank replaces it" --> Q
-    Q -- "(2) pull: lease the earliest queued pocket<br/>only this consumer gets it" --> C1["Consumer c1"]
-    C1 -- "(3) ack or nack each record" --> Q
-    C1 -- "(4) release: the pocket goes to the back" --> Q
-    S["sweep"] -. "(4) or no pull, ack, nack or renew for 5 min:<br/>the lease lapses, the pocket keeps its place" .-> A
-    C2["Consumer c2"] -- "(2) pull: the next queued pocket" --> Q
+    A <== "(2) pull · (3) ack or nack · (4) release" ==> C["Consumer"]
     classDef leased fill:#fde68a,stroke:#b45309,color:#000
-    classDef parked fill:#e5e7eb,stroke:#6b7280,stroke-dasharray:4 3,color:#000
     class A leased
-    class X parked
 ```
 
-A pocket left with no records goes idle instead, until a publish into it. Expiry runs on
-a sweep, so a late action the service applies before the lapse is not refused for being
-late; its other checks still apply
-([decision 0019](docs/decisions/0019-service-runtime-tokio-and-http.md)). A newer version
-published while its record is held is kept: the ack answers `deferred`, and the newer
-version is delivered after the lease ends. The [HTTP API](docs/reference/http-api.md)
-has every route and reply, and the specification,
+The everyday loop is the one any work queue has: publish, pull, ack.
+
+```mermaid
+sequenceDiagram
+    participant P as Publisher
+    participant Q as pachinko
+    participant C1 as Consumer c1
+    P->>Q: join as p1
+    C1->>Q: join as c1
+    P->>Q: PUT tenant-a/k1 at rank 1
+    Q-->>P: created
+    C1->>Q: pull
+    Q-->>C1: batch [k1 rank 1] and a lease on tenant-a
+    C1->>Q: ack k1
+    Q-->>C1: settled
+```
+
+One pocket has one consumer at a time. A second consumer gets a different pocket, and a
+consumer that goes quiet loses its lease without losing the pocket's turn.
+
+```mermaid
+sequenceDiagram
+    participant Q as pachinko
+    participant C1 as Consumer c1
+    participant C2 as Consumer c2
+    Note over Q: tenant-a and tenant-b each hold a record
+    C1->>Q: pull
+    Q-->>C1: lease on tenant-a
+    C2->>Q: pull
+    Q-->>C2: lease on tenant-b, never tenant-a
+    C2->>Q: ack k1
+    Q-->>C2: settled
+    Note over C1: goes quiet
+    Note over Q: the lease timer lapses c1's lease<br/>tenant-a keeps its place at the front
+    C2->>Q: release
+    Q-->>C2: idle, tenant-b has no records left
+    C2->>Q: pull
+    Q-->>C2: lease on tenant-a
+```
+
+The newest version of a record wins. A higher rank replaces the waiting version, a lower
+one is answered `stale` and changes nothing, and a version that arrives while its record
+is held waits for the lease.
+
+```mermaid
+sequenceDiagram
+    participant P as Publisher
+    participant Q as pachinko
+    participant C1 as Consumer c1
+    P->>Q: PUT tenant-a/k1 at rank 1
+    Q-->>P: created
+    P->>Q: PUT tenant-a/k1 at rank 2
+    Q-->>P: superseded, rank 2 replaces rank 1
+    P->>Q: PUT tenant-a/k1 at rank 1, late
+    Q-->>P: stale, rank 2 stays
+    C1->>Q: pull
+    Q-->>C1: lease on tenant-a, batch [k1 rank 2]
+    P->>Q: PUT tenant-a/k1 at rank 3
+    Q-->>P: superseded
+    Note over Q: c1 still holds rank 2<br/>rank 3 waits for the lease
+    C1->>Q: ack k1
+    Q-->>C1: deferred
+    C1->>Q: release
+    Q-->>C1: queued
+    C1->>Q: pull
+    Q-->>C1: lease on tenant-a, batch [k1 rank 3]
+```
+
+A pocket whose lease ends with no records left goes idle until a publish into it, and a
+pocket whose lease lapses three times in a row (by default) parks until a publish into it
+is accepted. Expiry runs on a sweep, so a late action the service applies before the
+lapse is not refused for being late; its other checks still apply
+([decision 0019](docs/decisions/0019-service-runtime-tokio-and-http.md)). The
+[HTTP API](docs/reference/http-api.md) has every route and reply, and the specification,
 [`docs/specs/pachinko.allium`](docs/specs/pachinko.allium), decides the behaviour.
 
 ## Run it
