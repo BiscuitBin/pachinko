@@ -67,7 +67,8 @@ sequenceDiagram
     C2->>Q: ack k1
     Q-->>C2: settled
     Note over C1: goes quiet
-    Note over Q: the lease timer lapses c1's lease<br/>tenant-a keeps its place at the front
+    Note over Q: the lease timer lapses c1's lease
+    Note over Q: tenant-a keeps its place at the front
     C2->>Q: release
     Q-->>C2: idle, tenant-b has no records left
     C2->>Q: pull
@@ -75,8 +76,8 @@ sequenceDiagram
 ```
 
 The newest version of a record wins. A higher rank replaces the waiting version, a lower
-one is answered `stale` and changes nothing, and a version that arrives while its record
-is held waits for the lease.
+one is answered `stale` and leaves the waiting version in place, and a version that
+arrives while its record is held waits for the lease.
 
 ```mermaid
 sequenceDiagram
@@ -93,7 +94,8 @@ sequenceDiagram
     Q-->>C1: lease on tenant-a, batch [k1 rank 2]
     P->>Q: PUT tenant-a/k1 at rank 3
     Q-->>P: superseded
-    Note over Q: c1 still holds rank 2<br/>rank 3 waits for the lease
+    Note over Q: c1 still holds rank 2
+    Note over Q: rank 3 waits for the lease
     C1->>Q: ack k1
     Q-->>C1: deferred
     C1->>Q: release
