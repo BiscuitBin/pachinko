@@ -12,7 +12,7 @@ divan = "0.1.21"
 edition = "2024"
 # The toolchain pin's major.minor (rust-toolchain.toml); it follows the pin until a
 # crate is first published.
-rust-version = "1.99"
+rust-version = "1.100"
 license = "Apache-2.0"
 repository = "https://github.com/BiscuitBin/pachinko"
 homepage = "https://github.com/BiscuitBin/pachinko"

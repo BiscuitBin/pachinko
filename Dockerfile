@@ -1,7 +1,7 @@
 # rust:1.99.1-slim-bookworm, resolved 2026-10-24 (UTC).
 # Move this tag with rust-toolchain.toml and rust-version in one Renovate group
 # (T17); the check below fails the required image job if the compiler differs.
-FROM rust:1.99.1-slim-bookworm@sha256:86234e857a413004348b471d11a4ebe1aa92d2eae2b6b143cac68fd1ac3c48be AS build
+FROM rust:1.100.0-slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37 AS build
 
 WORKDIR /build
 COPY rust-toolchain.toml ./
