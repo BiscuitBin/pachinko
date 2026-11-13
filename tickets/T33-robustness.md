@@ -729,7 +729,9 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
   - `LeaseIdError` moved to the private `error` module and is re-exported at the crate
     root as its one path. api.md and architecture.md say the root names every value an
     operation refuses with, and `LeaseId` and `ParseLeaseIdError` set the precedent. This
-    deviates from Files touched's "in `lease_ids.rs`".
+    deviates from the Goal table's `lease_ids::LeaseIdError` and from Files touched's "in
+    `lease_ids.rs`": its one path is `libpachinko::LeaseIdError`, and the change came after
+    both §14 reviews.
   - The owner and `ServeError::LeaseIdsExhausted` docs now say a `StillActive` refusal
     also stops it. The mapping is the ticket's, so no new variant.
   - The CHANGELOG line is rewrapped.
@@ -754,56 +756,155 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
   for a changed trait-method return type. It reports no incompatibility at all, none
   outside the intended one included; the `CHANGELOG` names the break by hand.
 
-The Verification block at `a4b8273`, with `origin/main` read as `origin/wave-2-tickets`:
+The Verification block ran at `a4b8273`, with `origin/main` read as
+`origin/wave-2-tickets`. A scratch script ran it, printing each command, the tail of its
+log (`ai_tmp/t33/verify/`) and its exit status. The quote is verbatim, except that the
+worktree's absolute path reads `<worktree>`. Three points are commentary, not output:
+
+- `rg -n -i 'lease.?id'` exits 0 on `ReleaseIdlesEmptyPocket`, which is the ticket
+  defect noted in step 2; the word-bounded search exits 1.
+- `just semver` exits 0, as Step 10 explains.
+- The coverage tail shows only stale-profile warnings. The report's `TOTAL` line from the
+  same log follows the block (regions, functions, lines; 98.96% of lines).
 
 ```text
-$ just plan-spec pachinko                                   exit 0
-$ rg -n 'LeaseLapses' docs/specs/pachinko.allium            exit 0 (positive control)
+HEAD a4b8273
+
+$ just plan-spec pachinko   (output in ai_tmp/t33/verify/plan-spec.log; tail shown)
+}
+exit 0
+
+$ rg -n 'LeaseLapses' docs/specs/pachinko.allium
 605:rule LeaseLapses {
 874:        LeaseLapses
-$ rg -n -i 'lease.?id' docs/specs/pachinko.allium           exit 0 (ticket defect, see step 2)
+exit 0
+
+$ rg -n -i 'lease.?id' docs/specs/pachinko.allium
 575:rule ReleaseIdlesEmptyPocket {
-$ rg -n -i '\blease.?id' docs/specs/pachinko.allium         exit 1
-$ just fmt-check                                            exit 0
-$ just clippy                                               exit 0
-$ just test                                                 exit 0
-     Summary [   1.119s] 250 tests run: 250 passed, 0 skipped
-$ just doc                                                  exit 0
-$ just effects                                              exit 0
+exit 0
+
+$ rg -n -i '\blease.?id' docs/specs/pachinko.allium
+exit 1
+
+$ just fmt-check   (output in ai_tmp/t33/verify/fmt-check.log; tail shown)
+cargo fmt --manifest-path fuzz/Cargo.toml --check
+cargo fmt --manifest-path loadgen/Cargo.toml --check
+exit 0
+
+$ just clippy   (output in ai_tmp/t33/verify/clippy.log; tail shown)
+cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+exit 0
+
+$ just test   (output in ai_tmp/t33/verify/test.log; tail shown)
+test crates/pachinko/src/error.rs - error::ServeError::Task (line 51) ... ok
+test crates/pachinko/src/lib.rs - exit_code (line 68) ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 0.52s; merged doctests compilation took 0.29s
+exit 0
+
+$ just doc   (output in ai_tmp/t33/verify/doc.log; tail shown)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+   Generated <worktree>/target/doc/libpachinko/index.html and 1 other file
+exit 0
+
+$ just effects   (output in ai_tmp/t33/verify/effects.log; tail shown)
+sh scripts/check-effects.sh
 effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
-$ just coverage                                             exit 0
-TOTAL ... lines 4531, missed 47, 98.96%
-$ just semver                                               exit 0 (expected non-zero; see above)
+exit 0
+
+$ just coverage   (output in ai_tmp/t33/verify/coverage.log; tail shown)
+<worktree>/target/llvm-cov-target/t33-robustness.md-21193-15851350013603388649_7.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
+<worktree>/target/llvm-cov-target/t33-robustness.md-21194-15851350013603388649_8.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
+<worktree>/target/llvm-cov-target/t33-robustness.md-21166-1335675195453789462_16.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
+<worktree>/target/llvm-cov-target/t33-robustness.md-21198-1335675195453789462_12.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
+
+    Finished report saved to target/llvm-cov/lcov.info
+exit 0
+
+$ just semver   (output in ai_tmp/t33/verify/semver.log; tail shown)
      Checked [   0.005s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-$ just semver origin/wave-2-tickets                         exit 0
+    Finished [   0.410s] libpachinko
+exit 0
+
+$ just semver origin/wave-2-tickets   (output in ai_tmp/t33/verify/semver-base.log; tail shown)
      Checked [   0.006s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-$ rg -n 'impl LeaseIds' crates                              exit 0 (positive control)
+    Finished [   0.497s] libpachinko
+exit 0
+
+$ rg -n 'impl LeaseIds' crates
 crates/libpachinko/src/queue/pull.rs:158:    impl LeaseIds for Repeating {
 crates/libpachinko/src/queue/pull.rs:218:    impl LeaseIds for AlwaysOne {
 crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
 crates/pachinko/src/lease_ids.rs:83:impl LeaseIds for EpochSerialLeaseIds {
 crates/libpachinko/tests/queue/pull.rs:330:impl LeaseIds for OneId {
 crates/libpachinko/tests/queue/pull.rs:345:impl LeaseIds for RepeatsOne {
-$ rg -n 'fn fresh_lease_id|while .*is_active' crates/libpachinko/src/queue/pull.rs   exit 1
-$ rg -n 'ticks: Option|ticks\.take\(\)' crates/pachinko/src/serve.rs               exit 1
-$ rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs   exit 0
+exit 0
+
+$ rg -n 'fn fresh_lease_id|while .*is_active' crates/libpachinko/src/queue/pull.rs
+exit 1
+
+$ rg -n 'ticks: Option|ticks\.take\(\)' crates/pachinko/src/serve.rs
+exit 1
+
+$ rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs
 924:    fn a_trickling_head_is_cut_at_the_header_read_deadline() {
-$ rg -n 'tick_lane\(\)\.1' crates                          exit 0 (both by design)
+exit 0
+
+$ rg -n 'tick_lane\(\)\.1' crates
 crates/pachinko/src/http.rs:705:        let ticks = actor::tick_lane().1;
 crates/pachinko/src/actor.rs:593:        tick_lane().1
-$ rg -n -i '<stale-sentence pattern>' docs crates            exit 1
-$ git diff --stat origin/wave-2-tickets...HEAD              exit 0 (positive control)
- 18 files changed, 750 insertions(+), 252 deletions(-)    (crates/, docs/ and CHANGELOG.md)
+exit 0
+
+$ rg -n -i 'no trickle|slowloris bound exists|after its last byte|of the last byte|second start gets|always comes first|always gets its 408' docs crates
+exit 1
+
+$ git diff --stat origin/wave-2-tickets...HEAD
+ CHANGELOG.md                            |  41 +++--
+ crates/libpachinko/README.md            |   2 +-
+ crates/libpachinko/src/error.rs         |  57 ++++++-
+ crates/libpachinko/src/lease_ids.rs     |  54 +++++--
+ crates/libpachinko/src/lib.rs           |  12 +-
+ crates/libpachinko/src/queue/pockets.rs |   7 +
+ crates/libpachinko/src/queue/pull.rs    | 142 +++++++++++++----
+ crates/libpachinko/tests/queue/pull.rs  | 147 +++++++++++++++++-
+ crates/pachinko/src/actor.rs            | 144 +++++++++--------
+ crates/pachinko/src/error.rs            |   6 +-
+ crates/pachinko/src/http.rs             |   9 +-
+ crates/pachinko/src/lease_ids.rs        |  66 ++++----
+ crates/pachinko/src/serve.rs            | 263 +++++++++++++++++++++++---------
+ docs/explanation/architecture.md        |  19 ++-
+ docs/explanation/security-model.md      |   6 +-
+ docs/reference/api.md                   |   4 +-
+ docs/reference/configuration.md         |   2 +-
+ docs/reference/http-api.md              |  21 ++-
+ 18 files changed, 750 insertions(+), 252 deletions(-)
+exit 0
+
 $ git diff --stat origin/wave-2-tickets...HEAD -- Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml Cargo.lock docs/decisions docs/specs
-                                                            exit 0, prints nothing
-$ just check-docs                                           exit 0
+exit 0
+
+$ just check-docs   (output in ai_tmp/t33/verify/check-docs.log; tail shown)
+bg-validate-docs
 Validated 47 pages and 48 canonical topics.
-$ just check                                                exit 0
+exit 0
+
+$ just check   (output in ai_tmp/t33/verify/check.log; tail shown)
+
 All checks passed and the worktree is unchanged.
-$ git status --short                                        exit 0, prints nothing
+exit 0
+
+$ git status --short
+exit 0
+```
+
+```text
+TOTAL                                      7541               143    98.10%         624                 4    99.36%        4531                47    98.96%           0                 0         -
 ```
 
 ## Open points
