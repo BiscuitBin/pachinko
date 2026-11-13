@@ -9,10 +9,10 @@ use super::types::{
     PocketFate, PocketStatus, Publication, PublishOutcome, SettleOutcome, ShedReason,
     SupersededRecord,
 };
-use crate::clock::Timestamp;
 use crate::error::PublishError;
-use crate::ids::{Payload, PocketKey, Position, Rank, RecordKey};
-use crate::records::{HeldRecord, PocketRecords, RecordStatus};
+use crate::ids::{HeldRecord, Payload, PocketKey, Rank, RecordKey};
+use crate::records::{PocketRecords, Position, RecordStatus};
+use crate::timestamp::Timestamp;
 
 /// One pocket.
 #[derive(Clone, Debug)]

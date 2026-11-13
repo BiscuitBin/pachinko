@@ -136,17 +136,40 @@ checks in order.
 
 ## The library
 
-`libpachinko` implements `docs/specs/pachinko.allium` in seven public modules:
+`libpachinko` implements `docs/specs/pachinko.allium` behind three surfaces, one for
+each kind of reader: the crate root for the caller who drives a queue, one public module
+per seam for whoever supplies an effect or a store, and `testing` for a test that checks
+the queue from outside.
 
-| Module | Holds |
+| Surface | Holds |
 | --- | --- |
-| `clock` | `Timestamp`, milliseconds since the Unix epoch; the `Clock` trait; `FakeClock` |
-| `lease_ids` | `LeaseId`, an opaque `u128` written as 32 lower-case hex digits; the `LeaseIds` trait; `CountingLeaseIds` |
-| `ids` | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `Position` |
-| `config` | `Config`, the specification's five values with its defaults, and `Config::check` |
-| `error` | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError` |
-| `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the `contract` behind `testing` |
-| `queue` | `Queue`, its operations and the values they take and return |
+| The crate root | `Queue`, its operations and the values they take and return: `Publication`, `PublishOutcome`, `PullOutcome`, `LeaseView`, `SettleOutcome`, `PocketFate`, `Lease`, `LeaseStatus`, `TickReport` |
+| The crate root | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `HeldRecord`; `Timestamp`, milliseconds since the Unix epoch; `LeaseId`, an opaque `u128` written as 32 lower-case hex digits, and `ParseLeaseIdError` |
+| The crate root | `Config`, the specification's five values with its defaults, and `Config::check` |
+| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError` |
+| The crate root | `version()` |
+| `clock` | The `Clock` trait; `FakeClock` |
+| `lease_ids` | The `LeaseIds` trait; `CountingLeaseIds` |
+| `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the values only the store speaks in, `RecordView`, `RecordStatus` and `Position` |
+| `testing`, behind the `testing` feature | `Snapshot`, `PocketView`, `TickCost`, `InspectRecords`, `check_contract`, and `PocketStatus`, `ShedReason`, `SupersededRecord` and `DeadLetter`, which no other surface exports |
+
+Each item has exactly one public path, and one `use libpachinko::{…}` names `Queue`,
+`Config` and every value an operation takes, returns or refuses with; the clock, the
+lease-id source and the store a queue is built over come from the seam modules. `lib.rs`
+re-exports the root's items from five private modules:
+`queue` holds `Queue` and the values of the first row; `ids` the names and values with
+`HeldRecord`, `LeaseId` and `ParseLeaseIdError`; `timestamp` holds `Timestamp`; `config`
+holds `Config`; and `error` the five enums. `LeaseId` sits in `ids` rather than in a
+module of its own because gate 7 measures coupling for each top-level module: with a
+third value module `error` imported two modules, which made it less stable than `config`,
+its dependent, and failed the stable-dependencies check, and it left `queue` exactly at
+the instability cap. A seam module holds its trait and the fake or the
+implementation beside it, and `records` also the values only the store speaks in.
+[Layering and dependency direction](layering.md#enforcement) states the rule the
+re-exports bring. The `testing` feature is additive: it adds the `testing` module and two
+`Queue` methods, `snapshot` and `tick_with_cost`, and changes nothing the other two
+surfaces hold. [Testing](../reference/testing.md#tests-from-the-specifications) says what
+the tests do with it.
 
 **Two effect traits, each with a fake.** `Clock` gives the queue its `now`; the service's
 implementation reads the system time, and `FakeClock`, shared through an `Arc` so a test
@@ -161,10 +184,12 @@ are `Clone + Debug + Send + Sync + 'static`, so a queue over them meets invarian
 steps the rules take: look a key up, insert it queued, supersede it, hold the oldest
 queued records, settle, defer, and free every held and deferred record in
 O(outstanding). The queue decides every rule and asks the store for one step; the store
-decides nothing. `MemoryRecords` is the one store (decision 0019). `check_contract`,
-behind the `testing` feature, is the one contract every store passes, and it refuses a
-store that could hand out a held record twice, keep two records for one key, or share
-state between clones.
+decides nothing. `MemoryRecords` is the one store (decision 0019). The trait holds only
+the steps the queue calls: reading every record back is `testing::InspectRecords`, a
+second trait a store implements for tests, as `MemoryRecords` does behind the `testing`
+feature. `testing::check_contract` is the one contract every store passes, over a store
+that implements both traits, and it refuses a store that could hand out a held record
+twice, keep two records for one key, or share state between clones.
 
 **`Queue<R, C, L>`** is generic over the store, the clock and the lease-id source. It is
 plain data with `&mut self` methods, so its owner applies one operation at a time, which
@@ -173,7 +198,9 @@ publishers, the consumers with their active lease, the pockets with the pocket o
 lease registry indexed by expiry, the shed queue of superseded records, and the one
 `next_position` counter pockets and records share. A clone forks all of that; the two
 share only what the clock and lease-id source share between clones. Behind `testing`,
-`Queue::snapshot` shows every entity as values, for tests.
+`Queue::snapshot` shows every entity as values, for tests, over a store that implements
+`InspectRecords`, and `Queue::tick_with_cost` returns a tick's `TickReport` beside a
+`TickCost`, the entries the tick read to find what was due.
 
 **The lease actions and fencing.** `ack`, `nack`, `renew` and `release` each name the
 lease they act under, and check, in the order of the rules' `requires` and before any

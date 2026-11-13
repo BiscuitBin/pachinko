@@ -27,8 +27,8 @@ specification module under `docs/specs/` names the modules it imports, and the R
 module that implements it may use what its specification imports and nothing above it.
 Today there is one specification module, `pachinko.allium`, which specifies the domain
 and imports nothing, so the library's Rust modules (`queue` and its submodules,
-`records`, `clock`, `lease_ids`, `ids`, `config` and `error`) all implement that one
-module and there is no specification order to follow. When a specification change splits the domain into modules, the
+`records`, `clock`, `lease_ids`, `ids`, `timestamp`, `config`, `error` and `testing`) all
+implement that one module and there is no specification order to follow. When a specification change splits the domain into modules, the
 code's modules follow it; [Work with the specifications](../how-to/work-with-the-specs.md#add-a-module)
 shows how a module states its imports.
 
@@ -83,14 +83,26 @@ function body.
 Three paths will be out of the rules' sight. A path written relative to the module, such
 as `super::super::…`, names no `crate::` prefix. An alias of the crate, `use crate as
 root;` and then `root::…`, replaces the prefix the rules match. And a re-export in
-`lib.rs` lets any module name an item without its module's path. The third is guarded
-from the side: `unreachable_pub` and `unnameable_types` in the workspace lint table keep
-what is `pub` deliberate, so a module's surface is the one it meant to export, and
-`lib.rs` is the one file to read for re-exports in review. `mod_module_files` bans
-`mod.rs`, so every module is the file named after it and the graph can be read from the
-file tree. What the rules cannot see is left to review, to the `rust-change` and
-`review-change` skills, and to the shape of the tests: code in the wrong layer is usually
-code that is hard to test.
+`lib.rs` lets any module name an item without its module's path.
+
+The third exists already. `lib.rs` re-exports the caller's whole interface from the
+private modules, so that one import names every value an operation takes or returns
+([Architecture](architecture.md#the-library) lists what the root holds). The cost is
+that `crate::Rank` names what `crate::ids::Rank` names, by a path no pattern rule will
+be able to attribute to `ids`. One rule holds it, and review holds the rule: inside
+`crates/libpachinko/src`, code names an item by its module path, `crate::ids::Rank`,
+never by a root re-export, `crate::Rank`, in a `use` line and in an inline path alike.
+Documentation is not code: a rustdoc link names the root path, `crate::Queue`, the one
+the reference shows a reader. `lib.rs` itself writes each re-export as
+`pub use crate::<module>::{…}`, so rustqual counts `lib` as an importer of that module in
+gate 7's coupling figures. `unreachable_pub` and `unnameable_types` in the workspace lint
+table keep what is `pub` deliberate, so a module's surface is the one it meant to export,
+and `lib.rs` is the one file to read for re-exports in review.
+
+`mod_module_files` bans `mod.rs`, so every module is the file named after it and the
+graph can be read from the file tree. What the rules cannot see is left to review, to the
+`rust-change` and `review-change` skills, and to the shape of the tests: code in the
+wrong layer is usually code that is hard to test.
 
 ## Related pages
 

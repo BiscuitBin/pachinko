@@ -3,7 +3,8 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use libpachinko::clock::{Clock, Timestamp};
+use libpachinko::Timestamp;
+use libpachinko::clock::Clock;
 
 use crate::ServeError;
 
@@ -67,7 +68,8 @@ fn since_epoch(time: SystemTime) -> Option<Timestamp> {
 mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
-    use libpachinko::clock::{Clock, Timestamp};
+    use libpachinko::Timestamp;
+    use libpachinko::clock::Clock;
 
     use super::{SystemClock, since_epoch};
 

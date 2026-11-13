@@ -2,16 +2,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{HeldRecord, PocketRecords, RecordStatus, RecordView};
-use crate::ids::{Payload, Position, Rank, RecordKey};
+use super::{PocketRecords, Position, RecordStatus, RecordView};
+use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
 
 /// One pocket's records in ordered collections: the records by key, an index of
 /// the queued ones by position, and an index of the outstanding keys, held and
 /// deferred, so [`free_held`](PocketRecords::free_held) visits only those.
 ///
 /// ```
-/// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-/// use libpachinko::records::{MemoryRecords, PocketRecords};
+/// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+/// use libpachinko::{Payload, Rank, RecordKey};
 ///
 /// let mut records = MemoryRecords::default();
 /// records.insert_queued(RecordKey::new("b"), Rank::new(1), Payload::default(), Position::new(2));
@@ -168,7 +168,10 @@ impl PocketRecords for MemoryRecords {
         held.sort_by_key(|(position, _)| *position);
         held.into_iter().map(|(_, record)| record).collect()
     }
+}
 
+#[cfg(feature = "testing")]
+impl super::contract::InspectRecords for MemoryRecords {
     fn snapshot(&self) -> Vec<RecordView> {
         self.records
             .iter()
@@ -181,8 +184,8 @@ impl PocketRecords for MemoryRecords {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{MemoryRecords, PocketRecords, RecordStatus};
-    use crate::ids::{Payload, Position, Rank, RecordKey};
+    use super::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    use crate::ids::{Payload, Rank, RecordKey};
 
     fn insert(records: &mut MemoryRecords, key: &str, position: u64) {
         records.insert_queued(
@@ -193,13 +196,16 @@ mod tests {
         );
     }
 
-    /// The keys `snapshot` shows held or deferred.
+    /// The keys `lookup` shows held or deferred, of every key the test inserts.
     fn outstanding_in_views(records: &MemoryRecords) -> BTreeSet<RecordKey> {
-        records
-            .snapshot()
+        ["a", "b", "c", "d"]
             .into_iter()
-            .filter(|view| view.status != RecordStatus::Queued)
-            .map(|view| view.key)
+            .map(RecordKey::new)
+            .filter(|key| {
+                records
+                    .lookup(key)
+                    .is_some_and(|view| view.status != RecordStatus::Queued)
+            })
             .collect()
     }
 

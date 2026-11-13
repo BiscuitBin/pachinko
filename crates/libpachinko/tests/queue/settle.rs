@@ -4,11 +4,12 @@
 
 use std::time::Duration;
 
-use libpachinko::error::{LeaseActionError, PublishError};
-use libpachinko::ids::{Payload, Rank, RecordKey};
-use libpachinko::lease_ids::LeaseId;
-use libpachinko::queue::{PublishOutcome, SettleOutcome, ShedReason};
 use libpachinko::records::RecordStatus;
+use libpachinko::testing::ShedReason;
+use libpachinko::{
+    LeaseActionError, LeaseId, Payload, PublishError, PublishOutcome, Rank, RecordKey,
+    SettleOutcome,
+};
 
 use crate::fixture::{DEAD_LETTER_TTL, Fixture, LEASE_TTL, T0, config, consumer, invariants, keys};
 

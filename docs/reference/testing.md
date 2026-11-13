@@ -36,8 +36,9 @@ never colocated with the code: in Rust a unit test can reach a private item only
 inside its module, and [Decision 0009](../decisions/0009-rust-quality-gate.md) records
 the deviation.
 
-libpachinko's integration tests are the queue suite under `tests/queue/` and
-`tests/records_contract.rs`, which "Tests from the specifications" describes.
+libpachinko's integration tests are the queue suite under `tests/queue/`,
+`tests/records_contract.rs` and the guard `tests/testing_feature.rs`, which "Tests from
+the specifications" describes.
 `crates/pachinko/tests/binary.rs` is the binary test: it runs the built service as a user
 would, through the path Cargo hands it as `CARGO_BIN_EXE_pachinko`, and asserts that the
 process exits zero, prints `pachinko`, a space, `libpachinko::version()` and a newline,
@@ -88,11 +89,28 @@ covers the workflow.
 
 The tests of `docs/specs/pachinko.allium` follow one layout.
 
-- **The `testing` feature.** `libpachinko`'s `testing` feature adds
-  `records::contract::check_contract` and `queue::Queue::snapshot`, the inspection seam
-  every invariant is checked through. The gate's `just test`, `just coverage` and
-  `just clippy` turn it on with `--all-features`; the integration test files open with
-  `#![cfg(feature = "testing")]`, because `just features` builds without it.
+- **The `testing` feature.** `libpachinko`'s `testing` feature adds one module,
+  `testing`, and two `Queue` methods, and nothing it adds changes what the crate root or
+  a seam module holds. Together they are the inspection seam every invariant is checked
+  through, `Queue::snapshot` with the `Snapshot` and `PocketView` it returns, over a
+  store that implements `InspectRecords`; the tick's cost, `Queue::tick_with_cost` with
+  its `TickCost`, the entries a tick read to find what was due, which `TickReport` does
+  not carry; the records contract, `check_contract`; and `PocketStatus`, `ShedReason`,
+  `SupersededRecord` and `DeadLetter`, values a snapshot shows and no other surface
+  exports. The gate's `just test`, `just coverage` and `just clippy` turn the feature on
+  with `--all-features`. The queue suite and `tests/records_contract.rs` open with
+  `#![cfg(feature = "testing")]`, because one of the three clippy passes of
+  `scripts/check-effects.sh` lints libpachinko with `--no-default-features` over all
+  targets, the integration tests among them. The suites name the `testing` module, so
+  with the feature off they must compile to nothing or that pass could not build them.
+  [Quality gates](quality-gates.md#gate-8-the-effects-bans) lists the passes.
+- **The guard.** Compiled to nothing, the suites would let a test run without the
+  feature pass on the unit tests and the doctests, with neither suite run.
+  `tests/testing_feature.rs` is compiled only without the feature, and its one test,
+  `the_testing_feature_is_on`, panics with
+  ``libpachinko's suites need the `testing` feature: run `just test` ``. So a plain
+  `cargo test -p libpachinko` fails on it, and every recipe that runs libpachinko's
+  tests passes `--all-features`, so none runs it.
 - **The queue suite.** `crates/libpachinko/tests/queue/` is one test target: `main.rs`
   declares the modules, each `#[cfg(test)]`, and states the tag conventions;
   `fixture.rs` builds a queue over `MemoryRecords`, a `FakeClock` at a fixed instant and
@@ -115,8 +133,9 @@ The tests of `docs/specs/pachinko.allium` follow one layout.
   state or an outcome the module names. A failing walk prints the assertion that fired,
   named after the invariant, the rule's prediction or the transition, and proptest's
   shrunk list of steps; that list replays the failure.
-- **The records contract.** `tests/records_contract.rs` runs `check_contract` over
-  `MemoryRecords`; a second store would get a line of its own.
+- **The records contract.** `tests/records_contract.rs` runs `testing::check_contract`
+  over `MemoryRecords`; a second store would implement `testing::InspectRecords` beside
+  `PocketRecords` and get a line of its own.
 - **Tags.** A test names what it pins in comments above it: `// scenario:` and the id,
   once per scenario across the crate; `// obligation:` and an id `just plan-spec`
   prints; and `// obligation: guarantee.<Name>` for a surface guarantee, which has no

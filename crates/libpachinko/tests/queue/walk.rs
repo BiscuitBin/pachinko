@@ -16,16 +16,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use libpachinko::clock::{Clock, Timestamp};
-use libpachinko::config::Config;
-use libpachinko::error::{JoinError, LeaseActionError, PublishError, PullError};
-use libpachinko::ids::{ConsumerId, Payload, PocketKey, Position, PublisherId, Rank, RecordKey};
-use libpachinko::lease_ids::{LeaseId, LeaseIds};
-use libpachinko::queue::{
-    Lease, LeaseStatus, PocketFate, PocketStatus, Publication, PublishOutcome, PullOutcome, Queue,
-    SettleOutcome, ShedReason, Snapshot,
+use libpachinko::clock::Clock;
+use libpachinko::lease_ids::LeaseIds;
+use libpachinko::records::{PocketRecords, Position, RecordStatus, RecordView};
+use libpachinko::testing::{InspectRecords, PocketStatus, PocketView, ShedReason, Snapshot};
+use libpachinko::{
+    Config, ConsumerId, HeldRecord, JoinError, Lease, LeaseActionError, LeaseId, LeaseStatus,
+    Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome, PublisherId,
+    PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, Timestamp,
 };
-use libpachinko::records::{HeldRecord, PocketRecords, RecordStatus, RecordView};
 use proptest::prelude::*;
 use proptest::test_runner::{Config as RunnerConfig, RngAlgorithm, TestRng, TestRunner};
 
@@ -223,7 +222,7 @@ pub(crate) struct Model {
     dead_letters: Vec<ModelLetter>,
 }
 
-fn model_pocket(pocket: &libpachinko::queue::PocketView) -> ModelPocket {
+fn model_pocket(pocket: &PocketView) -> ModelPocket {
     ModelPocket {
         status: pocket.status,
         position: pocket.position,
@@ -1052,7 +1051,7 @@ fn advance(set_clock: &impl Fn(Timestamp), turn: &mut Turn<'_>, millis: i64) {
 
 /// Runs one step: predicts it from the pre-state, applies it, and checks the
 /// post-state against the prediction, every invariant and every transition.
-fn run<R: PocketRecords, C: Clock, L: LeaseIds>(
+fn run<R: InspectRecords, C: Clock, L: LeaseIds>(
     queue: &mut Queue<R, C, L>,
     set_clock: &impl Fn(Timestamp),
     walk: &mut Walk,
@@ -1144,7 +1143,7 @@ fn note_states(snapshot: &Snapshot, walk: &mut Walk) {
 
 /// Runs `steps` over `queue`, which must be new and empty, after `p0`, `c0` and
 /// `c1` join, with the clock set through `set_clock` from [`START`].
-pub(crate) fn walk<R: PocketRecords, C: Clock, L: LeaseIds>(
+pub(crate) fn walk<R: InspectRecords, C: Clock, L: LeaseIds>(
     queue: &mut Queue<R, C, L>,
     set_clock: &impl Fn(Timestamp),
     steps: &[WalkStep],

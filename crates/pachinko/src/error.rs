@@ -1,6 +1,6 @@
 //! Why the service stopped or could not start.
 
-use libpachinko::error::ConfigError;
+use libpachinko::ConfigError;
 
 /// A failure of the service: a command line it does not read, a configuration the
 /// library refuses, an I/O failure, a task that failed, or an effect that cannot be
@@ -26,7 +26,7 @@ pub enum ServeError {
     /// The flags set a configuration the library's config check refuses.
     ///
     /// ```
-    /// use libpachinko::error::ConfigError;
+    /// use libpachinko::ConfigError;
     /// let error = pachinko::ServeError::from(ConfigError::MaxPullBatchZero);
     /// assert!(error.to_string().starts_with("invalid configuration: max_pull_batch"));
     /// ```
@@ -94,7 +94,7 @@ impl ServeError {
 #[cfg(test)]
 mod tests {
     use super::ServeError;
-    use libpachinko::error::ConfigError;
+    use libpachinko::ConfigError;
 
     #[test]
     fn io_carries_what_was_being_done_and_the_errors_text() {

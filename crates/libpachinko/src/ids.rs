@@ -1,7 +1,10 @@
 //! The specification's names and values: who publishes and consumes, which pocket
-//! and key a record has, its rank and payload, and the positions the queue hands out.
+//! and key a record has, its rank and payload, a held record as a batch carries it,
+//! and the id of a lease, the fencing token every ack, nack, renew and release
+//! carries back, with the one text form the wire carries it in.
 
 use std::fmt;
+use std::str::FromStr;
 
 /// Declares a newtype over `String` that names something in the specification.
 macro_rules! name {
@@ -9,7 +12,7 @@ macro_rules! name {
         $(#[$doc])*
         ///
         /// ```
-        #[doc = concat!("use libpachinko::ids::", stringify!($name), ";")]
+        #[doc = concat!("use libpachinko::", stringify!($name), ";")]
         #[doc = concat!("let name = ", stringify!($name), "::new(\"", $example, "\");")]
         #[doc = concat!("assert_eq!(name.as_str(), \"", $example, "\");")]
         #[doc = concat!("assert_eq!(name.to_string(), \"", $example, "\");")]
@@ -23,7 +26,7 @@ macro_rules! name {
             /// The name, from any string.
             ///
             /// ```
-            #[doc = concat!("use libpachinko::ids::", stringify!($name), ";")]
+            #[doc = concat!("use libpachinko::", stringify!($name), ";")]
             #[doc = concat!("let name = ", stringify!($name), "::new(String::from(\"", $example, "\"));")]
             #[doc = concat!("assert_eq!(name.as_str(), \"", $example, "\");")]
             /// ```
@@ -35,7 +38,7 @@ macro_rules! name {
             /// The name as text.
             ///
             /// ```
-            #[doc = concat!("use libpachinko::ids::", stringify!($name), ";")]
+            #[doc = concat!("use libpachinko::", stringify!($name), ";")]
             #[doc = concat!("assert_eq!(", stringify!($name), "::new(\"", $example, "\").as_str(), \"", $example, "\");")]
             /// ```
             #[must_use]
@@ -89,7 +92,7 @@ name!(
 /// orders like the `i64` it holds, negatives and zero included.
 ///
 /// ```
-/// use libpachinko::ids::Rank;
+/// use libpachinko::Rank;
 /// assert!(Rank::new(2) > Rank::new(1));
 /// assert!(Rank::new(-1) < Rank::new(0));
 /// assert_eq!(Rank::new(-3).get(), -3);
@@ -102,7 +105,7 @@ impl Rank {
     /// The rank with the given value.
     ///
     /// ```
-    /// use libpachinko::ids::Rank;
+    /// use libpachinko::Rank;
     /// assert_eq!(Rank::new(i64::MAX).get(), i64::MAX);
     /// ```
     #[must_use]
@@ -113,7 +116,7 @@ impl Rank {
     /// The rank's value.
     ///
     /// ```
-    /// use libpachinko::ids::Rank;
+    /// use libpachinko::Rank;
     /// assert_eq!(Rank::new(7).get(), 7);
     /// ```
     #[must_use]
@@ -131,7 +134,7 @@ impl fmt::Display for Rank {
 /// The opaque bytes a record carries; pachinko never reads them.
 ///
 /// ```
-/// use libpachinko::ids::Payload;
+/// use libpachinko::Payload;
 /// let payload = Payload::from(b"hello".as_slice());
 /// assert_eq!(payload.as_ref(), b"hello");
 /// assert_eq!(payload.into_bytes(), b"hello".to_vec());
@@ -144,7 +147,7 @@ impl Payload {
     /// The payload carrying `bytes`.
     ///
     /// ```
-    /// use libpachinko::ids::Payload;
+    /// use libpachinko::Payload;
     /// assert_eq!(Payload::new(vec![1, 2]).as_ref(), &[1, 2]);
     /// ```
     #[must_use]
@@ -155,7 +158,7 @@ impl Payload {
     /// The bytes, by value.
     ///
     /// ```
-    /// use libpachinko::ids::Payload;
+    /// use libpachinko::Payload;
     /// assert_eq!(Payload::new(vec![9]).into_bytes(), vec![9]);
     /// ```
     #[must_use]
@@ -182,58 +185,124 @@ impl From<&[u8]> for Payload {
     }
 }
 
-/// Where a pocket stands in the pocket order and a record in its pocket: the
-/// queue's counter when it entered or re-entered, smallest first.
+/// A held record as a batch carries it and the `Consuming` surface exposes it: the
+/// key, the held rank and the held payload.
 ///
 /// ```
-/// use libpachinko::ids::Position;
-/// assert!(Position::new(0) < Position::new(1));
-/// assert_eq!(Position::new(4).get(), 4);
+/// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
+///
+/// let held = HeldRecord::new(RecordKey::new("k"), Rank::new(2), Payload::default());
+/// assert_eq!(held.key.as_str(), "k");
+/// assert_eq!(held.rank, Rank::new(2));
 /// ```
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub struct Position(u64);
+pub struct HeldRecord {
+    /// The record key.
+    pub key: RecordKey,
+    /// The rank of the version handed out.
+    pub rank: Rank,
+    /// The payload of the version handed out.
+    pub payload: Payload,
+}
 
-impl Position {
-    /// The position with the given value.
+impl HeldRecord {
+    /// A held record with these parts.
     ///
     /// ```
-    /// use libpachinko::ids::Position;
-    /// assert_eq!(Position::new(3), Position::new(3));
+    /// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
+    ///
+    /// assert_eq!(HeldRecord::new(RecordKey::new("k"), Rank::new(7), Payload::default()).rank.get(), 7);
     /// ```
     #[must_use]
-    pub const fn new(position: u64) -> Self {
-        Self(position)
+    pub const fn new(key: RecordKey, rank: Rank, payload: Payload) -> Self {
+        Self { key, rank, payload }
+    }
+}
+
+/// The identity of one lease, opaque to its holder: a `u128` whose high 64 bits are
+/// the source's epoch and whose low 64 bits are its serial.
+///
+/// It is written as exactly 32 lower-case hexadecimal digits, which is how the wire
+/// carries it, and parsed back from exactly that form: a shorter or longer text, an
+/// upper-case digit or a sign is refused.
+///
+/// ```
+/// use libpachinko::LeaseId;
+///
+/// let id = LeaseId::from_u128(0xab);
+/// assert_eq!(id.to_string(), "000000000000000000000000000000ab");
+/// assert_eq!(id.to_string().parse::<LeaseId>(), Ok(id));
+/// assert!("ab".parse::<LeaseId>().is_err());
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct LeaseId(u128);
+
+impl LeaseId {
+    /// The lease id with the given 128 bits.
+    ///
+    /// ```
+    /// use libpachinko::LeaseId;
+    /// assert_eq!(LeaseId::from_u128(7).as_u128(), 7);
+    /// ```
+    #[must_use]
+    pub const fn from_u128(bits: u128) -> Self {
+        Self(bits)
     }
 
-    /// The position's value.
+    /// The id's 128 bits.
     ///
     /// ```
-    /// use libpachinko::ids::Position;
-    /// assert_eq!(Position::new(8).get(), 8);
+    /// use libpachinko::LeaseId;
+    /// assert_eq!(LeaseId::from_u128(9).as_u128(), 9);
     /// ```
     #[must_use]
-    pub const fn get(self) -> u64 {
+    pub const fn as_u128(self) -> u128 {
         self.0
     }
+}
 
-    /// The position after this one. The queue hands out one position per pocket or
-    /// record that enters an order, so `u64` positions do not run out in practice;
-    /// the step saturates rather than wrapping.
-    ///
-    /// ```
-    /// use libpachinko::ids::Position;
-    /// assert_eq!(Position::new(8).next(), Position::new(9));
-    /// ```
-    #[must_use]
-    pub const fn next(self) -> Self {
-        Self(self.0.saturating_add(1))
+impl fmt::Display for LeaseId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:032x}", self.0)
+    }
+}
+
+/// Why a text is not a lease id.
+///
+/// ```
+/// use libpachinko::{LeaseId, ParseLeaseIdError};
+/// assert_eq!("xyz".parse::<LeaseId>(), Err(ParseLeaseIdError::NotThirtyTwoHexDigits));
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum ParseLeaseIdError {
+    /// The text is not exactly 32 lower-case hexadecimal digits.
+    #[error("a lease id is exactly 32 lower-case hexadecimal digits")]
+    NotThirtyTwoHexDigits,
+}
+
+impl FromStr for LeaseId {
+    type Err = ParseLeaseIdError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let well_formed =
+            text.len() == 32 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        well_formed
+            .then(|| u128::from_str_radix(text, 16).ok())
+            .flatten()
+            .map(Self)
+            .ok_or(ParseLeaseIdError::NotThirtyTwoHexDigits)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsumerId, Payload, PocketKey, Position, PublisherId, Rank, RecordKey};
+    use super::{
+        ConsumerId, HeldRecord, LeaseId, ParseLeaseIdError, Payload, PocketKey, PublisherId, Rank,
+        RecordKey,
+    };
 
     #[test]
     fn names_convert_from_text_and_display_as_it() {
@@ -244,17 +313,59 @@ mod tests {
     }
 
     #[test]
-    fn ranks_and_positions_order_by_value() {
+    fn ranks_order_by_value() {
         assert!(Rank::new(i64::MIN) < Rank::new(i64::MAX));
         assert_eq!(Rank::new(5).to_string(), "5");
-        assert!(Position::new(3) > Position::default());
-        assert_eq!(Position::new(4).get(), 4);
-        assert_eq!(Position::new(u64::MAX).next(), Position::new(u64::MAX));
     }
 
     #[test]
     fn payloads_hold_bytes() {
         assert_eq!(Payload::from(vec![3]).into_bytes(), [3]);
         assert_eq!(Payload::default().as_ref(), b"");
+    }
+
+    #[test]
+    fn a_held_record_keeps_its_parts() {
+        let held = HeldRecord::new(RecordKey::new("k"), Rank::new(2), Payload::from(vec![1]));
+        assert_eq!(
+            (held.key.as_str(), held.rank, held.payload.as_ref()),
+            ("k", Rank::new(2), [1].as_slice())
+        );
+    }
+
+    #[test]
+    fn display_and_parse_round_trip_the_edges() {
+        for bits in [
+            0,
+            1,
+            u128::from(u64::MAX),
+            u128::from(u64::MAX) + 1,
+            u128::MAX,
+        ] {
+            let id = LeaseId::from_u128(bits);
+            assert_eq!(id.to_string().len(), 32);
+            assert_eq!(id.to_string().parse(), Ok(id));
+        }
+        assert_eq!(LeaseId::from_u128(u128::MAX).to_string(), "f".repeat(32));
+    }
+
+    #[test]
+    fn parsing_refuses_every_other_form() {
+        let upper = "A".repeat(32);
+        let plus = format!("+{}", "0".repeat(31));
+        let short = "0".repeat(31);
+        let long = "0".repeat(33);
+        let not_hex = "g".repeat(32);
+        for bad in ["", "1", &short, &long, &not_hex, &upper, &plus] {
+            assert_eq!(
+                bad.parse::<LeaseId>(),
+                Err(ParseLeaseIdError::NotThirtyTwoHexDigits),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(
+            ParseLeaseIdError::NotThirtyTwoHexDigits.to_string(),
+            "a lease id is exactly 32 lower-case hexadecimal digits"
+        );
     }
 }

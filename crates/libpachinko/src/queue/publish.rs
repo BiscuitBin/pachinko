@@ -27,10 +27,11 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// changes.
     ///
     /// ```
-    /// use libpachinko::error::PublishError;
-    /// use libpachinko::queue::PublishOutcome;
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::{PublishError, PublishOutcome};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
+    /// # };
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let p = PublisherId::new("p");

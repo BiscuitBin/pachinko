@@ -3,7 +3,8 @@
 
 use std::time::Duration;
 
-use libpachinko::queue::{SettleOutcome, ShedReason};
+use libpachinko::SettleOutcome;
+use libpachinko::testing::ShedReason;
 
 use crate::fixture::{DEAD_LETTER_TTL, Fixture, SUPERSEDED_TTL, T0, config};
 

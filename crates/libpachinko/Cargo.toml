@@ -33,8 +33,11 @@ pre-release-replacements = [
   { file = "../../CHANGELOG.md", search = "(?m)^\\[libpachinko-unreleased\\]: .*", replace = "[libpachinko-unreleased]: {{repository}}/compare/libpachinko-v{{version}}...HEAD\n[libpachinko-{{version}}]: {{repository}}/releases/tag/libpachinko-v{{version}}", exactly = 1 },
 ]
 
-# `testing` exposes the records contract and the queue's inspection seam, which
-# this crate's tests and the service's tests use; no normal build turns it on.
+# `testing` adds the `testing` module and two `Queue` methods, `snapshot` and
+# `tick_with_cost`, and changes nothing else: the queue's inspection seam, the tick's
+# cost counts and the records contract, with the four values no surface exposes. This
+# crate's integration tests need it, and `tests/testing_feature.rs` fails a test run
+# without it; no normal build and no part of the service turns it on.
 [features]
 testing = []
 

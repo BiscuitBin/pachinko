@@ -11,9 +11,10 @@ requires: []
 The service's runtime configuration is the flags `pachinko serve` takes, listed under
 [Service flags](#service-flags); it reads no file and no variable
 ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). libpachinko's one
-Cargo feature, `testing`, exposes the records contract and the queue snapshot to tests and
-is off in every normal build. Everything else on this page configures the tools that
-build and check the workspace.
+Cargo feature, `testing`, adds the `testing` module and two `Queue` methods for tests,
+which [Testing](testing.md#tests-from-the-specifications) describes, and is off in every
+normal build. Everything else on this page configures the tools that build and check the
+workspace.
 
 ## Service flags
 
@@ -86,7 +87,7 @@ constants belong in source where they can be reviewed.
 | --- | --- |
 | `rust-toolchain.toml` | The compiler: an exact stable release, the minimal profile, and three components: rustfmt, clippy and `llvm-tools-preview` for coverage. Exact rather than `stable`, because clippy's lint set moves every six weeks and would break `-D warnings` with no diff here. No extra target, because libpachinko is a std library ([decision 0008](../decisions/0008-std-library.md)), and no `rust-src`, which served rust-analyzer only; a contributor who wants it runs `rustup component add rust-src`. Honoured only by rustup's proxy. |
 | `Cargo.toml` (root) | The workspace: resolver 3, every directory under `crates/` a member and `fuzz/` and `loadgen/` excluded, the package fields each crate inherits (edition, `rust-version`, licence, repository, homepage, authors, `publish = false`), the lint table, and the release and test profiles. The release profile builds with fat LTO and one codegen unit, kept by the maintainer's choice on 2026-10-24 after the container image's release build compiled in 6.24 s uncached for a 9.4 MB image; the test profile at `opt-level = 1`. The `[workspace.dependencies]` table holds every third-party dependency, each with its note ([decision 0007](../decisions/0007-dependency-policy.md)): divan and proptest, which libpachinko takes as development dependencies only; thiserror, which both crates take; the service's tokio, axum, serde, base64, getrandom, tracing and tracing-subscriber; and serde_json and ureq, the service's development dependencies for its wire tests. |
-| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). One feature, `testing`, off by default, which exposes the records contract and the queue snapshot to tests; one normal dependency, thiserror; and two development dependencies from the workspace table: divan, for the `version` and `workloads` benches under `benches/`, each a `[[bench]]` table with `harness = false`, and proptest, for the queue suite's invariant walk. |
+| `crates/libpachinko/Cargo.toml` | The library: its name, version, description, keywords, categories and README, the metadata the `cargo` lint group's `cargo_common_metadata` names, kept for the docs and for the day publishing is decided, since the lint skips a `publish = false` package; every other package field drawn from the workspace; `[lints] workspace = true`; the docs.rs metadata; and `[package.metadata.release]`, cargo-release's tag prefix and the `CHANGELOG.md` replacements a release makes ([decision 0016](../decisions/0016-release-process.md)). One feature, `testing`, off by default, which adds the `testing` module and two `Queue` methods for tests: the queue's inspection seam, the tick's cost counts and the records contract; one normal dependency, thiserror; and two development dependencies from the workspace table: divan, for the `version` and `workloads` benches under `benches/`, each a `[[bench]]` table with `harness = false`, and proptest, for the queue suite's invariant walk. |
 | `crates/pachinko/Cargo.toml` | The service, in the same shape: `libpachinko` by path and version, and the workspace entries above as `{ workspace = true }` lines ([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). Cargo then enforces the direction, since libpachinko cannot name `pachinko` without a cycle; see [Layering](../explanation/layering.md). |
 | `fuzz/Cargo.toml` | The fuzz crate, `libpachinko-fuzz`: excluded from the workspace, so it is its own, with its own `fuzz/Cargo.lock`, a dependency on libfuzzer-sys and on libpachinko by path, and the `smoke` target. An excluded crate inherits nothing, so it restates `rust-version`, the workspace's two `forbid` lints and its clippy levels, which are kept in step with the root table by hand. |
 | `loadgen/Cargo.toml` | The load generator, `pachinko-loadgen`: excluded from the workspace and pinned by its own `loadgen/Cargo.lock`, with `publish = false`, its own `rust-version`, and two dependencies, ureq without default features or TLS, and serde_json, each with its decision-0007 note. It names no workspace crate and speaks HTTP only. Like the fuzz crate, it restates the two `forbid` lints and the clippy levels, which are kept in step with the root table by hand. |
@@ -194,7 +195,7 @@ A figure a specification states is mirrored in code once, by name, in a constant
 doctest and a unit test hold to the specification's `config` entry. A Rust constant that
 stands for a figure but has no `config` entry to name is drift the other way: the figure
 belongs in the specification first. Today the one module, `docs/specs/pachinko.allium`,
-declares five figures in its `config` block, and `libpachinko::config::Config::default`
+declares five figures in its `config` block, and `libpachinko::Config::default`
 mirrors them, held by its doctest and by the tests of scenarios S001 and S002; see
 [Specifications](../explanation/specifications.md).
 

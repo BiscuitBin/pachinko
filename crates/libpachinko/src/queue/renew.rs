@@ -8,11 +8,12 @@
 
 use super::Queue;
 use super::types::{Lease, LeaseStatus, PocketFate};
-use crate::clock::{Clock, Timestamp};
+use crate::clock::Clock;
 use crate::error::LeaseActionError;
-use crate::ids::{ConsumerId, PocketKey};
-use crate::lease_ids::{LeaseId, LeaseIds};
+use crate::ids::{ConsumerId, LeaseId, PocketKey};
+use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
+use crate::timestamp::Timestamp;
 
 impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// `Renew`: the lease's `expires_at` moves to `now + lease_ttl`, replacing the
@@ -27,10 +28,13 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     ///
     /// ```
     /// use std::time::Duration;
-    /// use libpachinko::clock::{FakeClock, Timestamp};
-    /// use libpachinko::queue::PullOutcome;
-    /// # use libpachinko::{config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::clock::FakeClock;
+    /// use libpachinko::{PullOutcome, Timestamp};
+    /// # use libpachinko::{lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// let clock = FakeClock::new(Timestamp::from_millis(0));
     /// let mut config = Config::default();
     /// config.lease_ttl = Duration::from_millis(10);
@@ -68,10 +72,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// [`LeaseActionError::LeaseNotActive`]. A refused release changes nothing.
     ///
     /// ```
-    /// use libpachinko::error::LeaseActionError;
-    /// use libpachinko::queue::{LeaseStatus, PocketFate, PullOutcome};
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::{LeaseActionError, LeaseStatus, PocketFate, PullOutcome};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let p = PublisherId::new("p");
@@ -133,12 +139,13 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
 mod tests {
     use std::time::Duration;
 
-    use crate::clock::{FakeClock, Timestamp};
+    use crate::clock::FakeClock;
     use crate::config::Config;
-    use crate::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-    use crate::lease_ids::{CountingLeaseIds, LeaseId};
+    use crate::ids::{ConsumerId, LeaseId, Payload, PocketKey, PublisherId, Rank, RecordKey};
+    use crate::lease_ids::CountingLeaseIds;
     use crate::queue::{Publication, PullOutcome, Queue};
     use crate::records::MemoryRecords;
+    use crate::timestamp::Timestamp;
 
     #[test]
     fn the_expiry_index_holds_one_entry_per_lease_after_each_extension() {

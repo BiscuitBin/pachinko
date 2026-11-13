@@ -4,13 +4,12 @@
 
 use std::time::Duration;
 
-use libpachinko::error::LeaseActionError;
-use libpachinko::ids::{Payload, Rank};
-use libpachinko::lease_ids::LeaseId;
-use libpachinko::queue::{
-    LeaseStatus, PocketFate, PocketStatus, PublishOutcome, PullOutcome, SettleOutcome,
-};
 use libpachinko::records::RecordStatus;
+use libpachinko::testing::PocketStatus;
+use libpachinko::{
+    LeaseActionError, LeaseId, LeaseStatus, Payload, PocketFate, PublishOutcome, PullOutcome, Rank,
+    SettleOutcome,
+};
 
 use crate::fixture::{Fixture, LEASE_TTL, T0, config, consumer, invariants, keys};
 

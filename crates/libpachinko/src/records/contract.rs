@@ -1,14 +1,50 @@
 //! The records contract, behind the `testing` feature: what every
-//! [`PocketRecords`] implementation must show, written once and run over each.
+//! [`PocketRecords`] implementation must show, written once and run over each, and
+//! [`InspectRecords`], the view of a store the contract and the queue's inspection
+//! seam read it through.
 
 use std::collections::BTreeSet;
 
-use super::{HeldRecord, PocketRecords, RecordStatus, RecordView};
-use crate::ids::{Payload, Position, Rank, RecordKey};
+use super::{PocketRecords, Position, RecordStatus, RecordView};
+use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
+
+/// A store a test can read whole: every record it holds, as values.
+///
+/// No rule of the specification reads a pocket's records this way, so the step is
+/// kept off [`PocketRecords`], the trait the queue drives in every build. A store
+/// implements it to pass [`check_contract`] and to sit under a queue whose
+/// [`Queue::snapshot`](crate::Queue::snapshot) a test reads.
+///
+/// ```
+/// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+/// use libpachinko::testing::InspectRecords;
+/// use libpachinko::{Payload, Rank, RecordKey};
+///
+/// let mut records = MemoryRecords::default();
+/// records.insert_queued(RecordKey::new("b"), Rank::new(1), Payload::default(), Position::new(0));
+/// records.insert_queued(RecordKey::new("a"), Rank::new(1), Payload::default(), Position::new(1));
+/// let keys: Vec<_> = records.snapshot().into_iter().map(|view| view.key).collect();
+/// assert_eq!(keys, [RecordKey::new("a"), RecordKey::new("b")]);
+/// ```
+pub trait InspectRecords: PocketRecords {
+    /// Every record, by key: what a test reads the invariants through.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    /// use libpachinko::testing::InspectRecords;
+    /// use libpachinko::{Payload, Rank, RecordKey};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// assert!(records.snapshot().is_empty());
+    /// records.insert_queued(RecordKey::new("k"), Rank::new(1), Payload::default(), Position::new(0));
+    /// assert_eq!(records.snapshot()[0].status, RecordStatus::Queued);
+    /// ```
+    fn snapshot(&self) -> Vec<RecordView>;
+}
 
 /// Checks every step of the records contract over fresh instances of `R`, and
 /// after every call that [`record_count`](PocketRecords::record_count) and
-/// [`held`](PocketRecords::held) agree with [`snapshot`](PocketRecords::snapshot).
+/// [`held`](PocketRecords::held) agree with [`snapshot`](InspectRecords::snapshot).
 ///
 /// The contract checks behaviour, not cost. The O(outstanding) bound on
 /// [`free_held`](PocketRecords::free_held), and the other documented costs, are
@@ -22,11 +58,11 @@ use crate::ids::{Payload, Position, Rank, RecordKey};
 ///
 /// ```
 /// use libpachinko::records::MemoryRecords;
-/// use libpachinko::records::contract::check_contract;
+/// use libpachinko::testing::check_contract;
 ///
 /// check_contract::<MemoryRecords>();
 /// ```
-pub fn check_contract<R: PocketRecords>() {
+pub fn check_contract<R: InspectRecords>() {
     insert_then_lookup::<R>();
     a_second_insert_is_refused::<R>();
     supersede_keeps_position_and_status::<R>();
@@ -50,7 +86,7 @@ fn held(text: &str, rank: i64, bytes: &str) -> HeldRecord {
     HeldRecord::new(key(text), Rank::new(rank), payload(bytes))
 }
 
-fn insert<R: PocketRecords>(records: &mut R, text: &str, rank: i64, position: u64) {
+fn insert<R: InspectRecords>(records: &mut R, text: &str, rank: i64, position: u64) {
     records.insert_queued(
         key(text),
         Rank::new(rank),
@@ -60,7 +96,7 @@ fn insert<R: PocketRecords>(records: &mut R, text: &str, rank: i64, position: u6
     agree(records, "insert_queued");
 }
 
-fn hold<R: PocketRecords>(records: &mut R, limit: usize) -> Vec<HeldRecord> {
+fn hold<R: InspectRecords>(records: &mut R, limit: usize) -> Vec<HeldRecord> {
     let batch = records.hold_oldest(limit).into_iter().collect();
     agree(records, "hold_oldest");
     batch
@@ -68,7 +104,7 @@ fn hold<R: PocketRecords>(records: &mut R, limit: usize) -> Vec<HeldRecord> {
 
 /// `record_count` and `held` read the same state `snapshot` does, and `snapshot`
 /// has one record per key.
-fn agree<R: PocketRecords>(records: &R, step: &str) {
+fn agree<R: InspectRecords>(records: &R, step: &str) {
     let views = records.snapshot();
     assert_eq!(
         records.record_count(),
@@ -91,11 +127,11 @@ fn agree<R: PocketRecords>(records: &R, step: &str) {
     assert_eq!(records.held(), expected, "held after {step}");
 }
 
-fn view<R: PocketRecords>(records: &R, text: &str) -> Option<RecordView> {
+fn view<R: InspectRecords>(records: &R, text: &str) -> Option<RecordView> {
     records.lookup(&key(text))
 }
 
-fn insert_then_lookup<R: PocketRecords>() {
+fn insert_then_lookup<R: InspectRecords>() {
     let mut records = R::default();
     assert_eq!(view(&records, "a"), None, "lookup of an absent key");
     assert_eq!(records.record_count(), 0, "a new store is empty");
@@ -119,7 +155,7 @@ fn insert_then_lookup<R: PocketRecords>() {
     );
 }
 
-fn a_second_insert_is_refused<R: PocketRecords>() {
+fn a_second_insert_is_refused<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "a", 1, 1);
     insert(&mut records, "a", 2, 2);
@@ -164,7 +200,7 @@ fn a_second_insert_is_refused<R: PocketRecords>() {
     );
 }
 
-fn supersede_keeps_position_and_status<R: PocketRecords>() {
+fn supersede_keeps_position_and_status<R: InspectRecords>() {
     let mut records = R::default();
     assert_eq!(
         records.supersede(&key("a"), Rank::new(1), payload("z")),
@@ -223,7 +259,7 @@ fn supersede_keeps_position_and_status<R: PocketRecords>() {
     );
 }
 
-fn hold_oldest_takes_smallest_positions<R: PocketRecords>() {
+fn hold_oldest_takes_smallest_positions<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "c", 1, 30);
     insert(&mut records, "a", 1, 10);
@@ -250,7 +286,7 @@ fn hold_oldest_takes_smallest_positions<R: PocketRecords>() {
     );
 }
 
-fn hold_oldest_with_limit_zero_holds_nothing<R: PocketRecords>() {
+fn hold_oldest_with_limit_zero_holds_nothing<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "a", 1, 1);
     assert!(
@@ -264,7 +300,7 @@ fn hold_oldest_with_limit_zero_holds_nothing<R: PocketRecords>() {
     );
 }
 
-fn settle_removes_only_held<R: PocketRecords>() {
+fn settle_removes_only_held<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "a", 1, 1);
     insert(&mut records, "b", 1, 2);
@@ -283,7 +319,7 @@ fn settle_removes_only_held<R: PocketRecords>() {
     assert_eq!(records.settle(&key("zz")), None, "settle of an absent key");
 }
 
-fn defer_takes_the_fresh_position<R: PocketRecords>() {
+fn defer_takes_the_fresh_position<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "a", 1, 1);
     assert_eq!(
@@ -324,7 +360,7 @@ fn defer_takes_the_fresh_position<R: PocketRecords>() {
     );
 }
 
-fn free_held_requeues_held_and_deferred<R: PocketRecords>() {
+fn free_held_requeues_held_and_deferred<R: InspectRecords>() {
     let mut records = R::default();
     assert_eq!(records.free_held(), 0, "free_held of an empty store");
     insert(&mut records, "held", 1, 1);
@@ -363,12 +399,12 @@ fn free_held_requeues_held_and_deferred<R: PocketRecords>() {
 }
 
 /// What a store shows, to compare before and after a change to its clone.
-fn state<R: PocketRecords>(records: &R) -> (Vec<RecordView>, usize, Vec<HeldRecord>) {
+fn state<R: InspectRecords>(records: &R) -> (Vec<RecordView>, usize, Vec<HeldRecord>) {
     (records.snapshot(), records.record_count(), records.held())
 }
 
 /// Changes `records` by every kind of step.
-fn change<R: PocketRecords>(records: &mut R) {
+fn change<R: InspectRecords>(records: &mut R) {
     hold(records, 1);
     records.supersede(&key("b"), Rank::new(9), payload("b9"));
     insert(records, "c", 1, 3);
@@ -376,7 +412,7 @@ fn change<R: PocketRecords>(records: &mut R) {
     agree(records, "a change to one copy");
 }
 
-fn clone_is_independent<R: PocketRecords>() {
+fn clone_is_independent<R: InspectRecords>() {
     let mut records = R::default();
     insert(&mut records, "a", 1, 1);
     insert(&mut records, "b", 1, 2);

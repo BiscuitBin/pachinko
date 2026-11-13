@@ -47,11 +47,12 @@ use std::time::Duration;
 use divan::counter::ItemsCount;
 use divan::{Bencher, black_box};
 use libpachinko::clock::FakeClock;
-use libpachinko::config::Config;
-use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
 use libpachinko::lease_ids::CountingLeaseIds;
-use libpachinko::queue::{Publication, PublishOutcome, PullOutcome, Queue};
 use libpachinko::records::MemoryRecords;
+use libpachinko::{
+    Config, ConsumerId, Payload, PocketKey, Publication, PublishOutcome, PublisherId, PullOutcome,
+    Queue, Rank, RecordKey,
+};
 
 fn main() {
     divan::main();

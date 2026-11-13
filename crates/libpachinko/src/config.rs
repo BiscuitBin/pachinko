@@ -9,7 +9,7 @@ use crate::error::ConfigError;
 ///
 /// [`Config::default`] is the specification's five defaults, which decision 0019
 /// confirms for the MVP. The fields are public so a deployment changes the ones it
-/// sets; [`Config::check`], which [`Queue::new`](crate::queue::Queue::new) calls,
+/// sets; [`Config::check`], which [`Queue::new`](crate::Queue::new) calls,
 /// refuses what `ExpiryLimitPositive` and `PullBatchPositive` exclude.
 /// `LeaseTtlNonNegative`, `SupersededTtlNonNegative` and `DeadLetterTtlNonNegative`
 /// hold by type, since a [`Duration`] is never negative: a negative TTL cannot be
@@ -17,7 +17,7 @@ use crate::error::ConfigError;
 ///
 /// ```
 /// use std::time::Duration;
-/// use libpachinko::config::Config;
+/// use libpachinko::Config;
 ///
 /// let config = Config::default();
 /// assert_eq!(config.lease_ttl, Duration::from_secs(5 * 60));
@@ -35,7 +35,7 @@ use crate::error::ConfigError;
 /// // obligation: invariant.SupersededTtlNonNegative
 /// // obligation: invariant.DeadLetterTtlNonNegative
 /// use std::time::Duration;
-/// let config = libpachinko::config::Config::default();
+/// let config = libpachinko::Config::default();
 /// let ttls: [Duration; 3] = [config.lease_ttl, config.superseded_ttl, config.dead_letter_ttl];
 /// assert!(ttls.iter().all(|ttl| *ttl >= Duration::ZERO));
 /// ```
@@ -45,19 +45,19 @@ use crate::error::ConfigError;
 /// ```compile_fail,E0600
 /// // scenario: S005
 /// // obligation: invariant.LeaseTtlNonNegative
-/// let mut config = libpachinko::config::Config::default();
+/// let mut config = libpachinko::Config::default();
 /// config.lease_ttl = -config.lease_ttl;
 /// ```
 ///
 /// ```compile_fail,E0600
 /// // obligation: invariant.SupersededTtlNonNegative
-/// let mut config = libpachinko::config::Config::default();
+/// let mut config = libpachinko::Config::default();
 /// config.superseded_ttl = -config.superseded_ttl;
 /// ```
 ///
 /// ```compile_fail,E0600
 /// // obligation: invariant.DeadLetterTtlNonNegative
-/// let mut config = libpachinko::config::Config::default();
+/// let mut config = libpachinko::Config::default();
 /// config.dead_letter_ttl = -config.dead_letter_ttl;
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,8 +85,7 @@ impl Config {
     /// [`ConfigError::MaxPullBatchZero`] (`PullBatchPositive`), in that order.
     ///
     /// ```
-    /// use libpachinko::config::Config;
-    /// use libpachinko::error::ConfigError;
+    /// use libpachinko::{Config, ConfigError};
     ///
     /// let mut config = Config::default();
     /// config.max_pull_batch = 0;

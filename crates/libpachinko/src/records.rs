@@ -1,29 +1,79 @@
 //! The store seam: one pocket's records, behind the trait the queue drives.
 //!
 //! [`PocketRecords`] is the record-level steps the specification's rules take and
-//! nothing more. The [`Queue`](crate::queue::Queue) decides every rule and then
-//! asks the store to carry out one step; the store decides nothing itself.
+//! nothing more. The [`Queue`](crate::Queue) decides every rule and then asks the
+//! store to carry out one step; the store decides nothing itself.
 //! [`MemoryRecords`] is the one implementation (decision 0019), and
-//! `contract::check_contract`, behind the `testing` feature, is the one contract
-//! every implementation passes.
+//! `testing::check_contract`, behind the `testing` feature, is the one contract
+//! every implementation passes. [`Position`] is where the queue tells the store a
+//! record stands.
 
 #[cfg(feature = "testing")]
-pub mod contract;
-pub mod memory;
+pub(crate) mod contract;
+mod memory;
 
 use std::fmt::Debug;
 
-use crate::ids::{Payload, Position, Rank, RecordKey};
+use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
 
 pub use memory::MemoryRecords;
+
+/// Where a pocket stands in the pocket order and a record in its pocket: the
+/// queue's counter when it entered or re-entered, smallest first.
+///
+/// ```
+/// use libpachinko::records::Position;
+/// assert!(Position::new(0) < Position::new(1));
+/// assert_eq!(Position::new(4).get(), 4);
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub struct Position(u64);
+
+impl Position {
+    /// The position with the given value.
+    ///
+    /// ```
+    /// use libpachinko::records::Position;
+    /// assert_eq!(Position::new(3), Position::new(3));
+    /// ```
+    #[must_use]
+    pub const fn new(position: u64) -> Self {
+        Self(position)
+    }
+
+    /// The position's value.
+    ///
+    /// ```
+    /// use libpachinko::records::Position;
+    /// assert_eq!(Position::new(8).get(), 8);
+    /// ```
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    /// The position after this one. The queue hands out one position per pocket or
+    /// record that enters an order, so `u64` positions do not run out in practice;
+    /// the step saturates rather than wrapping.
+    ///
+    /// ```
+    /// use libpachinko::records::Position;
+    /// assert_eq!(Position::new(8).next(), Position::new(9));
+    /// ```
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
 
 /// A record's state. The held version, `held_rank` and `held_payload` in the
 /// specification, exists only while the record is held, so it lives in the
 /// [`Held`](RecordStatus::Held) variant and nowhere else.
 ///
 /// ```
-/// use libpachinko::ids::{Payload, Rank};
 /// use libpachinko::records::RecordStatus;
+/// use libpachinko::{Payload, Rank};
 ///
 /// let held = RecordStatus::Held { rank: Rank::new(1), payload: Payload::default() };
 /// assert_ne!(held, RecordStatus::Queued);
@@ -45,49 +95,12 @@ pub enum RecordStatus {
     Deferred,
 }
 
-/// A held record as a batch carries it and the `Consuming` surface exposes it: the
-/// key, the held rank and the held payload.
-///
-/// ```
-/// use libpachinko::ids::{Payload, Rank, RecordKey};
-/// use libpachinko::records::HeldRecord;
-///
-/// let held = HeldRecord::new(RecordKey::new("k"), Rank::new(2), Payload::default());
-/// assert_eq!(held.key.as_str(), "k");
-/// assert_eq!(held.rank, Rank::new(2));
-/// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub struct HeldRecord {
-    /// The record key.
-    pub key: RecordKey,
-    /// The rank of the version handed out.
-    pub rank: Rank,
-    /// The payload of the version handed out.
-    pub payload: Payload,
-}
-
-impl HeldRecord {
-    /// A held record with these parts.
-    ///
-    /// ```
-    /// use libpachinko::ids::{Payload, Rank, RecordKey};
-    /// use libpachinko::records::HeldRecord;
-    ///
-    /// assert_eq!(HeldRecord::new(RecordKey::new("k"), Rank::new(7), Payload::default()).rank.get(), 7);
-    /// ```
-    #[must_use]
-    pub const fn new(key: RecordKey, rank: Rank, payload: Payload) -> Self {
-        Self { key, rank, payload }
-    }
-}
-
 /// Every field of one record: its key, latest rank and payload, position and
 /// status.
 ///
 /// ```
-/// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-/// use libpachinko::records::{RecordStatus, RecordView};
+/// use libpachinko::records::{Position, RecordStatus, RecordView};
+/// use libpachinko::{Payload, Rank, RecordKey};
 ///
 /// let view = RecordView::new(
 ///     RecordKey::new("k"),
@@ -117,8 +130,8 @@ impl RecordView {
     /// A view with these parts.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{RecordStatus, RecordView};
+    /// use libpachinko::records::{Position, RecordStatus, RecordView};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let view = RecordView::new(
     ///     RecordKey::new("k"),
@@ -151,15 +164,15 @@ impl RecordView {
 ///
 /// The queue calls each step once its rule's guards hold. A step whose
 /// precondition does not hold changes nothing. Every implementation passes
-/// `contract::check_contract`, behind the `testing` feature.
+/// `testing::check_contract`, behind the `testing` feature.
 ///
 /// `Clone` must be a deep, independent copy: a clone shares no record and no
 /// interior mutability with the original, so a change to one never shows in the
 /// other. The contract checks it, and a cloned `Queue` forks on it.
 ///
 /// ```
-/// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-/// use libpachinko::records::{MemoryRecords, PocketRecords};
+/// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+/// use libpachinko::{Payload, Rank, RecordKey};
 ///
 /// let mut records = MemoryRecords::default();
 /// records.insert_queued(RecordKey::new("k"), Rank::new(1), Payload::default(), Position::new(0));
@@ -175,8 +188,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// The record with this key, or `None` when the pocket has none.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("k");
@@ -191,8 +204,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// nothing changes (`OneRecordPerKeyPerPocket`).
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("k");
@@ -208,8 +221,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// changing nothing, when the key is absent.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("k");
@@ -231,8 +244,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// record is never taken.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// records.insert_queued(RecordKey::new("later"), Rank::new(1), Payload::default(), Position::new(7));
@@ -246,8 +259,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// changing nothing, when the key is not held.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("k");
@@ -264,8 +277,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// held.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords, RecordStatus};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("k");
@@ -282,8 +295,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// and returns how many. It costs O(outstanding), never O(records).
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// records.insert_queued(RecordKey::new("a"), Rank::new(1), Payload::default(), Position::new(0));
@@ -297,8 +310,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// How many records the pocket has, in any state.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// records.insert_queued(RecordKey::new("a"), Rank::new(1), Payload::default(), Position::new(0));
@@ -310,8 +323,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// The held records at their held version, smallest position first.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
     ///
     /// let mut records = MemoryRecords::default();
     /// let key = RecordKey::new("a");
@@ -321,18 +334,16 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// assert_eq!(records.held()[0].rank, Rank::new(1));
     /// ```
     fn held(&self) -> Vec<HeldRecord>;
+}
 
-    /// Every record, by key: what a test reads the invariants through.
-    ///
-    /// ```
-    /// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-    /// use libpachinko::records::{MemoryRecords, PocketRecords};
-    ///
-    /// let mut records = MemoryRecords::default();
-    /// records.insert_queued(RecordKey::new("b"), Rank::new(1), Payload::default(), Position::new(0));
-    /// records.insert_queued(RecordKey::new("a"), Rank::new(1), Payload::default(), Position::new(1));
-    /// let keys: Vec<_> = records.snapshot().into_iter().map(|view| view.key).collect();
-    /// assert_eq!(keys, [RecordKey::new("a"), RecordKey::new("b")]);
-    /// ```
-    fn snapshot(&self) -> Vec<RecordView>;
+#[cfg(test)]
+mod tests {
+    use super::Position;
+
+    #[test]
+    fn positions_order_by_value() {
+        assert!(Position::new(3) > Position::default());
+        assert_eq!(Position::new(4).get(), 4);
+        assert_eq!(Position::new(u64::MAX).next(), Position::new(u64::MAX));
+    }
 }

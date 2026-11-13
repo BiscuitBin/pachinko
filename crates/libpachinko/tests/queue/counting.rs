@@ -1,4 +1,5 @@
-//! `Counting`, a `PocketRecords` that delegates every step to `MemoryRecords` and,
+//! `Counting`, a `PocketRecords` and `InspectRecords` that delegates every step to
+//! `MemoryRecords` and,
 //! while a test records, logs each call with the keys of the pocket it was made
 //! on. The queue builds each pocket's store with `Default`, so the log is a
 //! thread-local the test reads back rather than a handle it passes in; each test
@@ -6,8 +7,9 @@
 
 use std::cell::RefCell;
 
-use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-use libpachinko::records::{HeldRecord, MemoryRecords, PocketRecords, RecordView};
+use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordView};
+use libpachinko::testing::{InspectRecords, check_contract};
+use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
 
 /// One call: the step's name and the record keys the pocket held when it ran.
 pub(crate) type Call = (&'static str, Vec<String>);
@@ -101,7 +103,9 @@ impl PocketRecords for Counting {
         self.log("held");
         self.inner.held()
     }
+}
 
+impl InspectRecords for Counting {
     fn snapshot(&self) -> Vec<RecordView> {
         self.log("snapshot");
         self.inner.snapshot()
@@ -112,5 +116,5 @@ impl PocketRecords for Counting {
 // lawful store.
 #[test]
 fn counting_passes_the_records_contract() {
-    libpachinko::records::contract::check_contract::<Counting>();
+    check_contract::<Counting>();
 }

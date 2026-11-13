@@ -70,17 +70,32 @@ a value between threads, copy it or print it. Public structs and enums are
 `#[non_exhaustive]`, so a field or variant added later breaks no caller. These are
 invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
 `thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
-`ConfigError`), and an outcome that is not a refusal, such as `NoPocketAvailable`, is a
-variant of the operation's outcome instead. `libpachinko`'s public API is `version`, the
-effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes `FakeClock` and
-`CountingLeaseIds`, the store seam `records::PocketRecords` with `MemoryRecords`, and
-`queue::Queue` with its joins, `publish`, `pull` and `lease_view`;
-[Architecture](../explanation/architecture.md#the-library) lists the modules.
-`pachinko`'s is `run`. `libpachinko` has one feature, `testing`, which adds
-`records::contract::check_contract` and `queue::Queue::snapshot` for tests and which no
-normal build turns on. Its one normal dependency is `thiserror`; `pachinko` depends only
-on `libpachinko`, and divan, the library's benchmark harness, is a development dependency
-only.
+`LeaseActionError`, `ConfigError`), and an outcome that is not a refusal, such as
+`NoPocketAvailable`, is a variant of the operation's outcome instead.
+
+`libpachinko`'s public API has three surfaces, and each item has one path. The crate
+root is the caller's, and one `use libpachinko::{…}` names all of it: `version`, `Config`
+and `Queue` with its joins, `publish`, `pull`, `lease_view`, the four lease actions and
+`tick`, beside every value those take, return or refuse with. The seam modules hold the
+effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes
+`clock::FakeClock` and `lease_ids::CountingLeaseIds`, and the store seam
+`records::PocketRecords` with `records::MemoryRecords`.
+[Architecture](../explanation/architecture.md#the-library) lists what each surface holds.
+`pachinko`'s public API is `run`.
+
+The lease actions each name the consumer and the `LeaseId` its pull returned, and each
+refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey` and return a
+`SettleOutcome`, `Settled` or `Deferred`. `renew` returns the lease's new `expires_at`,
+a `Timestamp`. `release` returns a `PocketFate`, `Queued` or `Idle`, with the ended
+`Lease`. `tick` takes nothing, refuses nothing and returns a `TickReport`: the leases
+that lapsed and how many superseded records and dead letters decayed.
+
+`libpachinko` has one feature, `testing`, which no normal build turns on. It adds the
+`testing` module and two `Queue` methods, `snapshot` and `tick_with_cost`, for tests, and
+nothing it adds changes what the other two surfaces hold;
+[Testing](testing.md#tests-from-the-specifications) says what each is for. The library's
+one normal dependency is `thiserror`; `pachinko` depends only on `libpachinko`, and
+divan, the library's benchmark harness, is a development dependency only.
 
 ## Related pages
 

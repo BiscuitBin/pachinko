@@ -5,7 +5,7 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use libpachinko::config::Config;
+use libpachinko::Config;
 use tracing::Level;
 
 use crate::ServeError;
@@ -352,8 +352,7 @@ fn min_body_bytes(max_payload_bytes: usize) -> Option<usize> {
 mod tests {
     use std::time::Duration;
 
-    use libpachinko::config::Config;
-    use libpachinko::error::ConfigError;
+    use libpachinko::{Config, ConfigError};
     use tracing::Level;
 
     use super::ServeConfig;

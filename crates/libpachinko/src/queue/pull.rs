@@ -6,8 +6,8 @@ use super::leases::Active;
 use super::types::PullOutcome;
 use crate::clock::Clock;
 use crate::error::PullError;
-use crate::ids::ConsumerId;
-use crate::lease_ids::{LeaseId, LeaseIds};
+use crate::ids::{ConsumerId, LeaseId};
+use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
 
 /// `min(limit, max_pull_batch)`, and 0 for a limit that is not positive.
@@ -32,9 +32,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// first. Finding no pocket is an outcome, never an error.
     ///
     /// ```
-    /// use libpachinko::queue::PullOutcome;
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::PullOutcome;
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let p = PublisherId::new("p");
@@ -120,8 +123,8 @@ mod tests {
     use super::batch_size;
     use crate::clock::FakeClock;
     use crate::config::Config;
-    use crate::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-    use crate::lease_ids::{LeaseId, LeaseIds};
+    use crate::ids::{ConsumerId, LeaseId, Payload, PocketKey, PublisherId, Rank, RecordKey};
+    use crate::lease_ids::LeaseIds;
     use crate::queue::{Publication, PullOutcome, Queue};
     use crate::records::MemoryRecords;
 

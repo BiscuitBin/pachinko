@@ -37,12 +37,14 @@ library and the library never on the service.
 │   │   │   ├── version.rs  The smoke benchmark just bench runs
 │   │   │   └── workloads.rs The queue's workloads W1 to W5, which just bench runs
 │   │   ├── src/
-│   │   │   ├── lib.rs      The crate root: the crate docs, the modules and version()
+│   │   │   ├── lib.rs      The crate root: the crate docs, the caller's re-exports and version()
 │   │   │   ├── queue.rs    Queue, with its operations in queue/
-│   │   │   └── ...         clock.rs, lease_ids.rs, ids.rs, config.rs, error.rs, records.rs
+│   │   │   ├── testing.rs  The testing feature's one module
+│   │   │   └── ...         clock.rs, lease_ids.rs, records.rs and records/, ids.rs, timestamp.rs, config.rs, error.rs
 │   │   └── tests/
 │   │       ├── queue/      The queue's integration tests, one file per area, and the walk
-│   │       └── records_contract.rs  MemoryRecords against the store contract
+│   │       ├── records_contract.rs  MemoryRecords against the store contract
+│   │       └── testing_feature.rs   The guard that fails a test run without the testing feature
 │   └── pachinko/           The service: the queue over HTTP/JSON, on tokio
 │       ├── Cargo.toml
 │       ├── README.md
@@ -92,9 +94,9 @@ reads for libpachinko alone in place of the root file, so it restates every root
 
 | Directory | Responsibility |
 | --- | --- |
-| `crates/libpachinko/src/` | The library. It holds the domain `docs/specs/pachinko.allium` defines: `Queue` in `queue.rs` and `queue/`, the store seam in `records.rs`, the ids, the config and one error enum per operation, and the `Clock` and `LeaseIds` effect traits with their fakes. `lib.rs` holds the crate docs and `version()`. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
+| `crates/libpachinko/src/` | The library. It holds the domain `docs/specs/pachinko.allium` defines: `Queue` in `queue.rs` and `queue/`, the names and values in `ids.rs` and `timestamp.rs`, the config in `config.rs` and one error enum per operation in `error.rs`, all private modules; the `Clock` and `LeaseIds` effect traits with their fakes in `clock.rs` and `lease_ids.rs` and the store seam in `records.rs` and `records/`, the three public seam modules; and `testing.rs`, the `testing` feature's module. `lib.rs` holds the crate docs, the re-exports that make the crate root the caller's interface, and `version()`. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
 | `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which reads the command line and takes the writer it writes to, and `exit_code()`; `main.rs` calls both and holds nothing else. `serve.rs` runs the tokio server and its shutdown, `http.rs` and `http/` the routes and the error codes, `actor.rs` the owner task that holds the queue, `config.rs` the flags, and `clock.rs` and `lease_ids.rs` the real effects. |
-| `crates/libpachinko/tests/` | Integration tests of the library: `queue/`, one file per area of the specification plus the invariant walk, and `records_contract.rs`. |
+| `crates/libpachinko/tests/` | Integration tests of the library: `queue/`, one file per area of the specification plus the invariant walk, `records_contract.rs`, and `testing_feature.rs`, the guard that fails a test run without the `testing` feature. |
 | `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its standard error and its exit status, and starts and stops `serve`; `http.rs` and `batch_publish.rs` drive the routes over HTTP. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
 | `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, and `workloads.rs` times the queue's workloads W1 to W5 at three pocket counts; both run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |

@@ -4,11 +4,11 @@
 use super::Queue;
 use super::types::{DeadLetter, SettleOutcome};
 use crate::clock::Clock;
-use crate::clock::Timestamp;
 use crate::error::LeaseActionError;
-use crate::ids::{ConsumerId, PocketKey, RecordKey};
-use crate::lease_ids::{LeaseId, LeaseIds};
-use crate::records::{HeldRecord, PocketRecords};
+use crate::ids::{ConsumerId, HeldRecord, LeaseId, PocketKey, RecordKey};
+use crate::lease_ids::LeaseIds;
+use crate::records::PocketRecords;
+use crate::timestamp::Timestamp;
 
 /// What a settle step leaves for a nack's dead letter.
 struct Settled {
@@ -37,10 +37,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// hold the key. A refused ack changes nothing, `expires_at` included.
     ///
     /// ```
-    /// use libpachinko::error::LeaseActionError;
-    /// use libpachinko::queue::{PullOutcome, SettleOutcome};
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::{LeaseActionError, PullOutcome, SettleOutcome};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let p = PublisherId::new("p");
@@ -77,9 +79,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// letter.
     ///
     /// ```
-    /// use libpachinko::queue::{PullOutcome, SettleOutcome};
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::{PullOutcome, SettleOutcome};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let p = PublisherId::new("p");

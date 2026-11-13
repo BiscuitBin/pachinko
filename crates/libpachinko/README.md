@@ -103,8 +103,13 @@ sequenceDiagram
 The same scenario in code. It is illustrative; the tested examples live in rustdoc.
 
 ```rust
-use libpachinko::{clock::*, config::Config, ids::*, lease_ids::CountingLeaseIds, queue::*};
+use libpachinko::clock::FakeClock;
+use libpachinko::lease_ids::CountingLeaseIds;
 use libpachinko::records::MemoryRecords;
+use libpachinko::{
+    Config, ConsumerId, Payload, PocketFate, PocketKey, Publication, PublishOutcome, PublisherId,
+    PullOutcome, Queue, Rank, RecordKey, SettleOutcome, Timestamp,
+};
 
 let clock = FakeClock::new(Timestamp::from_millis(0));
 let mut queue: Queue<MemoryRecords, _, _> =
@@ -133,10 +138,15 @@ lease_ids::LeaseIds       CountingLeaseIds      EpochSerialLeaseIds
 store seam (libpachinko)  implementation
 records::PocketRecords    MemoryRecords, the only one
 
-feature `testing`, which no normal build turns on
-├── records::contract::check_contract   every PocketRecords passes it
-└── Queue::snapshot -> Snapshot         the inspection seam the invariant tests read
+feature `testing`, which no normal build turns on: the one module `testing`
+├── testing::check_contract             every PocketRecords passes it
+├── testing::InspectRecords             the read of every record, which a store adds for tests
+├── Queue::snapshot -> Snapshot         the inspection seam the invariant tests read
+└── Queue::tick_with_cost -> TickCost   what a tick read, beside its TickReport
 ```
+
+The crate root holds `Queue`, `Config` and every value an operation takes, returns or
+refuses with; `clock`, `lease_ids` and `records` hold the seams a queue is built over.
 
 ## Config defaults
 
