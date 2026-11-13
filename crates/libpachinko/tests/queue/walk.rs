@@ -598,6 +598,8 @@ impl Model {
                 nacked_at: now,
                 expires_at: now + config.dead_letter_ttl,
             });
+        } else {
+            self.pocket(&pocket_key).consecutive_expiries = 0;
         }
         if held_rank == rank {
             self.pocket(&pocket_key).records.remove(key);
@@ -942,13 +944,22 @@ fn settle<R: PocketRecords, C: Clock, L: LeaseIds>(
     assert_eq!(got, expected, "{name}");
     turn.reads = got.is_ok();
     turn.reach(format!("{name} {}", action_label(&got)));
+    let pocket_key = turn
+        .pre
+        .leases
+        .iter()
+        .find(|l| l.id == lease)
+        .map(|l| l.pocket_key.clone());
+    let counted = (turn.pre.pockets.iter())
+        .any(|p| Some(&p.key) == pocket_key.as_ref() && p.consecutive_expiries > 0);
+    if counted && turn.reads {
+        turn.reach(if nack {
+            "nack keeps a counted pocket"
+        } else {
+            "ack resets a counted pocket"
+        });
+    }
     if got == Ok(SettleOutcome::Settled) {
-        let pocket_key = turn
-            .pre
-            .leases
-            .iter()
-            .find(|l| l.id == lease)
-            .map(|l| l.pocket_key.clone());
         let settled = (
             pocket_key.expect("a settled record's lease was active"),
             key,

@@ -44,7 +44,7 @@ pub struct PocketView {
     pub status: PocketStatus,
     /// Its position in the pocket order, or where it last stood there.
     pub position: Position,
-    /// How many of its leases in a row have lapsed.
+    /// How many of its leases have lapsed since the last ack, release or revive.
     pub consecutive_expiries: u32,
     /// Its records, by key.
     pub records: Vec<RecordView>,
