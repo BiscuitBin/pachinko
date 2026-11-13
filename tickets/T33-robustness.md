@@ -1,7 +1,7 @@
 ---
 id: T33
 title: "Robustness: fallible lease ids, the tick receiver by value, a header-read deadline"
-status: todo
+status: done
 depends_on: [T31]
 parallel_with: [T32, T34]
 branch: ticket/t33-robustness
@@ -529,35 +529,307 @@ git status --short; echo "exit $?"
 
 ### Baseline
 
+At `53d64b7` (`origin/wave-2-tickets`), after `just initialize` (exit 0), `just check` on
+the untouched worktree (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+Commit A is `5d15371` (the change); `a4b8273` merges `origin/wave-2-tickets` (`c0f28e8`,
+T34); commit B carries this section and `status:`.
+
+### Overrides
+
+- The maintainer chose `origin/wave-2-tickets` as the base, because T31 is not on `main`.
+  Every `origin/main` in this ticket's diff checks, Step 10's merge and the T33-2 review
+  reads `origin/wave-2-tickets`.
+- Worked on the existing branch `ticket/t33-robustness.md`, not `ticket/t33-robustness`.
+- Push and the pull request were not run: each needs its own authorisation.
+- Implementation, the §14 reviewers' triage and the fix writer ran as subagents; the lead
+  wrote the red tests and the briefs, and read each diff. Working notes are in
+  `ai_tmp/t33/` and `ai_tmp/review/T33-{1,2}/` (gitignored).
+
 ### The plan (step 2)
+
+At `53d64b7`. `just plan-spec pachinko` (exit 0) prints each Goal obligation id:
+`rule-success.PullWithinLease`, `rule-success.PullFindsNoPocket`,
+`rule-success.PullClaimsFrontPocket` and `rule-entity-creation.PullClaimsFrontPocket.1`.
+
+- The spec search's positive control, `rg -n 'LeaseLapses' docs/specs/pachinko.allium`,
+  prints lines 605 and 874 (exit 0).
+- **Ticket defect:** `rg -n -i 'lease.?id' docs/specs/pachinko.allium` does not print
+  nothing. It prints `575:rule ReleaseIdlesEmptyPocket {` (exit 0), because "ReleaseIdles"
+  contains "leaseId"; it did at `4daf9df` too. The word-bounded
+  `rg -n -i '\blease.?id' docs/specs/pachinko.allium` prints nothing (exit 1). No rule
+  names a lease id.
+- Implementors: `crates/libpachinko/src/lease_ids.rs:58`,
+  `crates/libpachinko/src/queue/pull.rs:145` and `crates/pachinko/src/lease_ids.rs:93`.
+  The only `next` caller outside doctests and tests was `fresh_lease_id`
+  (`pull.rs:110,112`).
+- `actor::start` callers: `serve.rs:88`, `serve.rs:877` (test) and `http.rs:711`
+  (`unanswered_router`). `Lifecycle::new`/`start` and `service_queue` are called at
+  `serve.rs` lines 131, 143 to 144, 180 to 183 and 189, and in the tests at 618 to 620,
+  646 to 648, 743 to 745, 821 to 823, 869 to 877, 917 to 922 and 978 to 980.
+- All three Context faults reproduced at `53d64b7`: the pre-check (`actor.rs:527`), the
+  redraw loop (`pull.rs:109-115`), the fallback lane (`serve.rs:93`) and `Idle::read`
+  restarting `owed_since` (`serve.rs:442-447`).
+- Not in the ticket: `serve.rs`'s
+  `a_head_slower_than_the_bound_still_gets_its_408_before_the_idle_bound_closes_it`
+  asserted the guarantee item 3 retires (its head takes 150 ms against a 100 ms bound).
+  Step 7 retargets it.
 
 ### Shown to bite (step 3, the red steps)
 
+At `53d64b7`, the four red steps as scratch tests, with
+`cargo nextest run --workspace --all-features --locked -E '<the five tests>'` (exit 100):
+
+```text
+thread 'queue::pull::tests::a_source_that_repeats_an_active_id_is_drawn_twice_and_refused' panicked at crates/libpachinko/src/queue/pull.rs:192:13:
+the source was drawn 3 times
+thread 'actor::tests::an_exhausted_source_still_answers_a_pull_within_a_lease' panicked at crates/pachinko/src/actor.rs:741:14:
+the pull within the lease is answered: RecvError(())
+thread 'actor::tests::an_exhausted_source_still_answers_a_pull_that_finds_no_pocket' panicked at crates/pachinko/src/actor.rs:763:18:
+the pull that finds no pocket is answered: RecvError(())
+thread 'serve::tests::a_second_start_gets_a_live_tick_lane' panicked at crates/pachinko/src/serve.rs:939:13:
+the second owner's lease never lapsed: its tick lane has no ticker
+thread 'serve::tests::a_trickling_head_is_cut_at_the_header_read_deadline' panicked at crates/pachinko/src/serve.rs:903:9:
+the trickling connection was still open after 3.04680025s
+```
+
+Each was then parked under `ai_tmp/t33/red/`. One helper change stayed in the tree,
+because it changes no behaviour: `serve_beside`, which `serve_until_closed` now calls.
+The trickle test needs it.
+
 ### The library API (step 4)
+
+Uncommitted, on `53d64b7`. `just fmt-check`, `just clippy`, `just test`, `just doc` and
+`just effects` each exit 0; `just coverage` exits 0 at 99.06% of lines.
+
+- `CountingLeaseIds` advances with `AtomicU64::try_update`, `fetch_update`'s
+  non-deprecated name on the pinned toolchain, and `checked_add`.
+- `claim_front_pocket` peeks, draws once with `?`, refuses an active id with
+  `StillActive`, and only then calls `claim_front`.
+- The spin test was restored with only the two changes the signature forces: `Ok(..)` in
+  the fake, and the `StillActive` assertion in place of `is_err()`.
 
 ### T33-1: the library API
 
+`codex exec -m gpt-6-astra -s read-only` (`codex exec --help` checked first), two
+lenses, each exit 0. Findings:
+
+- **C1** (low) and **B1** (medium), the same gap: no snapshot equality for a `StillActive`
+  refusal.
+- **B2** (low): the bypass paths did not count draws.
+
+All three were triaged valid and fixed in `crates/libpachinko/tests/queue/pull.rs`:
+
+- `a_claim_refused_for_a_still_active_id_changes_nothing` is new;
+- `OneId` counts its draws, and the tests assert 1 after a within-lease pull and 0 after
+  a no-pocket pull.
+
+Each fix was shown to bite by a temporary mutation of `pull.rs`, which was then reverted;
+`cmp` confirmed it byte-identical. No finding was high, so there was no second round. The
+reviewers found no new kind of effect (decision 0019 already records the source) and no
+need for a spec rule.
+
 ### The service follows (step 5)
+
+`exhausted()` and the serial-0 sentences are gone, and the owner holds no source. On
+`Err(PullError::LeaseId(_))`, `pull` ends the owner with `LeaseIdsExhausted` without
+answering. `run_owner` keeps its `(lease_ids, commands)` signature, so the two actor
+tests were restored byte-identical (the diff is empty). `an_exhausted_source_grants_its_last_id_then_stops_the_owner`
+is unchanged. `just test` and `just effects` each exit 0.
 
 ### The tick receiver by value (step 6)
 
+`Lifecycle` has no `ticks` field; `new` returns `(Self, mpsc::Receiver<Tick>)` and
+`start(&self, queue, ticks)` takes the receiver. The fallback and the line-82 sentence
+are gone. A scratch test that passes one `ticks` binding to two `start` calls fails to
+compile:
+
+```text
+error[E0382]: use of moved value: `ticks`
+1082 |         let _first = lifecycle.start(queue_1, ticks);
+     |                                               ----- value moved here
+1083 |         let _second = lifecycle.start(queue_2, ticks);
+     |                                                ^^^^^ value used here after move
+```
+
+The scratch test was deleted, and the dead-lane test was never committed. `just clippy`
+and `just test` each exit 0.
+
 ### The head deadline (step 7)
+
+`Idle::read(true)` now runs `owed_since.get_or_insert_with(Instant::now)`; `wrote()` still
+clears it.
+
+- **The trickle test.** It was restored token-identical. `rustfmt` reflowed two
+  statements, because the parked block had never been formatted; the diff equals the
+  rustfmt of the parked block.
+- **The retired test.** With the fix in place and the test unchanged, the 150 ms head
+  failed with a 400, not a silent cut:
+  `"HTTP/1.1 400 Bad Request ... {\"error\":\"bad_request\",\"message\":\"Failed to buffer the request body: error reading a body from connection\"}"`.
+  The deadline fails the handler's body read. The test was retargeted as
+  `a_head_within_the_bound_still_gets_its_408_before_the_idle_bound_closes_it`, with a
+  500 ms timeout and a 100 ms pause.
+- **Gates.** `just test` exits 0 (249 of 249) and `just coverage` exits 0 (98.89%).
+- **Flakiness.** `serve::tests` and the exhaustion tests ran three times: 60 of 60 passed.
 
 ### The handbook (step 8)
 
+- **`http-api.md` "Request timeout".** The deadline counts from the first byte. A head
+  within one timeout gets its reply or its 408. A slower head gets its reply if the
+  handler writes it within two timeouts, and otherwise a 400 if the handler is reading a
+  body, or no reply for a partial head. A `100 Continue` restarts the deadline. The
+  pipelined bound is stated (T33-2).
+- **`security-model.md`.** The trickle is bounded per request.
+- **`configuration.md`.** The `--request-timeout-ms` row now covers the head bound.
+- **`architecture.md`.** The fallible `LeaseIds`, `LeaseIdError` at the crate root, and
+  the owner stopping only at a pull that needs an id.
+- **`api.md`.** `LeaseIdError` and `PullError::LeaseId`.
+- **`CHANGELOG.md`.** Both Unreleased sections; the libpachinko entry names the BREAKING
+  `LeaseIds::next` change.
+- **`crates/libpachinko/README.md`.** The `pull` row gains `LeaseId`.
+
+The stale-sentence search below adds `always comes first|always gets its 408`, because
+the step's pattern misses the 408 claim that item 3 retires. Its positive control at
+`53d64b7` prints `security-model.md:141` and `:142`, `http-api.md:185` and `:186`, and
+`serve.rs:82`, `:406` and `:432` (exit 0). After the edits it prints nothing (exit 1),
+and `just check-docs` exits 0.
+
 ### T33-2: the whole diff
 
+`codex exec -m gpt-6-astra -s read-only`, two lenses, each exit 0. Findings, all
+triaged valid:
+
+- **B1 = C3** (medium): the trickle test could pass with the fix reverted if the client
+  stalled past two timeouts. It now asserts the longest client silence stayed under
+  190 ms. With `Idle::read` reverted it fails at 50 ms pacing
+  (`the trickling connection was still open after 3.041238834s`) and at 250 ms pacing
+  (`the client was silent for 201.825042ms, long enough to be closed two bounds after a later byte`).
+  The `pachinko` suite ran five times: 5 × 120 passed.
+- **B2 = C1** (medium): a pipelined request loses its first-byte instant when the
+  previous reply is written. Measured about 285 ms at 100 ms. The wrapper cannot see
+  hyper's buffered bytes, so the fix is docs only; see Open points.
+- **B3 = C2** (medium): "a slow head never gets a 408" was false after a `100 Continue`,
+  which restarts the deadline. The docs are qualified everywhere.
+- **B4** (low): the documented 400 had no test. It now has
+  `a_head_slower_than_the_bound_is_answered_400_when_its_body_read_fails_at_the_deadline`,
+  which gets a 408 with the fix reverted.
+
+No finding was high, so there was no second round. The reviewers answered the ticket's
+remaining questions: each red step fails with its fix reverted, a refused claim leaves no
+state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
+`unanswered_router` still call `tick_lane().1`. No file outside Files touched changed.
+
 ### Step 10: `review-change`, merge and gate
+
+- **`code-review` (high).** Eight findings, none high. Applied:
+  - `LeaseIdError` moved to the private `error` module and is re-exported at the crate
+    root as its one path. api.md and architecture.md say the root names every value an
+    operation refuses with, and `LeaseId` and `ParseLeaseIdError` set the precedent. This
+    deviates from Files touched's "in `lease_ids.rs`".
+  - The owner and `ServeError::LeaseIdsExhausted` docs now say a `StillActive` refusal
+    also stops it. The mapping is the ticket's, so no new variant.
+  - The CHANGELOG line is rewrapped.
+
+  Not applied, all low: the trickle test's 190 ms bound (it fails closed by design); the
+  unreachable `let`-`else` in `claim_front_pocket`; the overlapping faulty sources, which
+  this ticket's steps and reviews require.
+- **`review-change`.** No high findings. M1, `PullError::LeaseId` with no spec rule
+  behind it, is confirmed as an effect failure (Non-goals). M2, the slow-head 400, is an
+  Open point. The pipelined detail repeated in `configuration.md` and
+  `security-model.md` now links to `http-api.md`.
+- **`just check` before the merge.** It first failed in `just lint` on EditorConfig: a
+  string continuation at `serve.rs:940` had 13 spaces of indent. Fixed, then exit 0.
+- **The merge.** `git fetch origin` (exit 0) moved `origin/wave-2-tickets` to `c0f28e8`
+  (T34). The merge had no conflicts. T34's pachinko `CHANGELOG` bullets were folded into
+  T33's `### Changed`, so the section has one such heading. `configuration.md` keeps both
+  tickets' lines.
+- **`just semver`.** It cannot fire on this break. Run as discovered, its baseline is the
+  merge base with `origin/main`, `611a86e`, which has no `lease_ids`; with
+  `origin/wave-2-tickets` as the baseline it also passes. cargo-semver-checks 0.51.0
+  passes even at `--release-type patch` (a diagnostic, not a gate), so it has no lint
+  for a changed trait-method return type. It reports no incompatibility at all, none
+  outside the intended one included; the `CHANGELOG` names the break by hand.
+
+The Verification block at `a4b8273`, with `origin/main` read as `origin/wave-2-tickets`:
+
+```text
+$ just plan-spec pachinko                                   exit 0
+$ rg -n 'LeaseLapses' docs/specs/pachinko.allium            exit 0 (positive control)
+605:rule LeaseLapses {
+874:        LeaseLapses
+$ rg -n -i 'lease.?id' docs/specs/pachinko.allium           exit 0 (ticket defect, see step 2)
+575:rule ReleaseIdlesEmptyPocket {
+$ rg -n -i '\blease.?id' docs/specs/pachinko.allium         exit 1
+$ just fmt-check                                            exit 0
+$ just clippy                                               exit 0
+$ just test                                                 exit 0
+     Summary [   1.119s] 250 tests run: 250 passed, 0 skipped
+$ just doc                                                  exit 0
+$ just effects                                              exit 0
+effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
+effects: the fixture trips every ban exactly once, and pachinko trips none.
+$ just coverage                                             exit 0
+TOTAL ... lines 4531, missed 47, 98.96%
+$ just semver                                               exit 0 (expected non-zero; see above)
+     Checked [   0.005s] 202 checks: 202 pass, 58 skip
+     Summary no semver update required
+$ just semver origin/wave-2-tickets                         exit 0
+     Checked [   0.006s] 202 checks: 202 pass, 58 skip
+     Summary no semver update required
+$ rg -n 'impl LeaseIds' crates                              exit 0 (positive control)
+crates/libpachinko/src/queue/pull.rs:158:    impl LeaseIds for Repeating {
+crates/libpachinko/src/queue/pull.rs:218:    impl LeaseIds for AlwaysOne {
+crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
+crates/pachinko/src/lease_ids.rs:83:impl LeaseIds for EpochSerialLeaseIds {
+crates/libpachinko/tests/queue/pull.rs:330:impl LeaseIds for OneId {
+crates/libpachinko/tests/queue/pull.rs:345:impl LeaseIds for RepeatsOne {
+$ rg -n 'fn fresh_lease_id|while .*is_active' crates/libpachinko/src/queue/pull.rs   exit 1
+$ rg -n 'ticks: Option|ticks\.take\(\)' crates/pachinko/src/serve.rs               exit 1
+$ rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs   exit 0
+924:    fn a_trickling_head_is_cut_at_the_header_read_deadline() {
+$ rg -n 'tick_lane\(\)\.1' crates                          exit 0 (both by design)
+crates/pachinko/src/http.rs:705:        let ticks = actor::tick_lane().1;
+crates/pachinko/src/actor.rs:593:        tick_lane().1
+$ rg -n -i '<stale-sentence pattern>' docs crates            exit 1
+$ git diff --stat origin/wave-2-tickets...HEAD              exit 0 (positive control)
+ 18 files changed, 750 insertions(+), 252 deletions(-)    (crates/, docs/ and CHANGELOG.md)
+$ git diff --stat origin/wave-2-tickets...HEAD -- Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml Cargo.lock docs/decisions docs/specs
+                                                            exit 0, prints nothing
+$ just check-docs                                           exit 0
+Validated 47 pages and 48 canonical topics.
+$ just check                                                exit 0
+All checks passed and the worktree is unchanged.
+$ git status --short                                        exit 0, prints nothing
+```
 
 ## Open points
 
 - Whether the lead prefers hyper's own `header_read_timeout`, through a hand-driven
   hyper-util accept loop with `hyper` and `hyper-util` as direct dependencies, to the
   in-crate deadline. That route needs two decision-0007 notes and is not taken here.
-- A head slower than one `--request-timeout-ms` is no longer guaranteed a reply: it is
-  cut, without a 408, unless the handler replies within two timeouts of the first byte.
-  Whether a
-  separate head-read flag is wanted, beside T31's D-T29-2 (the idle and handler
+- A head slower than one `--request-timeout-ms` is no longer guaranteed a reply: unless
+  the handler replies within two timeouts of the first byte, it gets a 400 (a body read
+  that failed) or no reply (a partial head), never the 408, unless a `100 Continue`
+  restarted the deadline. Whether a separate head-read flag is wanted, beside T31's D-T29-2 (the idle and handler
   timeouts share one flag), is the maintainer's.
 - The libpachinko version bump for the breaking `LeaseIds::next` change belongs to the
   release process (`docs/operations/maintenance.md`), not this ticket.
+- The head deadline is the connection's, not the request's (T33-2, B2 = C1): a write
+  clears it, so a pipelined request whose first bytes arrived before the previous reply
+  was written is timed from that write. It can hold the connection up to three
+  `--request-timeout-ms` after it (measured about 285 ms at 100 ms), and one whose head
+  had fully arrived is answered 400 rather than 408. Closing this needs to know where each
+  request starts, for example hyper's `header_read_timeout` through the hyper-util route
+  above. The maintainer decides.
+- A head slower than one timeout whose handler is reading a body is answered
+  400 `bad_request` at the deadline, not cut silently (`review-change` M2). A test pins
+  it, and the handbook says so. Whether that should be a 408 is the maintainer's call.
+- `just semver` cannot report a changed trait-method return type: cargo-semver-checks
+  0.51.0 has no lint for it. Its discovered baseline, the merge base with `origin/main`,
+  also predates `lease_ids` while the wave runs off `main`.
+- The ticket's Verification line `rg -n -i 'lease.?id' docs/specs/pachinko.allium`
+  ("must be 1") matches `ReleaseIdlesEmptyPocket`. `'\blease.?id'` is the search it means.
