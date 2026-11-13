@@ -44,7 +44,7 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | `--max-payload-bytes` | `1048576` (1 MiB) | The largest decoded payload of a single publish or a batch row; more is 413 `payload_too_large`. |
 | `--max-body-bytes` | `16777216` (16 MiB) | The largest request body any route reads; more is 413 `body_too_large`. At least the minimum above. |
 | `--log-level` | `info` | The most detailed log line written to standard error: `error`, `warn`, `info`, `debug` or `trace`, lower case. Each request writes one line at `debug`. |
-| `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; at least 1. |
+| `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; it also bounds a request head: its connection is closed two timeouts after the head's first byte if no reply has been written ([HTTP API](http-api.md#request-timeout)); at least 1. |
 | `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once, then waits up to 1 second for the server's tasks, which end on the cut, before aborting what is left. |
 | `--sweep-ms` | `1000` (1 second) | How long the ticker waits after each sweep before the next; each sweep lapses the leases and decays the shed entries whose `expires_at` has passed; at least 1. |
 

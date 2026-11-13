@@ -1,11 +1,19 @@
 //! Pull: `PullClaimsFrontPocket`, `PullWithinLease`, `HoldRecord` and
 //! `PullFindsNoPocket`, the lease view, and the lease invariants.
 
-use libpachinko::records::RecordStatus;
-use libpachinko::testing::PocketStatus;
-use libpachinko::{LeaseId, LeaseStatus, Payload, PullOutcome, Rank};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::fixture::{Fixture, LEASE_TTL, T0, config, invariants, keys};
+use libpachinko::clock::FakeClock;
+use libpachinko::lease_ids::LeaseIds;
+use libpachinko::records::{MemoryRecords, RecordStatus};
+use libpachinko::testing::PocketStatus;
+use libpachinko::{
+    LeaseId, LeaseIdError, LeaseStatus, Payload, PocketKey, Publication, PullError, PullOutcome,
+    Queue, Rank, RecordKey,
+};
+
+use crate::fixture::{Fixture, LEASE_TTL, T0, config, consumer, invariants, keys, publisher};
 
 /// A fixture with `count` records `r0`, `r1`, ... published into pocket `pk`.
 fn pocket_of(count: usize) -> Fixture {
@@ -295,4 +303,137 @@ fn held_records_exist_only_in_leased_pockets() {
             .any(|p| p.status == PocketStatus::Queued)
     );
     invariants::outstanding_only_while_leased(&snapshot);
+}
+
+/// A lease-id source with one id, 1, to give; every draw after it is
+/// [`LeaseIdError::Exhausted`]. `spent()` is a source with none to give. It
+/// counts every draw, refused ones included, in `draws()`.
+#[derive(Clone, Debug, Default)]
+struct OneId {
+    spent: Arc<AtomicBool>,
+    draws: Arc<AtomicUsize>,
+}
+
+impl OneId {
+    fn spent() -> Self {
+        Self {
+            spent: Arc::new(AtomicBool::new(true)),
+            draws: Arc::default(),
+        }
+    }
+
+    fn draws(&self) -> usize {
+        self.draws.load(Ordering::SeqCst)
+    }
+}
+
+impl LeaseIds for OneId {
+    fn next(&self) -> Result<LeaseId, LeaseIdError> {
+        self.draws.fetch_add(1, Ordering::SeqCst);
+        if self.spent.swap(true, Ordering::SeqCst) {
+            Err(LeaseIdError::Exhausted)
+        } else {
+            Ok(LeaseId::from_u128(1))
+        }
+    }
+}
+
+/// A faulty lease-id source that gives id 1 on every draw.
+#[derive(Clone, Copy, Debug, Default)]
+struct RepeatsOne;
+
+impl LeaseIds for RepeatsOne {
+    fn next(&self) -> Result<LeaseId, LeaseIdError> {
+        Ok(LeaseId::from_u128(1))
+    }
+}
+
+/// A queue over `ids` with the fixture's publisher and consumers joined.
+fn queue_over<L: LeaseIds>(ids: L) -> Queue<MemoryRecords, FakeClock, L> {
+    let mut queue = Queue::new(config(), FakeClock::new(T0), ids).unwrap();
+    queue.publisher_joins(publisher()).unwrap();
+    for id in ["c1", "c2"] {
+        queue.consumer_joins(consumer(id)).unwrap();
+    }
+    queue
+}
+
+fn publish_into<L: LeaseIds>(
+    queue: &mut Queue<MemoryRecords, FakeClock, L>,
+    pocket_key: &str,
+    key: &str,
+) {
+    let publication = Publication::new(
+        PocketKey::new(pocket_key),
+        RecordKey::new(key),
+        Rank::new(1),
+        Payload::default(),
+    );
+    queue.publish(&publisher(), publication).unwrap();
+}
+
+// obligation: rule-success.PullWithinLease
+#[test]
+fn an_exhausted_source_refuses_only_a_claim_and_the_refusal_changes_nothing() {
+    let source = OneId::default();
+    let mut queue = queue_over(source.clone());
+    for (pocket_key, key) in [("a", "r0"), ("a", "r1"), ("b", "r0")] {
+        publish_into(&mut queue, pocket_key, key);
+    }
+    let Ok(PullOutcome::Batch {
+        lease, pocket_key, ..
+    }) = queue.pull(&consumer("c1"), 1)
+    else {
+        panic!("c1 claims a under the source's one id");
+    };
+    assert_eq!((lease, pocket_key.as_str()), (LeaseId::from_u128(1), "a"));
+    let Ok(PullOutcome::Batch {
+        lease: within,
+        records,
+        ..
+    }) = queue.pull(&consumer("c1"), 1)
+    else {
+        panic!("a pull within the lease draws no id");
+    };
+    assert_eq!((within, keys(&records)), (lease, vec!["r1"]));
+    assert_eq!(source.draws(), 1, "the pull within the lease drew no id");
+    let before = queue.snapshot();
+    assert_eq!(
+        queue.pull(&consumer("c2"), 1),
+        Err(PullError::LeaseId(LeaseIdError::Exhausted))
+    );
+    assert_eq!(queue.snapshot(), before, "a refused claim changes nothing");
+}
+
+// obligation: rule-success.PullFindsNoPocket
+#[test]
+fn a_pull_that_finds_no_pocket_draws_no_lease_id() {
+    let source = OneId::spent();
+    let mut queue = queue_over(source.clone());
+    assert_eq!(
+        queue.pull(&consumer("c1"), 10),
+        Ok(PullOutcome::NoPocketAvailable)
+    );
+    assert_eq!(source.draws(), 0, "a pull that finds no pocket draws no id");
+}
+
+#[test]
+fn a_claim_refused_for_a_still_active_id_changes_nothing() {
+    let mut queue = queue_over(RepeatsOne);
+    for pocket_key in ["a", "b"] {
+        publish_into(&mut queue, pocket_key, "r0");
+    }
+    let Ok(PullOutcome::Batch {
+        lease, pocket_key, ..
+    }) = queue.pull(&consumer("c1"), 1)
+    else {
+        panic!("c1 claims a under id 1");
+    };
+    assert_eq!((lease, pocket_key.as_str()), (LeaseId::from_u128(1), "a"));
+    let before = queue.snapshot();
+    assert_eq!(
+        queue.pull(&consumer("c2"), 1),
+        Err(PullError::LeaseId(LeaseIdError::StillActive(lease)))
+    );
+    assert_eq!(queue.snapshot(), before, "a refused claim changes nothing");
 }

@@ -146,7 +146,7 @@ the queue from outside.
 | The crate root | `Queue`, its operations and the values they take and return: `Publication`, `PublishOutcome`, `PullOutcome`, `LeaseView`, `SettleOutcome`, `PocketFate`, `Lease`, `LeaseStatus`, `TickReport` |
 | The crate root | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `HeldRecord`; `Timestamp`, milliseconds since the Unix epoch; `LeaseId`, an opaque `u128` written as 32 lower-case hex digits, and `ParseLeaseIdError` |
 | The crate root | `Config`, the specification's five values with its defaults, and `Config::check` |
-| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError` |
+| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError`; and `LeaseIdError`, a lease-id source's refusal, which `PullError::LeaseId` carries |
 | The crate root | `version()` |
 | `clock` | The `Clock` trait; `FakeClock` |
 | `lease_ids` | The `LeaseIds` trait; `CountingLeaseIds` |
@@ -159,7 +159,7 @@ lease-id source and the store a queue is built over come from the seam modules. 
 re-exports the root's items from five private modules:
 `queue` holds `Queue` and the values of the first row; `ids` the names and values with
 `HeldRecord`, `LeaseId` and `ParseLeaseIdError`; `timestamp` holds `Timestamp`; `config`
-holds `Config`; and `error` the five enums. `LeaseId` sits in `ids` rather than in a
+holds `Config`; and `error` the six enums. `LeaseId` sits in `ids` rather than in a
 module of its own because gate 7 measures coupling for each top-level module: with a
 third value module `error` imported two modules, which made it less stable than `config`,
 its dependent, and failed the stable-dependencies check, and it left `queue` exactly at
@@ -177,7 +177,14 @@ keeps a handle, moves only when a test moves it. The queue clamps the clock: it 
 latest reading it has seen, so a clock that steps back stamps nothing before an earlier
 stamp. `LeaseIds` hands out the lease ids that fence an ack, nack, renew or release to
 its lease; the service's source draws an epoch once from the operating system's random
-source and counts a serial beside it, and `CountingLeaseIds` counts 1, 2, 3. Both traits
+source and counts a serial beside it, and `CountingLeaseIds` counts 1, 2, 3. The source
+is fallible: `next` returns `Result<LeaseId, LeaseIdError>`, and once a source cannot
+give an id it has not given before it answers `LeaseIdError::Exhausted` on every later
+call. Only a pull that claims a pocket draws, once, after it finds a queued pocket and
+before it claims it; an id that is still active is refused with
+`LeaseIdError::StillActive` and never drawn again, so a refused claim changes nothing and
+no source can spin the queue. Either refusal reaches the caller as `PullError::LeaseId`.
+A pull within a lease and a pull that finds no pocket never draw. Both traits
 are `Clone + Debug + Send + Sync + 'static`, so a queue over them meets invariant 3.
 
 **The store seam.** A pocket's records live behind `PocketRecords`, the record-level
@@ -271,8 +278,10 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
   epoch, behind the queue's clamp, which never lets the queue's time step back;
   `EpochSerialLeaseIds` draws a 64-bit epoch from the operating system's random source
   once and pairs it with a serial from 1. `serve` refuses to start when the clock reads
-  before the epoch or the random source fails, and the owner stops rather than reissue a
-  lease id once the serial is exhausted.
+  before the epoch or the random source fails. Once the serial is exhausted, the owner
+  stops with `LeaseIdsExhausted` at the first pull that needs a new lease id, rather
+  than reissue one, and leaves that pull unanswered; a pull within a lease and a pull
+  that finds no pocket need no new id, so they are still answered.
 - **The task scope.** `serve` holds the owner, the ticker, the listener and the signal task in one
   `JoinSet`. The first to end starts the shutdown: `GET /readyz` answers 503 at once, the
   listener stops accepting, lets in-flight requests finish, cuts connections still open

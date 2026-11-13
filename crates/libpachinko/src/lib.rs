@@ -22,7 +22,7 @@
 //! | join | [`Queue::publisher_joins`] | a [`PublisherId`] | `()` | [`JoinError`]: `PublisherExists` |
 //! | join | [`Queue::consumer_joins`] | a [`ConsumerId`] | `()` | [`JoinError`]: `ConsumerExists` |
 //! | `Publishing` | [`Queue::publish`] | the publisher and a [`Publication`] | [`PublishOutcome`]: `Created`, `NewKey`, `Superseded`, `Stale` | [`PublishError`]: `UnknownPublisher`, `EqualRank` |
-//! | `Consuming` | [`Queue::pull`] | the consumer and a limit | [`PullOutcome`]: `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | [`PullError`]: `UnknownConsumer` |
+//! | `Consuming` | [`Queue::pull`] | the consumer and a limit | [`PullOutcome`]: `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | [`PullError`]: `UnknownConsumer`, `LeaseId` ([`LeaseIdError`]: `Exhausted`, `StillActive`) |
 //! | `Consuming` | [`Queue::lease_view`] | the consumer | `Some` [`LeaseView`] or `None` | [`PullError`]: `UnknownConsumer` |
 //! | `Consuming` | [`Queue::ack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Settled`, `Deferred` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
 //! | `Consuming` | [`Queue::nack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Settled`, `Deferred` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
@@ -79,7 +79,11 @@
 //! only through its [`clock::Clock`] and draws lease ids, which need randomness,
 //! only from its [`lease_ids::LeaseIds`]; [`clock::FakeClock`] and
 //! [`lease_ids::CountingLeaseIds`] are the fakes beside them, and the `pachinko`
-//! service supplies the real implementations. [`records::PocketRecords`] is the
+//! service supplies the real implementations. A lease-id source is fallible: once
+//! it has no id it has not given before it answers [`LeaseIdError::Exhausted`],
+//! and a pull that claims a pocket draws once and is refused with
+//! [`PullError::LeaseId`] rather than draw again; a pull within a lease and a pull
+//! that finds no pocket never draw. [`records::PocketRecords`] is the
 //! store seam, the record-level steps the specification's rules take, with
 //! [`records::MemoryRecords`] its one implementation (decision 0019).
 //!
@@ -111,7 +115,9 @@ pub mod testing;
 // importers by `crate::` paths alone, so `pub use queue::…` would hide this file's edge
 // to `queue` and `just metrics` would report `queue` over the instability cap.
 pub use crate::config::Config;
-pub use crate::error::{ConfigError, JoinError, LeaseActionError, PublishError, PullError};
+pub use crate::error::{
+    ConfigError, JoinError, LeaseActionError, LeaseIdError, PublishError, PullError,
+};
 pub use crate::ids::{
     ConsumerId, HeldRecord, LeaseId, ParseLeaseIdError, Payload, PocketKey, PublisherId, Rank,
     RecordKey,

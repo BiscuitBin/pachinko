@@ -170,6 +170,13 @@ impl<R: PocketRecords> Pockets<R> {
         self.by_key.insert(pocket_key, pocket);
     }
 
+    /// The queued pocket with the smallest position, the one [`Self::claim_front`]
+    /// would claim, left queued; `None` when no pocket is queued. A claim peeks
+    /// first so it can draw its lease id before it changes anything.
+    pub(super) fn front(&self) -> Option<&PocketKey> {
+        self.order.first().map(|(_, key)| key)
+    }
+
     /// `PullClaimsFrontPocket`'s pocket step: the queued pocket with the smallest
     /// position leaves the order, leased. Returns its key, or `None` when no pocket
     /// is queued (`PullFindsNoPocket`).

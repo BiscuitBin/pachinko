@@ -35,6 +35,14 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   release processed after its lease's `expires_at` but before the lapse succeeds. The
   root module keeps eight open questions, and decision 0019 confirms its five
   configuration defaults for the MVP.
+- BREAKING: `LeaseIds::next` returns `Result<LeaseId, LeaseIdError>`, and a source
+  that has no id it has not given before answers `LeaseIdError::Exhausted` on every
+  later call. `LeaseIdError` is new, at the crate root beside the other refusal enums,
+  with `Exhausted` and `StillActive`, and `PullError` gains `LeaseId`. A pull that
+  claims a pocket draws once, before it claims, and refuses an id that is still active
+  with `StillActive` rather than draw again, so a refused claim changes nothing; a pull
+  within a lease and a pull that finds no pocket never draw. `CountingLeaseIds` issues
+  `u64::MAX` once and then answers `Exhausted` instead of wrapping.
 
 ### Added
 
@@ -84,6 +92,24 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   except vulnerability fixes, with the pins that stay manual named in the handbook.
 
 ## pachinko [Unreleased][pachinko-unreleased]
+
+### Changed
+
+- Once the lease-id serial is exhausted, the owner stops with `LeaseIdsExhausted` only
+  at a pull that needs a new lease id, leaving that pull unanswered; a pull within a
+  lease and a pull that finds no pocket are still answered.
+  `EpochSerialLeaseIds::exhausted` is removed: an exhausted source answers
+  `LeaseIdError::Exhausted` from `next`.
+- A connection still owed a reply is closed two `--request-timeout-ms` after the first
+  byte of the request, however it trickles, instead of two after its latest byte. A head
+  that arrives within one timeout still gets its reply or its 408 first. A slower one
+  gets its reply only if the handler writes it within two timeouts of the first byte;
+  otherwise a handler still reading the body answers 400 `bad_request`, and a head that
+  never completes is closed without a reply. Any write restarts the deadline, a
+  `100 Continue` included, so a request that asked for one can still be answered 408. A
+  pipelined request whose first bytes arrived before the previous reply was written is
+  timed from that write, and closed within three timeouts of it; one whose whole head
+  had arrived can be answered 400 rather than 408.
 
 ### Added
 
