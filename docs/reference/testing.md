@@ -12,6 +12,8 @@ requires: []
 
 cargo-nextest runs the unit and integration tests. It cannot run doctests, so `just test`
 runs nextest and then `cargo test --doc`, and `just test-doc` runs the doctests alone.
+Both turn every feature on; `just test-doc-default` runs the doctests again with default
+features, the build a user of the crate gets.
 `.config/nextest.toml` names the minimum nextest version it needs (the pin itself is in
 `pyproject.toml` and `pixi.lock`) and holds the profiles: the default one
 stops at the first failure, and a `ci` profile, which runs everything and writes a JUnit
@@ -103,7 +105,10 @@ The tests of `docs/specs/pachinko.allium` follow one layout.
   `scripts/check-effects.sh` lints libpachinko with `--no-default-features` over all
   targets, the integration tests among them. The suites name the `testing` module, so
   with the feature off they must compile to nothing or that pass could not build them.
-  [Quality gates](quality-gates.md#gate-8-the-effects-bans) lists the passes.
+  [Quality gates](quality-gates.md#gate-8-the-effects-bans) lists the passes. A doc
+  example that uses the feature guards those lines with
+  `# #[cfg(feature = "testing")] {` and `# }`, and gate 20, `just test-doc-default`,
+  enforces the guard by running every doctest without the feature.
 - **The guard.** Compiled to nothing, the suites would let a test run without the
   feature pass on the unit tests and the doctests, with neither suite run.
   `tests/testing_feature.rs` is compiled only without the feature, and its one test,
@@ -398,8 +403,9 @@ The recipe runs `cargo run --locked` against `loadgen/Cargo.lock`, which `just l
 checks beside the workspace, fuzz and pixi lockfiles. The gates `fmt-check` and `clippy` cover the crate
 by `--manifest-path`, as they cover `fuzz/`. `loadgen/Cargo.toml` copies the root lint
 table, so keep it aligned. `just test-loadgen` runs the crate's own unit tests, which
-`just test` cannot reach. No gate or CI job runs the load generator or its tests, because
-timings measure the machine.
+`just test` cannot reach, and CI's `loadgen` job runs them; they are not a gate in
+`just check`. Nothing runs the load generator itself, because timings measure the
+machine.
 
 ## Fuzzing
 

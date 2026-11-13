@@ -108,7 +108,7 @@ constants belong in source where they can be reviewed.
 | `.dockerignore` | What the image's build context leaves out: `.gitignore`'s entries, kept in step with it by hand, plus `.git` and `tickets/`. |
 | `renovate.json` | Renovate's configuration: which pins it reads, how it groups them, and the dependency-dashboard approval its updates wait for. [Decision 0018](../decisions/0018-renovate.md) is the record, and [Maintain dependencies](../how-to/maintain-dependencies.md) the procedure. |
 | `.pre-commit-config.yaml` | The read-only hook gate `just lint` runs and `just install-hooks` installs. |
-| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`. |
+| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`; the trailing-whitespace fixer skips the Markdown under `tickets/`, whose hand-backs quote output verbatim. |
 | `.markdownlint-cli2.jsonc` | markdownlint's rules and the directories it ignores. |
 | `lychee.toml` | The link checker's settings and excluded paths. |
 | `_typos.toml` | The only typos configuration: the excluded lockfiles and directories, and the allowlisted `mis`, `als` and `ede`. A `[tool.typos]` table in `pyproject.toml` would be ignored. |

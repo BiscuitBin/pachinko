@@ -116,7 +116,8 @@ loadgen *args:
     cargo run --manifest-path loadgen/Cargo.toml --release --locked -- "$@"
 
 # The excluded loadgen/ crate's own unit tests, which `test` cannot reach: the
-# crate is outside the workspace. Run by hand, outside `check`, like the crate.
+# crate is outside the workspace. Outside `check`, like the crate; CI's
+# `loadgen` job runs it.
 test-loadgen:
     cargo test --manifest-path loadgen/Cargo.toml --locked
 
@@ -142,6 +143,30 @@ test:
 
 test-doc:
     cargo test --doc --workspace --all-features --locked
+
+# Gate 20: every doctest with default features. libpachinko has no default
+# features, so this is the build a user of the crate gets, and a doc example that
+# needs `testing` must guard its lines with `# #[cfg(feature = "testing")]`.
+# Each package runs on its own, so a sibling's dev-dependency features cannot
+# unify into libpachinko's doctest build. A package's own dependencies,
+# dev-dependencies included, could still enable `testing`, so the recipe first
+# reads each package's feature graph and fails if it names libpachinko's
+# `testing`, or does not name libpachinko at all.
+test-doc-default:
+    #!/bin/sh
+    set -eu
+    for package in libpachinko pachinko; do
+        tree=$(cargo tree --edges features --package "$package" --invert libpachinko --locked --offline)
+        case $tree in
+            *'libpachinko v'*) ;;
+            *) printf '%s\n' "$package: cargo tree does not list libpachinko" >&2; exit 1 ;;
+        esac
+        case $tree in
+            *'libpachinko feature "testing"'*) printf '%s\n' "$package: its doctest build enables libpachinko's testing feature" >&2; exit 1 ;;
+        esac
+    done
+    cargo test --doc --package libpachinko --locked
+    cargo test --doc --package pachinko --locked
 
 # Optional baseline overrides discovery. Before any library release, compare this
 # branch with main's merge base; afterwards use the latest reachable library tag.
@@ -200,6 +225,7 @@ format:
 fix:
     -prek run --all-files --config .pre-commit-fix.yaml
     prek run --all-files --config .pre-commit-fix.yaml
+    just _fix-untracked
     cargo fmt --manifest-path fuzz/Cargo.toml
     cargo fmt --manifest-path loadgen/Cargo.toml
     cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged
@@ -207,10 +233,55 @@ fix:
     cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
     just lint
 
+# The same two fixer passes over untracked files Git does not ignore, which
+# `--all-files` leaves out, as `lint` reads them; the first may fail on what a
+# fixer repaired, the second must pass. The leading underscore keeps it out of
+# `just --list`.
+_fix-untracked:
+    -just _prek-untracked .pre-commit-fix.yaml
+    just _prek-untracked .pre-commit-fix.yaml
+
+# prek over every untracked file Git does not ignore, with the given hook
+# configuration; skipped when there is none. The list goes through a file
+# outside the worktree, not a pipe, so a failing `git ls-files` fails the
+# recipe; -z and xargs -0 keep a path with a space or a newline whole. prek
+# hands paths to hooks without `--`, so a path that begins with `-`, such as
+# `--help`, would be read as an option: it is named and fails the recipe
+# instead, and the other paths are still checked. Nothing is staged:
+# `git add -N` would change the index `just check` snapshots.
+_prek-untracked config:
+    #!/bin/sh
+    set -eu
+    list=$(mktemp)
+    trap 'rm -f "$list"' EXIT
+    git ls-files -z --others --exclude-standard >"$list"
+    if [ ! -s "$list" ]; then
+        exit 0
+    fi
+    # The inner shell takes the configuration as $0 and the paths as $@.
+    xargs -0 sh -c '
+        bad=0
+        n=$#
+        for f do
+            case $f in
+                -*) printf "%s\n" "untracked path begins with -: $f" >&2; bad=1 ;;
+                *) set -- "$@" "$f" ;;
+            esac
+        done
+        shift "$n"
+        if [ "$#" -gt 0 ]; then
+            prek run --config "$0" --files "$@" || bad=1
+        fi
+        exit "$bad"
+    ' "$1" <"$list"
+
 # ------------------------------------------------------------------ check ---
 
+# prek's `--all-files` reads tracked files only, so `_prek-untracked` runs the
+# hook gate a second time over every untracked file Git does not ignore.
 lint:
     prek run --all-files
+    just _prek-untracked .pre-commit-config.yaml
 
 fmt-check:
     cargo fmt --all --check

@@ -110,6 +110,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   pipelined request whose first bytes arrived before the previous reply was written is
   timed from that write, and closed within three timeouts of it; one whose whole head
   had arrived can be answered 400 rather than 408.
+- `just check` runs a twentieth gate, `just test-doc-default`, every doctest with
+  default features, and CI's `rust` job runs it too.
+- `just lint` reads untracked files Git does not ignore as well as tracked ones, and
+  `just fix` repairs them; the trailing-whitespace fixer leaves the Markdown under
+  `tickets/` alone.
+- CI runs the load generator's unit tests in a `loadgen` job, one of `check`'s `needs`.
 
 ### Added
 
