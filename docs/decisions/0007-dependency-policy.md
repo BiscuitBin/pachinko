@@ -73,6 +73,9 @@ T16 added divan 0.1.21 through `[workspace.dependencies]` as a library developme
 dependency only. It provides the benchmark harness and black box; it is outside the
 graph consumers resolve and cargo-deny’s `exclude-dev` graph. Its MSRV is 1.80.0,
 below the pinned compiler. Its transitive packages are committed in `Cargo.lock`.
+T28 added proptest 1.12.0 the same way, with `default-features = false` and the `std`
+feature, as a library development dependency only for the queue's invariant walk; its
+MSRV is 1.88.
 
 The unpublished `fuzz/` crate is excluded from the workspace. It names libfuzzer-sys
 0.4.13 directly because it cannot inherit workspace dependencies; this is the explicit
@@ -85,6 +88,14 @@ Unlike the service's workspace path dependency, the unpublished fuzz harness nam
 `libpachinko` by path alone: its excluded manifest is not updated by cargo-release.
 This exception avoids a stale version constraint; a library version bump still requires
 refreshing `fuzz/Cargo.lock` before the locked checks can pass.
+
+The unpublished `loadgen/` crate (T30), the load generator and lapse probe, is excluded
+from the workspace too. It names its two dependencies directly, for the same reason the
+fuzz crate does: ureq, with no default features and no TLS, since it speaks plain HTTP
+over loopback, and serde_json, to build request bodies and read replies as values
+without a derive. `loadgen/Cargo.lock` pins its separate graph, and `lock-check` proves
+that lock offline beside the other three. It names no workspace crate, so a library
+version bump leaves its lock alone.
 
 ## Consequences
 

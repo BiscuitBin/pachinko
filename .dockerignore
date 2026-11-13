@@ -66,6 +66,7 @@ fuzz/target/
 fuzz/corpus/
 fuzz/artifacts/
 fuzz/coverage/
+loadgen/target/
 
 # Git metadata and ticket evidence are not build inputs.
 **/.git

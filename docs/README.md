@@ -12,15 +12,15 @@ Every page below is registered in `manifest.yml`, owns at least one topic, and i
 reachable from here. That is the whole of the arrangement; the rules behind it are in
 the documentation contract, listed under Look up.
 
-This repository is a Cargo workspace of two crates: `crates/libpachinko`, a std library,
-and `crates/pachinko`, a minimal service binary built around it. What their domain is,
-the specifications will define; the handbook describes the machinery that is already
-here.
+This repository is a Cargo workspace of two crates: `crates/libpachinko`, a std library
+holding one queue of pockets consumed under exclusive leases, and `crates/pachinko`, the
+service that serves it over HTTP/JSON. The handbook describes both and the machinery
+around them.
 
-Behaviour is specified separately, in Allium, under `docs/specs/`. There is one module
-so far, the placeholder root [`pachinko.allium`](specs/pachinko.allium), and it states
-no behaviour yet; each behaviour arrives there as a specification change before any code
-implements it. That file is not part of this handbook; it is its subject. Start at
+Behaviour is specified separately, in Allium, under `docs/specs/`. There is one module,
+the root [`pachinko.allium`](specs/pachinko.allium), which states the queue's entities,
+rules, surfaces and invariants; each behaviour arrives there as a specification change
+before any code implements it. That file is not part of this handbook; it is its subject. Start at
 Specifications, under Understand, to see how the two relate.
 
 ## Start here
@@ -44,7 +44,8 @@ Specifications, under Understand, to see how the two relate.
 - [Architecture](explanation/architecture.md) — how a library and the service around it are put together, and where effects live.
 - [Layering and dependency direction](explanation/layering.md) — which crate and module may depend on which.
 - [Specifications](explanation/specifications.md) — why behaviour is written down before it is built.
-- [Security model](explanation/security-model.md) — what a library and a minimal service binary do and do not defend.
+- [Prior art](explanation/prior-art.md) — what comparable queues and databases do, as evidence for the open questions.
+- [Security model](explanation/security-model.md) — what the library and the HTTP service do and do not defend.
 - [Quality philosophy](explanation/quality-philosophy.md) — why each gate exists.
 
 ## Look up
@@ -56,6 +57,7 @@ Specifications, under Understand, to see how the two relate.
 - [Documentation contract](reference/documentation-contract.md)
 - [Agent contract](reference/agent-contract.md)
 - [API reference](reference/api.md)
+- [HTTP API](reference/http-api.md) — the service's routes, bodies and error codes.
 
 ## Run it
 
@@ -69,3 +71,4 @@ Specifications, under Understand, to see how the two relate.
 - [Decision 0016: The release process](decisions/0016-release-process.md)
 - [Decision 0017: Mutation testing, benchmarks and fuzzing](decisions/0017-mutation-bench-and-fuzz.md)
 - [Decision 0018: Dependency updates through Renovate](decisions/0018-renovate.md)
+- [Decision 0019: The service runtime: tokio, one owner task and HTTP/JSON](decisions/0019-service-runtime-tokio-and-http.md)

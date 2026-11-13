@@ -27,6 +27,12 @@ INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked -E 'test(r
 INSTA_UPDATE=no RUST_BACKTRACE=1 cargo nextest run -p libpachinko --all-features --locked -E 'test(name)'
 ```
 
+Without `--all-features` libpachinko's integration suites compile to nothing, and a run
+of the whole crate fails on `the_testing_feature_is_on`, the guard
+[Testing](../reference/testing.md#tests-from-the-specifications) describes. A filter
+that selects other tests leaves the guard out, and then nothing says the suites did not
+run.
+
 The doctests run through cargo, not nextest, and narrow the same way:
 
 ```console
@@ -45,20 +51,60 @@ Framework configuration and conventions are described in
 
 `crates/pachinko/tests/binary.rs` runs the built service as a user would. Cargo builds
 the `pachinko` binary before it runs that crate's integration tests and hands the test
-its path as `CARGO_BIN_EXE_pachinko`; the test asserts that the binary exits zero, prints
-`pachinko`, a space, `libpachinko::version()` and one newline on standard output and
-writes nothing to standard error. Run it alone with:
+its path as `CARGO_BIN_EXE_pachinko`. The tests assert that the binary with no argument
+exits zero, prints `pachinko`, a space, `libpachinko::version()` and one newline, and
+writes nothing to standard error; that `serve --bogus 1` exits 1 with
+`pachinko: usage: unknown flag --bogus`; and that `serve --listen 127.0.0.1:0` announces
+its address, answers `GET /healthz` with `ok` there, and exits 0 on SIGTERM and on
+SIGINT within a bounded wait. Run them alone with:
 
 ```console
 INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked --test binary
 ```
 
-The line has two tests: the unit test beside `run` in `crates/pachinko/src/lib.rs`
-writes into a buffer, and the binary test reads the real standard output. A change to
-the line fails both, and both are updated together, as
+The version line has two tests: the unit test beside `run` in
+`crates/pachinko/src/lib.rs` writes into a buffer, and the binary test reads the real
+standard output. A change to the line fails both, and both are updated together, as
 [Make your first change](../tutorials/first-change.md) walks through. When only the
 binary test fails, the fault is between `run` and the process: `main.rs`, its exit
-status, or something written to standard error.
+status, the signal handling, or something written to standard error. The wire tests in
+`crates/pachinko/tests/http.rs` start the server in-process instead; run them with
+`--test http` in place of `--test binary`.
+
+## Run the service
+
+Start the service on a free port; it prints the address it bound:
+
+```console
+$ cargo run -p pachinko --locked -- serve --listen 127.0.0.1:0
+listening on 127.0.0.1:53817
+```
+
+In another terminal, with `ADDR` set to that address, join a publisher and a consumer,
+publish `hello` (`aGVsbG8=` in base64), pull it, read the lease, and check health:
+
+```console
+$ ADDR=127.0.0.1:53817
+$ curl -i -X POST "http://$ADDR/publishers/p1"
+$ curl -i -X POST "http://$ADDR/consumers/c1"
+$ curl -s -X PUT "http://$ADDR/pockets/tenant-a/records/k1" \
+    -H 'content-type: application/json' \
+    -d '{"publisher_id": "p1", "rank": 1, "payload": "aGVsbG8="}'
+{"outcome":"created"}
+$ curl -s -X POST "http://$ADDR/consumers/c1/pull" \
+    -H 'content-type: application/json' -d '{"limit": 10}'
+{"outcome":"batch","lease_id":"…","pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+$ curl -s "http://$ADDR/consumers/c1/lease"
+{"pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+$ curl -s "http://$ADDR/healthz"
+ok
+```
+
+The joins answer `201 Created` with no body. Press ctrl-c in the first terminal; the
+service shuts down and exits 0. The lease actions, `POST /leases/{lease_id}/ack`,
+`/nack`, `/renew` and `/release`, take the `lease_id` the pull returned. Every route,
+body and error code is in [HTTP API](../reference/http-api.md); the request log is at
+`debug`, which the default `info` level does not print.
 
 ## Narrow down a failing test
 
@@ -88,7 +134,7 @@ Once a test takes one:
    and names the snapshot. These recipes leave no pending file.
 2. Read the diff and decide whether the interface change was intended. Keep the
    behaviour's asserting tests green; the snapshot establishes no correctness.
-3. For an intended change, run `just snapshots-accept`. It checks all three locks, reruns
+3. For an intended change, run `just snapshots-accept`. It checks all four locks, reruns
    all unit and integration tests with every feature and accepts pending snapshots
    without prompting. It also deletes a `.snap` file no test refers to, such as one a
    renamed or removed test left behind. It works for an agent without a terminal as well.
@@ -155,3 +201,4 @@ deliberately; never run `cargo update` from inside a fix for something else.
 - [Quality gates](../reference/quality-gates.md)
 - [Troubleshooting](../operations/troubleshooting.md)
 - [Architecture](../explanation/architecture.md)
+- [HTTP API](../reference/http-api.md)

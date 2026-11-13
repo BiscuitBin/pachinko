@@ -53,19 +53,36 @@ page's module table to reflect its new responsibility.
 
 Record domain terms in [Terminology](../project/terminology.md). Run both spec
 gates and plan the new module, then follow the test and implementation loop above.
-The root's obligations are not covered by any test yet: the first implementation
-change derives them with `propagate` and brings its tests with it.
+The root's obligations are covered by the tests under `crates/libpachinko/tests/queue/`
+and `crates/pachinko/tests/http.rs`, each tagged `// obligation:` or `scenario:`. A
+change to the root updates those tests and tags any new obligation instead of deriving
+a fresh suite with `propagate`.
 
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-carries nine today, listed at its end; each marks a decision the maintainer has not
+carries eight today, listed at its end; each marks a decision the maintainer has not
 made, and none is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.
 - If a new gap appears, add an `open question` rather than guess.
 - When a decision is made, state it in the specification and remove its question
   in the same commit.
+
+The module numbers its questions in order, and the numbers do not compact: question 8,
+a late action before its lapse is processed, was closed by
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), and a scenario
+tagged `oq:9` keeps its tag. The eight that remain:
+
+- Question 1, equal-rank publishes: an equal rank with a different payload for one key.
+- Question 2, who reads the superseded and dead-letter queues, and what an entry must
+  carry.
+- Question 3, capacity beyond shedding the decaying queues.
+- Question 4, routing by worker pool or priority.
+- Question 5, an adaptive lease TTL.
+- Question 6, a new pocket jumping the queue.
+- Question 7, reviving a parked pocket other than by a publish.
+- Question 9, a key published again under the lease that removed its record.
 
 ## Tooling
 

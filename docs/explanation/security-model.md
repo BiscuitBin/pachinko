@@ -8,20 +8,22 @@ requires: []
 
 # Security model
 
-This workspace is a library and a minimal service binary. The library holds no data
-about anyone and performs no effect itself, and the service, today, writes one line to
-standard output and exits. That removes most of the attack surface software usually
-has, and it is worth being precise about what remains rather than claiming the problem
-away: the supply chain that builds both crates, the code handed to whoever consumes the
-library, and a network surface for the service that no decision has drawn yet.
+This workspace is a library and a service. The library holds no data about anyone and
+performs no effect itself, and the service keeps its queue in memory, writes nothing to
+disk and listens on loopback unless told otherwise. That removes much of the attack
+surface software usually has, and it is worth being precise about what remains rather
+than claiming the problem away: the supply chain that builds both crates, the code
+handed to whoever consumes the library, and the service's unauthenticated HTTP surface,
+described under [The network surface](#the-network-surface).
 
 ## What there is to protect
 
 Very little, and that is the point.
 
-- **Nothing is collected or stored.** libpachinko will hold the domain once the
-  specifications define one; it takes values from its caller and hands values back,
-  and it has nowhere of its own to send anything.
+- **Nothing is persisted or sent elsewhere.** libpachinko holds the queue the
+  specification defines in memory: the payloads its callers publish, and superseded and
+  dead-lettered ones until their expiry. It writes nothing to disk, collects no telemetry
+  and has nowhere of its own to send anything.
 - **There are no credentials in the repository.** No file here carries a token.
   Continuous integration uses the token GitHub mints for each run and discards with it,
   and the workflows need nothing more: the Pages deployment proves itself with the run's
@@ -107,18 +109,41 @@ for tests are never a source to use where unpredictability matters.
 - **Credential leakage.** `ripsecrets` scans every commit, and its output is redacted so
   a match never copies the matched value into a log.
 
-## What is deferred
+## The network surface
 
-**The service's network surface.** The service is a minimal std binary with no async
-runtime, transport or HTTP stack, and so it listens on nothing. Which of those it gets,
-and therefore what it exposes and to whom, waits for the specifications to say what the
-service must do ([decision 0014](../decisions/0014-service-runtime-deferred.md)). This
-page describes that surface, its authentication and its limits when the decision that
-follows the specifications records them.
+`pachinko serve` listens for HTTP/1.1 on `--listen`, which is `127.0.0.1:8080` unless
+set, so by default only the host itself can reach it
+([decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)). There is no
+authentication, no TLS and no rate limiting: anyone who can reach the address can join
+under any id, publish into any pocket and pull any record. `--listen 0.0.0.0:<port>`
+opens that to the network, and the service does not warn; put it behind a proxy or a
+firewall that decides who reaches it. [HTTP API](../reference/http-api.md) lists every
+route.
+
+## Request-shape limits
+
+Three flags bound what one request can make the service read and hold:
+`--max-body-bytes` (16 MiB) bounds any request body a route reads, refused by its `Content-Length`
+before it is read or once a body without one is read past the limit;
+`--max-batch-rows` (1,000) bounds the rows of one batch publish; and
+`--max-payload-bytes` (1 MiB) bounds each decoded payload. Each is a refusal of the
+request's shape, 413 with its own code, decided before any row applies; none is a
+capacity refusal, and a service under load makes a request wait rather than refuse it,
+by the specification's `NeverRefusedForCapacity`. Nothing bounds the memory the queue
+holds across requests: a publisher within every limit can still grow it without end.
+Whether and how to bound it is the specification's third open question, and the
+resident memory of PR 38's prototype, 8,191 MiB after ten seconds of batch publishing
+(decision 0019's evidence), is the reason it needs an answer.
+
+Time is bounded apart from shape. `--request-timeout-ms` (30 seconds) answers a handler
+that runs past it 408 `request_timeout` and closes a connection that sends nothing for
+that long, so an idle client cannot hold a connection open. A client that trickles a
+byte at least every two timeouts still can, until shutdown cuts it: no trickle or
+slowloris bound exists ([HTTP API](../reference/http-api.md#request-timeout)).
 
 ## What is out of scope
 
-What a consumer does with the library's output, and what it passes in through the
+What a caller does with the library's output, and what it passes in through the
 effect traits it implements: an implementation that reads the clock or the network on
 the library's behalf answers for its own sources.
 
@@ -132,4 +157,5 @@ See `SECURITY.md` at the repository root.
 - [Maintain dependencies](../how-to/maintain-dependencies.md)
 - [Quality gates](../reference/quality-gates.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
-- [Decision 0014](../decisions/0014-service-runtime-deferred.md)
+- [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)
+- [HTTP API](../reference/http-api.md)

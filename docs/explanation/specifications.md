@@ -40,10 +40,11 @@ lapses park the pocket until a publish revives it; superseded records and dead
 letters stay visible until they decay. It imports nothing, and
 [Terminology](../project/terminology.md) holds its words.
 
-None of it is implemented. Empty diagnostics and findings say the module is valid,
-not that the library does any of it. Its test plan carries obligations no test yet
-covers; the first implementation change derives those tests, confirms they fail,
-and builds until they pass. Behaviour that outgrows the root's Scope goes in a
+`libpachinko` implements it, and the service serves it over HTTP. Empty diagnostics
+and findings say the module is valid, not that the library does any of it: the tests
+do, each tagged `// obligation:` or `scenario:` with the clause it proves, and
+[Testing](../reference/testing.md) catalogs the scenarios. A change to the root
+updates those tests and tags each new obligation. Behaviour that outgrows the root's Scope goes in a
 module it imports, with explicit boundaries so that each behaviour has an owner.
 
 ## Open questions are a feature
@@ -52,17 +53,19 @@ An `open question` records a product decision nobody has made yet. An unwritten
 gap is easily filled by whoever writes the code first; a written one stays visible
 until someone entitled to decide answers it.
 
-The root carries nine: equal-rank publishes, who reads the superseded and
+The root carries eight: equal-rank publishes, who reads the superseded and
 dead-letter queues, capacity beyond shedding the decaying queues, routing by pool
 or priority, an adaptive lease TTL, a pocket jumping the queue, reviving a parked
-pocket other than by a publish, a consumer's action that arrives after its lease's
-time has passed but before the lapse is processed, and a key published again under
-the lease that removed its record. Seven mark decisions the maintainer declined to
-make in the elicitation and the last two gaps that writing and reviewing the rules
-exposed; where the rules' reading matters meanwhile, the question says what it is,
-and no code answers one. A change that reaches an unanswered decision adds a
-question rather than guessing. A low count is normal for a settled module, but it
-is not a reason to hide uncertainty.
+pocket other than by a publish, and a key published again under the lease that
+removed its record. Seven mark decisions the maintainer declined to make in the
+elicitation and the last a gap that writing and reviewing the rules exposed. The
+eighth by number, a consumer's action processed after its lease's time has passed
+but before the lapse, was closed by
+[decision 0019](../decisions/0019-service-runtime-tokio-and-http.md): such an action
+succeeds, and the surviving questions keep their numbers. Where the rules' reading
+matters meanwhile, the question says what it is, and no code answers one. A change
+that reaches an unanswered decision adds a question rather than guessing. A low count
+is normal for a settled module, but it is not a reason to hide uncertainty.
 
 ## What a specification is not
 

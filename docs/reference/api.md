@@ -33,8 +33,8 @@ which fail outright, and a missing crate-level doc and unescaped backticks, whic
 
 ## Doc examples are tests
 
-[The agent contract](agent-contract.md) asks for an example on every public item; today
-`libpachinko::version` carries one. `just test-doc` (gate 10) compiles and runs each
+[The agent contract](agent-contract.md) asks for an example on every public item, and
+every public item of both crates carries one. `just test-doc` (gate 10) compiles and runs each
 example, so an example that stops being true stops the gate. Examples are not counted
 toward the coverage floor, because the coverage tooling cannot measure doctests on a
 stable toolchain. The division of labour follows: an example shows the contract to a
@@ -65,16 +65,37 @@ API reference.
 
 ## What the API promises
 
-Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a consumer may move
+Every public type is `Send + Sync + 'static`, `Clone` and `Debug`, so a caller may move
 a value between threads, copy it or print it. Public structs and enums are
-`#[non_exhaustive]`, so a field or variant added later breaks no consumer. These are
-invariants of [the agent contract](agent-contract.md); the domain types that will carry
-them arrive with the specifications, and today the public API is two functions,
-`libpachinko::version` and `pachinko::run`. Neither crate has features, and neither has
-a normal dependency beyond `pachinko`'s on `libpachinko`; divan, the library's benchmark
-harness, is a development dependency only. The library performs no effect itself; its
-effect traits will appear here beside their fakes, and
-[Architecture](../explanation/architecture.md) explains the boundary.
+`#[non_exhaustive]`, so a field or variant added later breaks no caller. These are
+invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
+`thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
+`LeaseActionError`, `ConfigError`), and an outcome that is not a refusal, such as
+`NoPocketAvailable`, is a variant of the operation's outcome instead.
+
+`libpachinko`'s public API has three surfaces, and each item has one path. The crate
+root is the caller's, and one `use libpachinko::{…}` names all of it: `version`, `Config`
+and `Queue` with its joins, `publish`, `pull`, `lease_view`, the four lease actions and
+`tick`, beside every value those take, return or refuse with. The seam modules hold the
+effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes
+`clock::FakeClock` and `lease_ids::CountingLeaseIds`, and the store seam
+`records::PocketRecords` with `records::MemoryRecords`.
+[Architecture](../explanation/architecture.md#the-library) lists what each surface holds.
+`pachinko`'s public API is `run`.
+
+The lease actions each name the consumer and the `LeaseId` its pull returned, and each
+refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey` and return a
+`SettleOutcome`, `Settled` or `Deferred`. `renew` returns the lease's new `expires_at`,
+a `Timestamp`. `release` returns a `PocketFate`, `Queued` or `Idle`, with the ended
+`Lease`. `tick` takes nothing, refuses nothing and returns a `TickReport`: the leases
+that lapsed and how many superseded records and dead letters decayed.
+
+`libpachinko` has one feature, `testing`, which no normal build turns on. It adds the
+`testing` module and two `Queue` methods, `snapshot` and `tick_with_cost`, for tests, and
+nothing it adds changes what the other two surfaces hold;
+[Testing](testing.md#tests-from-the-specifications) says what each is for. The library's
+one normal dependency is `thiserror`; `pachinko` depends only on `libpachinko`, and
+divan, the library's benchmark harness, is a development dependency only.
 
 ## Related pages
 

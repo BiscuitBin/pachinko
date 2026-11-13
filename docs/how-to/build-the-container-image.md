@@ -39,8 +39,32 @@ its digest, `rust-toolchain.toml` and `rust-version` together.
 CI builds this Dockerfile, loads the image locally and runs it on every pull
 request. Its `image` job joins the required `check` aggregate. Nothing pushes an
 image to a registry. [Decision 0015](../decisions/0015-container-image.md) explains
-why this foundation includes an image and why it uses distroless. Ports, health
-checks and configuration await the service's specifications and runtime decision.
+why this foundation includes an image and why it uses distroless.
+
+## Run the service in the container
+
+The entrypoint is the bare binary, so `serve` and its flags are run arguments. Bind
+all interfaces inside the container, because the default loopback address is
+unreachable through a published port:
+
+```sh
+docker run -d -p 8080:8080 --name pachinko pachinko:dev serve --listen 0.0.0.0:8080
+curl -i http://127.0.0.1:8080/readyz
+docker stop -t 15 pachinko
+```
+
+Use `GET /readyz` as the health check: it answers 204 while serving and 503 while
+starting or stopping ([HTTP API](../reference/http-api.md#get-readyz)). The flags are in
+[Configuration](../reference/configuration.md#service-flags); the service reads no
+environment variable.
+
+`docker stop` sends SIGTERM and kills the process after its timeout, `-t`, ten seconds
+by default. The service needs up to twice `--shutdown-grace-ms` (the grace, then the
+bounded join after it), plus the longest command or tick the owner applies and the
+release of the queue's state, which you estimate from your own load. With the default
+grace of 5000 ms the two grace periods alone equal `docker stop`'s default, so pass a
+`-t` above it, as above, or a smaller grace; otherwise the container is killed
+mid-join.
 
 ## Related pages
 

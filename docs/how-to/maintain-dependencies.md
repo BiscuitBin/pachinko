@@ -48,15 +48,15 @@ than a `Justfile` recipe, and outside `just check`.
 
 | Group | What moves |
 | --- | --- |
-| `crates` | `Cargo.lock` and `fuzz/Cargo.lock` within the caret ranges, or a range itself when a release falls outside it, which is the diff to read |
+| `crates` | `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` within the caret ranges, or a range itself when a release falls outside it, which is the diff to read |
 | `github actions` | each remote action's SHA with its version comment, in the workflows and the `setup` action |
-| `rust toolchain` | `channel`, `rust-version` in both manifests, and the `Dockerfile`'s build-stage `rust` tag and digest |
+| `rust toolchain` | `channel`, `rust-version` in the three manifests, and the `Dockerfile`'s build-stage `rust` tag and digest |
 | `distroless base` | the run stage's digest under its `nonroot` tag |
 | `pixi bootstrap` | `requires-pixi` in `pyproject.toml` and `pixi-version` in the `setup` action, together |
 | `cargo-nextest` | the pin in `pyproject.toml` and `nextest-version` in `.config/nextest.toml`, together |
 | `hook revs` | every hook SHA and comment in both prek configurations, but lychee's |
 | one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
-| lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock` and `fuzz/Cargo.lock` together under the `crates` group, and `pixi.lock` |
+| lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` together under the `crates` group, and `pixi.lock` |
 
 Major updates open in a pull request of their own beside their group's, because
 Renovate's `separateMajorMinor` is on and takes precedence over a group. A branch that
@@ -90,7 +90,7 @@ just lock-check
 ```
 
 This runs `cargo update --workspace --locked --offline`, once for the workspace and once
-with `--manifest-path fuzz/Cargo.toml`, and `pixi lock --check --offline --dry-run`,
+each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, and `pixi lock --check --offline --dry-run`,
 none of which writes. It is gate 2 of
 `just check`, so a manifest edited without relocking fails the gate rather than
 drifting. Being offline, it fails on a cold Cargo cache rather than fetching the
@@ -102,8 +102,8 @@ registry index; `just sync` fills the cache.
 just sync
 ```
 
-This runs `cargo fetch --locked` for the workspace and for `fuzz/Cargo.toml`, and
-`pixi install --frozen`: all three lockfiles, exactly as committed, and it never rewrites
+This runs `cargo fetch --locked` for the workspace, for `fuzz/Cargo.toml` and for
+`loadgen/Cargo.toml`, and `pixi install --frozen`: all four lockfiles, exactly as committed, and it never rewrites
 any. It reaches the network, so run it while the
 network is there, before the offline gates need the sources.
 
@@ -114,11 +114,11 @@ just lock            # relock after a manifest edit
 just lock-upgrade    # move every crate to the newest version its range admits
 ```
 
-`just lock` relocks the workspace and the excluded `fuzz/` crate against what the
+`just lock` relocks the workspace and the excluded `fuzz/` and `loadgen/` crates against what the
 manifests state, then runs `pixi lock`. It is not a no-op: a dependency whose range was
 edited, or that is new, resolves to the newest version its range admits, not to the
 version the range names.
-`just lock-upgrade` moves every crate in both `Cargo.lock` and `fuzz/Cargo.lock`,
+`just lock-upgrade` moves every crate in `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock`,
 transitive ones included, to the newest version its range admits, which under caret
 ranges changes plenty, and runs `pixi update`. Every tool pin is exact, so that moves
 transitive packages and one direct one: Python, pinned `3.14.*`, whose patch release can
@@ -128,15 +128,16 @@ move. Both recipes reach the network. Read every lockfile diff before accepting 
 
 The one normal workspace dependency is still the service's path dependency on
 `libpachinko`, and libpachinko gains its first when the specifications define a domain
-that needs one. The first external dependencies are harnesses: divan, libpachinko's
-development dependency for its benchmark, and libfuzzer-sys in the excluded `fuzz/`
-crate ([decision 0007](../decisions/0007-dependency-policy.md)).
+that needs one. The first external dependencies are harnesses: divan and proptest,
+libpachinko's development dependencies for its benchmark and its invariant walk,
+libfuzzer-sys in the excluded `fuzz/` crate, and ureq and serde_json in the excluded
+`loadgen/` crate ([decision 0007](../decisions/0007-dependency-policy.md)).
 
 1. A version lives in one place: the root `Cargo.toml`'s `[workspace.dependencies]`
    table, and a member crate names the dependency with `workspace = true`. Edit the range
-   there. The excluded `fuzz/` crate cannot inherit that table and names its own, the one
-   exception decision 0007 records.
-2. Run `just lock`, then read the `Cargo.lock` and `fuzz/Cargo.lock` diffs before
+   there. The excluded `fuzz/` and `loadgen/` crates cannot inherit that table and name their
+   own, the exception decision 0007 records.
+2. Run `just lock`, then read the `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` diffs before
    accepting them.
 3. Run `just sync`, so the new sources are fetched while the network is there.
 4. Run `just deny`: licences, bans and sources, answered offline.

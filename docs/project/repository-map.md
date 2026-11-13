@@ -29,27 +29,40 @@ library and the library never on the service.
 ├── .dockerignore           What the image build leaves out of its context
 ├── .config/nextest.toml    The test runner's profiles
 ├── crates/
-│   ├── libpachinko/        The library: the domain, once the specifications define one
+│   ├── libpachinko/        The library: the queue the specification defines
 │   │   ├── Cargo.toml
 │   │   ├── README.md
 │   │   ├── clippy.toml     The root clippy.toml restated, plus the effects gate's std-API bans
 │   │   ├── benches/
-│   │   │   └── version.rs  The smoke benchmark just bench runs
-│   │   └── src/
-│   │       └── lib.rs      The crate root: the crate docs and one documented, tested item
-│   └── pachinko/           The service: a minimal binary built around the library
+│   │   │   ├── version.rs  The smoke benchmark just bench runs
+│   │   │   └── workloads.rs The queue's workloads W1 to W5, which just bench runs
+│   │   ├── src/
+│   │   │   ├── lib.rs      The crate root: the crate docs, the caller's re-exports and version()
+│   │   │   ├── queue.rs    Queue, with its operations in queue/
+│   │   │   ├── testing.rs  The testing feature's one module
+│   │   │   └── ...         clock.rs, lease_ids.rs, records.rs and records/, ids.rs, timestamp.rs, config.rs, error.rs
+│   │   └── tests/
+│   │       ├── queue/      The queue's integration tests, one file per area, and the walk
+│   │       ├── records_contract.rs  MemoryRecords against the store contract
+│   │       └── testing_feature.rs   The guard that fails a test run without the testing feature
+│   └── pachinko/           The service: the queue over HTTP/JSON, on tokio
 │       ├── Cargo.toml
 │       ├── README.md
 │       ├── src/
-│       │   ├── lib.rs      The tested run(), which writes the service's one line
-│       │   └── main.rs     The one-line main: run() on standard output, then the exit code
+│       │   ├── lib.rs      run(), which reads the command line, and exit_code()
+│       │   ├── main.rs     The one-line main: run() on standard output, then the exit code
+│       │   └── ...         serve.rs, http.rs and http/, actor.rs, config.rs, clock.rs, lease_ids.rs, error.rs
 │       └── tests/
-│           └── binary.rs   Runs the built binary as a user would
+│           └── ...         binary.rs, http.rs and batch_publish.rs
 ├── fuzz/                   The fuzz crate, outside the workspace, with its own lockfile
 │   ├── Cargo.toml
 │   ├── Cargo.lock          The pin for the fuzz crate's separate graph
 │   └── fuzz_targets/
 │       └── smoke.rs        The smoke target just fuzz runs
+├── loadgen/                The load generator, outside the workspace, with its own lockfile
+│   ├── Cargo.toml
+│   ├── Cargo.lock          The pin for the load generator's separate graph
+│   └── src/                main.rs, client.rs, workloads.rs, probe.rs and report.rs
 ├── tests/fixtures/
 │   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
@@ -81,12 +94,14 @@ reads for libpachinko alone in place of the root file, so it restates every root
 
 | Directory | Responsibility |
 | --- | --- |
-| `crates/libpachinko/src/` | The library. It holds the domain once the specifications define one; today `lib.rs` holds the crate docs and one item, `version()`, with its doctest and an in-module unit test. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
-| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which takes the writer it writes to, so its in-module unit test writes to a `Vec<u8>`; `main.rs` calls `run()` on standard output and turns the result into an exit code, and holds nothing else. |
-| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its empty standard error and its exit status. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
-| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
+| `crates/libpachinko/src/` | The library. It holds the domain `docs/specs/pachinko.allium` defines: `Queue` in `queue.rs` and `queue/`, the names and values in `ids.rs` and `timestamp.rs`, the config in `config.rs` and one error enum per operation in `error.rs`, all private modules; the `Clock` and `LeaseIds` effect traits with their fakes in `clock.rs` and `lease_ids.rs` and the store seam in `records.rs` and `records/`, the three public seam modules; and `testing.rs`, the `testing` feature's module. `lib.rs` holds the crate docs, the re-exports that make the crate root the caller's interface, and `version()`. It performs no effect itself; [Architecture](../explanation/architecture.md) explains the effects boundary. Every public item is documented, and its example is a test. |
+| `crates/pachinko/src/` | The service, the only place effects happen. `lib.rs` holds `run()`, which reads the command line and takes the writer it writes to, and `exit_code()`; `main.rs` calls both and holds nothing else. `serve.rs` runs the tokio server and its shutdown, `http.rs` and `http/` the routes and the error codes, `actor.rs` the owner task that holds the queue, `config.rs` the flags, and `clock.rs` and `lease_ids.rs` the real effects. |
+| `crates/libpachinko/tests/` | Integration tests of the library: `queue/`, one file per area of the specification plus the invariant walk, `records_contract.rs`, and `testing_feature.rs`, the guard that fails a test run without the `testing` feature. |
+| `crates/pachinko/tests/` | Integration tests. `binary.rs` runs the built binary and asserts its line, its standard error and its exit status, and starts and stops `serve`; `http.rs` and `batch_publish.rs` drive the routes over HTTP. Unit tests sit in the module they test, a stated deviation recorded in [decision 0009](../decisions/0009-rust-quality-gate.md). |
+| `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, and `workloads.rs` times the queue's workloads W1 to W5 at three pocket counts; both run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
-| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one placeholder module, `pachinko.allium`, which declares no behaviour. |
+| `loadgen/` | The load generator, `pachinko-loadgen`, outside the workspace and pinned by its own `loadgen/Cargo.lock`. It names no workspace crate and speaks HTTP to a running `pachinko serve`: closed-loop publish, batch, consume and mix workloads and the lapse probe. `just loadgen` runs it and `just test-loadgen` runs its unit tests, by hand and never in CI or the gate, because its timings measure the machine. |
+| `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one module, `pachinko.allium`, the root, which declares the queue's entities, rules, surfaces and invariants. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
 | `tickets/` | The tickets, their `README.md` and `CONVENTIONS.md`, the conventions every ticket obeys. |

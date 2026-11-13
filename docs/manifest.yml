@@ -19,6 +19,7 @@
     {"path": "explanation/architecture.md", "title": "Architecture", "kind": "explanation", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["system_architecture"], "requires": []},
     {"path": "explanation/layering.md", "title": "Layering and dependency direction", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["dependency_boundaries"], "requires": []},
     {"path": "explanation/specifications.md", "title": "Specifications", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["specification_model"], "requires": []},
+    {"path": "explanation/prior-art.md", "title": "Prior art", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["prior_art"], "requires": []},
     {"path": "explanation/security-model.md", "title": "Security model", "kind": "explanation", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["security_model"], "requires": []},
     {"path": "explanation/quality-philosophy.md", "title": "Quality philosophy", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_philosophy"], "requires": []},
 
@@ -28,6 +29,7 @@
     {"path": "reference/quality-gates.md", "title": "Quality gates", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_gate_reference"], "requires": []},
     {"path": "reference/documentation-contract.md", "title": "Documentation contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["documentation_contract"], "requires": []},
     {"path": "reference/agent-contract.md", "title": "Agent contract", "kind": "reference", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["agent_contract"], "requires": []},
+    {"path": "reference/http-api.md", "title": "HTTP API", "kind": "reference", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["http_api"], "requires": []},
     {"path": "reference/api.md", "title": "API reference", "kind": "reference", "audience": ["user", "contributor", "maintainer", "agent"], "canonical_for": ["api_reference"], "requires": []},
 
     {"path": "operations/maintenance.md", "title": "Maintenance", "kind": "operations", "audience": ["maintainer", "operator", "agent"], "canonical_for": ["maintenance_routine"], "requires": []},
@@ -51,6 +53,7 @@
     {"path": "decisions/0015-container-image.md", "title": "Decision 0015: The container image", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_container_image"], "requires": []},
     {"path": "decisions/0016-release-process.md", "title": "Decision 0016: The release process", "kind": "decision", "audience": ["maintainer", "agent"], "canonical_for": ["decision_release_process"], "requires": []},
     {"path": "decisions/0017-mutation-bench-and-fuzz.md", "title": "Decision 0017: Mutation testing, benchmarks and fuzzing", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_mutation_bench_fuzz"], "requires": []},
-    {"path": "decisions/0018-renovate.md", "title": "Decision 0018: Dependency updates through Renovate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_dependency_updates"], "requires": []}
+    {"path": "decisions/0018-renovate.md", "title": "Decision 0018: Dependency updates through Renovate", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_dependency_updates"], "requires": []},
+    {"path": "decisions/0019-service-runtime-tokio-and-http.md", "title": "Decision 0019: The service runtime: tokio, one owner task and HTTP/JSON", "kind": "decision", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["decision_service_runtime"], "requires": []}
   ]
 }
