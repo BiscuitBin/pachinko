@@ -621,7 +621,10 @@ The final commit carries this section and `status:`.
   as the acceptance criteria require.
 - **`just fix`.** The Rust agent ran it once. It stripped trailing whitespace in
   `tickets/T30-performance-evidence.md`, which was restored with `git checkout --` that
-  file. It changed nothing else.
+  file. No other file outside the agents' own changed, and the lead read the handbook
+  diff before committing it as `b0e5c30`. `just fix` also runs `markdownlint --fix`, and
+  the handbook edits were uncommitted at the time, so whether it reformatted any of those
+  lines cannot be told apart from the handbook agent's own edits.
 
 ### Step 2: the plan and the obligations before
 
@@ -739,25 +742,36 @@ At `2158750`:
 
 `just test` passed 242 of 242.
 
-Each bite was a scratch edit on `2158750`, run with `NEXTEST_PROFILE=ci just test` (exit
+The bites first ran at `2158750`. The `code-review` round then rewrote S063, which made
+those quotes stale (§11), so every bite was rerun at `9292852`, after the round, and the
+quotes below are from that run.
+
+Each bite was a scratch edit on `9292852`, run with `NEXTEST_PROFILE=ci just test` (exit
 100 each) and restored with `git checkout -- <file>`. After each,
 `git diff --stat -- crates` printed nothing.
 
-| Bite | Scratch edit | Failing tests |
+| Bite | Scratch edit | Failing tests, by assertion label |
 | --- | --- | --- |
-| 1 | reset removed | S077 ("a settling ack", `(Leased, 1)` not 0) and both walk tests |
-| 2 | reset moved into `settle_held` | S063 (`(Idle, 1, 0)`, not `(Parked, 3, 0)`), S064 ("after the nack", 0 not 1) and both walk tests |
-| 3 | reset in `ack` before the `RecordNotHeld` guard | S077 in `Fixture::refused` ("a refused action changed the queue") and both walk tests |
-| 4a | reset added to `Queue::renew` | S064 ("after the renew") and both walk tests |
-| 4b | reset added to the pull within a lease | S064 ("after that pull") and both walk tests |
+| 1 | reset removed | S077 "a settling ack" (`(Leased, 1)`, not `(Leased, 0)`); S063 "acked" (`(Parked, 3, 0)`, not `(Idle, 1, 0)`); both walk tests at "the state the rules predict" |
+| 2 | reset moved into `settle_held` | S064 "after the nack" (0, not 1); S063 "nacked" (`(Idle, 1, 0)`, not `(Parked, 3, 0)`); both walk tests |
+| 3 | reset in `ack` before the `RecordNotHeld` guard | S077 in `Fixture::refused`, "a refused action changed the queue"; both walk tests |
+| 4a | reset added to `Queue::renew` | S064 "after the renew" (0, not 1); both walk tests |
+| 4b | reset added to the pull within a lease | S064 "after that pull" (0, not 1); both walk tests |
 | 5 | the two `turn.reach` calls removed | only `the_walk_reaches_every_state_and_every_outcome`, "never reached": `["ack resets a counted pocket", "nack keeps a counted pocket"]` |
+| CR6a | an empty pocket never parks | S063 "limit 1, acked" (`(Idle, 1, 0)`, not `(Parked, 1, 0)`); `every_invariant_holds_after_every_step_of_any_walk` |
+
+The run at `2158750` matched this one, except in two places:
+
+- bite 1 did not yet fail S063, because its "acked" assertion was added later;
+- bite 2's S063 failure carried no label, though its values were the same.
 
 The walk also fails in bites 3, 4a and 4b, beyond the tests the ticket names, because its
 model follows the rules. Both new reach labels are reached at the walk's
 `max_consecutive_expiries` of 2 with no change to the generator.
 
 The gates at `2158750` all exited 0: `fmt-check`, `clippy`, `test`, `doc`, `effects`,
-`metrics` and `coverage`, the last at 99.09% of lines.
+`metrics` and `coverage`, the last at 99.09% of lines. The Verification run at `2681bd6`
+(Step 10) supersedes these results.
 
 ### Step 7: the handbook
 
@@ -806,6 +820,11 @@ All other questions drew no finding from either lens. Neither reviewer could bui
 read-only sandbox, so their mutation reasoning is from the source; the bites above are the
 run evidence. There was no valid high finding, so there was no second round.
 
+The Verification block was rerun after the fix, at `7d637ac` with a clean worktree (base
+`53d64b7`, line 528 fixed). Every line printed its passing status, `just check` exited 0
+with "All checks passed and the worktree is unchanged.", and coverage was 99.09% of
+lines. That run is superseded by the run at `2681bd6` below.
+
 ### Step 10: `review-change`, the merge and the final check
 
 **`/code-review high`** ran over `53d64b7..7d637ac`, as a read-only Claude agent. It found
@@ -832,14 +851,15 @@ files:
   `max_consecutive_expiries` 1, and idles below the threshold after earlier lapses.
   - Both are now in S063's test, through `Fixture::with_config` and `fork()`, with no new
     id.
-  - Two bites, each `NEXTEST_PROFILE=ci just test` exit 100 and then restored:
+  - Two bites, rerun at `9292852` (Step 6's table, bite 1 and CR6a):
     - an empty pocket made never to park fails at "limit 1, acked";
     - the reset removed fails at "acked".
 - **CR7 (valid, low; handed back).** No test in `crates/pachinko` exercises the HTTP ack
   reset. It holds by construction, since `leases.rs` calls `Queue::ack`, but the fix is a
   service test and lies outside Files touched.
 
-The fixes are in `2681bd6`. After them, at `2681bd6` with uncommitted changes:
+The fixes are in `2681bd6`. Before that commit, the implementers' reruns ran at `7d637ac`
+with uncommitted changes:
 
 - `check-specs`, `analyse-specs`, `check-docs`, `fmt-check`, `clippy`, `metrics` and
   `test` exited 0, with 242 of 242 tests passing;
