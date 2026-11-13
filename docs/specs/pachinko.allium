@@ -377,11 +377,13 @@ rule ReviveParkedPocket {
 
 -- PullWithinLease extends the lease whatever the batch holds, an empty
 -- batch included: a consumer that pulls in a loop keeps its pocket after
--- acking or nacking every record, and releasing it is the consumer's
--- action. That is intended. No lease is granted on an empty pocket:
--- PullClaimsFrontPocket claims only a queued pocket, every rule that
--- makes a pocket queued creates a record or requires one, and a pocket
--- loses records only under an active lease, while it is leased.
+-- acking or nacking every record, as long as each pull is processed
+-- before the lease lapses (see the Lease expiry comment), and releasing
+-- it is the consumer's action. That is intended. No lease is granted on
+-- an empty pocket: PullClaimsFrontPocket claims only a queued pocket,
+-- every rule that makes a pocket queued creates a record or requires one,
+-- and a pocket loses records only under an active lease, while it is
+-- leased.
 rule PullWithinLease {
     when: Pull(consumer, limit)
     let lease = Lease{consumer: consumer, status: active}
@@ -910,5 +912,5 @@ open question "Adaptive lease TTL: should lease_ttl be derived from observed lea
 open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
 open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"
 open question "A key acked or nacked under a lease, its record removed, is published again before that lease ends: is the new record pullable in the same lease, as the rules allow today because publish creates it queued, or does one visit per key per lease hold for the key itself, so that it waits for the lease to end?"
-open question "A supersede of a held record sheds the version the consumer still holds: Supersede copies record.payload, which is the held payload while the held rank is current, into a SupersededRecord, and a later nack of that held version (NackDefersNewerVersion) makes a DeadLetter of the same payload, so it sits in both shed queues. Should the held version be shed when it is settled rather than when it is superseded, and should a nack of a superseded held version still dead-letter it? The rules do both today; that is a placeholder, not a decision. Ticket T35 decides it."
-open question "A stale publish touches its pocket: DropStalePublish emits PocketTouched like every publish into an existing pocket, so a stale publish into a parked pocket revives it through ReviveParkedPocket and resets its consecutive_expiries although no record changed. Should a stale publish touch the pocket? It does today; that is a placeholder, not a decision. Ticket T35 decides it."
+open question "A supersede of a held record sheds the version the consumer still holds: Supersede copies record.payload, which is the held payload while the held rank is current, into a SupersededRecord, and a later nack of that held version (NackDefersNewerVersion) makes a DeadLetter of the same payload, so that payload is shed twice, once into each shed queue. Should the held version be shed when it is settled rather than when it is superseded, and should a nack of a superseded held version still dead-letter it? The rules do both today; that is a placeholder, not a decision. Ticket T35 decides it."
+open question "A stale publish touches its pocket: DropStalePublish emits PocketTouched like PublishNewKey and Supersede, so a stale publish into a parked pocket revives it through ReviveParkedPocket and resets its consecutive_expiries although no record changed. Should a stale publish touch the pocket? It does today; that is a placeholder, not a decision. Ticket T35 decides it."
