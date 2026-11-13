@@ -1,7 +1,7 @@
 ---
 id: T32
 title: "Specification follow-up: expiry count on ack, empty pulls, and two new open questions"
-status: todo
+status: done
 depends_on: [T31]
 parallel_with: [T33, T34]
 branch: ticket/t32-spec-follow-up
@@ -548,23 +548,361 @@ git status --short; echo "exit $?"
 
 ### Baseline
 
+At `53d64b7` (the head of `wave-2-tickets`), in a new worktree on
+`ticket/t32-spec-follow-up`, `just initialize` exited 0. It installed allium 3.6.1 and,
+because this is a secondary worktree, skipped `install-hooks`. `just check` on the
+untouched worktree exited 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+Commits on the branch:
+
+| Commit | Content |
+| --- | --- |
+| `41e5370` | Step 3: the specification |
+| `dd4c68f` | the T32-1 fixes |
+| `2158750` | Steps 5 and 6: tests and code |
+| `b0e5c30` | Step 7: the handbook |
+| `7d637ac` | the T32-2 fix |
+| `2681bd6` | the `code-review` fixes |
+
+The final commit carries this section and `status:`.
+
+### Overrides of the ticket's assumptions
+
+- **Base.** Pull request 40 had not merged, so `main` (`611a86e`) holds no MVP code. The
+  maintainer chose to cut the branch from `wave-2-tickets` (`53d64b7`), stacked on pull
+  request 41.
+  - At Step 2, `origin/wave-2-tickets` did not exist, so every pre-merge diff, the
+    review briefs' and the Verification block's `base=` used the branch point `53d64b7`
+    literally.
+  - `merge-base HEAD origin/main` would be `611a86e`, which would pull in the whole MVP
+    diff.
+  - After Step 10's fetch, `merge-base HEAD origin/wave-2-tickets` is `53d64b7`, the same
+    commit.
+- **Triage (§14 phase 2).** By the maintainer's choice, findings were not triaged by
+  separate subagents. The implementer agent that wrote the work under review checked each
+  finding against the tree, wrote the verdicts and applied the valid fixes one at a time.
+  The lead triaged the one finding on the ticket file. The lead and three implementer
+  agents (spec, Rust, handbook) ran the steps.
+- **Line drift since `4daf9df`.** Content was unchanged; these lines moved:
+  - `testing.md` "76 scenarios" moved from line 152 to 171.
+  - `architecture.md` "expiry count rises" moved from 196 to 223.
+  - T22's `CHANGELOG.md` entry moved to lines 34 to 37, and T28's line to 54.
+  - In `settle.rs`, `ack`, `nack` and `settle_held` are at 60, 100 and 127.
+  - In `walk.rs`, the model's `settle` is at 570 and the driver's at 923; the file has
+    1,167 lines.
+- **Files outside Files touched, each a minimal edit.** `docs/explanation/prior-art.md`,
+  `README.md` and `crates/libpachinko/src/queue/inspect.rs` are outside Files touched.
+  Each still said something the change makes false:
+  - `prior-art.md:229` said "carries eight open questions", which would fail the
+    acceptance search. It came with commit `189b76e`, after the ticket was written.
+  - `README.md:108` said "lapses three times in a row".
+  - `PocketView::consecutive_expiries` was documented as "in a row".
+- **Wording departures from the ticket's verbatim text** (reasons under T32-1 and
+  `code-review`):
+  - Five spec departures:
+    - the `PullWithinLease` comment, which now names the lapse qualifier and how the
+      revive rules reach a record;
+    - the ack paragraph's last clause;
+    - open question 10's "shed twice";
+    - open question 11's "like PublishNewKey and Supersede";
+    - the numbering comment, which the ticket describes but does not word.
+  - In the handbook, the http-api empty-pull paragraph carries the lapse qualifier and
+    names deferred records.
+  - S045's catalog suffix reads "(OQ10 as the rules stand: the first loser is the version
+    still held)", because a bare label would contradict "the held version is untouched".
+  - `specifications.md` drops "as writing the rules exposed the ninth", because the
+    sentence already names question 9's origin.
+- **`CHANGELOG.md` line 59, T26's Added bullet.** "lapses in a row" became "lapses with no
+  ack, release or revive between them" (a `code-review` fix). T22's and T28's lines stay,
+  as the acceptance criteria require.
+- **`just fix`.** The Rust agent ran it once. It stripped trailing whitespace in
+  `tickets/T30-performance-evidence.md`, which was restored with `git checkout --` that
+  file. It changed nothing else.
+
 ### Step 2: the plan and the obligations before
+
+At `53d64b7`:
+
+```text
+$ just plan-spec pachinko > ai_tmp/T32/plan-before.json; echo "exit $?"
+exit 0
+$ jq '.obligations | length' ai_tmp/T32/plan-before.json
+190
+$ jq '.diagnostics | length' ai_tmp/T32/plan-before.json
+0
+```
+
+The count is 190, as T22 and T31 recorded. It was counted with
+`jq '.obligations | length'`.
+
+The Q3 argument was re-derived with the ticket's two `rg` searches. A pocket becomes
+queued at five places:
+
+- line 263, `PublishIntoNewPocket`, which creates a record;
+- lines 347 and 359, the revive rules, which answer `PocketTouched`. Only lines 296
+  (`PublishNewKey`), 319 (`Supersede`) and 338 (`DropStalePublish`) emit it, and each
+  leaves a record;
+- line 551, `ReleaseRequeuesPocket`, guarded at 542;
+- line 645, `LeaseExpiryKeepsPocketAtFront`, guarded at 636.
+
+Records leave only at lines 453 and 495, under an active lease. The argument holds, so
+nothing stopped.
 
 ### Step 3: the specification
 
+At `41e5370`:
+
+- `just check-specs` exited 0 and `just analyse-specs` exited 0, with no diagnostics and
+  no findings.
+- Obligations were 190 before and 190 after, and plan-after has 0 diagnostics.
+- `diff ids-before.txt ids-after.txt` printed nothing (exit 0), and `ids-new.txt` has 0
+  lines.
+- `rg -c '^open question '` prints 10.
+
+The new `ensures` adds no id: this module's `when-set.*` ids come only from fields
+declared `when status = ...`. Twelve ids keep their id and description but change content,
+because `entities_written` gains `Pocket`:
+
+- `rule-success.AckSettlesRecord` and `rule-success.AckDefersNewerVersion`;
+- `rule-failure.AckSettlesRecord.1` to `.5`;
+- `rule-failure.AckDefersNewerVersion.1` to `.5`.
+
+All twelve were already tagged, and S077 carries the two `rule-success` ids.
+
 ### T32-1: the specification (step 4)
+
+The reviewers were `codex exec -m gpt-6-astra -s read-only`, one per lens, over
+`git diff 53d64b7 -- docs/specs/pachinko.allium` at `41e5370` and the plan-spec files.
+
+- **Conformance:** no findings on any of the eight questions.
+- **Breakage B1 (medium), valid:** a looping pull keeps the pocket only if each pull is
+  processed before the lapse, and at `lease_ttl` 0 it never does. Fixed: the
+  `PullWithinLease` comment adds "as long as each pull is processed before the lease
+  lapses (see the Lease expiry comment)". The same qualifier went into http-api.md.
+- **B2 (low), valid:** the superseded copy can decay before the nack, so "sits in both shed
+  queues" is not guaranteed. Fixed: open question 10 says "so that payload is shed twice,
+  once into each shed queue".
+- **B3 (low), valid:** a publish at the stored rank matches no rule and emits nothing.
+  Fixed: open question 11 says "like PublishNewKey and Supersede".
+
+All three fixes are in `dd4c68f`. There was no valid high finding, so there was no second
+round. The comment above `PublishNewKey` (line 278, written before T32) has B3's
+imprecision and is handed back under Open points.
+
+The rerun at `dd4c68f` with uncommitted changes: `check-specs` and `analyse-specs` exited
+0, obligations stayed at 190 with an empty id diff, and there are 10 open questions.
 
 ### Step 5: the tests, red first
 
+At `dd4c68f` with uncommitted test changes, nothing under `src` changed:
+
+```text
+$ NEXTEST_PROFILE=ci just test; echo "exit $?"
+exit 100
+     Summary [   1.146s] 242 tests run: 239 passed, 3 failed, 0 skipped
+        FAIL ( 49/242) libpachinko::queue expiry::an_ack_resets_the_consecutive_expiry_count
+        FAIL (106/242) libpachinko::queue invariants::the_walk_reaches_every_state_and_every_outcome
+        FAIL (118/242) libpachinko::queue invariants::every_invariant_holds_after_every_step_of_any_walk
+    thread 'expiry::an_ack_resets_the_consecutive_expiry_count' panicked at crates/libpachinko/tests/queue/expiry.rs:432:5:
+    assertion `left == right` failed: a settling ack
+      left: (Leased, 1)
+     right: (Leased, 0)
+    thread 'invariants::every_invariant_holds_after_every_step_of_any_walk' panicked at crates/libpachinko/tests/queue/walk.rs:1120:5:
+    assertion `left == right` failed: the state the rules predict
+      left: ... PocketKey("a"): ModelPocket { status: Leased, position: Position(0), consecutive_expiries: 1, records: {} } ...
+     right: ... PocketKey("a"): ModelPocket { status: Leased, position: Position(0), consecutive_expiries: 0, records: {} } ...
+    minimal failing steps: [Publish { publisher: 0, pocket: 0, key: 0, rank: 0 }, Pull { consumer: 0, limit: 0 }, Advance(100), Tick, PublisherJoins(0), Pull { consumer: 1, limit: 1 }, Ack { consumer: 1, lease: Own, key: 0 }]
+```
+
+The output above is abridged: the walk's model dump is cut to pocket `a`.
+
+- **The walk:** the shrunk walk is a lapse, a claim and an ack. The model resets the
+  count and the code does not.
+- **`the_walk_reaches_every_state_and_every_outcome`** fails at the same assertion,
+  because it drives the same model.
+- **S063 and S064:** S063 (now emptied by nacks) and S064 (renamed) passed, as expected.
+- **S024 and S045:** their scenario labels changed and nothing else.
+- **`fixture.rs`:** untouched. S077 uses the existing `Fixture::refused`.
+
 ### Step 6: the code, and shown to bite
+
+At `2158750`:
+
+- `Pockets::reset_expiries` is `pub(super)` in `pockets.rs`.
+- `Queue::ack` calls it once `settle_held(..)?` has returned, so a refused ack returns
+  before the call. `nack`, `renew` and the pull never call it.
+- The docs on the module, `ack`, `nack` and `PocketView::consecutive_expiries` say so.
+
+`just test` passed 242 of 242.
+
+Each bite was a scratch edit on `2158750`, run with `NEXTEST_PROFILE=ci just test` (exit
+100 each) and restored with `git checkout -- <file>`. After each,
+`git diff --stat -- crates` printed nothing.
+
+| Bite | Scratch edit | Failing tests |
+| --- | --- | --- |
+| 1 | reset removed | S077 ("a settling ack", `(Leased, 1)` not 0) and both walk tests |
+| 2 | reset moved into `settle_held` | S063 (`(Idle, 1, 0)`, not `(Parked, 3, 0)`), S064 ("after the nack", 0 not 1) and both walk tests |
+| 3 | reset in `ack` before the `RecordNotHeld` guard | S077 in `Fixture::refused` ("a refused action changed the queue") and both walk tests |
+| 4a | reset added to `Queue::renew` | S064 ("after the renew") and both walk tests |
+| 4b | reset added to the pull within a lease | S064 ("after that pull") and both walk tests |
+| 5 | the two `turn.reach` calls removed | only `the_walk_reaches_every_state_and_every_outcome`, "never reached": `["ack resets a counted pocket", "nack keeps a counted pocket"]` |
+
+The walk also fails in bites 3, 4a and 4b, beyond the tests the ticket names, because its
+model follows the rules. Both new reach labels are reached at the walk's
+`max_consecutive_expiries` of 2 with no change to the generator.
+
+The gates at `2158750` all exited 0: `fmt-check`, `clippy`, `test`, `doc`, `effects`,
+`metrics` and `coverage`, the last at 99.09% of lines.
 
 ### Step 7: the handbook
 
+At `2158750` with uncommitted changes, committed as `b0e5c30`:
+
+- `just check-docs` exited 0.
+- The catalog has 77 rows.
+- `rg -n -i 'empty batch' docs/reference/http-api.md` exited 0.
+- The stale search over `docs` and `crates` exited 1, with no hits.
+
+The text went to the pages Step 7 names, plus `prior-art.md` and `README.md` (see
+Overrides). `just check-docs` does not compare the catalog's test names with `crates/`.
+Both new names were confirmed with `rg` in `expiry.rs`.
+
 ### Step 8: the obligations reconciled
+
+`ids-new.txt` is empty, so no new id needs a tag. Each of the twelve ids whose content
+changed is in `ids-after.txt` and tagged under `crates/`. S077's tags are:
+
+- `rule-success.AckSettlesRecord`
+- `rule-success.AckDefersNewerVersion`
+- `invariant.Pocket.ExpiriesWithinLimit`
+
+No id vanished, so no tag was removed.
 
 ### T32-2: the whole diff (step 9)
 
+The reviewers were `codex exec -m gpt-6-astra -s read-only`, one per lens, over
+`git diff 53d64b7` at `b0e5c30`, plus an uncommitted rewrap in `prior-art.md`.
+
+Both lenses raised the same finding, conformance C1 and breakage B1 (medium). The ticket's
+Verification line
+`git diff "$base" -- docs/specs/pachinko.allium | rg -n '^\+.*https?://'` prints the
+passing "exit 1" when `git diff` fails, because `rg` returns 1 on empty input. Both
+reviewers reproduced this with a bad revision.
+
+- **Verdict:** valid.
+- **Fix, in `7d637ac`:** the diff goes to `ai_tmp/T32/spec-diff.txt` with its own exit
+  status, and `rg` reads that file.
+- **The other Verification pipelines** were checked for the same flaw:
+  - the S001 to S077 `diff` fails loudly on empty input;
+  - `uniq -d` returns `rg`'s 2 under `pipefail`;
+  - the `-B8 ... | rg 'empty pocket'` line must exit 0.
+
+All other questions drew no finding from either lens. Neither reviewer could build in the
+read-only sandbox, so their mutation reasoning is from the source; the bites above are the
+run evidence. There was no valid high finding, so there was no second round.
+
 ### Step 10: `review-change`, the merge and the final check
+
+**`/code-review high`** ran over `53d64b7..7d637ac`, as a read-only Claude agent. It found
+no correctness bug and raised seven findings. Each implementer triaged the ones in its own
+files:
+
+- **CR1 (low, valid).** The spec's "the decision names the ack only" reads as a ruling on
+  nacks. It now says "leave the count as the rules stand: the maintainer decided the ack
+  only, and a reset on a nack is neither chosen nor ruled out".
+- **CR2 (partly valid).** In `CHANGELOG.md` Unreleased:
+  - T22's "keeps eight open questions" (line 36) and T28's "76 scenarios" (line 54) now
+    disagree with T32's bullet. They stay as their tickets' record, as the acceptance
+    criteria require, and are handed back.
+  - T26's "lapses in a row" (line 59) was false, and is fixed.
+- **CR3 (valid).** The empty-batch reasons in http-api.md left out deferred records. They
+  now read "the pocket has no queued record left (each is held or deferred, or none
+  remains)".
+- **CR4 (valid).** The revive rules neither create nor require a record. The comment now
+  says "creates a record, requires one or answers a publish that leaves one".
+- **CR5 (valid, low; handed back).** `config.rs:69`, `types.rs:168`,
+  `configuration.md:39` and `terminology.md:36` say "consecutive" without naming what
+  resets the count. All four are outside Files touched.
+- **CR6 (valid).** Two cases were untested: an ack-emptied pocket parks at
+  `max_consecutive_expiries` 1, and idles below the threshold after earlier lapses.
+  - Both are now in S063's test, through `Fixture::with_config` and `fork()`, with no new
+    id.
+  - Two bites, each `NEXTEST_PROFILE=ci just test` exit 100 and then restored:
+    - an empty pocket made never to park fails at "limit 1, acked";
+    - the reset removed fails at "acked".
+- **CR7 (valid, low; handed back).** No test in `crates/pachinko` exercises the HTTP ack
+  reset. It holds by construction, since `leases.rs` calls `Queue::ack`, but the fix is a
+  service test and lies outside Files touched.
+
+The fixes are in `2681bd6`. After them, at `2681bd6` with uncommitted changes:
+
+- `check-specs`, `analyse-specs`, `check-docs`, `fmt-check`, `clippy`, `metrics` and
+  `test` exited 0, with 242 of 242 tests passing;
+- obligations stayed at 190 with an empty id diff.
+
+**`review-change`**, over `git diff 53d64b7..HEAD`:
+
+- No public type, dependency, effect or `unsafe` was added.
+- The reset follows the two ack rules and runs only after every guard.
+- The walk's model resets on the ack branch alone and predicts from the pre-state.
+
+It raised no finding beyond the ones above.
+
+**The merge.** `git fetch origin` exited 0. `origin/wave-2-tickets` is `53d64b7`, the
+branch point, and `origin/main` (`611a86e`) is already an ancestor. `git merge
+origin/wave-2-tickets` and `git merge origin/main` each printed "Already up to date." and
+exited 0, so there is no merge commit and no T33 or T34 lines to reconcile. Merging
+`origin/main` stays a no-op until pull request 40 lands.
+
+**The Verification block** was rerun at `2681bd6`. The worktree was clean (`git status
+--short` printed nothing) and the merge was a no-op, so `2681bd6` is the merge point. It
+ran with `base=53d64b7` and line 528 in its fixed form. This is the abridged output, each
+line with its exit status:
+
+```text
+just check-specs                                  exit 0
+just analyse-specs                                exit 0
+just plan-spec pachinko > plan-after.json         exit 0
+jq '.obligations | length' before after           190 / 190, exit 0
+jq '.diagnostics | length' plan-after.json        0, exit 0
+wc -l ids-before.txt ids-after.txt                190 / 190
+diff ids-before.txt ids-after.txt                 (nothing), exit 0
+wc -l < ids-new.txt                               0; the UNTAGGED loop prints nothing
+rg -n 'scenario: S077' -A6 expiry.rs              exit 0
+rg -c '^open question '                           10, exit 0
+rg -n 'T35' pachinko.allium                       lines 916, 917, exit 0
+positive control rg -c 'scenario: S[0-9]+'        expiry.rs:20 lease.rs:12 publish.rs:12 ..., exit 0
+scenario set vs S001..S077                        (nothing), exit 0
+duplicate scenario tags (uniq -d)                 (nothing), exit 0
+catalog rows                                      77, exit 0
+git diff "$base" -- spec http-api                 exit 0
+git diff "$base" -- spec > spec-diff.txt          exit 0 (must be 0)
+rg URL in spec-diff.txt                           exit 1 (1 when the module gains no URL)
+-B8 PullWithinLease | rg 'empty pocket'           line 383, exit 0 (must be 0)
+rg -i 'empty batch' http-api.md                   line 71, exit 0 (must be 0)
+stale search on 53d64b7 (positive control)        7 hits (expiry.rs:400, prior-art.md:229,
+                                                  specifications.md:56, work-with-the-specs.md:64
+                                                  and :75, testing.md:171 and :244), exit 0
+stale search on the branch                        (nothing), exit 1
+just fmt-check / clippy / test / doc              exit 0 each
+just effects / metrics / coverage                 exit 0 each; coverage 99.09% of lines
+just check-docs                                   exit 0, "Validated 47 pages and 48 canonical topics."
+just check                                        exit 0
+git status --short                                (nothing), exit 0
+```
+
+`just check`'s last line:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+The final commit changes only this ticket and T32's row in `tickets/README.md`.
 
 ## Open points
 
@@ -584,3 +922,32 @@ git status --short; echo "exit $?"
   "the placeholder", "which declares no behaviour"; T31's handbook search did not cover
   `.agents/`. A skill edit takes `just check-agents` and is outside this ticket. Owner:
   maintainer.
+- Handed back by T32-1 (B3's imprecision in older text): the comment above
+  `PublishNewKey` (`docs/specs/pachinko.allium` line 278) says "Every publish into an
+  existing pocket emits PocketTouched". A publish at the stored rank matches no rule and
+  emits nothing. Its fix is "Every accepted publish". Owner: T35, which edits that area.
+- Handed back by `code-review` CR2: `CHANGELOG.md`'s libpachinko Unreleased section now
+  has T22's "keeps eight open questions" (line 36) and T28's "76 scenarios" (line 54)
+  beside T32's "ten in all". The acceptance criteria keep them as those tickets' record.
+  Fold the unreleased entries into one statement at release. Owner: maintainer, at
+  release.
+- Handed back by `code-review` CR5: four places say "consecutive" without naming what
+  resets the count. They are outside Files touched.
+  - Proposed text for the first three: "how many lease expiries, with no ack, release or
+    revive between them, park a pocket".
+    - `crates/libpachinko/src/config.rs:69`
+    - `docs/reference/configuration.md:39`, the page that owns the flag
+    - `docs/project/terminology.md:36`
+  - `crates/libpachinko/src/types.rs:168`: the same looseness.
+
+  The spec now defines consecutive this way, so none of the four is false. Owner:
+  maintainer, or a follow-up ticket.
+- Handed back by `code-review` CR7: no test in `crates/pachinko` shows that an ack over
+  HTTP resets the count and a nack does not, which the pachinko `CHANGELOG.md` bullet
+  claims. It holds by construction, since the service's lease routes call `Queue::ack`
+  and `Queue::nack`. The fix is an HTTP test with `--max-consecutive-expiries 2` and
+  lapses around an ack. Owner: maintainer, or a follow-up ticket.
+- Found by the handbook pass: `docs/reference/http-api.md` lines 93 to 95 say an action
+  already waiting at the lapse gets `lease_not_active`. That is wrong for a pull, which
+  names no lease: a pull applied after the lapse claims a pocket afresh or answers
+  `no_pocket`. This is older text, outside T32's own lines. Owner: maintainer.
