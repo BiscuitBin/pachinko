@@ -43,7 +43,7 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
 | `new` | the queue | `MaxConsecutiveExpiriesZero`, `MaxPullBatchZero` |
 | `*_joins` | `()` | `PublisherExists`, `ConsumerExists` |
 | `publish` | `Created`, `NewKey`, `Superseded`, `Stale` | `UnknownPublisher`, `EqualRank` |
-| `pull` | `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | `UnknownConsumer` |
+| `pull` | `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | `UnknownConsumer`, `LeaseId` (`Exhausted`, `StillActive`) |
 | `lease_view` | `Some(view)` or `None` | `UnknownConsumer` |
 | `ack`, `nack` | `Settled`, `Deferred` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
 | `renew` | the new `expires_at` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours` |

@@ -70,8 +70,11 @@ pub enum ServeError {
     /// ```
     #[error("the random source failed: {0}")]
     RandomSource(String),
-    /// The lease-id serial cannot advance, so the next id would repeat one already
-    /// issued.
+    /// The queue's owner stopped at a pull that needed a lease id and got none the
+    /// queue could grant: the lease-id serial cannot advance, so the next id would
+    /// repeat one already issued, or a source broke its contract and returned an id
+    /// that is still active ([`libpachinko::LeaseIdError`]); the real source never
+    /// does.
     ///
     /// ```
     /// let error = pachinko::ServeError::LeaseIdsExhausted;

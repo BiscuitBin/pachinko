@@ -51,7 +51,9 @@ type Owner<F> = (QueueHandle, F);
 /// sets to `Serving` and the scope to `Stopping`; the shutdown, which turns true
 /// when the shutdown begins and which every task beside the owner ends on; the
 /// cut, which ends the open connections and tells the owner to stop; and the tick
-/// lane, whose sender the ticker holds and whose receiver the owner takes.
+/// lane's sender, which the ticker holds. The lane's receiver is not kept here:
+/// [`Lifecycle::new`] hands it back, and [`Lifecycle::start`] takes it by value for
+/// the owner, so one receiver serves one start.
 pub(crate) struct Lifecycle {
     readiness: watch::Sender<Readiness>,
     shutdown: watch::Sender<bool>,
@@ -59,39 +61,33 @@ pub(crate) struct Lifecycle {
     bounds: Bounds,
     limits: Limits,
     lane: mpsc::Sender<Tick>,
-    ticks: Option<mpsc::Receiver<Tick>>,
 }
 
 impl Lifecycle {
     /// A lifecycle `Starting`, not shutting down, not cut, with the bounds and the
-    /// limits `config` sets.
-    pub(crate) fn new(config: &ServeConfig) -> Self {
+    /// limits `config` sets, and the receiving end of its tick lane, for
+    /// [`Lifecycle::start`].
+    pub(crate) fn new(config: &ServeConfig) -> (Self, mpsc::Receiver<Tick>) {
         let (lane, ticks) = actor::tick_lane();
-        Self {
+        let lifecycle = Self {
             readiness: watch::channel(Readiness::Starting).0,
             shutdown: watch::channel(false).0,
             cut: watch::channel(false).0,
             bounds: Bounds::of(config),
             limits: Limits::from(config),
             lane,
-            ticks: Some(ticks),
-        }
+        };
+        (lifecycle, ticks)
     }
 
     /// The owner of `queue`, reporting to this lifecycle, stopping on its cut and
-    /// taking its ticks. A second start gets a tick lane whose ticker has gone.
+    /// taking its ticks from `ticks`, the receiver [`Lifecycle::new`] handed back.
     pub(crate) fn start(
-        &mut self,
+        &self,
         queue: ServiceQueue,
-        lease_ids: EpochSerialLeaseIds,
+        ticks: mpsc::Receiver<Tick>,
     ) -> Owner<impl Future<Output = TaskResult> + Send + 'static> {
-        actor::start(
-            queue,
-            lease_ids,
-            self.readiness.clone(),
-            self.cut.subscribe(),
-            self.ticks.take().unwrap_or_else(|| actor::tick_lane().1),
-        )
+        actor::start(queue, self.readiness.clone(), self.cut.subscribe(), ticks)
     }
 }
 
@@ -128,7 +124,7 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         .with_max_level(config.log_level())
         .try_init()
         .ok();
-    let (queue, lease_ids) = service_queue(config)?;
+    let queue = service_queue(config)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -140,8 +136,8 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         let signals = install_signals()?;
         announce(&listener, out)?;
         let (_never_sent, stop) = watch::channel(());
-        let mut lifecycle = Lifecycle::new(config);
-        let owner = lifecycle.start(queue, lease_ids);
+        let (lifecycle, ticks) = Lifecycle::new(config);
+        let owner = lifecycle.start(queue, ticks);
         scope(listener, owner, lifecycle, stop, signals).await
     })
 }
@@ -177,20 +173,19 @@ pub async fn serve(
     config: &ServeConfig,
     stop: watch::Receiver<()>,
 ) -> Result<(), ServeError> {
-    let (queue, lease_ids) = service_queue(config)?;
+    let queue = service_queue(config)?;
     let signals = install_signals()?;
-    let mut lifecycle = Lifecycle::new(config);
-    let owner = lifecycle.start(queue, lease_ids);
+    let (lifecycle, ticks) = Lifecycle::new(config);
+    let owner = lifecycle.start(queue, ticks);
     scope(listener, owner, lifecycle, stop, signals).await
 }
 
-/// The service's queue over the real clock and lease ids, and the owner's clone of
-/// the lease-id source.
-fn service_queue(config: &ServeConfig) -> Result<(ServiceQueue, EpochSerialLeaseIds), ServeError> {
+/// The service's queue over the real clock and lease ids.
+fn service_queue(config: &ServeConfig) -> Result<ServiceQueue, ServeError> {
     let clock = SystemClock::new()?;
     let lease_ids = EpochSerialLeaseIds::new()?;
-    let queue = Queue::new(config.queue().clone(), clock, lease_ids.clone())?;
-    Ok((queue, lease_ids))
+    let queue = Queue::new(config.queue().clone(), clock, lease_ids)?;
+    Ok(queue)
 }
 
 /// Writes `listening on <address>` and flushes it, so a reader sees it at once.
@@ -223,7 +218,6 @@ where
         bounds,
         limits,
         lane,
-        ticks: _,
     } = lifecycle;
     let shutting_down = shutdown.subscribe();
     let connections = Connections {
@@ -394,25 +388,38 @@ struct Connection {
 
 /// A connection's idle bound: a read that stays pending for `bound` while the
 /// server owes the client nothing fails, and so does one still pending two bounds
-/// after the last byte that arrived while the server owed a reply.
+/// after the first byte that arrived while nothing was owed, until the server
+/// writes.
 struct Idle {
     /// How long a read may stay pending while the server owes no reply.
     bound: Duration,
     /// The deadline of the read now pending, if one is.
     waiting: Option<Pin<Box<Sleep>>>,
-    /// When bytes last arrived since the server last wrote: a request is being read
-    /// or handled. The deadline is two bounds from this instant. The handler starts
-    /// no later than the head's last byte and the request timeout writes its 408 one
-    /// bound after that, so the 408 always comes first, however slowly the head
-    /// arrived once it completes. A client can hold the connection only by sending a byte at least
-    /// every two bounds, which hyper's limit on a head's size and the shutdown's cut
-    /// end; no deadline at all would let a client hold it with a partial head.
+    /// When the first byte arrived since the server last wrote: a request is being
+    /// read or handled. Later bytes leave it as it is, and only a write clears it.
+    /// The deadline is two bounds from this instant. The handler starts no later
+    /// than the head's last byte and the request timeout writes its 408 one bound
+    /// after that, so a head that arrives within one bound always gets its reply
+    /// or its 408 before the deadline. A slower head still gets its reply if the
+    /// handler writes it within two bounds of the first byte; otherwise the read
+    /// fails at the deadline, before the 408 is due. What it gets instead is the
+    /// handler's: one still reading the body answers 400 for the failed read. A
+    /// partial head is closed unanswered. Any write clears it, a `100 Continue`
+    /// included, so a head that asked for one is timed afresh from that reply and
+    /// its handler can still answer 408. The instant is the connection's, not the
+    /// request's: a pipelined request whose first bytes arrived before the
+    /// previous reply was written is timed from that write, and is closed within
+    /// three bounds of it, one with nothing owed and two from its next byte; one
+    /// whose whole head was buffered by then can get the 400 instead of its 408. A
+    /// client trickling a head holds the connection at most two bounds per
+    /// request, three after a pipelined reply; no deadline at all would let it
+    /// hold the connection with a partial head.
     owed_since: Option<Instant>,
 }
 
 impl Idle {
     /// Fails once a read has stayed pending for `bound` while nothing is owed, or
-    /// two bounds after the last byte that arrived while a reply was owed; until
+    /// two bounds after the first byte that arrived while nothing was owed; until
     /// then, wakes `context` when it would.
     fn pending(&mut self, context: &mut Context<'_>) -> io::Result<()> {
         let bound = self.bound;
@@ -429,7 +436,7 @@ impl Idle {
         self.waiting = None;
         let message = match self.owed_since {
             Some(_) => format!(
-                "no reply was written within {}ms of the last byte",
+                "no reply was written within {}ms of the first byte",
                 (2 * bound).as_millis()
             ),
             None => format!("no bytes arrived within {}ms", bound.as_millis()),
@@ -438,11 +445,12 @@ impl Idle {
     }
 
     /// A read finished; `arrived` says whether it brought bytes, which the server
-    /// now owes a reply to.
+    /// now owes a reply to. The first such byte since the last write starts the
+    /// deadline; later ones leave it where it is.
     fn read(&mut self, arrived: bool) {
         self.waiting = None;
         if arrived {
-            self.owed_since = Some(Instant::now());
+            self.owed_since.get_or_insert_with(Instant::now);
         }
     }
 
@@ -615,9 +623,9 @@ expect: 100-continue\r\n\r\n";
     async fn a_panicked_owner_makes_serve_fail_within_three_grace_periods() {
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
-        let (queue, lease_ids) = service_queue(&config).unwrap();
-        let mut lifecycle = Lifecycle::new(&config);
-        let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+        let queue = service_queue(&config).unwrap();
+        let (lifecycle, ticks) = Lifecycle::new(&config);
+        let (handle, _real_owner) = lifecycle.start(queue, ticks);
         let (_stop, stopped) = watch::channel(());
         let owner = (handle, panicking_owner());
         let served = timeout(
@@ -643,9 +651,9 @@ expect: 100-continue\r\n\r\n";
     async fn a_task_that_ignores_the_cut_is_aborted_after_the_second_grace_period() {
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
-        let (queue, lease_ids) = service_queue(&config).unwrap();
-        let mut lifecycle = Lifecycle::new(&config);
-        let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+        let queue = service_queue(&config).unwrap();
+        let (lifecycle, ticks) = Lifecycle::new(&config);
+        let (handle, _real_owner) = lifecycle.start(queue, ticks);
         // The owner's place is taken by a future parked at a yield point that never
         // looks at the cut, so only the abort can end it.
         let owner = (handle, std::future::pending());
@@ -740,9 +748,9 @@ expect: 100-continue\r\n\r\n";
             let (stop, stopped) = watch::channel(());
             let client =
                 async move { tokio::task::block_in_place(|| stall_a_request(address, stop)) };
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
+            let owner = lifecycle.start(queue, ticks);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             timeout(BOUND, async { tokio::join!(server, client) })
                 .await
@@ -809,18 +817,23 @@ expect: 100-continue\r\n\r\n";
     /// Serves with a request timeout of 100 ms while a client sends `sent` and
     /// waits for the close, returning whether it came and how long it took.
     fn serve_until_closed(sent: &'static [u8]) -> (bool, Duration) {
+        serve_beside(move |address, stop| wait_for_the_close(address, sent, stop))
+    }
+
+    /// Serves with a request timeout of 100 ms while `client` runs against the
+    /// listener's address, returning what the client returned once `serve` has
+    /// ended with `Ok`. The client drops `stop` when it is done.
+    fn serve_beside<T: Send>(client: impl FnOnce(SocketAddr, watch::Sender<()>) -> T + Send) -> T {
         let runtime = runtime();
         let (served, closed) = runtime.block_on(async {
             let config = config(&["--request-timeout-ms", "100"]);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
-            let client = async move {
-                tokio::task::block_in_place(|| wait_for_the_close(address, sent, stop))
-            };
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
+            let client = async move { tokio::task::block_in_place(|| client(address, stop)) };
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
+            let owner = lifecycle.start(queue, ticks);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             timeout(BOUND, async { tokio::join!(server, client) })
                 .await
@@ -851,6 +864,87 @@ expect: 100-continue\r\n\r\n";
         );
     }
 
+    /// What a trickling client saw: whether the server closed the connection, how
+    /// long after the first byte, and the longest the client went without sending,
+    /// between two bytes or from its latest byte to the close.
+    struct Trickle {
+        closed: bool,
+        waited: Duration,
+        longest_silence: Duration,
+    }
+
+    /// Connects to `address`, sends `G`, then one more byte of a request line every
+    /// 50 ms for three seconds, never ending the line, and returns what it saw,
+    /// dropping `stop` then. A reply to the partial head fails the test.
+    fn trickle_until_closed(address: SocketAddr, stop: watch::Sender<()>) -> Trickle {
+        let mut stream = TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let line = [b"GET /".as_slice(), &[b'a'; 64]].concat();
+        let started = Instant::now();
+        let mut sent = started;
+        let mut longest_silence = Duration::ZERO;
+        let mut closed = false;
+        for byte in line {
+            if started.elapsed() >= Duration::from_secs(3) {
+                break;
+            }
+            longest_silence = longest_silence.max(sent.elapsed());
+            if stream.write_all(&[byte]).is_err() {
+                closed = true;
+                break;
+            }
+            sent = Instant::now();
+            match stream.read(&mut [0; 64]) {
+                Ok(0) => closed = true,
+                Ok(read) => panic!("the server replied to a partial head with {read} bytes"),
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(error) => {
+                    assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}");
+                    closed = true;
+                }
+            }
+            if closed {
+                longest_silence = longest_silence.max(sent.elapsed());
+                break;
+            }
+        }
+        let waited = started.elapsed();
+        drop(stop);
+        Trickle {
+            closed,
+            waited,
+            longest_silence,
+        }
+    }
+
+    #[test]
+    fn a_trickling_head_is_cut_at_the_header_read_deadline() {
+        let Trickle {
+            closed,
+            waited,
+            longest_silence,
+        } = serve_beside(trickle_until_closed);
+        assert!(
+            closed,
+            "the trickling connection was still open after {waited:?}"
+        );
+        // A connection is also closed two bounds after the latest byte it read, so
+        // the close shows the deadline from the first byte only if the client was
+        // never silent that long.
+        assert!(
+            longest_silence < Duration::from_millis(190),
+            "the client was silent for {longest_silence:?}, long enough to be closed \
+            two bounds after a later byte"
+        );
+        assert!(
+            waited >= Duration::from_millis(190) && waited < Duration::from_millis(1500),
+            "closed after {waited:?}, not at twice the 100 ms bound from the first byte"
+        );
+    }
+
     #[test]
     fn a_request_whose_owner_has_stopped_answers_503_not_ready() {
         let body = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
@@ -866,15 +960,14 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (_stop, stopped) = watch::channel(());
-            let mut lifecycle = Lifecycle::new(&config);
+            let (lifecycle, ticks) = Lifecycle::new(&config);
             let readiness = lifecycle.readiness.subscribe();
-            let ticks = lifecycle.ticks.take().unwrap();
             // The owner's stop is the test's to send: the same watch and the same
             // branch of the owner loop the scope's cut reaches.
             let (stop_owner, owner_stop) = watch::channel(false);
-            let (queue, lease_ids) = service_queue(&config).unwrap();
+            let queue = service_queue(&config).unwrap();
             let readiness_sender = lifecycle.readiness.clone();
-            let owner = actor::start(queue, lease_ids, readiness_sender, owner_stop, ticks);
+            let owner = actor::start(queue, readiness_sender, owner_stop, ticks);
             // On a blocking thread of its own: it waits for `Stopping`, which the
             // scope sends, so it must not hold the task the scope runs on.
             let client = tokio::task::spawn_blocking(move || {
@@ -914,12 +1007,12 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
             // The real owner is kept but never run, so the command is never answered
             // and the handler outlives the bound; the connection's read stays pending
             // for as long, which must not close it first.
-            let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+            let (handle, _real_owner) = lifecycle.start(queue, ticks);
             let owner = (handle, std::future::pending());
             let client = tokio::task::spawn_blocking(move || {
                 let mut stream = TcpStream::connect(address).unwrap();
@@ -948,8 +1041,10 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
         drop(runtime);
     }
 
-    #[test]
-    fn a_head_slower_than_the_bound_still_gets_its_408_before_the_idle_bound_closes_it() {
+    /// Serves with a request timeout of 500 ms while a client sends the first byte
+    /// of a publish's head, the rest of the head `pause` later, and never the body,
+    /// returning what `serve` returned and the reply the client read.
+    fn publish_with_a_slow_head(pause: Duration) -> (Result<(), ServeError>, String) {
         let body = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
         let rest = format!(
             "UT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
@@ -958,39 +1053,61 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
         );
         let runtime = runtime();
         let (served, reply) = runtime.block_on(async {
-            let config = config(&["--request-timeout-ms", "100"]);
+            let config = config(&["--request-timeout-ms", "500"]);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
             let client = tokio::task::spawn_blocking(move || {
                 let mut stream = TcpStream::connect(address).unwrap();
                 stream.set_read_timeout(Some(BOUND)).unwrap();
-                // The head takes longer than the bound and the body never comes, so
-                // the handler overruns waiting for it.
                 stream.write_all(b"P").unwrap();
-                std::thread::sleep(Duration::from_millis(150));
+                std::thread::sleep(pause);
                 stream.write_all(rest.as_bytes()).unwrap();
                 let mut reply = [0; 512];
                 let read = stream.read(&mut reply).unwrap();
                 drop(stop);
                 String::from_utf8_lossy(&reply[..read]).into_owned()
             });
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
+            let owner = lifecycle.start(queue, ticks);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             let client = async { client.await.unwrap() };
             timeout(BOUND, async { tokio::join!(server, client) })
                 .await
                 .expect("serve returned within the bound")
         });
+        drop(runtime);
+        (served, reply)
+    }
+
+    #[test]
+    fn a_head_within_the_bound_still_gets_its_408_before_the_idle_bound_closes_it() {
+        // The head arrives slowly but within the bound, and the body never comes, so
+        // the handler overruns waiting for it: its 408 one bound after the head
+        // (about 600 ms) comes before the idle bound's cut, two bounds after the
+        // first byte (1000 ms).
+        let (served, reply) = publish_with_a_slow_head(Duration::from_millis(100));
         assert!(
             reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
             "{reply:?}"
         );
         assert!(reply.contains(r#""error":"request_timeout""#), "{reply:?}");
         assert_eq!(served, Ok(()));
-        drop(runtime);
+    }
+
+    #[test]
+    fn a_head_slower_than_the_bound_is_answered_400_when_its_body_read_fails_at_the_deadline() {
+        // The head ends after the bound (about 750 ms), and the body never comes: the
+        // idle bound fails the handler's body read two bounds after the first byte
+        // (1000 ms), before its 408 would come one bound after the head (1250 ms).
+        let (served, reply) = publish_with_a_slow_head(Duration::from_millis(750));
+        assert!(
+            reply.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+            "{reply:?}"
+        );
+        assert!(reply.contains(r#""error":"bad_request""#), "{reply:?}");
+        assert_eq!(served, Ok(()));
     }
 
     /// Drains a task that fails at once, if `early` is set, beside one that waits

@@ -71,7 +71,9 @@ a value between threads, copy it or print it. Public structs and enums are
 invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
 `thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
 `LeaseActionError`, `ConfigError`), and an outcome that is not a refusal, such as
-`NoPocketAvailable`, is a variant of the operation's outcome instead.
+`NoPocketAvailable`, is a variant of the operation's outcome instead. A lease-id source
+refuses with `LeaseIdError` (`Exhausted`, `StillActive`), which a pull that claims a
+pocket carries as `PullError::LeaseId`.
 
 `libpachinko`'s public API has three surfaces, and each item has one path. The crate
 root is the caller's, and one `use libpachinko::{…}` names all of it: `version`, `Config`

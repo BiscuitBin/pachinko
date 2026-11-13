@@ -138,8 +138,10 @@ resident memory of PR 38's prototype, 8,191 MiB after ten seconds of batch publi
 Time is bounded apart from shape. `--request-timeout-ms` (30 seconds) answers a handler
 that runs past it 408 `request_timeout` and closes a connection that sends nothing for
 that long, so an idle client cannot hold a connection open. A client that trickles a
-byte at least every two timeouts still can, until shutdown cuts it: no trickle or
-slowloris bound exists ([HTTP API](../reference/http-api.md#request-timeout)).
+request a byte at a time holds the connection for a bounded time per request: one still
+owed a reply two timeouts after the request's first byte is closed, however the rest
+arrives, and the [HTTP API](../reference/http-api.md#request-timeout) states the bound
+for a pipelined request.
 
 ## What is out of scope
 
