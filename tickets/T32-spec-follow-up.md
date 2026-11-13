@@ -525,7 +525,8 @@ rg -c '^\| S0[0-9]{2} \|' docs/reference/testing.md; echo "exit $?"
 # which must print lines; then on the branch it must print nothing and exit 1
 base=$(git merge-base HEAD origin/main)
 git diff "$base" -- docs/specs/pachinko.allium docs/reference/http-api.md; echo "exit $?"
-git diff "$base" -- docs/specs/pachinko.allium | rg -n '^\+.*https?://'; echo "exit $? (1 when the module gains no URL)"
+git diff "$base" -- docs/specs/pachinko.allium > ai_tmp/T32/spec-diff.txt; echo "exit $? (must be 0)"
+rg -n '^\+.*https?://' ai_tmp/T32/spec-diff.txt; echo "exit $? (1 when the module gains no URL)"
 # Q3, documentation only: the new comment above PullWithinLease and the empty-pull paragraph
 rg -n -B8 '^rule PullWithinLease' docs/specs/pachinko.allium | rg -n 'empty pocket'; echo "exit $? (must be 0)"
 rg -n -i 'empty batch' docs/reference/http-api.md; echo "exit $? (must be 0)"
