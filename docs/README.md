@@ -44,6 +44,7 @@ Specifications, under Understand, to see how the two relate.
 - [Architecture](explanation/architecture.md) — how a library and the service around it are put together, and where effects live.
 - [Layering and dependency direction](explanation/layering.md) — which crate and module may depend on which.
 - [Specifications](explanation/specifications.md) — why behaviour is written down before it is built.
+- [Prior art](explanation/prior-art.md) — what comparable queues and databases do, as evidence for the open questions.
 - [Security model](explanation/security-model.md) — what the library and the HTTP service do and do not defend.
 - [Quality philosophy](explanation/quality-philosophy.md) — why each gate exists.
 

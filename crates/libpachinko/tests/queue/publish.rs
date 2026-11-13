@@ -2,10 +2,9 @@
 //! `DropStalePublish`, the equal-rank placeholder, and the `PocketTouched` dispatch
 //! on a queued or leased pocket.
 
-use libpachinko::error::PublishError;
-use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-use libpachinko::queue::{PocketStatus, PublishOutcome, ShedReason};
-use libpachinko::records::RecordStatus;
+use libpachinko::records::{Position, RecordStatus};
+use libpachinko::testing::{PocketStatus, ShedReason};
+use libpachinko::{Payload, PublishError, PublishOutcome, Rank, RecordKey};
 
 use crate::fixture::{Fixture, SUPERSEDED_TTL, T0, invariants, keys};
 
@@ -273,8 +272,8 @@ fn payload_bytes_and_keys_round_trip_unchanged() {
     let mut fixture = Fixture::new();
     let every_byte: Vec<u8> = (0..=u8::MAX).collect();
     let (pocket, key) = ("pocket-\u{e9}\u{4e2d}\u{1f600}", "key-\u{3b1}\u{3b2}\u{0}");
-    let publication = libpachinko::queue::Publication::new(
-        libpachinko::ids::PocketKey::new(pocket),
+    let publication = libpachinko::Publication::new(
+        libpachinko::PocketKey::new(pocket),
         RecordKey::new(key),
         Rank::new(1),
         Payload::new(every_byte.clone()),
@@ -316,7 +315,7 @@ fn publishing_into_a_leased_pocket_neither_requeues_it_nor_escapes_the_lease() {
     assert_eq!(fixture.snapshot().leases, lease_before);
     assert!(matches!(
         fixture.try_pull("c2", 10),
-        Ok(libpachinko::queue::PullOutcome::NoPocketAvailable)
+        Ok(libpachinko::PullOutcome::NoPocketAvailable)
     ));
     let again = fixture.pull("c1", 10);
     assert_eq!(again.lease, batch.lease);

@@ -1,10 +1,9 @@
 //! Pull: `PullClaimsFrontPocket`, `PullWithinLease`, `HoldRecord` and
 //! `PullFindsNoPocket`, the lease view, and the lease invariants.
 
-use libpachinko::ids::{Payload, Rank};
-use libpachinko::lease_ids::LeaseId;
-use libpachinko::queue::{LeaseStatus, PocketStatus, PullOutcome};
 use libpachinko::records::RecordStatus;
+use libpachinko::testing::PocketStatus;
+use libpachinko::{LeaseId, LeaseStatus, Payload, PullOutcome, Rank};
 
 use crate::fixture::{Fixture, LEASE_TTL, T0, config, invariants, keys};
 

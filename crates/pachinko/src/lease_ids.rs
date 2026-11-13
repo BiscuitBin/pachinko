@@ -4,7 +4,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use libpachinko::lease_ids::{LeaseId, LeaseIds};
+use libpachinko::LeaseId;
+use libpachinko::lease_ids::LeaseIds;
 
 use crate::ServeError;
 
@@ -113,7 +114,8 @@ const fn advance(serial: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use libpachinko::lease_ids::{LeaseId, LeaseIds};
+    use libpachinko::LeaseId;
+    use libpachinko::lease_ids::LeaseIds;
 
     use super::EpochSerialLeaseIds;
     use crate::ServeError;

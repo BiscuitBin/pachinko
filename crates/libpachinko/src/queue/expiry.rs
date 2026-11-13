@@ -10,18 +10,22 @@
 
 use super::Queue;
 use super::types::{Lease, LeaseStatus};
-use crate::clock::{Clock, Timestamp};
-use crate::lease_ids::{LeaseId, LeaseIds};
+use crate::clock::Clock;
+use crate::ids::LeaseId;
+use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
+use crate::timestamp::Timestamp;
 
 /// What one [`Queue::tick`] processed.
 ///
 /// ```
 /// use std::time::Duration;
-/// use libpachinko::clock::{FakeClock, Timestamp};
-/// use libpachinko::queue::{LeaseStatus, TickReport};
-/// # use libpachinko::{config::Config, ids::*, lease_ids::CountingLeaseIds};
-/// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+/// use libpachinko::clock::FakeClock;
+/// use libpachinko::{LeaseStatus, TickReport, Timestamp};
+/// # use libpachinko::{lease_ids::CountingLeaseIds, records::MemoryRecords};
+/// # use libpachinko::{
+/// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
+/// # };
 /// let clock = FakeClock::new(Timestamp::from_millis(0));
 /// let mut config = Config::default();
 /// config.lease_ttl = Duration::from_millis(10);
@@ -37,9 +41,6 @@ use crate::records::PocketRecords;
 /// let report: TickReport = queue.tick();
 /// assert_eq!(report.lapsed[0].status, LeaseStatus::Expired { ended_at: Timestamp::from_millis(10) });
 /// assert_eq!((report.decayed_superseded, report.decayed_dead_letters), (0, 0));
-/// # #[cfg(feature = "testing")] {
-/// assert_eq!((report.leases_examined, report.shed_examined), (1, 0));
-/// # }
 /// ```
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -50,21 +51,13 @@ pub struct TickReport {
     pub decayed_superseded: usize,
     /// How many dead letters decayed.
     pub decayed_dead_letters: usize,
-    /// The expiry-index entries the lapse walk read: the due ones and the first
-    /// later one that stopped the walk, if any.
-    #[cfg(feature = "testing")]
-    pub leases_examined: usize,
-    /// The shed entries the decay read: the due ones and, per non-empty queue,
-    /// the first later one that stopped the walk.
-    #[cfg(feature = "testing")]
-    pub shed_examined: usize,
 }
 
 impl TickReport {
     /// Whether the tick lapsed or decayed anything.
     ///
     /// ```
-    /// use libpachinko::queue::TickReport;
+    /// use libpachinko::TickReport;
     /// assert!(TickReport::default().is_empty());
     /// ```
     #[must_use]
@@ -95,11 +88,13 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     ///
     /// ```
     /// use std::time::Duration;
-    /// use libpachinko::clock::{FakeClock, Timestamp};
-    /// use libpachinko::error::LeaseActionError;
-    /// use libpachinko::queue::PullOutcome;
-    /// # use libpachinko::{config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::clock::FakeClock;
+    /// use libpachinko::{LeaseActionError, PullOutcome, Timestamp};
+    /// # use libpachinko::{lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{
+    /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank,
+    /// #     RecordKey,
+    /// # };
     /// let clock = FakeClock::new(Timestamp::from_millis(0));
     /// let mut config = Config::default();
     /// config.lease_ttl = Duration::from_millis(10);
@@ -121,6 +116,14 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// assert_eq!(records[0].key.as_str(), "rk");
     /// ```
     pub fn tick(&mut self) -> TickReport {
+        self.tick_counting().0
+    }
+
+    /// The tick itself, with what it read to find what was due beside what it
+    /// processed: the report, then the expiry-index entries the lapse walk read,
+    /// then the shed entries the decay read. [`Queue::tick`] drops the two counts;
+    /// the `testing` module's `Queue::tick_with_cost` returns them.
+    pub(super) fn tick_counting(&mut self) -> (TickReport, usize, usize) {
         let now = self.now();
         let due = self.leases.due(now);
         let lapsed = due
@@ -129,15 +132,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
             .filter_map(|lease| self.lapse(lease, now))
             .collect();
         let decay = self.shed.decay(now);
-        TickReport {
+        let report = TickReport {
             lapsed,
             decayed_superseded: decay.superseded,
             decayed_dead_letters: decay.dead_letters,
-            #[cfg(feature = "testing")]
-            leases_examined: due.examined,
-            #[cfg(feature = "testing")]
-            shed_examined: decay.examined,
-        }
+        };
+        (report, due.examined, decay.examined)
     }
 
     /// One `LeaseLapsed`: the lease ends as expired at `now`, its consumer holds
@@ -160,12 +160,14 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
 #[cfg(test)]
 #[cfg(feature = "testing")]
 mod tests {
-    use crate::clock::{FakeClock, Timestamp};
+    use crate::clock::FakeClock;
     use crate::config::Config;
-    use crate::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-    use crate::lease_ids::{CountingLeaseIds, LeaseId};
-    use crate::queue::{PocketStatus, Publication, PullOutcome, Queue};
+    use crate::ids::{ConsumerId, LeaseId, Payload, PocketKey, PublisherId, Rank, RecordKey};
+    use crate::lease_ids::CountingLeaseIds;
+    use crate::queue::types::PocketStatus;
+    use crate::queue::{Publication, PullOutcome, Queue};
     use crate::records::MemoryRecords;
+    use crate::timestamp::Timestamp;
 
     /// A queue with pocket `pk` leased by `c` under the returned lease.
     fn leased() -> (Queue<MemoryRecords, FakeClock, CountingLeaseIds>, LeaseId) {

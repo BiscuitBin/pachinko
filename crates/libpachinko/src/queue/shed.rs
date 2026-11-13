@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use super::types::{DeadLetter, SupersededRecord};
-use crate::clock::Timestamp;
+use crate::timestamp::Timestamp;
 
 /// What [`Shed::decay`] removed.
 #[derive(Debug, Default)]
@@ -17,10 +17,6 @@ pub(super) struct Decay {
     pub(super) dead_letters: usize,
     /// The entries the decay read: the due ones and, per non-empty queue, the
     /// first later one that stopped the walk.
-    #[cfg_attr(
-        not(any(feature = "testing", test)),
-        expect(dead_code, reason = "read only by the testing count on `TickReport`")
-    )]
     pub(super) examined: usize,
 }
 
@@ -96,7 +92,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::take_due;
-    use crate::clock::Timestamp;
+    use crate::timestamp::Timestamp;
 
     #[test]
     fn take_due_removes_the_prefix_and_reads_one_entry_past_it() {

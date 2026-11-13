@@ -1,7 +1,7 @@
 //! The pachinko service: `libpachinko`'s queue over HTTP (decision 0019).
 //!
 //! With no argument the binary writes `pachinko <version>`. With `serve [flags]` it
-//! runs a tokio HTTP/1.1 JSON server over one in-memory [`libpachinko::queue::Queue`]
+//! runs a tokio HTTP/1.1 JSON server over one in-memory [`libpachinko::Queue`]
 //! held by one owner task, which applies every command in arrival order
 //! (`docs/reference/http-api.md` has the routes), and stops cleanly on SIGTERM or
 //! SIGINT.

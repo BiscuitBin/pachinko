@@ -1,13 +1,14 @@
 //! The queue: the specification's `Queue` entity with its publishers, consumers,
 //! pockets, records, leases and shed queue, and one method per trigger.
 //!
-//! `Queue` is plain data with `&mut self` methods. It performs no effect: it reads
-//! the time only through its [`Clock`] and draws lease ids only from its
-//! [`LeaseIds`]. Whoever owns it applies one operation at a time, so a lapse, which
-//! [`Queue::tick`] processes, and a consumer's action meet in one stream, as
-//! decision 0019 requires.
+//! The module is private: the crate root exports `Queue` and the values its
+//! operations take and return, and the crate's front page carries the one-owner
+//! rule. The `testing` module exports the inspection seam and the four values no
+//! surface exposes.
 
 mod expiry;
+#[cfg(feature = "testing")]
+mod inspect;
 mod leases;
 mod pockets;
 mod publish;
@@ -15,18 +16,17 @@ mod pull;
 mod renew;
 mod settle;
 mod shed;
-#[cfg(feature = "testing")]
-mod snapshot;
 mod types;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::clock::{Clock, Timestamp};
+use crate::clock::Clock;
 use crate::config::Config;
 use crate::error::{ConfigError, JoinError, PullError};
-use crate::ids::{ConsumerId, PublisherId};
-use crate::lease_ids::{LeaseId, LeaseIds};
+use crate::ids::{ConsumerId, LeaseId, PublisherId};
+use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
+use crate::timestamp::Timestamp;
 
 use leases::Leases;
 use pockets::Pockets;
@@ -34,10 +34,12 @@ use shed::Shed;
 
 pub use expiry::TickReport;
 #[cfg(feature = "testing")]
-pub use snapshot::{PocketView, Snapshot};
+pub use inspect::{PocketView, Snapshot, TickCost};
+#[cfg(feature = "testing")]
+pub use types::{DeadLetter, PocketStatus, ShedReason, SupersededRecord};
 pub use types::{
-    DeadLetter, Lease, LeaseStatus, LeaseView, PocketFate, PocketStatus, Publication,
-    PublishOutcome, PullOutcome, SettleOutcome, ShedReason, SupersededRecord,
+    Lease, LeaseStatus, LeaseView, PocketFate, Publication, PublishOutcome, PullOutcome,
+    SettleOutcome,
 };
 
 /// The deployment's one queue, over a record store `R`, a clock `C` and a lease-id
@@ -46,7 +48,7 @@ pub use types::{
 /// `Queue` is `Clone`, as invariant 3 asks of every public type, and a clone forks
 /// the state: the two never share a pocket, record, lease or shed entry afterwards,
 /// because [`PocketRecords`] requires its `Clone` to be a deep, independent copy,
-/// which `check_contract` proves, and the queue's other stores are plain values.
+/// which `testing::check_contract` proves, and the queue's other stores are plain values.
 /// What they do share is whatever the clock
 /// and the lease-id source share between clones: a shared [`FakeClock`] keeps
 /// ticking for both, and a shared [`CountingLeaseIds`] keeps counting for both.
@@ -55,12 +57,13 @@ pub use types::{
 /// [`CountingLeaseIds`]: crate::lease_ids::CountingLeaseIds
 ///
 /// ```
-/// use libpachinko::clock::{FakeClock, Timestamp};
-/// use libpachinko::config::Config;
-/// use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
+/// use libpachinko::clock::FakeClock;
 /// use libpachinko::lease_ids::CountingLeaseIds;
-/// use libpachinko::queue::{Publication, PublishOutcome, PullOutcome, Queue};
 /// use libpachinko::records::MemoryRecords;
+/// use libpachinko::{
+///     Config, ConsumerId, Payload, PocketKey, Publication, PublishOutcome, PublisherId,
+///     PullOutcome, Queue, Rank, RecordKey, Timestamp,
+/// };
 ///
 /// let clock = FakeClock::new(Timestamp::from_millis(0));
 /// let mut queue: Queue<MemoryRecords, _, _> =
@@ -81,8 +84,8 @@ pub use types::{
 ///
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
-/// use libpachinko::ids::{Payload, Position, Rank, RecordKey};
-/// use libpachinko::records::{HeldRecord, PocketRecords, RecordView};
+/// use libpachinko::records::{PocketRecords, Position, RecordView};
+/// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
 ///
 /// #[derive(Clone, Debug, Default)]
 /// struct RcRecords(Rc<Vec<RecordView>>);
@@ -98,7 +101,6 @@ pub use types::{
 ///     fn free_held(&mut self) -> usize { 0 }
 ///     fn record_count(&self) -> usize { 0 }
 ///     fn held(&self) -> Vec<HeldRecord> { Vec::new() }
-///     fn snapshot(&self) -> Vec<RecordView> { Vec::new() }
 /// }
 /// ```
 #[derive(Clone, Debug)]
@@ -128,11 +130,9 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     ///
     /// ```
     /// use libpachinko::clock::FakeClock;
-    /// use libpachinko::config::Config;
-    /// use libpachinko::error::ConfigError;
     /// use libpachinko::lease_ids::CountingLeaseIds;
-    /// use libpachinko::queue::Queue;
     /// use libpachinko::records::MemoryRecords;
+    /// use libpachinko::{Config, ConfigError, Queue};
     ///
     /// let mut config = Config::default();
     /// config.max_consecutive_expiries = 0;
@@ -157,8 +157,8 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// The configuration the queue was built with.
     ///
     /// ```
-    /// # use libpachinko::{clock::FakeClock, config::Config, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::Queue, records::MemoryRecords};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{Config, Queue};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// let queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// assert_eq!(queue.config(), &Config::default());
@@ -176,10 +176,9 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// nothing changes.
     ///
     /// ```
-    /// use libpachinko::error::JoinError;
-    /// use libpachinko::ids::PublisherId;
-    /// # use libpachinko::{clock::FakeClock, config::Config, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::Queue, records::MemoryRecords};
+    /// use libpachinko::{JoinError, PublisherId};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{Config, Queue};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// assert_eq!(queue.publisher_joins(PublisherId::new("p")), Ok(()));
@@ -204,10 +203,9 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// nothing changes.
     ///
     /// ```
-    /// use libpachinko::error::JoinError;
-    /// use libpachinko::ids::ConsumerId;
-    /// # use libpachinko::{clock::FakeClock, config::Config, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::Queue, records::MemoryRecords};
+    /// use libpachinko::{ConsumerId, JoinError};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{Config, Queue};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// assert_eq!(queue.consumer_joins(ConsumerId::new("c")), Ok(()));
@@ -233,9 +231,9 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// [`PullError::UnknownConsumer`] when no consumer with this id has joined.
     ///
     /// ```
-    /// use libpachinko::ids::{ConsumerId, PocketKey};
-    /// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-    /// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+    /// use libpachinko::{ConsumerId, PocketKey};
+    /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+    /// # use libpachinko::{Config, Payload, Publication, PublisherId, Queue, Rank, RecordKey};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
     /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
     /// # let publisher = PublisherId::new("p");
@@ -286,10 +284,11 @@ mod tests {
     use std::time::Duration;
 
     use super::Queue;
-    use crate::clock::{Clock, FakeClock, Timestamp};
+    use crate::clock::{Clock, FakeClock};
     use crate::config::Config;
     use crate::lease_ids::{CountingLeaseIds, LeaseIds};
     use crate::records::{MemoryRecords, PocketRecords};
+    use crate::timestamp::Timestamp;
 
     fn assert_invariant_3<T: Clone + Debug + Send + Sync + 'static>() {}
 

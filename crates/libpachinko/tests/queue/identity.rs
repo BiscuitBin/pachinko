@@ -4,12 +4,12 @@
 use std::time::Duration;
 
 use libpachinko::clock::FakeClock;
-use libpachinko::config::Config;
-use libpachinko::error::{ConfigError, JoinError, PublishError, PullError};
-use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
 use libpachinko::lease_ids::CountingLeaseIds;
-use libpachinko::queue::{Publication, PullOutcome, Queue};
 use libpachinko::records::MemoryRecords;
+use libpachinko::{
+    Config, ConfigError, ConsumerId, JoinError, Payload, PocketKey, Publication, PublishError,
+    PublisherId, PullError, PullOutcome, Queue, Rank, RecordKey,
+};
 
 use crate::fixture::{Fixture, config, invariants, keys};
 

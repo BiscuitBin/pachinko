@@ -13,6 +13,24 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Changed
 
+- The crate root is the caller's interface, and one `use libpachinko::{…}` names it:
+  `Queue`, `Config`, the names and values, `Timestamp`, `LeaseId`, `ParseLeaseIdError`,
+  `HeldRecord`, every outcome and every error enum moved there, and `ids`, `config`,
+  `error` and `queue` are private. `clock`, `lease_ids` and `records` stay public as the
+  seam modules, each holding its trait and its fake or implementation: `Timestamp` left
+  `clock`, `LeaseId` and `ParseLeaseIdError` left `lease_ids`, `HeldRecord` left
+  `records`, `Position` moved from `ids` to `records`, and `records::memory` is private,
+  so `records::MemoryRecords` is that store's one path. No old path is kept as an alias.
+- The `testing` feature is one additive module, `testing`, with two `Queue` methods,
+  and nothing it adds changes what the root or a seam module holds. `Snapshot`,
+  `PocketView`, `PocketStatus`, `ShedReason`, `SupersededRecord` and `DeadLetter` moved
+  there from `queue`, and `check_contract` from `records::contract`.
+  `PocketRecords::snapshot` became `testing::InspectRecords::snapshot`, which
+  `check_contract` and `Queue::snapshot` now require of a store. `TickReport` lost
+  `leases_examined` and `shed_examined` to `testing::TickCost`, which
+  `Queue::tick_with_cost` returns beside the report. A test run without the feature
+  fails on `tests/testing_feature.rs`, where it used to pass with the integration suites
+  compiled to nothing.
 - The specification closes open question 8 by decision 0019: a pull, ack, nack, renew or
   release processed after its lease's `expires_at` but before the lapse succeeds. The
   root module keeps eight open questions, and decision 0019 confirms its five

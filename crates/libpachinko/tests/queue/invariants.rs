@@ -40,12 +40,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use libpachinko::clock::{FakeClock, Timestamp};
-use libpachinko::config::Config;
-use libpachinko::ids::{ConsumerId, PocketKey, RecordKey};
-use libpachinko::lease_ids::{CountingLeaseIds, LeaseId};
-use libpachinko::queue::{Lease, LeaseStatus, PocketStatus, PullOutcome, Queue, Snapshot};
-use libpachinko::records::{HeldRecord, MemoryRecords, RecordStatus, RecordView};
+use libpachinko::clock::FakeClock;
+use libpachinko::lease_ids::CountingLeaseIds;
+use libpachinko::records::{MemoryRecords, RecordStatus, RecordView};
+use libpachinko::testing::{PocketStatus, Snapshot};
+use libpachinko::{
+    Config, ConsumerId, HeldRecord, Lease, LeaseId, LeaseStatus, PocketKey, PullOutcome, Queue,
+    RecordKey, Timestamp,
+};
 
 use super::fixture::invariants;
 use proptest::strategy::{Strategy, ValueTree};

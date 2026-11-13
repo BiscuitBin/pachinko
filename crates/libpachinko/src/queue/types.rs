@@ -1,16 +1,15 @@
 //! The values the queue's operations take and return, and the entities its
-//! inspection seam shows.
+//! inspection seam shows. [`PocketStatus`], [`ShedReason`], [`SupersededRecord`] and
+//! [`DeadLetter`] are the second kind: the queue keeps them in every build, and the
+//! `testing` module alone exports them.
 
-use crate::clock::Timestamp;
-use crate::ids::{ConsumerId, Payload, PocketKey, Rank, RecordKey};
-use crate::lease_ids::LeaseId;
-use crate::records::HeldRecord;
+use crate::ids::{ConsumerId, HeldRecord, LeaseId, Payload, PocketKey, Rank, RecordKey};
+use crate::timestamp::Timestamp;
 
 /// One publish: the pocket, the record key, its rank and its payload.
 ///
 /// ```
-/// use libpachinko::ids::{Payload, PocketKey, Rank, RecordKey};
-/// use libpachinko::queue::Publication;
+/// use libpachinko::{Payload, PocketKey, Publication, Rank, RecordKey};
 ///
 /// let publication = Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(1), Payload::default());
 /// assert_eq!(publication.rank, Rank::new(1));
@@ -32,8 +31,7 @@ impl Publication {
     /// A publication with these parts.
     ///
     /// ```
-    /// use libpachinko::ids::{Payload, PocketKey, Rank, RecordKey};
-    /// use libpachinko::queue::Publication;
+    /// use libpachinko::{Payload, PocketKey, Publication, Rank, RecordKey};
     ///
     /// let publication = Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(1), Payload::default());
     /// assert_eq!(publication.pocket_key.as_str(), "pk");
@@ -57,7 +55,7 @@ impl Publication {
 /// Which publish rule took a publish.
 ///
 /// ```
-/// use libpachinko::queue::PublishOutcome;
+/// use libpachinko::PublishOutcome;
 /// assert_ne!(PublishOutcome::Created, PublishOutcome::Stale);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -78,7 +76,7 @@ pub enum PublishOutcome {
 /// What a pull hands back.
 ///
 /// ```
-/// use libpachinko::queue::PullOutcome;
+/// use libpachinko::PullOutcome;
 /// assert_eq!(PullOutcome::NoPocketAvailable, PullOutcome::NoPocketAvailable);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -105,9 +103,7 @@ pub enum PullOutcome {
 /// key, `expires_at` and the held records at their held rank and payload.
 ///
 /// ```
-/// use libpachinko::clock::Timestamp;
-/// use libpachinko::ids::PocketKey;
-/// use libpachinko::queue::LeaseView;
+/// use libpachinko::{LeaseView, PocketKey, Timestamp};
 ///
 /// let view = LeaseView::new(PocketKey::new("pk"), Timestamp::from_millis(5), Vec::new());
 /// assert_eq!(view.expires_at, Timestamp::from_millis(5));
@@ -127,9 +123,7 @@ impl LeaseView {
     /// A lease view with these parts.
     ///
     /// ```
-    /// use libpachinko::clock::Timestamp;
-    /// use libpachinko::ids::PocketKey;
-    /// use libpachinko::queue::LeaseView;
+    /// use libpachinko::{LeaseView, PocketKey, Timestamp};
     ///
     /// assert!(LeaseView::new(PocketKey::new("pk"), Timestamp::default(), Vec::new()).records.is_empty());
     /// ```
@@ -150,11 +144,20 @@ impl LeaseView {
 /// A pocket's state.
 ///
 /// ```
-/// use libpachinko::queue::PocketStatus;
+/// # #[cfg(feature = "testing")] {
+/// use libpachinko::testing::PocketStatus;
 /// assert_ne!(PocketStatus::Queued, PocketStatus::Parked);
+/// # }
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[cfg_attr(
+    not(feature = "testing"),
+    expect(
+        unreachable_pub,
+        reason = "exported by the testing module alone until open question 2 is answered"
+    )
+)]
 pub enum PocketStatus {
     /// In the pocket order, waiting for a consumer.
     Queued,
@@ -169,8 +172,7 @@ pub enum PocketStatus {
 /// A lease's state. `ended_at` exists only once it has ended.
 ///
 /// ```
-/// use libpachinko::clock::Timestamp;
-/// use libpachinko::queue::LeaseStatus;
+/// use libpachinko::{LeaseStatus, Timestamp};
 ///
 /// let ended = LeaseStatus::Released { ended_at: Timestamp::from_millis(1) };
 /// assert_ne!(ended, LeaseStatus::Active);
@@ -192,12 +194,15 @@ pub enum LeaseStatus {
     },
 }
 
-/// One lease, as the inspection seam and a lapse report show it.
+/// One lease, as a release and a lapse report hand it back, ended, and as the
+/// inspection seam shows it, active.
 ///
 /// ```
-/// use libpachinko::queue::LeaseStatus;
-/// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-/// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+/// use libpachinko::{LeaseStatus, PullOutcome};
+/// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+/// # use libpachinko::{
+/// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
+/// # };
 /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
 /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
 /// # let publisher = PublisherId::new("p");
@@ -206,12 +211,11 @@ pub enum LeaseStatus {
 /// # queue.consumer_joins(consumer.clone()).unwrap();
 /// # let publication = |rank| Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(rank), Payload::default());
 /// queue.publish(&publisher, publication(1)).unwrap();
-/// queue.pull(&consumer, 1).unwrap();
-/// # #[cfg(feature = "testing")] {
-/// let lease = &queue.snapshot().leases[0];
-/// assert_eq!(lease.status, LeaseStatus::Active);
+/// let Ok(PullOutcome::Batch { lease: id, .. }) = queue.pull(&consumer, 1) else { panic!() };
+/// let (_, lease) = queue.release(&consumer, id).unwrap();
+/// assert_eq!((lease.id, &lease.consumer_id), (id, &consumer));
+/// assert_eq!(lease.status, LeaseStatus::Released { ended_at: lease.granted_at });
 /// assert!(lease.granted_at <= lease.expires_at);
-/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -233,11 +237,20 @@ pub struct Lease {
 /// Why a payload became a superseded record.
 ///
 /// ```
-/// use libpachinko::queue::ShedReason;
+/// # #[cfg(feature = "testing")] {
+/// use libpachinko::testing::ShedReason;
 /// assert_ne!(ShedReason::Superseded, ShedReason::Stale);
+/// # }
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[cfg_attr(
+    not(feature = "testing"),
+    expect(
+        unreachable_pub,
+        reason = "exported by the testing module alone until open question 2 is answered"
+    )
+)]
 pub enum ShedReason {
     /// It lost a supersede.
     Superseded,
@@ -249,9 +262,12 @@ pub enum ShedReason {
 /// arrival (`EveryDropIsVisible`).
 ///
 /// ```
-/// use libpachinko::queue::ShedReason;
-/// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-/// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+/// # #[cfg(feature = "testing")] {
+/// use libpachinko::testing::ShedReason;
+/// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+/// # use libpachinko::{
+/// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
+/// # };
 /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
 /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
 /// # let publisher = PublisherId::new("p");
@@ -261,7 +277,6 @@ pub enum ShedReason {
 /// # let publication = |rank| Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(rank), Payload::default());
 /// queue.publish(&publisher, publication(2)).unwrap();
 /// queue.publish(&publisher, publication(1)).unwrap();
-/// # #[cfg(feature = "testing")] {
 /// let shed = &queue.snapshot().superseded[0];
 /// assert_eq!(shed.reason, ShedReason::Stale);
 /// assert!(shed.shed_at <= shed.expires_at);
@@ -269,6 +284,13 @@ pub enum ShedReason {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[cfg_attr(
+    not(feature = "testing"),
+    expect(
+        unreachable_pub,
+        reason = "exported by the testing module alone until open question 2 is answered"
+    )
+)]
 pub struct SupersededRecord {
     /// The pocket it was published into.
     pub pocket_key: PocketKey,
@@ -289,7 +311,7 @@ pub struct SupersededRecord {
 /// Which rule took an ack or nack.
 ///
 /// ```
-/// use libpachinko::queue::SettleOutcome;
+/// use libpachinko::SettleOutcome;
 /// assert_ne!(SettleOutcome::Settled, SettleOutcome::Deferred);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -307,7 +329,7 @@ pub enum SettleOutcome {
 /// Where a release left the pocket.
 ///
 /// ```
-/// use libpachinko::queue::PocketFate;
+/// use libpachinko::PocketFate;
 /// assert_ne!(PocketFate::Queued, PocketFate::Idle);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -324,9 +346,12 @@ pub enum PocketFate {
 /// A nacked payload, kept visible until it decays.
 ///
 /// ```
-/// use libpachinko::queue::{PullOutcome, SettleOutcome};
-/// # use libpachinko::{clock::FakeClock, config::Config, ids::*, lease_ids::CountingLeaseIds};
-/// # use libpachinko::{queue::{Publication, Queue}, records::MemoryRecords};
+/// # #[cfg(feature = "testing")] {
+/// use libpachinko::{PullOutcome, SettleOutcome};
+/// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
+/// # use libpachinko::{
+/// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
+/// # };
 /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
 /// # let mut queue: Queue<MemoryRecords, _, _> = Queue::new(Config::default(), clock, ids).unwrap();
 /// # let publisher = PublisherId::new("p");
@@ -337,7 +362,6 @@ pub enum PocketFate {
 /// queue.publish(&publisher, publication).unwrap();
 /// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&consumer, 1) else { panic!() };
 /// assert_eq!(queue.nack(&consumer, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Settled));
-/// # #[cfg(feature = "testing")] {
 /// let letter = &queue.snapshot().dead_letters[0];
 /// assert_eq!(letter.nacked_by, consumer);
 /// assert!(letter.nacked_at <= letter.expires_at);
@@ -345,6 +369,13 @@ pub enum PocketFate {
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
+#[cfg_attr(
+    not(feature = "testing"),
+    expect(
+        unreachable_pub,
+        reason = "exported by the testing module alone until open question 2 is answered"
+    )
+)]
 pub struct DeadLetter {
     /// The pocket the record was in.
     pub pocket_key: PocketKey,

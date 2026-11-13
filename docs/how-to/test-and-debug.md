@@ -27,6 +27,12 @@ INSTA_UPDATE=no cargo nextest run -p pachinko --all-features --locked -E 'test(r
 INSTA_UPDATE=no RUST_BACKTRACE=1 cargo nextest run -p libpachinko --all-features --locked -E 'test(name)'
 ```
 
+Without `--all-features` libpachinko's integration suites compile to nothing, and a run
+of the whole crate fails on `the_testing_feature_is_on`, the guard
+[Testing](../reference/testing.md#tests-from-the-specifications) describes. A filter
+that selects other tests leaves the guard out, and then nothing says the suites did not
+run.
+
 The doctests run through cargo, not nextest, and narrow the same way:
 
 ```console

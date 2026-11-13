@@ -6,7 +6,7 @@
 )]
 
 use libpachinko::records::MemoryRecords;
-use libpachinko::records::contract::check_contract;
+use libpachinko::testing::check_contract;
 
 #[test]
 fn memory_records_keep_the_records_contract() {

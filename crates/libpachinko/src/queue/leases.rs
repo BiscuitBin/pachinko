@@ -8,10 +8,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::types::{Lease, LeaseStatus};
-use crate::clock::Timestamp;
 use crate::error::LeaseActionError;
-use crate::ids::{ConsumerId, PocketKey};
-use crate::lease_ids::LeaseId;
+use crate::ids::{ConsumerId, LeaseId, PocketKey};
+use crate::timestamp::Timestamp;
 
 /// One active lease.
 #[derive(Clone, Debug)]
@@ -132,11 +131,10 @@ impl Leases {
 #[cfg(test)]
 mod tests {
     use super::{Active, Leases};
-    use crate::clock::Timestamp;
     use crate::error::LeaseActionError;
-    use crate::ids::{ConsumerId, PocketKey};
-    use crate::lease_ids::LeaseId;
+    use crate::ids::{ConsumerId, LeaseId, PocketKey};
     use crate::queue::types::LeaseStatus;
+    use crate::timestamp::Timestamp;
 
     fn lease(pocket: &str, expires_at: u64) -> Active {
         Active {

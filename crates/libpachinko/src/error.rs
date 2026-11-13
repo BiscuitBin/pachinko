@@ -1,14 +1,12 @@
 //! Why an operation was refused: one `thiserror` enum per operation, one variant per
 //! refusal (invariant 10).
 
-use crate::ids::{ConsumerId, PublisherId, Rank, RecordKey};
-use crate::lease_ids::LeaseId;
+use crate::ids::{ConsumerId, LeaseId, PublisherId, Rank, RecordKey};
 
 /// A refused join.
 ///
 /// ```
-/// use libpachinko::error::JoinError;
-/// use libpachinko::ids::PublisherId;
+/// use libpachinko::{JoinError, PublisherId};
 ///
 /// let error = JoinError::PublisherExists(PublisherId::new("p1"));
 /// assert_eq!(error.to_string(), "publisher p1 has already joined");
@@ -27,8 +25,7 @@ pub enum JoinError {
 /// A refused publish. A refused publish changes nothing.
 ///
 /// ```
-/// use libpachinko::error::PublishError;
-/// use libpachinko::ids::PublisherId;
+/// use libpachinko::{PublishError, PublisherId};
 ///
 /// let error = PublishError::UnknownPublisher(PublisherId::new("p1"));
 /// assert_eq!(error.to_string(), "publisher p1 has not joined");
@@ -44,8 +41,7 @@ pub enum PublishError {
     /// decision.
     ///
     /// ```
-    /// use libpachinko::error::PublishError;
-    /// use libpachinko::ids::{Rank, RecordKey};
+    /// use libpachinko::{PublishError, Rank, RecordKey};
     ///
     /// let error = PublishError::EqualRank { key: RecordKey::new("k"), rank: Rank::new(2) };
     /// assert!(error.to_string().contains("placeholder"));
@@ -63,11 +59,10 @@ pub enum PublishError {
 }
 
 /// A refused pull or lease read. Finding no pocket is not a refusal: that is
-/// [`PullOutcome::NoPocketAvailable`](crate::queue::PullOutcome::NoPocketAvailable).
+/// [`PullOutcome::NoPocketAvailable`](crate::PullOutcome::NoPocketAvailable).
 ///
 /// ```
-/// use libpachinko::error::PullError;
-/// use libpachinko::ids::ConsumerId;
+/// use libpachinko::{ConsumerId, PullError};
 ///
 /// let error = PullError::UnknownConsumer(ConsumerId::new("c1"));
 /// assert_eq!(error.to_string(), "consumer c1 has not joined");
@@ -85,8 +80,7 @@ pub enum PullError {
 /// lease's `expires_at` included.
 ///
 /// ```
-/// use libpachinko::error::LeaseActionError;
-/// use libpachinko::lease_ids::LeaseId;
+/// use libpachinko::{LeaseActionError, LeaseId};
 ///
 /// let error = LeaseActionError::LeaseNotActive(LeaseId::from_u128(1));
 /// assert_eq!(error.to_string(), "lease 00000000000000000000000000000001 is not active");
@@ -112,7 +106,7 @@ pub enum LeaseActionError {
 /// A configuration the config invariants exclude.
 ///
 /// ```
-/// use libpachinko::error::ConfigError;
+/// use libpachinko::ConfigError;
 ///
 /// assert_eq!(
 ///     ConfigError::MaxPullBatchZero.to_string(),
@@ -133,8 +127,7 @@ pub enum ConfigError {
 #[cfg(test)]
 mod tests {
     use super::{ConfigError, JoinError, LeaseActionError, PublishError, PullError};
-    use crate::ids::{ConsumerId, PublisherId, Rank, RecordKey};
-    use crate::lease_ids::LeaseId;
+    use crate::ids::{ConsumerId, LeaseId, PublisherId, Rank, RecordKey};
 
     #[test]
     fn every_variant_says_what_was_refused() {

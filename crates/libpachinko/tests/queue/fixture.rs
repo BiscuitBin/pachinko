@@ -6,16 +6,15 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use libpachinko::clock::{FakeClock, Timestamp};
-use libpachinko::config::Config;
-use libpachinko::error::{LeaseActionError, PublishError, PullError};
-use libpachinko::ids::{ConsumerId, Payload, PocketKey, Position, PublisherId, Rank, RecordKey};
-use libpachinko::lease_ids::{CountingLeaseIds, LeaseId};
-use libpachinko::queue::{
-    Lease, LeaseStatus, LeaseView, PocketFate, PocketStatus, PocketView, Publication,
-    PublishOutcome, PullOutcome, Queue, SettleOutcome, Snapshot, TickReport,
+use libpachinko::clock::FakeClock;
+use libpachinko::lease_ids::CountingLeaseIds;
+use libpachinko::records::{MemoryRecords, Position, RecordStatus, RecordView};
+use libpachinko::testing::{PocketStatus, PocketView, Snapshot};
+use libpachinko::{
+    Config, ConsumerId, HeldRecord, Lease, LeaseActionError, LeaseId, LeaseStatus, LeaseView,
+    Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome, PublisherId,
+    PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, TickReport, Timestamp,
 };
-use libpachinko::records::{HeldRecord, MemoryRecords, RecordStatus, RecordView};
 
 /// The instant every fixture starts at.
 pub(crate) const T0: Timestamp = Timestamp::from_millis(1_000_000);
@@ -322,7 +321,7 @@ pub(crate) mod invariants {
     }
 
     /// The active leases on the pocket.
-    fn active_on(s: &Snapshot, key: &libpachinko::ids::PocketKey) -> usize {
+    fn active_on(s: &Snapshot, key: &libpachinko::PocketKey) -> usize {
         s.leases
             .iter()
             .filter(|l| &l.pocket_key == key && l.status == LeaseStatus::Active)

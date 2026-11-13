@@ -19,6 +19,7 @@
     {"path": "explanation/architecture.md", "title": "Architecture", "kind": "explanation", "audience": ["contributor", "maintainer", "operator", "agent"], "canonical_for": ["system_architecture"], "requires": []},
     {"path": "explanation/layering.md", "title": "Layering and dependency direction", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["dependency_boundaries"], "requires": []},
     {"path": "explanation/specifications.md", "title": "Specifications", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["specification_model"], "requires": []},
+    {"path": "explanation/prior-art.md", "title": "Prior art", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["prior_art"], "requires": []},
     {"path": "explanation/security-model.md", "title": "Security model", "kind": "explanation", "audience": ["user", "contributor", "maintainer", "operator", "agent"], "canonical_for": ["security_model"], "requires": []},
     {"path": "explanation/quality-philosophy.md", "title": "Quality philosophy", "kind": "explanation", "audience": ["contributor", "maintainer", "agent"], "canonical_for": ["quality_philosophy"], "requires": []},
 

@@ -4,15 +4,15 @@
 //! tick, and the one strict order. Every tick goes through the fixture, which
 //! checks every state invariant and `ExpiriesWithinLimit` after it.
 
-use libpachinko::clock::{FakeClock, Timestamp};
-use libpachinko::error::{LeaseActionError, PublishError};
-use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-use libpachinko::lease_ids::{CountingLeaseIds, LeaseId};
-use libpachinko::queue::{
-    LeaseStatus, PocketFate, PocketStatus, Publication, PublishOutcome, PullOutcome, Queue,
-    SettleOutcome, TickReport,
-};
+use libpachinko::clock::FakeClock;
+use libpachinko::lease_ids::CountingLeaseIds;
 use libpachinko::records::RecordStatus;
+use libpachinko::testing::PocketStatus;
+use libpachinko::{
+    ConsumerId, LeaseActionError, LeaseId, LeaseStatus, Payload, PocketFate, PocketKey,
+    Publication, PublishError, PublishOutcome, PublisherId, PullOutcome, Queue, Rank, RecordKey,
+    SettleOutcome, TickReport, Timestamp,
+};
 
 use crate::counting::{Counting, recording};
 use crate::fixture::{Fixture, T0, consumer, invariants, keys, short_lease};
@@ -625,18 +625,18 @@ fn a_tick_examines_only_what_is_due() {
         queue.pull(&id, 10).unwrap();
     }
     clock.set(at(TTL));
-    let (report, calls) = recording(|| queue.tick());
+    let ((report, cost), calls) = recording(|| queue.tick_with_cost());
     assert_eq!(report.lapsed.len(), 3);
     assert_eq!(
         (report.decayed_superseded, report.decayed_dead_letters),
         (0, 0)
     );
     assert_eq!(
-        report.leases_examined, 4,
+        cost.leases_examined, 4,
         "the three due and the one that stopped the walk"
     );
     assert_eq!(
-        report.shed_examined, 1,
+        cost.shed_examined, 1,
         "the superseded backlog's one stopper; the dead letters are empty"
     );
     let due = ["r000", "r001", "r002"];

@@ -35,14 +35,12 @@
 
 use std::time::Duration;
 
-use libpachinko::clock::Timestamp;
-use libpachinko::error::{JoinError, LeaseActionError, PublishError, PullError};
-use libpachinko::ids::{ConsumerId, PublisherId, RecordKey};
-use libpachinko::lease_ids::LeaseId;
-use libpachinko::queue::{
-    Lease, LeaseView, PocketFate, Publication, PublishOutcome, PullOutcome, Queue, SettleOutcome,
-};
 use libpachinko::records::MemoryRecords;
+use libpachinko::{
+    ConsumerId, JoinError, Lease, LeaseActionError, LeaseId, LeaseView, PocketFate, Publication,
+    PublishError, PublishOutcome, PublisherId, PullError, PullOutcome, Queue, RecordKey,
+    SettleOutcome, Timestamp,
+};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::{EpochSerialLeaseIds, ServeError, SystemClock};
@@ -569,10 +567,10 @@ mod tests {
     use std::task::Poll;
     use std::time::Duration;
 
-    use libpachinko::config::Config;
-    use libpachinko::error::{JoinError, PublishError, PullError};
-    use libpachinko::ids::{ConsumerId, Payload, PocketKey, PublisherId, Rank, RecordKey};
-    use libpachinko::queue::{Publication, PublishOutcome, PullOutcome, Queue};
+    use libpachinko::{
+        Config, ConsumerId, JoinError, Payload, PocketKey, Publication, PublishError,
+        PublishOutcome, PublisherId, PullError, PullOutcome, Queue, Rank, RecordKey,
+    };
     use tokio::sync::mpsc::error::TrySendError;
     use tokio::sync::{mpsc, oneshot, watch};
 
