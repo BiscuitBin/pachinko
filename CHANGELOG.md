@@ -35,6 +35,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   release processed after its lease's `expires_at` but before the lapse succeeds. The
   root module keeps eight open questions, and decision 0019 confirms its five
   configuration defaults for the MVP.
+- `Queue::ack` resets its pocket's consecutive-expiry count, so only
+  `max_consecutive_expiries` lapses with no intervening ack, release or revive park a
+  pocket; lapses before an ack no longer count toward it. A nack, renew or pull leaves
+  the count. The specification gains open questions 10 and 11, ten in all, and says that
+  a pull within a lease extends it on an empty batch.
 
 ### Added
 
@@ -84,6 +89,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   except vulnerability fixes, with the pins that stay manual named in the handbook.
 
 ## pachinko [Unreleased][pachinko-unreleased]
+
+### Changed
+
+- An ack over HTTP resets the pocket's count of consecutive lapses that
+  `--max-consecutive-expiries` measures; a nack does not.
 
 ### Added
 

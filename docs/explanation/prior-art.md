@@ -226,7 +226,9 @@ and against no others.
 
 ## Evidence for the open questions
 
-The root module carries eight open questions. Each section below lists what comparable
+This research covers the eight questions the root module carried when it was done;
+questions 10 and 11 came later, from the wave's code review, and have no section here.
+Each section below lists what comparable
 systems do, in the module's order, and ends with what was not found. None of it answers
 a question: the questions stay the maintainer's, as
 [Specifications](specifications.md) explains. Items are one reader's unless marked.

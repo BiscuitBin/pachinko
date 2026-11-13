@@ -220,9 +220,10 @@ records, keyed by expiry and arrival for the decay.
 **The tick.** `Queue::tick` is the clock's trigger. It reads `now` once, walks the
 expiry index from its earliest entry and stops at the first one later than `now`, so a
 tick costs the leases due, never the leases active. Each due lease ends as expired and
-leaves the registry, so it lapses once; its pocket's expiry count rises, its held and
-deferred records return to queued, and the pocket parks at `max_consecutive_expiries`,
-keeps its position, which is the front, with records, or goes idle without. Then both
+leaves the registry, so it lapses once; its pocket's expiry count rises (an ack, a
+release or a revive resets it to 0), its held and deferred records return to queued, and
+the pocket parks at `max_consecutive_expiries`, keeps its position, which is the
+front, with records, or goes idle without. Then both
 shed queues decay by removing entries from the front while their `expires_at` has
 passed, stopping at the first that has not. A tick is
 one operation like any other, so it never interleaves with an action.

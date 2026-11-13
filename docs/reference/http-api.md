@@ -60,19 +60,32 @@ even when the same consumer has claimed the same pocket again under a new lease.
 removes a held record whose held version is still the latest (`settled`), or, when a
 newer version arrived while it was held, defers that newer version to the back of the
 pocket until the lease ends (`deferred`). A nack does the same and keeps the held
-version as a dead letter. Ack, nack and renew each move `expires_at` to now plus
-`--lease-ttl-ms`; a refused action moves nothing. A release ends the lease, returns its
-held and deferred records to queued in place, and requeues the pocket at the back
-(`queued`) or, with no records left, leaves it idle until a publish revives it (`idle`).
-No action checks `expires_at` against the clock: a late action the owner applies before
-the lapse succeeds (decision 0019).
+version as a dead letter. An ack also resets its pocket's count of consecutive lapses
+(below) to zero, and a nack leaves it. Ack, nack and renew each move `expires_at` to now
+plus `--lease-ttl-ms`; a refused action moves and resets nothing. A release ends the
+lease, returns its held and deferred records to queued in place, and requeues the pocket
+at the back (`queued`) or, with no records left, leaves it idle until a publish revives
+it (`idle`). No action checks `expires_at` against the clock: a late action the owner
+applies before the lapse succeeds (decision 0019).
+
+A pull under a lease extends it whatever the batch holds, an empty batch included. A
+pull that returns no records, because `limit` is zero or less or the pocket's records
+are all held or were all acked or nacked, still moves `expires_at` to now plus
+`--lease-ttl-ms` and keeps the pocket, so a consumer that pulls in a loop holds its
+pocket, emptied or not, until it releases the lease, as long as the owner applies each
+pull before the lease lapses: once `expires_at` has passed, a lapse applied first ends
+the lease as if no pull had come (below), so a loop that pulls less often than every
+`--lease-ttl-ms` can lose its pocket. The release is the client's to send. No pull
+claims an empty pocket: a pull without a lease claims only a queued pocket, which always
+has a record, and answers `no_pocket` when there is none.
 
 A lease nobody pulls under, acks, nacks or renews lapses: the service sweeps every
 `--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, returns its
 held and deferred records to queued in place and keeps the pocket at the front of the
-queue, so the next pull claims it. After `--max-consecutive-expiries` lapses in a row
-the pocket parks instead and no pull claims it until a publish into it; a pocket whose
-records were all acked or nacked goes idle below that count. The sweep is not instant:
+queue, so the next pull claims it. After `--max-consecutive-expiries` lapses with no
+ack, release or publish revival between them the pocket parks instead and no pull
+claims it until a publish into it; a pocket whose records were all acked or nacked goes
+idle below that count. The sweep is not instant:
 a lease can stay active past `expires_at` for up to one sweep, plus the application of
 the sweep in progress and of the command the owner is applying, and a sweep reads the
 time once, so a lease expiring while one runs waits for the next. A pull, ack, nack or
