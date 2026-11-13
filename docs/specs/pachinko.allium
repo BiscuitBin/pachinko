@@ -381,9 +381,9 @@ rule ReviveParkedPocket {
 -- before the lease lapses (see the Lease expiry comment), and releasing
 -- it is the consumer's action. That is intended. No lease is granted on
 -- an empty pocket: PullClaimsFrontPocket claims only a queued pocket,
--- every rule that makes a pocket queued creates a record or requires one,
--- and a pocket loses records only under an active lease, while it is
--- leased.
+-- every rule that makes a pocket queued creates a record, requires one
+-- or answers a publish that leaves one, and a pocket loses records only
+-- under an active lease, while it is leased.
 rule PullWithinLease {
     when: Pull(consumer, limit)
     let lease = Lease{consumer: consumer, status: active}
@@ -452,7 +452,8 @@ rule PullFindsNoPocket {
 -- An ack is progress: both ack rules reset the pocket's
 -- consecutive_expiries to 0, so lapses are consecutive only while no
 -- ack, release or revive comes between them. A nack, a renew and a pull
--- leave the count; the decision names the ack only.
+-- leave the count as the rules stand: the maintainer decided the ack
+-- only, and a reset on a nack is neither chosen nor ruled out.
 
 rule AckSettlesRecord {
     when: Ack(consumer, lease, record_key)

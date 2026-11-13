@@ -56,7 +56,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   has passed, in the time of the leases due rather than active, and reports them in
   `TickReport` with the superseded records and dead letters it decayed. A lapse keeps a
   pocket with records at the front, idles an empty one, and parks one after
-  `max_consecutive_expiries` lapses in a row, until a publish revives it.
+  `max_consecutive_expiries` lapses with no ack, release or revive between them, until
+  a publish revives it.
 - The lease actions: `Queue::ack`, `Queue::nack`, `Queue::renew` and `Queue::release`,
   each fenced to the lease it names and refusing, in rule order, with
   `LeaseActionError` (`UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`,

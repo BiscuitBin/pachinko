@@ -69,15 +69,15 @@ it (`idle`). No action checks `expires_at` against the clock: a late action the 
 applies before the lapse succeeds (decision 0019).
 
 A pull under a lease extends it whatever the batch holds, an empty batch included. A
-pull that returns no records, because `limit` is zero or less or the pocket's records
-are all held or were all acked or nacked, still moves `expires_at` to now plus
-`--lease-ttl-ms` and keeps the pocket, so a consumer that pulls in a loop holds its
-pocket, emptied or not, until it releases the lease, as long as the owner applies each
-pull before the lease lapses: once `expires_at` has passed, a lapse applied first ends
-the lease as if no pull had come (below), so a loop that pulls less often than every
-`--lease-ttl-ms` can lose its pocket. The release is the client's to send. No pull
-claims an empty pocket: a pull without a lease claims only a queued pocket, which always
-has a record, and answers `no_pocket` when there is none.
+pull that returns no records, because `limit` is zero or less or the pocket has no
+queued record left (each is held or deferred, or none remains), still moves `expires_at`
+to now plus `--lease-ttl-ms` and keeps the pocket, so a consumer that pulls in a loop
+holds its pocket, emptied or not, until it releases the lease, as long as the owner
+applies each pull before the lease lapses: once `expires_at` has passed, a lapse applied
+first ends the lease as if no pull had come (below), so a loop that pulls less often
+than every `--lease-ttl-ms` can lose its pocket. The release is the client's to send. No
+pull claims an empty pocket: a pull without a lease claims only a queued pocket, which
+always has a record, and answers `no_pocket` when there is none.
 
 A lease nobody pulls under, acks, nacks or renews lapses: the service sweeps every
 `--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, returns its
