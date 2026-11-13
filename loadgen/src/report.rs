@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn the_rate_is_per_second_of_the_elapsed_time() {
-        assert_eq!(per_second(500, Duration::from_millis(250)), 2_001);
+        assert_eq!(per_second(500, Duration::from_millis(250)), 2_000);
         assert_eq!(per_second(7, Duration::ZERO), 7_000_000);
     }
 
