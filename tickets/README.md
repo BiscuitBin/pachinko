@@ -57,7 +57,7 @@ snapshot.
 | T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | done |
 | T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | todo |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
-| T35 | Decide and land the held-version shed (Q1) and stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
+| T35 | Land the held set that lasts until the lease ends (Q1, decided), and decide the stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -177,7 +177,10 @@ the MVP wave.
   default-features doctests, untracked files, quoted evidence and loadgen in CI. T32,
   T33 and T34 are parallel lanes on the wave-2 rule, each editing only its own lines in
   the shared files (CONVENTIONS.md §11). T35 decides Q1 and Q2 and lands the decision;
-  it waits for T32 because both edit `docs/specs/pachinko.allium`.
+  it waits for T32 because both edit `docs/specs/pachinko.allium`. The maintainer
+  decided Q1 on 2026-11-13 with a design outside the ticket's options, which also closes
+  open question 9: a record stays held until its lease ends. T35 was rewritten around
+  that decision, and its specification is on the ticket's branch.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex
