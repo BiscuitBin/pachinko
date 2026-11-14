@@ -567,8 +567,18 @@ Commits on the branch:
 | `b0e5c30` | Step 7: the handbook |
 | `7d637ac` | the T32-2 fix |
 | `2681bd6` | the `code-review` fixes |
+| `9292852`, `62efe41` | the hand-back and its requote (this ticket and its row in `tickets/README.md`) |
+| `1760ba722b70e02c458661662b1f231ee3814afa` | Close-out: the merge of `origin/wave-2-tickets` |
+| `95d0193` | Close-out: the `CHANGELOG.md` heading fold the merge needed |
+| `1c04851` | Close-out: the `spec-change` skill wording |
+| `6ed06c3` | Close-out: the `lease_not_active` sentence |
+| `071b15a` | Close-out: CR5's four places |
+| `292eecf` | Close-out: CR7's two HTTP tests |
+| `ef08423` | Close-out: the second `code-review` fixes |
+| `fddc65a` | Close-out: the T32-3 fixes; the final code commit |
 
-The final commit carries this section and `status:`.
+The final commit carries this section and `status:`. The commits after `fddc65a` carry
+the Close-out section and change only this ticket.
 
 ### Overrides of the ticket's assumptions
 
@@ -744,7 +754,8 @@ At `2158750`:
 
 The bites first ran at `2158750`. The `code-review` round then rewrote S063, which made
 those quotes stale (§11), so every bite was rerun at `9292852`, after the round, and the
-quotes below are from that run.
+quotes below are from that run. The merge under Close-out made them stale in turn: the rerun
+at `fddc65a` is under Close-out and supersedes this table.
 
 Each bite was a scratch edit on `9292852`, run with `NEXTEST_PROFILE=ci just test` (exit
 100 each) and restored with `git checkout -- <file>`. After each,
@@ -877,12 +888,13 @@ It raised no finding beyond the ones above.
 branch point, and `origin/main` (`611a86e`) is already an ancestor. `git merge
 origin/wave-2-tickets` and `git merge origin/main` each printed "Already up to date." and
 exited 0, so there is no merge commit and no T33 or T34 lines to reconcile. Merging
-`origin/main` stays a no-op until pull request 40 lands.
+`origin/main` stays a no-op until pull request 40 lands. This no longer holds: the base
+moved, and Close-out records the merge.
 
 **The Verification block** was rerun at `2681bd6`. The worktree was clean (`git status
 --short` printed nothing) and the merge was a no-op, so `2681bd6` is the merge point. It
-ran with `base=53d64b7` and line 528 in its fixed form. This is the abridged output, each
-line with its exit status:
+ran with `base=53d64b7` and line 528 in its fixed form. The run at `fddc65a` under
+Close-out supersedes it. This is the abridged output, each line with its exit status:
 
 ```text
 just check-specs                                  exit 0
@@ -924,6 +936,312 @@ All checks passed and the worktree is unchanged.
 
 The final commit changes only this ticket and T32's row in `tickets/README.md`.
 
+### Close-out, 2026-11-13
+
+The hand-back above left the maintainer five things to settle. They were settled on
+2026-11-13, and this section records the answers and the work they authorised, which ran
+into 2026-11-14. The branch took new commits only, because `ticket/t35-decide-q1-q2` is
+stacked on `62efe41`: no rebase, no amend, no force-push.
+
+**The baseline.** At `62efe41`, on the untouched worktree, `just check` exited 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+**The decisions.** Each answer is the maintainer's, verbatim, to the question asked:
+
+| # | Question | Answer |
+| --- | --- | --- |
+| 1 | What happens to the three edits outside Files touched (`docs/explanation/prior-art.md`, `README.md`, `crates/libpachinko/src/queue/inspect.rs`)? | "Accept as recorded" |
+| 2 | Accept `2681bd6`, which landed after T32-2, or run one more §14 round over `git diff 7d637ac..2681bd6`? | "Run one section 14 round" |
+| 3 | The base moved past the branch point `53d64b7`: merge it and rerun Verification in this session? | "Fetch and merge now" |
+| 4 | Should a nack reset a pocket's `consecutive_expiries`? | "Yes: a nack resets too" |
+| 5 | Where does the nack reset land, since it is a specification change and cannot land here? | "T35" |
+| 6 | Should the specification state `QueuedHasRecords` as an invariant? | "Yes, in a ticket after T35" |
+| 7 | Which of the four handed-back wording and test points are fixed on this branch now, in new commits outside Files touched? | All four: "spec-change skill wording", "lease_not_active sentence", "CR5: four \"consecutive\" places", "CR7: HTTP test of the ack reset" |
+| 8 | CR5's wording and CR7's test state the nack reading decision 4 goes against, while the rules here still say a nack leaves the count: how are the two written on this branch? | "Both halves, as the rules stand" |
+
+The maintainer's note on decision 4, in full:
+
+> Because the consecutive_expiries feature is mean to capture pockets that keep killing
+> workers (unrecoverable bugs), And cordon them off to avoid unnecessary churn and
+> turbulence, in a situation where we may or may not be able to attribute the issue to a
+> specific record. NACKs, while they are a negative for an individual record, they are
+> still a part of the natural and expected workflow/lifecycle. Individual records can be
+> cracked without affecting the other records in the pocket.
+
+Decision 7 authorises six files outside Files touched:
+
+- `.agents/skills/spec-change/SKILL.md`
+- `docs/reference/configuration.md`
+- `docs/project/terminology.md`
+- `crates/libpachinko/src/config.rs`
+- `crates/libpachinko/src/queue/types.rs`
+- `crates/pachinko/tests/http.rs`
+
+Nothing in this section changes a rule. Open questions 10 and 11, the comment above
+`PublishNewKey` and the nack rules are T35's, and `docs/specs/pachinko.allium` is
+untouched since `2681bd6`.
+
+**The merge.** `git fetch origin` exited 0 and moved `origin/wave-2-tickets` from
+`c0f28e8` to `ba070546a948417948f35c0d0e10d9acddea3c14` (pull requests 45 and 47, T34),
+called the base head below. The incoming diff from `53d64b7` to the base head was read
+before merging: ten files, none of them `docs/specs/pachinko.allium`,
+`tickets/README.md` or a lockfile, and it adds no scenario id and no catalog row.
+`git merge --no-ff origin/wave-2-tickets` made the merge commit,
+`1760ba722b70e02c458661662b1f231ee3814afa`, with no textual conflict. Both hashes are
+written in full because the spell checker reads their seven-character forms as a
+misspelt word.
+
+At the merge commit, `just check` exited 1 at gate 3:
+
+```text
+CHANGELOG.md:133 error MD024/no-duplicate-heading Multiple headings with the same content [Context: "Changed"]
+error: recipe `lint` failed on line 295 with exit code 1
+error: recipe `check` failed on line 431 with exit code 1
+```
+
+Both sides had added a `### Changed` heading under pachinko Unreleased: this ticket
+before `### Added`, T34 after it. `95d0193` removes this ticket's heading and moves its
+one bullet to the end of T34's list; T34's lines are unchanged. The merge commit itself
+stays red, because the branch takes no amend. At `95d0193`, `just check` exited 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+A second `git fetch origin`, after the last code commit, left `origin/wave-2-tickets` at
+the base head, already an ancestor, so there is one merge.
+
+**The four fixes** (decision 7), each true to the rules as they stand on this branch:
+
+- **The skill wording, `1c04851`.** Step 1 of `.agents/skills/spec-change/SKILL.md` now
+  reads "Today there is one, `docs/specs/pachinko.allium`, the root, which holds the
+  queue domain." The frontmatter and the bridges are unchanged, and `just check-agents`
+  exited 0 ("Validated AGENTS.md, 2 adapters, and 14 skills.").
+- **The `lease_not_active` sentence, `6ed06c3`**, reworded by the two reviews below. The
+  paragraph of `docs/reference/http-api.md` now says an ack, nack, renew or release
+  already waiting at the lapse gets `lease_not_active`, the old lease is
+  `lease_not_active` "to every lease route", and a pull, which names no lease, claims a
+  pocket under a new lease or answers `no_pocket` (`PullClaimsFrontPocket`,
+  `PullFindsNoPocket`).
+- **CR5, `071b15a`.** The four places name what breaks a run of lapses:
+  - `crates/libpachinko/src/config.rs:69` and `docs/reference/configuration.md:39`:
+    "How many lease expiries, with no ack, release or revive between them, park a
+    pocket; at least 1."
+  - `crates/libpachinko/src/queue/types.rs:168` and `docs/project/terminology.md:36`:
+    "set aside after `max_consecutive_expiries` lease expiries with no ack, release or
+    revive between them, until a publish revives it".
+
+  The Open point gave the third path as `crates/libpachinko/src/types.rs`; the file is
+  `crates/libpachinko/src/queue/types.rs`. `just fmt-check`, `just clippy`, `just doc`,
+  `just check-docs` and `just test-doc-default` exited 0.
+- **CR7, `292eecf`.** Two tests in `crates/pachinko/tests/http.rs`, at
+  `--max-consecutive-expiries 2` and `--sweep-ms 10`, sharing one opening that lets the
+  pocket's first lease lapse and claims it again:
+  - `an_ack_resets_the_expiry_count_over_http` (driver `ack_resets_count`), S077's wire
+    half: an ack of `k1` before the second lapse, and the next pull claims the pocket
+    under a third lease and receives `k2`.
+  - `a_nack_leaves_the_expiry_count_over_http` (driver `nack_keeps_count`), S064's wire
+    half, the nack alone: a nack of `k1` before the second lapse, and the next pull
+    answers `no_pocket`. That answer alone would also follow an emptied pocket, so a
+    publish of `k3` then revives the pocket and the pull after it receives `k2` then
+    `k3`: the pocket parked with its record in it.
+
+  The lapse poll of the older lapse test became the helper `wait_for_lapse`, which all
+  three drivers use. `docs/reference/testing.md` tags rows S064 and S077 `edge, wire`
+  and counts twelve `wire` scenarios; the catalog still has 77 rows.
+
+**`review-change`**, over the diff from the merge commit to `HEAD`, at `292eecf`: no
+public type, dependency, effect or `unsafe` was added, no file under `crates/*/src`
+changed beyond two doc comments, and `just effects` exited 0. It raised no finding.
+
+**`/code-review high`** ran over the range from the merge commit to `292eecf`, as a
+read-only Claude agent. The skill's pass read the source and ran nothing; the agent
+wrapping it ran `just test` three times (244 passed each), `just check-docs` and
+`just check-agents`. Nine findings, none a correctness bug, triaged by the lead; the
+fixes are in `ef08423`:
+
+- **CRB1 (low, partly valid).** The two tests race a real lease: a stall longer than the
+  lease between a pull and its ack or nack fails them with no defect. No timing change
+  here; T32-3 raised it again (C1) and fixed it.
+- **CRB2 (low, valid).** `wait_for_lapse` asserted its deadline before reading the
+  answer, so a 404 or a 500 would spin to the deadline and be reported as "the lease
+  never lapsed". It now reports an unexpected answer as itself.
+- **CRB3 (valid as a description).** The ticket still listed the four fixed points as
+  open and recorded neither the six files nor the new bites. This section is that
+  record.
+- **CRB4 (low, valid).** S064 is tagged `wire` but its driver exercises the nack alone.
+  The catalog row now says "the nack alone".
+- **CRB5 (low, partly valid).** The ack test did not assert a third lease; it now does.
+  Its control that the limit of 2 took effect stays the nack test on the same flags.
+- **CRB6 (low, partly valid).** The new flags comment said "consecutive"; fixed. The
+  older loose summaries are outside the four places CR5 names and are handed back.
+- **CRB7 (low, valid).** The pull sentence split "Recovery ... therefore takes
+  `--lease-ttl-ms` plus that window" from its window. It moved to the end of the
+  paragraph.
+- **CRB8 (low, valid; handed back).** `docs/reference/configuration.md:38`, older text.
+- **CRB9 (low, valid).** The drivers now also tag
+  `rule-success.LeaseExpiryKeepsPocketAtFront` and `rule-success.ReviveParkedPocket`.
+
+At `292eecf` with those changes uncommitted, `just fmt-check`, `just clippy`,
+`just test` (244 of 244), `just metrics` and `just check-docs` exited 0.
+
+**T32-3** (decision 2), last, so that only ticket commits follow the last review. The
+reviewers were `codex exec -m gpt-6-astra -s read-only`, one per lens, at `ef08423` with
+a clean worktree, over `git diff 7d637ac..2681bd6` and the diff from the merge commit to
+`HEAD`. The second diff was added so that this session's fixes did not repeat
+`2681bd6`'s gap. The brief named the six authorised files and carried no hand-back
+conclusion. Neither reviewer could build: the sandbox's rustc was 1.96.0 against the
+crates' 1.99, so their mutation reasoning is from the source and the bites below are the
+run evidence.
+
+On Diff A (`7d637ac..2681bd6`) neither lens raised a finding: only specification
+comments changed and both agree with the rules; S063 still pins its scenario and fails
+each of the three mutations asked about; the changelog and the empty-batch paragraph
+agree with the rules. On Diff B there were four distinct findings. A fresh subagent,
+neither a reviewer nor the lead, triaged each against the tree, wrote the verdicts and
+applied the fixes one at a time; the lead read the diff and committed it as `fddc65a`:
+
+- **C1 and B1 (medium, valid).** The 300 ms lease of the two new tests. A stall of the
+  test thread longer than the lease between the second pull and the ack or nack gets a
+  correct `lease_not_active` and fails the test with no defect; it cannot pass falsely.
+  Nobody has seen it fail. Fixed: `--lease-ttl-ms 1000`. The service's only clock is
+  the real one, so no fix inside the scope guard removes the race; the cost is below,
+  under Open points.
+- **C2 and B2 (low, valid).** CRB2's fix let `wait_for_lapse` accept a 204 read after
+  its deadline, which the loop it was lifted from did not. It now reads the answer,
+  reports an unexpected one as itself, and then refuses a 204 or a 200 read after the
+  deadline. A scratch control forcing a late 204 failed all three tests that use the
+  helper with "the lease lapsed, but after the deadline", and was restored.
+- **C3 (low, valid).** The flags comment said the action "must be applied within
+  300 ms" and "cannot pass late"; an action after `expires_at` but before the lapse
+  succeeds (decision 0019). The comment now names the race with the lapse.
+- **C4 (low, valid).** "is handed the lapsed pocket's records again" ignored the pull's
+  limit. The sentence now adds "up to its `limit` and none at zero or less".
+
+Nothing was handed back by the triage. No finding was high, so there was no second
+round. At `ef08423` with those changes uncommitted, `just fmt-check`, `just clippy`,
+`just test` (244 of 244), `just metrics` and `just check-docs` exited 0. The raw files
+are under `ai_tmp/review/T32-3/`.
+
+**The bites, at `fddc65a`.** The merge and the fix rounds made the quotes at `9292852`
+stale, so all seven bites of Step 6's table and the two new ones were rerun at the final
+code commit. Each was a scratch edit, run with `NEXTEST_PROFILE=ci just test` (exit 100
+each) and restored with `git checkout -- <file>`; after each, `git diff --stat -- crates`
+printed nothing. Bite 1 and the new ack bite are the same scratch edit, so they are one
+run.
+
+| Bite | Scratch edit | Failing tests, by assertion label |
+| --- | --- | --- |
+| 1, and the new ack bite | reset removed from `Queue::ack` | S077 "a settling ack" (`(Leased, 1)`, not `(Leased, 0)`); S063 "acked" (`(Parked, 3, 0)`, not `(Idle, 1, 0)`); both walk tests at "the state the rules predict"; `an_ack_resets_the_expiry_count_over_http` at "the pocket is still queued after its second lapse" (`no_pocket`, not a batch for `pk`) |
+| 2 | reset moved into `settle_held` | S064 "after the nack" (0, not 1); S063 "nacked" (`(Idle, 1, 0)`, not `(Parked, 3, 0)`); both walk tests; `a_nack_leaves_the_expiry_count_over_http` at "the pocket parked at its second lapse" |
+| 3 | reset in `ack` before the `RecordNotHeld` guard | S077 in `Fixture::refused`, "a refused action changed the queue"; both walk tests |
+| 4a | reset added to `Queue::renew` | S064 "after the renew" (0, not 1); both walk tests |
+| 4b | reset added to the pull within a lease | S064 "after that pull" (0, not 1); both walk tests |
+| 5 | the two `turn.reach` calls removed | only `the_walk_reaches_every_state_and_every_outcome`, "never reached": `["ack resets a counted pocket", "nack keeps a counted pocket"]` |
+| CR6a | an empty pocket never parks | S063 "limit 1, acked" (`(Idle, 1, 0)`, not `(Parked, 1, 0)`); `every_invariant_holds_after_every_step_of_any_walk` |
+| the new nack bite | reset added to `Queue::nack` | `a_nack_leaves_the_expiry_count_over_http` at "the pocket parked at its second lapse" (a batch for `pk` holding `k2`, not `no_pocket`); S064 "after the nack"; S063 "nacked"; both walk tests |
+
+Each run was 244 tests. Every test the table names failed, no other test failed, and the
+library failures are at the same labels and values as at `9292852`. The ack test over
+HTTP passes under bite 2 and under the new nack bite, and the nack test passes under
+bite 1, so each wire test answers to its own rule.
+
+After the bites were restored, at `fddc65a` with a clean worktree, `just test` ran 20
+times and `just coverage` 20 times: 20 of 20 exited 0 in each, every run "244 tests run:
+244 passed, 0 skipped". The same 20 and 20 had passed at `071b15a` with the first version
+of the two tests uncommitted, at a 300 ms lease.
+
+**The Verification block** was rerun at `fddc65a`, the final code commit, with a clean
+worktree and `base=$(git merge-base HEAD origin/wave-2-tickets)`, which is the base head. It
+supersedes the run at `2681bd6` above. This is the abridged output, each line with its
+exit status:
+
+```text
+just check-specs                                  exit 0
+just analyse-specs                                exit 0
+just plan-spec pachinko > plan-after.json         exit 0
+jq '.obligations | length' before after           190 / 190, exit 0
+jq '.diagnostics | length' plan-after.json        0, exit 0
+wc -l ids-before.txt ids-after.txt                190 / 190
+diff ids-before.txt ids-after.txt                 (nothing), exit 0
+wc -l < ids-new.txt                               0; the UNTAGGED loop prints nothing
+rg -n 'scenario: S077' -A6 expiry.rs              line 417, exit 0
+rg -c '^open question '                           10, exit 0
+rg -n 'T35' pachinko.allium                       lines 916, 917, exit 0
+positive control rg -c 'scenario: S[0-9]+'        expiry.rs:20 lease.rs:12 publish.rs:12 ..., exit 0
+scenario set vs S001..S077                        (nothing), exit 0
+duplicate scenario tags (uniq -d)                 (nothing), exit 0
+catalog rows                                      77, exit 0
+git diff "$base" -- spec http-api                 exit 0 (148 lines)
+git diff "$base" -- spec > spec-diff.txt          exit 0 (must be 0; 84 lines)
+rg URL in spec-diff.txt                           exit 1 (1 when the module gains no URL)
+-B8 PullWithinLease | rg 'empty pocket'           line 383, exit 0 (must be 0)
+rg -i 'empty batch' http-api.md                   lines 39, 71, exit 0 (must be 0)
+stale search on the base head (positive control)  7 hits (expiry.rs:400, prior-art.md:229,
+                                                  specifications.md:56, work-with-the-specs.md:64
+                                                  and :75, testing.md:176 and :249), exit 0
+stale search on the branch                        (nothing), exit 1
+just fmt-check / clippy / test / doc              exit 0 each; 244 of 244 tests
+just effects / metrics / coverage                 exit 0 each; coverage 99.09% of lines
+just check-docs                                   exit 0, "Validated 47 pages and 48 canonical topics."
+just check                                        exit 0
+git status --short                                (nothing), exit 0
+```
+
+`just check`'s last line, at `fddc65a`:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+The first `git diff "$base"` line went to a scratch file with its exit status and line
+count instead of the terminal; nothing else departs from the block. `just check` now has
+twenty gates: T34's `test-doc-default` runs every doctest with default features.
+
+**Looser summaries seen and left.** These say "consecutive" or "in a row" without naming
+what resets the count. None is false, and none is among the four places CR5 names:
+
+- `docs/how-to/work-with-the-specs.md:20`, "parking after consecutive expiries";
+- `docs/explanation/specifications.md:38`, "consecutive lapses park the pocket";
+- `docs/specs/pachinko.allium:62`, the header's "set aside after consecutive lease
+  expiries";
+- `CHANGELOG.md:77`, an older Added bullet's "after consecutive lease expiries";
+- `crates/libpachinko/benches/workloads.rs:35` and `:79`, workload W5, which never acks;
+- `docs/reference/testing.md`, S062's title, "Three consecutive lapses park the pocket";
+- `tickets/T28-invariant-walk.md` says "ten `wire` ids" in five places, as T28's record
+  of the catalog when it was written; the catalog now has twelve.
+
+**What T35 must flip** (decisions 4 and 5). This branch merges saying a nack leaves the
+count, which is true of its rules and stale as a decision until T35 lands. T35's ticket
+still lists the nack reset as a Non-goal; that edit is the maintainer's, in T35's
+worktree. When the nack rules gain the reset, these follow:
+
+- the two nack rules in `docs/specs/pachinko.allium`, and the ack paragraph's "A nack, a
+  renew and a pull leave the count as the rules stand" and "a reset on a nack is neither
+  chosen nor ruled out" (lines 454 to 456);
+- S063's "nacked" case and S064's "after the nack" assertion in
+  `crates/libpachinko/tests/queue/expiry.rs`, S064's title in the catalog, and the
+  walk's model and its reach label "nack keeps a counted pocket"
+  (`crates/libpachinko/tests/queue/walk.rs:957`, `invariants.rs:405`);
+- `a_nack_leaves_the_expiry_count_over_http` in `crates/pachinko/tests/http.rs`, which
+  is a red wire test to start from, with its S064 row in the catalog;
+- `Queue::nack` and the docs in `crates/libpachinko/src/queue/settle.rs` ("a nack leaves
+  it", line 3);
+- `docs/reference/http-api.md:64`, "a nack leaves it";
+- `CHANGELOG.md:40`, "A nack, renew or pull leaves the count", and `:137`, "a nack does
+  not";
+- every sentence that lists the resets as "ack, release or revive":
+  `crates/libpachinko/src/config.rs:69`, `crates/libpachinko/src/queue/types.rs:168`,
+  `crates/libpachinko/src/queue/inspect.rs:47`, `docs/reference/configuration.md:39`,
+  `docs/project/terminology.md:36`, `docs/reference/http-api.md:86`, `README.md:108`,
+  `CHANGELOG.md:39` and `:59`, and the comment on `PARK_AT_TWO` in
+  `crates/pachinko/tests/http.rs`.
+
+The commits after `fddc65a` change only this ticket.
+
 ## Open points
 
 - The nack reading is unconfirmed: the maintainer's decision names the ack, so a nack,
@@ -931,10 +1249,17 @@ The final commit changes only this ticket and T32's row in `tickets/README.md`.
   reading. A nack is also a consumer's progress; if the maintainer wants it to reset the
   count, that is a specification change to the two nack rules and those two tests.
   Owner: maintainer.
+  - **Decided 2026-11-13: a nack resets too, and the change lands in T35** (Close-out,
+    decisions 4 and 5). Nothing changed on this branch, whose rules, tests and prose
+    still say a nack leaves the count. "What T35 must flip" under Close-out lists what
+    follows the rule. T35's ticket still lists the nack reset as a Non-goal; that edit
+    is the maintainer's. Owner: T35.
 - Open questions 10 and 11 (Q1, Q2 above) stay open; T35 decides them.
 - "A queued pocket has a record" holds by reachability, which the `PullWithinLease`
   comment states; an invariant such as `QueuedHasRecords` would make it checked and add
   obligations. Owner: maintainer.
+  - **Decided 2026-11-13: yes, in a ticket after T35** (Close-out, decision 6). Owner:
+    that ticket.
 - No scenario pins a within-lease pull on a pocket emptied by acks or nacks; S036 and
   S067's pull half pin the extension on an empty batch of a pocket that still holds
   records. Owner: maintainer, with T35 or a later ticket.
@@ -942,6 +1267,7 @@ The final commit changes only this ticket and T32's row in `tickets/README.md`.
   "the placeholder", "which declares no behaviour"; T31's handbook search did not cover
   `.agents/`. A skill edit takes `just check-agents` and is outside this ticket. Owner:
   maintainer.
+  - **Fixed in `1c04851`** (Close-out, decision 7).
 - Handed back by T32-1 (B3's imprecision in older text): the comment above
   `PublishNewKey` (`docs/specs/pachinko.allium` line 278) says "Every publish into an
   existing pocket emits PocketTouched". A publish at the stored rank matches no rule and
@@ -962,12 +1288,50 @@ The final commit changes only this ticket and T32's row in `tickets/README.md`.
 
   The spec now defines consecutive this way, so none of the four is false. Owner:
   maintainer, or a follow-up ticket.
+  - **Fixed in `071b15a`** (Close-out, decision 7). The fourth path is
+    `crates/libpachinko/src/queue/types.rs:168`. Each sentence names today's resets, so
+    each is on the list of what T35 must flip.
 - Handed back by `code-review` CR7: no test in `crates/pachinko` shows that an ack over
   HTTP resets the count and a nack does not, which the pachinko `CHANGELOG.md` bullet
   claims. It holds by construction, since the service's lease routes call `Queue::ack`
   and `Queue::nack`. The fix is an HTTP test with `--max-consecutive-expiries 2` and
   lapses around an ack. Owner: maintainer, or a follow-up ticket.
+  - **Fixed in `292eecf`**, reworked by `ef08423` and `fddc65a` (Close-out, decisions 7
+    and 8): one test for the ack and one for the nack, as the rules stand. The nack test
+    goes red when T35 lands the nack reset.
 - Found by the handbook pass: `docs/reference/http-api.md` lines 93 to 95 say an action
   already waiting at the lapse gets `lease_not_active`. That is wrong for a pull, which
   names no lease: a pull applied after the lapse claims a pocket afresh or answers
   `no_pocket`. This is older text, outside T32's own lines. Owner: maintainer.
+  - **Fixed in `6ed06c3`**, reworded by `ef08423` and `fddc65a` (Close-out, decision 7).
+- Found by the close-out's `code-review` (CRB8): `docs/reference/configuration.md:38`
+  says `--lease-ttl-ms` is "how long a lease lasts after its claim or its consumer's
+  last pull". An ack, a nack and a renew extend it too, as `Config::lease_ttl`'s doc and
+  `docs/reference/http-api.md` say. Older text, on the page that owns the flag, and not
+  the line decision 7 authorised. Owner: maintainer, or a follow-up ticket.
+- From T32-3 (C1, B1): the two HTTP expiry-count tests race a real lease. At
+  `--lease-ttl-ms 1000` only a stall of the test thread longer than a second, between a
+  pull and the ack or nack after it, fails them, and it fails them with no defect in the
+  queue; they cannot pass falsely.
+  - The cost: each test waits the lease out twice, about 2 s. `just test`'s nextest
+    summary went from about 1.1 s to about 2.3 s.
+  - The weekly `just mutants` job runs `cargo test` per mutant, so each mutant whose run
+    reaches the HTTP test binary pays the wait. The triage's upper bound is 5.7 minutes
+    more, or 11.2 if cargo-mutants tests the whole workspace per mutant; that is
+    arithmetic from `just mutants --list` (246 and 232 mutants), not a measured run, and
+    the job's present duration is not recorded. `docs/reference/quality-gates.md` says
+    to raise the job's thirty-minute timeout when the step takes more than half of it.
+  - Only a clock the test controls removes the race, and `serve` builds the real
+    `SystemClock`; that is a change to the service, outside this ticket.
+
+  Owner: maintainer.
+- Noted by the T32-3 triage: `wait_until_ready` in `crates/pachinko/tests/http.rs`
+  returns on its 204 before it checks its deadline, the shape C2 fixed in
+  `wait_for_lapse`. It is older code and no finding names it. Owner: maintainer, or a
+  follow-up ticket.
+- The looser summaries of "consecutive" that the close-out saw and left are listed under
+  Close-out. Owner: maintainer, or T35 where it rewrites those sentences.
+- The merge commit fails `just check` at gate 3 (MD024 in `CHANGELOG.md`), and
+  `95d0193`, the next commit, fixes it; the branch takes no amend because T35 is stacked
+  on it. A bisect across the branch can land on the red commit. Owner: maintainer, when
+  choosing how the pull request merges.
