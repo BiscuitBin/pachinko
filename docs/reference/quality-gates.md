@@ -18,7 +18,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
 | 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `loadgen/Cargo.toml` with `loadgen/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
-| 3 | `lint` | `prek run --all-files` | The whole hook gate passes over every file. |
+| 3 | `lint` | `prek run --all-files`, then `prek run --files` over every untracked file Git does not ignore | The whole hook gate passes over every tracked file, and every hook that reads the files it is given passes over every untracked file Git does not ignore. |
 | 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every Rust file, the fuzz and loadgen crates' included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
 | 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz and loadgen crates' copies of it over their targets, for the host platform, with warnings as errors. |
@@ -35,7 +35,8 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | 17 | `check-specs` | `bg-run-allium check` | Every specification reports an empty `diagnostics` array. |
 | 18 | `analyse-specs` | `bg-run-allium analyse` | Every specification reports an empty `findings` array too. |
 | 19 | `snapshots-check` | `cargo insta test --check` | Every snapshot matches, and no `.snap` file is unreferenced. Runs `lock-check` first, then all tests through cargo-insta and nextest, offline, with every feature, without writing snapshots or pending files. |
-| 20 | `check-clean` | `bg-project-check clean` | The run changed nothing. |
+| 20 | `test-doc-default` | `cargo tree --edges features` per package, then `cargo test --doc` with default features, once per package | Every doc example compiles and passes without the `testing` feature, the build a user of the crate gets. |
+| 21 | `check-clean` | `bg-project-check clean` | The run changed nothing. |
 
 The table leaves out `--locked`, which the recipes
 [decision 0007](../decisions/0007-dependency-policy.md) names pass; `deps-unused` does
@@ -45,8 +46,9 @@ not, and `snapshots-check` cannot pass it through cargo-insta, which is why it r
 `fuzz/` and `loadgen/` are each a workspace of their own, so gates 2, 4 and 6 name their
 manifests beside the root one. The fuzz crate's clippy pass stays inside `just check` by
 the maintainer's choice on 2026-10-24: it costs 7.87 s on a cold cache and about 0.06 s
-warm. The loadgen crate is checked the same way (T30); only running it, by `just loadgen`,
-and its unit tests, by `just test-loadgen`, stay outside the gate.
+warm. The loadgen crate is checked the same way (T30); running it, by `just loadgen`, and its
+unit tests, by `just test-loadgen`, stay outside the gate, and CI's `loadgen` job runs
+the unit tests.
 
 Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
 The duplication is deliberate: a regression names itself in the list of gates rather than
@@ -137,6 +139,8 @@ choice on 2026-10-24, so a test that needs a real effect belongs under
 `test`, `build`, `audit`, `mutants`, `bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`,
 `image`, `site`, `plan-spec` and `check-links-online` are recipes that `just check` does not run. `test` runs nextest
 and the doctests in one go, which `coverage` and `test-doc` already cover between them;
+`test-loadgen` runs the excluded crate's unit tests in CI's `loadgen` job, which keeps
+the local gate's length;
 `build` compiles what `clippy` and `features` already compile; `site` builds the API
 reference that `doc` has proved, for
 [Deploy to GitHub Pages](../how-to/deploy-to-github-pages.md); and `plan-spec` prints a
@@ -172,6 +176,7 @@ suppression is one lint on one line, as
 | `effects` | Move the effect behind a trait libpachinko defines, with the real implementation in `pachinko` and a fake beside the trait. |
 | `features` | Fix the combination the output names. |
 | `test-doc`, `coverage` | Fix the failing test or example; below the floor, test the uncovered lines or remove them. |
+| `test-doc-default` | A doc example that passes under `test-doc` but fails here uses the `testing` feature: guard those lines with `# #[cfg(feature = "testing")] {` and `# }`. If it fails before any doctest runs, a dependency or dev-dependency of the named package enables libpachinko's `testing` feature: remove it, because a doctest built with it no longer proves the default build. |
 | `doc` | Document the item, or repair the link rustdoc names. |
 | `deny` | Replace the dependency whose licence, source or name is refused. |
 | `deps-unused` | Remove the dependency; `just fix` runs `cargo shear --fix`. |
@@ -186,8 +191,24 @@ authorises it.
 
 ## What the hook gate contains
 
-`just lint` runs `.pre-commit-config.yaml` over every file. This is the read-only
-configuration, and it is the one installed as the pre-commit hook.
+`just lint` runs `.pre-commit-config.yaml` over every tracked file, then again over every
+untracked file Git does not ignore, because prek's `--all-files` reads tracked files only.
+This is the read-only configuration, and it is the one installed as the pre-commit hook.
+
+The second run reads the untracked list from a file outside the worktree, so a failing
+`git ls-files` fails the recipe, and it stages nothing: `git add -N` would make
+`--all-files` see the file, but it changes the index `just check` snapshots. The
+trade-off is that an untracked scratch file outside `ai_tmp/`, such as notes at the
+repository root, is linted too, so a fault in it fails `just lint` and `just check` until
+it moves under `ai_tmp/` or into `.git/info/exclude`. A hook that takes no file names
+whose `files` pattern matches an untracked path runs twice. prek hands paths to its hooks
+without `--`, so an untracked path that begins with `-`, such as `--help`, would reach a
+hook as an option: the second run names it and fails rather than check it, and still
+checks the other untracked files. The second run reaches every hook that reads the files
+it is given, but `check-added-large-files` reads staged files only, whatever files it is
+given, so an untracked file over its limit passes `just lint` and fails at the commit
+that stages it. A fresh checkout in CI has no
+untracked file, so the second run never happens there.
 
 | Hook | Checks |
 | --- | --- |
@@ -225,30 +246,38 @@ workflow, or a change to those two, deserves `shellcheck` by hand until the gap 
 
 `.pre-commit-fix.yaml` holds the hooks that write: `cargo fmt`, `taplo fmt`,
 `cargo shear --fix`, end-of-file and trailing-whitespace repair, and
-`markdownlint --fix`. It is never installed as a hook and runs only from `just fix`.
+`markdownlint --fix`. It is never installed as a hook and runs only from `just fix`, which
+runs it twice over every tracked file and twice over every untracked file Git does not
+ignore, as `lint` reads them; an untracked path that begins with `-` stops it there, named, as
+it fails `lint`. The trailing-whitespace fixer skips the Markdown under
+`tickets/`: a hand-back quotes command output verbatim, trailing spaces included.
+`.editorconfig` already leaves Markdown's trailing whitespace alone, and markdownlint's
+MD009 still reports, and `markdownlint --fix` still repairs, a trailing space in ticket
+prose.
 `cargo clippy --fix` is not among them: it needs a full build and permission to touch a
 dirty tree, so it is a line in the `fix` recipe itself.
 
 ## In continuous integration
 
-`.github/workflows/ci.yml` runs the same recipes in four gate jobs, each on Ubuntu and
+`.github/workflows/ci.yml` runs the same recipes in five gate jobs, each on Ubuntu and
 each starting with the repository's composite setup action, which installs the pixi
 environment, the toolchain, the tools `tools.txt` and `tools-source.txt` pin, and the hook
 environments.
 
 | Job | Runs |
 | --- | --- |
-| `rust` | `check-toolchain`, `lock-check`, `fmt-check`, `toml-check`, `clippy`, `metrics`, `effects`, `features`, `test`, `snapshots-check`, `doc`, `deps-unused` |
+| `rust` | `check-toolchain`, `lock-check`, `fmt-check`, `toml-check`, `clippy`, `metrics`, `effects`, `features`, `test`, `test-doc-default`, `snapshots-check`, `doc`, `deps-unused` |
 | `coverage` | `coverage`, then uploads `lcov.info` as an artifact kept for seven days |
 | `deny` | `deny` |
 | `documents` | `install-allium`, `lint`, `check-docs`, `check-agents`, `check-specs`, `analyse-specs` |
+| `loadgen` | `test-loadgen`, the excluded `loadgen/` crate's unit tests; the setup action's Rust cache does not save `loadgen/target/`, so it compiles loadgen's dependencies cold |
 
-A fifth gate job, `image`, runs no recipe and no setup action: it builds the container
+A sixth gate job, `image`, runs no recipe and no setup action: it builds the container
 image with Docker, loads it without pushing it, and runs it once
-([decision 0015](../decisions/0015-container-image.md)). A sixth job, `check`, needs all
-five and runs no recipe: it fails when any of them failed, was cancelled or was skipped.
+([decision 0015](../decisions/0015-container-image.md)). A seventh job, `check`, needs all
+six and runs no recipe: it fails when any of them failed, was cancelled or was skipped.
 It exists so that branch protection can name one check that never changes. A gate job
-added later joins its `needs`, and protection stays as it is. A seventh, `semver`, runs
+added later joins its `needs`, and protection stays as it is. An eighth, `semver`, runs
 `just semver` on pull requests only; it is advisory before 1.0 and is not among `check`'s
 `needs` ([decision 0016](../decisions/0016-release-process.md)).
 
@@ -256,7 +285,8 @@ A newer run of `ci.yml` on the same ref cancels the one still in progress, on `m
 a branch, by the maintainer's choice on 2026-10-24.
 
 The mapping is not one to one. `rust` runs `test`, where the gate runs `test-doc` and
-`coverage`; `lint` runs in `documents`; and each gate job that runs recipes ends with
+`coverage`, and runs `test-doc-default` as the gate does; `lint` runs in `documents`;
+`loadgen` runs `test-loadgen`, which the gate does not; and each gate job that runs recipes ends with
 `check-clean`, so a recipe that rewrites a tracked file or leaves an untracked one fails
 in CI as it does in `just check`. Past the composite setup action and `image`'s Docker
 steps, nothing in `ci.yml` runs a command that does not exist in the `Justfile`.
@@ -285,7 +315,7 @@ deployment that fails blocks no merge.
 
 `main` is protected, and one check, `check`, must pass before a branch merges into it.
 That is the aggregate job above, which fails unless `rust`, `coverage`, `deny`,
-`documents` and `image` all succeeded, so a gate job is added by joining its `needs` and
+`documents`, `image` and `loadgen` all succeeded, so a gate job is added by joining its `needs` and
 the protection itself never changes. `audit`, `mutants` and `semver` are never required.
 
 The branch is not required to be up to date with `main` first, and no review is required —
