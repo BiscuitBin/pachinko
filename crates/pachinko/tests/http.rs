@@ -612,18 +612,24 @@ async fn readyz_answers_204_while_serving_and_a_publish_answers_under_the_defaul
     serve_while(ready_then_publish).await;
 }
 
-/// Polls `GET /consumers/{consumer}/lease` until it answers 204, failing on a
-/// deadline or on any answer but the 200 of a lease still active before it: the
-/// sweep has lapsed the consumer's lease and decided its pocket.
+/// Polls `GET /consumers/{consumer}/lease` until it answers 204: the sweep has
+/// lapsed the consumer's lease and decided its pocket. An answer other than that
+/// 204 and the 200 of a lease still active fails as itself, and so does one read
+/// after the deadline, the 204 included.
 fn wait_for_lapse(client: &Client, consumer: &str) {
     let deadline = Instant::now() + REQUEST_BOUND;
     loop {
-        match client.lease(consumer) {
-            (204, Value::Null) => return,
-            (200, _) => {}
+        let lapsed = match client.lease(consumer) {
+            (204, Value::Null) => true,
+            (200, _) => false,
             other => panic!("the lease read answered {other:?}"),
+        };
+        let in_time = Instant::now() < deadline;
+        if lapsed {
+            assert!(in_time, "the lease lapsed, but after the deadline");
+            return;
         }
-        assert!(Instant::now() < deadline, "the lease never lapsed");
+        assert!(in_time, "the lease never lapsed");
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -655,15 +661,19 @@ async fn a_lease_nobody_renews_lapses_and_its_record_goes_to_another_consumer() 
 }
 
 /// The flags of the two expiry-count tests: a pocket parks at its second lapse
-/// with no ack, release or revive since its first. The one real-time bound the
-/// tests lean on is the lease's: the ack or nack must be applied within 300 ms
-/// of the pull before it, or it is refused `lease_not_active` and the test
-/// fails; it cannot pass late.
+/// with no ack, release or revive since its first. The one real-time race the
+/// tests run is the lease's: the ack or nack must be applied before the sweep
+/// applies the lapse of the lease it names, which is no sooner than
+/// `--lease-ttl-ms` after the pull before it. One that loses is refused
+/// `lease_not_active` and the test fails, with no defect in the queue; one
+/// applied past that time but ahead of the lapse succeeds, as the rules allow.
+/// The lease is long so that only a stall of its length loses, and each test
+/// waits it out twice.
 const PARK_AT_TWO: [&str; 6] = [
     "--max-consecutive-expiries",
     "2",
     "--lease-ttl-ms",
-    "300",
+    "1000",
     "--sweep-ms",
     "10",
 ];

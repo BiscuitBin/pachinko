@@ -97,8 +97,9 @@ gets `lease_not_active`. Recovery after a consumer dies therefore takes `--lease
 plus that window. Once the lapse is applied, the old lease is `lease_not_active` to
 every lease route, and `GET /consumers/{consumer_id}/lease` answers 204. A pull names no
 lease, so one applied after the lapse, already waiting or not, is not refused: it claims
-a pocket under a new lease, and is handed the lapsed pocket's records again when that is
-the pocket it claims, or answers `no_pocket`.
+a pocket under a new lease, and is handed the lapsed pocket's records again, up to its
+`limit` and none at zero or less, when that is the pocket it claims, or answers
+`no_pocket`.
 
 A lease route checks, in this order, the order of the rules' `requires`: the path's
 `lease_id` parses as 32 lower-case hexadecimal digits (400 `bad_request`, before
