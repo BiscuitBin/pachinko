@@ -949,7 +949,8 @@ stacked on `62efe41`: no rebase, no amend, no force-push.
 All checks passed and the worktree is unchanged.
 ```
 
-**The decisions.** Each answer is the maintainer's, verbatim, to the question asked:
+**The decisions.** Each answer is the maintainer's, verbatim; the questions are abridged
+here, and the "(Recommended)" label the dialog put on some options is dropped:
 
 | # | Question | Answer |
 | --- | --- | --- |
@@ -1005,7 +1006,9 @@ error: recipe `check` failed on line 431 with exit code 1
 Both sides had added a `### Changed` heading under pachinko Unreleased: this ticket
 before `### Added`, T34 after it. `95d0193` removes this ticket's heading and moves its
 one bullet to the end of T34's list; T34's lines are unchanged. The merge commit itself
-stays red, because the branch takes no amend. At `95d0193`, `just check` exited 0:
+stays red, because the branch takes no amend, so the acceptance criterion "`just check`
+is green at the commit that merges" the base is met one commit later, not at the merge.
+At `95d0193`, `just check` exited 0:
 
 ```text
 All checks passed and the worktree is unchanged.
@@ -1025,7 +1028,8 @@ the base head, already an ancestor, so there is one merge.
   already waiting at the lapse gets `lease_not_active`, the old lease is
   `lease_not_active` "to every lease route", and a pull, which names no lease, claims a
   pocket under a new lease or answers `no_pocket` (`PullClaimsFrontPocket`,
-  `PullFindsNoPocket`).
+  `PullFindsNoPocket`). The Open point named lines 93 to 95; the edit also reaches the
+  next sentence ("every lease route") and adds the pull sentence after it.
 - **CR5, `071b15a`.** The four places name what breaks a run of lapses:
   - `crates/libpachinko/src/config.rs:69` and `docs/reference/configuration.md:39`:
     "How many lease expiries, with no ack, release or revive between them, park a
@@ -1088,8 +1092,11 @@ fixes are in `ef08423`:
 At `292eecf` with those changes uncommitted, `just fmt-check`, `just clippy`,
 `just test` (244 of 244), `just metrics` and `just check-docs` exited 0.
 
-**T32-3** (decision 2), last, so that only ticket commits follow the last review. The
-reviewers were `codex exec -m gpt-6-astra -s read-only`, one per lens, at `ef08423` with
+**T32-3** (decision 2), the last review. One code commit follows it, `fddc65a`, which
+holds the round's own fixes; no adversarial review has read that commit. The triage
+subagent wrote it, the lead read its diff, and no finding was high, so §14 asks for no
+second round. A round over `git diff ef08423..fddc65a` is the maintainer's to ask for.
+The reviewers were `codex exec -m gpt-6-astra -s read-only`, one per lens, at `ef08423` with
 a clean worktree, over `git diff 7d637ac..2681bd6` and the diff from the merge commit to
 `HEAD`. The second diff was added so that this session's fixes did not repeat
 `2681bd6`'s gap. The brief named the six authorised files and carried no hand-back
@@ -1100,9 +1107,10 @@ run evidence.
 On Diff A (`7d637ac..2681bd6`) neither lens raised a finding: only specification
 comments changed and both agree with the rules; S063 still pins its scenario and fails
 each of the three mutations asked about; the changelog and the empty-batch paragraph
-agree with the rules. On Diff B there were four distinct findings. A fresh subagent,
+agree with the rules. On Diff B there were four distinct findings. One fresh subagent,
 neither a reviewer nor the lead, triaged each against the tree, wrote the verdicts and
-applied the fixes one at a time; the lead read the diff and committed it as `fddc65a`:
+applied the fixes one at a time; §14 says "separate subagents", and one did the work.
+The lead read the diff and committed it as `fddc65a`:
 
 - **C1 and B1 (medium, valid).** The 300 ms lease of the two new tests. A stall of the
   test thread longer than the lease between the second pull and the ack or nack gets a
@@ -1219,6 +1227,9 @@ count, which is true of its rules and stale as a decision until T35 lands. T35's
 still lists the nack reset as a Non-goal; that edit is the maintainer's, in T35's
 worktree. When the nack rules gain the reset, these follow:
 
+- T35's own Non-goal, read at `7d60de7` in T35's worktree
+  (`tickets/T35-decide-q1-q2.md`): "No reset of `consecutive_expiries` on a nack; T32's
+  reset on an ack stays.";
 - the two nack rules in `docs/specs/pachinko.allium`, and the ack paragraph's "A nack, a
   renew and a pull leave the count as the rules stand" and "a reset on a nack is neither
   chosen nor ruled out" (lines 454 to 456);
@@ -1241,6 +1252,16 @@ worktree. When the nack rules gain the reset, these follow:
   `crates/pachinko/tests/http.rs`.
 
 The commits after `fddc65a` change only this ticket.
+
+**The final check.** A third `git fetch origin`, after the bites and the flake runs, left
+`origin/wave-2-tickets` at the base head. `git merge-base --is-ancestor 62efe41 HEAD`
+exits 0, and so does the same check against `ticket/t35-decide-q1-q2`, so T35's base is
+intact. At `dd1bf7b`, the commit that added this section, `just check` exited 0 and
+`git status --short` printed nothing:
+
+```text
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
