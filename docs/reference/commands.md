@@ -73,7 +73,7 @@ proves and why.
 
 | Recipe | Purpose |
 | --- | --- |
-| `just lint` | The whole read-only hook gate over every tracked file, then over every untracked file Git does not ignore, which prek's `--all-files` leaves out. Stages nothing. An untracked path that begins with `-` fails the gate by name, because a hook would read it as an option. An untracked scratch file belongs under `ai_tmp/`, or its faults fail the gate. Gate 3. |
+| `just lint` | The whole read-only hook gate over every tracked file, then over every untracked file Git does not ignore, which prek's `--all-files` leaves out; the large-file check reads staged files only, so it passes an untracked file. Stages nothing. An untracked path that begins with `-` fails the gate by name, because a hook would read it as an option. An untracked scratch file belongs under `ai_tmp/`, or its faults fail the gate. Gate 3. |
 | `just fmt-check` | rustfmt, checking. Gate 4. |
 | `just toml-check` | taplo's formatting check and its lint over every TOML file. Gate 5. |
 | `just clippy` | Clippy over every crate target (the library, the binary, their tests, and any examples or benches) with every feature, for the host platform, with warnings as errors. The manifests say `warn`, so a local build never breaks mid-edit; this is where warnings become failures. Gate 6. |
