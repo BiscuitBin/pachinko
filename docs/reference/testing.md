@@ -173,8 +173,8 @@ These rules hold for every module the specifications add.
 
 ## Scenario catalog
 
-The wave's 76 scenarios, each with the one library test whose `// scenario:` tag pins
-it, found by `rg -n 'scenario: S0NN'`, and for the ten `wire` scenarios the test that
+The wave's 77 scenarios, each with the one library test whose `// scenario:` tag pins
+it, found by `rg -n 'scenario: S0NN'`, and for the twelve `wire` scenarios the test that
 also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
 boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
 placeholder for open question N; `decision:0019`, a scenario decision 0019 settled. S066
@@ -206,7 +206,7 @@ both.
 | S021 | Publishing into a leased pocket neither requeues it nor escapes the lease | core | `crates/libpachinko/tests/queue/publish.rs`, `publishing_into_a_leased_pocket_neither_requeues_it_nor_escapes_the_lease` | |
 | S022 | Publishing into a queued pocket does not move it in the pocket order | edge | `crates/libpachinko/tests/queue/publish.rs`, `publishing_into_a_queued_pocket_does_not_move_it_in_the_pocket_order` | |
 | S023 | A publish revives an idle pocket at the back | core | `crates/libpachinko/tests/queue/lease.rs`, `a_publish_revives_an_idle_pocket_at_the_back` | |
-| S024 | A supersede or a stale publish revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_or_a_stale_publish_revives_a_parked_pocket` | |
+| S024 | A supersede or a stale publish revives a parked pocket (OQ11 as the rules stand, the stale half) | edge, oq:11 | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_or_a_stale_publish_revives_a_parked_pocket` | |
 | S025 | An equal-rank publish does not revive a parked pocket | oq:1 | `crates/libpachinko/tests/queue/expiry.rs`, `an_equal_rank_publish_does_not_revive_a_parked_pocket` | |
 | S026 | Only a publish revives a parked pocket (OQ7 as the rules stand) | oq:7 | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
 | S027 | A pull claims the front pocket, leases it and holds the batch | core | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch` | |
@@ -227,7 +227,7 @@ both.
 | S042 | Rejected acks change nothing, not even the lease's expiry | edge | `crates/libpachinko/tests/queue/settle.rs`, `rejected_acks_change_nothing_not_even_the_leases_expiry` | |
 | S043 | A supersede while the key is held defers it on ack | edge | `crates/libpachinko/tests/queue/settle.rs`, `a_supersede_while_the_key_is_held_defers_it_on_ack` | |
 | S044 | A deferred record restarts at the back of its pocket | edge | `crates/libpachinko/tests/queue/settle.rs`, `a_deferred_record_restarts_at_the_back_of_its_pocket` | |
-| S045 | Two supersedes while held: both losers are shed and the held version is untouched | edge | `crates/libpachinko/tests/queue/settle.rs`, `two_supersedes_while_held_shed_both_losers_and_leave_the_held_version` | |
+| S045 | Two supersedes while held: both losers are shed and the held version is untouched (OQ10 as the rules stand: the first loser is the version still held) | edge, oq:10 | `crates/libpachinko/tests/queue/settle.rs`, `two_supersedes_while_held_shed_both_losers_and_leave_the_held_version` | |
 | S046 | A stale check while held compares with the latest rank, not the held one | edge, oq:1 | `crates/libpachinko/tests/queue/settle.rs`, `a_stale_check_while_held_compares_with_the_latest_rank_not_the_held_one` | |
 | S047 | A nack dead-letters the held version on the first nack, without redelivery | core, wire | `crates/libpachinko/tests/queue/settle.rs`, `a_nack_dead_letters_the_held_version_on_the_first_nack_without_redelivery` | `crates/pachinko/tests/http.rs`, `a_nack_does_not_redeliver_over_http` (driver `nack_dead_letters`) |
 | S048 | A supersede while the key is held defers it on nack, and the lapse frees it | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_while_held_is_deferred_on_nack_and_the_lapse_frees_it` | |
@@ -246,7 +246,7 @@ both.
 | S061 | A lapse with no records idles the pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_with_no_records_idles_the_pocket` | |
 | S062 | Three consecutive lapses park the pocket, and a publish revives it | edge | `crates/libpachinko/tests/queue/expiry.rs`, `three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it` | |
 | S063 | At the threshold an empty pocket parks rather than idling | edge | `crates/libpachinko/tests/queue/expiry.rs`, `at_the_threshold_an_empty_pocket_parks_rather_than_idling` | |
-| S064 | Progress under a lease does not reset the expiry count | edge | `crates/libpachinko/tests/queue/expiry.rs`, `progress_under_a_lease_does_not_reset_the_expiry_count` | |
+| S064 | A pull, a nack or a renew under a lease does not reset the expiry count | edge, wire | `crates/libpachinko/tests/queue/expiry.rs`, `a_pull_a_nack_or_a_renew_under_a_lease_does_not_reset_the_expiry_count` | `crates/pachinko/tests/http.rs`, `a_nack_leaves_the_expiry_count_over_http` (driver `nack_keeps_count`; the nack alone) |
 | S065 | A lapse fires once per lease | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_fires_once_per_lease` | |
 | S066 | A renew or release after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `a_renew_after_expires_at_but_before_the_lapse_succeeds`; release half: `a_release_after_expires_at_but_before_the_lapse_succeeds` | |
 | S067 | An ack or pull after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_after_expires_at_but_before_the_lapse_succeeds`; pull half: `a_pull_after_expires_at_but_before_the_lapse_extends_the_lease` | |
@@ -259,6 +259,7 @@ both.
 | S074 | Dead letters decay at `nacked_at` plus `dead_letter_ttl` | core | `crates/libpachinko/tests/queue/decay.rs`, `dead_letters_decay_at_nacked_at_plus_dead_letter_ttl` | |
 | S075 | Pockets and records form one strict, deterministic order | edge | `crates/libpachinko/tests/queue/expiry.rs`, `pockets_and_records_form_one_strict_deterministic_order` | |
 | S076 | The consumer view exposes only the active lease and its held versions | core | `crates/libpachinko/tests/queue/lease.rs`, `the_consumer_view_exposes_only_the_active_lease_and_its_held_versions` | |
+| S077 | An ack resets the consecutive-expiry count | edge, wire | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_resets_the_consecutive_expiry_count` | `crates/pachinko/tests/http.rs`, `an_ack_resets_the_expiry_count_over_http` (driver `ack_resets_count`) |
 
 ## Coverage
 

@@ -156,7 +156,8 @@ fn a_deferred_record_restarts_at_the_back_of_its_pocket() {
     assert_eq!(next.records[1].rank, Rank::new(3));
 }
 
-// scenario: S045
+// scenario: S045 (open question 10: the held version is shed at the supersede, as
+// the rules stand)
 // obligation: rule-success.Supersede
 // obligation: guarantee.NothingLostWhileHeld
 #[test]

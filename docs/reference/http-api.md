@@ -60,29 +60,46 @@ even when the same consumer has claimed the same pocket again under a new lease.
 removes a held record whose held version is still the latest (`settled`), or, when a
 newer version arrived while it was held, defers that newer version to the back of the
 pocket until the lease ends (`deferred`). A nack does the same and keeps the held
-version as a dead letter. Ack, nack and renew each move `expires_at` to now plus
-`--lease-ttl-ms`; a refused action moves nothing. A release ends the lease, returns its
-held and deferred records to queued in place, and requeues the pocket at the back
-(`queued`) or, with no records left, leaves it idle until a publish revives it (`idle`).
-No action checks `expires_at` against the clock: a late action the owner applies before
-the lapse succeeds (decision 0019).
+version as a dead letter. An ack also resets its pocket's count of consecutive lapses
+(below) to zero, and a nack leaves it. Ack, nack and renew each move `expires_at` to now
+plus `--lease-ttl-ms`; a refused action moves and resets nothing. A release ends the
+lease, returns its held and deferred records to queued in place, and requeues the pocket
+at the back (`queued`) or, with no records left, leaves it idle until a publish revives
+it (`idle`). No action checks `expires_at` against the clock: a late action the owner
+applies before the lapse succeeds (decision 0019).
+
+A pull under a lease extends it whatever the batch holds, an empty batch included. A
+pull that returns no records, because `limit` is zero or less or the pocket has no
+queued record left (each is held or deferred, or none remains), still moves `expires_at`
+to now plus `--lease-ttl-ms` and keeps the pocket, so a consumer that pulls in a loop
+holds its pocket, emptied or not, until it releases the lease, as long as the owner
+applies each pull before the lease lapses: once `expires_at` has passed, a lapse applied
+first ends the lease as if no pull had come (below), so a loop that pulls less often
+than every `--lease-ttl-ms` can lose its pocket. The release is the client's to send. No
+pull claims an empty pocket: a pull without a lease claims only a queued pocket, which
+always has a record, and answers `no_pocket` when there is none.
 
 A lease nobody pulls under, acks, nacks or renews lapses: the service sweeps every
 `--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, returns its
 held and deferred records to queued in place and keeps the pocket at the front of the
-queue, so the next pull claims it. After `--max-consecutive-expiries` lapses in a row
-the pocket parks instead and no pull claims it until a publish into it; a pocket whose
-records were all acked or nacked goes idle below that count. The sweep is not instant:
+queue, so the next pull claims it. After `--max-consecutive-expiries` lapses with no
+ack, release or publish revival between them the pocket parks instead and no pull
+claims it until a publish into it; a pocket whose records were all acked or nacked goes
+idle below that count. The sweep is not instant:
 a lease can stay active past `expires_at` for up to one sweep, plus the application of
 the sweep in progress and of the command the owner is applying, and a sweep reads the
 time once, so a lease expiring while one runs waits for the next. A pull, ack, nack or
 renew the owner applies in that window, before the lapse, succeeds and extends the lease,
 and a release applied in it succeeds by ending the lease and freeing its records; neither
 is refused for being late (decision 0019). Arrival does not decide: a sweep the owner
-takes up first ends the lease, and an action already waiting then gets
-`lease_not_active`. Recovery after a consumer dies therefore takes `--lease-ttl-ms` plus
-that window. Once the lapse is applied, the old lease is `lease_not_active` to every
-route, and `GET /consumers/{consumer_id}/lease` answers 204.
+takes up first ends the lease, and an ack, nack, renew or release already waiting then
+gets `lease_not_active`. Recovery after a consumer dies therefore takes `--lease-ttl-ms`
+plus that window. Once the lapse is applied, the old lease is `lease_not_active` to
+every lease route, and `GET /consumers/{consumer_id}/lease` answers 204. A pull names no
+lease, so one applied after the lapse, already waiting or not, is not refused: it claims
+a pocket under a new lease, and is handed the lapsed pocket's records again, up to its
+`limit` and none at zero or less, when that is the pocket it claims, or answers
+`no_pocket`.
 
 A lease route checks, in this order, the order of the rules' `requires`: the path's
 `lease_id` parses as 32 lower-case hexadecimal digits (400 `bad_request`, before

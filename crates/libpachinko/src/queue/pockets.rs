@@ -233,6 +233,15 @@ impl<R: PocketRecords> Pockets<R> {
         Some((SettleOutcome::Deferred, held))
     }
 
+    /// An ack's `ensures: pocket.consecutive_expiries = 0` (`AckSettlesRecord`,
+    /// `AckDefersNewerVersion`), called once the ack has settled or deferred its
+    /// record; a nack, a renew and a pull never call it.
+    pub(super) fn reset_expiries(&mut self, pocket_key: &PocketKey) {
+        if let Some(pocket) = self.by_key.get_mut(pocket_key) {
+            pocket.consecutive_expiries = 0;
+        }
+    }
+
     /// A release's pocket step: every held and deferred record back to queued at
     /// its own position in one `free_held` (`RequeueHeldRecord`,
     /// `RequeueDeferredRecord`); then, with records left, the pocket rejoins the
