@@ -91,11 +91,6 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ## pachinko [Unreleased][pachinko-unreleased]
 
-### Changed
-
-- An ack over HTTP resets the pocket's count of consecutive lapses that
-  `--max-consecutive-expiries` measures; a nack does not.
-
 ### Added
 
 - An Apache-2.0 service, `pachinko`, that writes its name and the library version.
@@ -138,6 +133,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `just fix` repairs them; the trailing-whitespace fixer leaves the Markdown under
   `tickets/` alone.
 - CI runs the load generator's unit tests in a `loadgen` job, one of `check`'s `needs`.
+- An ack over HTTP resets the pocket's count of consecutive lapses that
+  `--max-consecutive-expiries` measures; a nack does not.
 
 [libpachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
 [pachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
