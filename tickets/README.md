@@ -180,7 +180,8 @@ the MVP wave.
   it waits for T32 because both edit `docs/specs/pachinko.allium`. The maintainer
   decided Q1 on 2026-11-13 with a design outside the ticket's options, which also closes
   open question 9: a record stays held until its lease ends. T35 was rewritten around
-  that decision, and its specification is on the ticket's branch.
+  that decision, and its specification is on the ticket's branch. The specification had
+  its §14 review (T35-1); the rewritten ticket text has had none.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

@@ -64,30 +64,38 @@ options; the label the maintainer chose is quoted, with their own notes.
   if c1 does not ACK/NACK k.v1 then when the lease ends k.v3 is inserted into the
   pockets record queue at the position that k.v1 occupied."
 
-The decisions, as the maintainer approved them in the plan of 2026-11-13:
+The decisions, verbatim from the plan the maintainer approved on 2026-11-13; "you" and
+"your" there address the maintainer:
 
 1. **Held until the lease ends.** A record handed out under a lease stays in the
-   consumer's held set until that lease ends. An ack or nack marks it; no held version is
-   removed, shed or dead-lettered while the lease is active. The lease's end, by release
-   or lapse, reconciles every held record. A lapse keeps the marks.
+   consumer's held set until that lease ends. An ack or nack marks it; no held version
+   is removed, shed or dead-lettered while the lease is active. The lease's end, by
+   release or lapse, reconciles every held record. A lapse keeps the marks.
 2. **An acked version is recorded nowhere.** Acked means consumed. The superseded queue
    holds only versions no consumer acked or nacked.
 3. **A nacked version becomes a dead letter only**, never a superseded record, created
    when the lease ends.
 4. **A waiting version that was never handed out is shed at once** when a higher rank
-   arrives (scenario C). Only the held version is protected.
+   arrives (scenario C, plain reading). Only the held version is protected.
 5. **Publish is judged against the kept record alike** whether it is unsettled, acked or
-   nacked: higher waits, equal is rejected (the module's question 1), lower is stale.
-   This closes the module's question 9: a key acked or nacked under a lease is not
-   pullable again in that lease.
-6. **A repeated ack or nack succeeds and changes nothing but the lease's expiry; a
-   change is refused.** An ack after a nack, or a nack after an ack, is rejected.
-7. **Positions.** A higher rank that arrives behind a held version is given its place in
-   the pocket's order when it arrives. When the lease ends, it is queued at that arrival
-   position if the held version was acked or nacked, and at the held version's position
-   if it was neither.
+   nacked: higher waits, equal is rejected (open question 1), lower is stale. This
+   closes open question 9: a key settled under a lease is not pullable again in that
+   lease.
+6. **A repeated ack or nack succeeds and changes nothing; a change is refused.** An ack
+   after a nack, or a nack after an ack, is rejected.
+7. **Positions ("total fairness", your later note).** A higher rank that arrives behind
+   a held version takes its place in the pocket's order at arrival. When the lease ends:
+   - held version acked or nacked: the newer version is queued at its arrival position;
+   - held version unsettled: the newer version is queued at the held version's position.
+
+   This replaces two things: the "queued at the back" line in the walk-through you
+   approved, and today's rule, where a deferred version takes its position when the held
+   version is acked or nacked.
 8. **No "transaction" term.** The vocabulary keeps Lease; two guarantees state the
    properties.
+
+Decision 6 is read with the approved assumption below that a repeated ack or nack
+extends the lease, so "changes nothing" means nothing but the lease's expiry.
 
 Reconciliation when the lease ends:
 
@@ -788,8 +796,8 @@ rg -c '^open question' docs/specs/pachinko.allium; echo "exit $?"
   rg -o '@guarantee (\w+)' -r 'guarantee.$1' docs/specs/pachinko.allium
 } | sort -u >| ai_tmp/T35/ids.txt; echo "exit $?"
 wc -l < ai_tmp/T35/ids.txt; echo "exit $?"
-rg -o --no-filename '^\s*// obligation: (\S+)' -r '$1' crates | sort -u \
-  | comm -23 - ai_tmp/T35/ids.txt; echo "exit $?"
+rg -o --no-filename '// obligation: ([A-Za-z][A-Za-z0-9_.-]*)\s*$' -r '$1' crates \
+  | sort -u | comm -23 - ai_tmp/T35/ids.txt; echo "exit $?"
 rg -c 'scenario: S[0-9]+' crates/libpachinko/tests crates/libpachinko/src; echo "exit $?"
 rg -o --no-filename 'scenario: S[0-9]+' crates/libpachinko/tests crates/libpachinko/src \
   | sort | uniq -d; echo "exit $?"
@@ -825,11 +833,12 @@ git status --short; echo "exit $?"
 ```
 
 The `comm` line prints the tags that name neither a planner id nor a `@guarantee` of
-the module, and must print nothing; at `a338355` it prints the 35 removed ids. The
-checker gives a guarantee no id, so its tag is `guarantee.<Name>`
-(`crates/libpachinko/tests/queue/main.rs`, the module doc). The line that greps for the
-old names is adjusted at step 3 if the plan keeps one of those names with a new
-meaning.
+the module, and must print nothing; run at `e812f5d` it prints the 35 removed ids, and
+its pattern matches 313 of the 315 tag lines, the other two being the placeholders in
+the module doc of `crates/libpachinko/tests/queue/main.rs`. The checker gives a
+guarantee no id, so its tag is `guarantee.<Name>`. The two `! rg` lines both match at
+`e812f5d`, so they can fire. The line that greps for the old names is adjusted at
+step 3 if the plan keeps one of those names with a new meaning.
 
 ## Hand-back notes
 
