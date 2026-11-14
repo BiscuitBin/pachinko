@@ -168,7 +168,7 @@ No option is chosen.
 - **Today.** A stale publish revives a parked pocket; the specification says so.
 - **No touch on stale.** `DropStalePublish` loses `ensures: PocketTouched`, so a stale
   resend is recorded as `stale` and changes nothing else, as an equal-rank publish
-  already changes nothing. The comment above `ReviveIdlePocket` ("Every publish into an
+  already changes nothing. The comment above `PublishNewKey` ("Every publish into an
   existing pocket emits PocketTouched") changes; `ReviveParkedPocket`,
   `ReviveIdlePocket` and the module's question 7 do not.
 
@@ -666,8 +666,11 @@ This ticket owns:
 4. **The specification, for Q2 and the wire answers.** Use the `spec-change` skill.
    Remove `open question` 11 in the same commit as its decision is stated, and extend
    the numbering comment. For "no touch on stale", remove `ensures: PocketTouched` from
-   `DropStalePublish` and reword the comment above `ReviveIdlePocket`; for "today", a
-   comment on the rule says the revival is decided. Run `just check-specs`,
+   `DropStalePublish` and reword the comment above `PublishNewKey`; for "today", a
+   comment on the rule says the revival is decided. Under either answer that comment
+   stops saying "Every publish into an existing pocket emits PocketTouched": a publish
+   at the stored rank matches no rule and emits nothing, so it reads "Every accepted
+   publish" (handed to this ticket by T32-1, in T32's Open points). Run `just check-specs`,
    `just analyse-specs` and `just plan-spec pachinko`, and diff the obligation list
    against step 3's.
    **Adversarial review** (`CONVENTIONS.md` §14), only if a rule changed here: checkpoint
@@ -951,3 +954,9 @@ concern about the decision itself.
   its push authorisation) are inherited and are the maintainer's to settle first.
 - The qsketch lines in Context were read outside this repository; step 1 asks the
   maintainer to confirm them.
+- T32's Open points that this ticket inherits or leaves: the comment above
+  `PublishNewKey` is corrected at step 4; whether a nack should also reset
+  `consecutive_expiries` stays the maintainer's and is a Non-goal here; T32's other
+  handed-back points (the "consecutive" wording in four places, an HTTP test of the
+  ack's reset, the `lease_not_active` sentence in `docs/reference/http-api.md`, the
+  `spec-change` skill's "placeholder" wording) are not this ticket's.
