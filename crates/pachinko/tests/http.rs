@@ -612,6 +612,20 @@ async fn readyz_answers_204_while_serving_and_a_publish_answers_under_the_defaul
     serve_while(ready_then_publish).await;
 }
 
+/// Polls `GET /consumers/{consumer}/lease` until it answers 204, failing on a
+/// deadline: the sweep has lapsed the consumer's lease and decided its pocket.
+fn wait_for_lapse(client: &Client, consumer: &str) {
+    let deadline = Instant::now() + REQUEST_BOUND;
+    loop {
+        let answer = client.lease(consumer);
+        assert!(Instant::now() < deadline, "the lease never lapsed");
+        if answer == (204, Value::Null) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 // The sweep lapses a lease nobody renews: the consumer's lease view turns 204
 // within the deadline, which is the assertion, and a second consumer receives the
 // record. No elapsed-time bound is asserted.
@@ -622,15 +636,7 @@ fn lapse_over_http(client: &Client) {
     let (status, batch) = client.pull("c1", 10);
     assert_eq!(status, 200);
     assert_eq!(records(&batch), [record("k", 1, b"v")]);
-    let deadline = Instant::now() + REQUEST_BOUND;
-    loop {
-        let answer = client.lease("c1");
-        assert!(Instant::now() < deadline, "the lease never lapsed");
-        if answer == (204, Value::Null) {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_for_lapse(client, "c1");
     let (status, batch) = client.pull("c2", 10);
     assert_eq!(status, 200);
     assert_eq!(batch["pocket_key"], json!("pk"));
@@ -644,4 +650,98 @@ async fn a_lease_nobody_renews_lapses_and_its_record_goes_to_another_consumer() 
         lapse_over_http,
     )
     .await;
+}
+
+/// The flags of the two expiry-count tests: a pocket parks at its second
+/// consecutive lapse, and the lease outlives the gap between a pull and the
+/// action after it by a wide margin.
+const PARK_AT_TWO: [&str; 6] = [
+    "--max-consecutive-expiries",
+    "2",
+    "--lease-ttl-ms",
+    "300",
+    "--sweep-ms",
+    "10",
+];
+
+/// Joins `c1`, publishes `k1` and `k2` into `pk`, lets `c1`'s lease on it lapse
+/// and claims it again: the pocket has lapsed once, and the lease id returned is
+/// the second lease's, with both records held under it.
+fn claimed_after_one_lapse(client: &Client) -> String {
+    joined(client, &["c1"]);
+    for key in ["k1", "k2"] {
+        assert_eq!(client.publish("pk", key, 1, key.as_bytes()).0, 200);
+    }
+    let both = [record("k1", 1, b"k1"), record("k2", 1, b"k2")];
+    let (status, first) = client.pull("c1", 10);
+    assert_eq!(status, 200);
+    assert_eq!(records(&first), both);
+    wait_for_lapse(client, "c1");
+    let (status, second) = client.pull("c1", 10);
+    assert_eq!(status, 200);
+    assert_eq!(records(&second), both);
+    assert_ne!(lease_of(&second), lease_of(&first), "a new lease");
+    lease_of(&second)
+}
+
+// An ack between two lapses resets the pocket's expiry count: at a limit of 2
+// the second lapse leaves the pocket queued, where a count left at 1 would park
+// it, so the next pull claims it again and receives the record the ack left.
+// scenario: S077 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.AckSettlesRecord
+fn ack_resets_count(client: &Client) {
+    let lease = claimed_after_one_lapse(client);
+    assert_eq!(
+        client.ack("c1", &lease, "k1"),
+        (200, json!({"outcome": "settled"}))
+    );
+    wait_for_lapse(client, "c1");
+    let (status, batch) = client.pull("c1", 10);
+    assert_eq!(
+        (status, &batch["pocket_key"]),
+        (200, &json!("pk")),
+        "the pocket is still queued after its second lapse: {batch}"
+    );
+    assert_eq!(records(&batch), [record("k2", 1, b"k2")]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_ack_resets_the_expiry_count_over_http() {
+    serve_with_while(&PARK_AT_TWO, ack_resets_count).await;
+}
+
+// A nack between two lapses leaves the pocket's expiry count: at a limit of 2
+// the second lapse parks the pocket, so the next pull finds none. The publish
+// after it revives the pocket, and the pull that follows receives `k2` ahead of
+// the new record: the pocket parked with its record in it, it was not emptied.
+// scenario: S064 (exercised over HTTP; the library test owns it)
+// obligation: rule-success.NackSettlesRecord
+// obligation: rule-success.LeaseExpiryParksPocket
+fn nack_keeps_count(client: &Client) {
+    let lease = claimed_after_one_lapse(client);
+    assert_eq!(
+        client.nack("c1", &lease, "k1"),
+        (200, json!({"outcome": "settled"}))
+    );
+    wait_for_lapse(client, "c1");
+    assert_eq!(
+        client.pull("c1", 10),
+        (200, json!({"outcome": "no_pocket"})),
+        "the pocket parked at its second lapse"
+    );
+    assert_eq!(
+        client.publish("pk", "k3", 1, b"k3"),
+        (200, json!({"outcome": "new_key"}))
+    );
+    let (status, batch) = client.pull("c1", 10);
+    assert_eq!((status, &batch["pocket_key"]), (200, &json!("pk")));
+    assert_eq!(
+        records(&batch),
+        [record("k2", 1, b"k2"), record("k3", 1, b"k3")]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_nack_leaves_the_expiry_count_over_http() {
+    serve_with_while(&PARK_AT_TWO, nack_keeps_count).await;
 }

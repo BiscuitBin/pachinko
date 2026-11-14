@@ -174,7 +174,7 @@ These rules hold for every module the specifications add.
 ## Scenario catalog
 
 The wave's 77 scenarios, each with the one library test whose `// scenario:` tag pins
-it, found by `rg -n 'scenario: S0NN'`, and for the ten `wire` scenarios the test that
+it, found by `rg -n 'scenario: S0NN'`, and for the twelve `wire` scenarios the test that
 also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
 boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
 placeholder for open question N; `decision:0019`, a scenario decision 0019 settled. S066
@@ -246,7 +246,7 @@ both.
 | S061 | A lapse with no records idles the pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_with_no_records_idles_the_pocket` | |
 | S062 | Three consecutive lapses park the pocket, and a publish revives it | edge | `crates/libpachinko/tests/queue/expiry.rs`, `three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it` | |
 | S063 | At the threshold an empty pocket parks rather than idling | edge | `crates/libpachinko/tests/queue/expiry.rs`, `at_the_threshold_an_empty_pocket_parks_rather_than_idling` | |
-| S064 | A pull, a nack or a renew under a lease does not reset the expiry count | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_pull_a_nack_or_a_renew_under_a_lease_does_not_reset_the_expiry_count` | |
+| S064 | A pull, a nack or a renew under a lease does not reset the expiry count | edge, wire | `crates/libpachinko/tests/queue/expiry.rs`, `a_pull_a_nack_or_a_renew_under_a_lease_does_not_reset_the_expiry_count` | `crates/pachinko/tests/http.rs`, `a_nack_leaves_the_expiry_count_over_http` (driver `nack_keeps_count`) |
 | S065 | A lapse fires once per lease | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_lapse_fires_once_per_lease` | |
 | S066 | A renew or release after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `a_renew_after_expires_at_but_before_the_lapse_succeeds`; release half: `a_release_after_expires_at_but_before_the_lapse_succeeds` | |
 | S067 | An ack or pull after `expires_at` but before the lapse is processed succeeds (branch A) | decision:0019 | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_after_expires_at_but_before_the_lapse_succeeds`; pull half: `a_pull_after_expires_at_but_before_the_lapse_extends_the_lease` | |
@@ -259,7 +259,7 @@ both.
 | S074 | Dead letters decay at `nacked_at` plus `dead_letter_ttl` | core | `crates/libpachinko/tests/queue/decay.rs`, `dead_letters_decay_at_nacked_at_plus_dead_letter_ttl` | |
 | S075 | Pockets and records form one strict, deterministic order | edge | `crates/libpachinko/tests/queue/expiry.rs`, `pockets_and_records_form_one_strict_deterministic_order` | |
 | S076 | The consumer view exposes only the active lease and its held versions | core | `crates/libpachinko/tests/queue/lease.rs`, `the_consumer_view_exposes_only_the_active_lease_and_its_held_versions` | |
-| S077 | An ack resets the consecutive-expiry count | edge | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_resets_the_consecutive_expiry_count` | |
+| S077 | An ack resets the consecutive-expiry count | edge, wire | `crates/libpachinko/tests/queue/expiry.rs`, `an_ack_resets_the_consecutive_expiry_count` | `crates/pachinko/tests/http.rs`, `an_ack_resets_the_expiry_count_over_http` (driver `ack_resets_count`) |
 
 ## Coverage
 
