@@ -93,11 +93,12 @@ renew the owner applies in that window, before the lapse, succeeds and extends t
 and a release applied in it succeeds by ending the lease and freeing its records; neither
 is refused for being late (decision 0019). Arrival does not decide: a sweep the owner
 takes up first ends the lease, and an ack, nack, renew or release already waiting then
-gets `lease_not_active`. A pull names no lease, so a pull already waiting claims a
-pocket afresh, under a new lease, or answers `no_pocket`. Recovery after a consumer dies
-therefore takes `--lease-ttl-ms` plus that window. Once the lapse is applied, the old
-lease is `lease_not_active` to every lease route, and
-`GET /consumers/{consumer_id}/lease` answers 204.
+gets `lease_not_active`. Recovery after a consumer dies therefore takes `--lease-ttl-ms`
+plus that window. Once the lapse is applied, the old lease is `lease_not_active` to
+every lease route, and `GET /consumers/{consumer_id}/lease` answers 204. A pull names no
+lease, so one applied after the lapse, already waiting or not, is not refused: it claims
+a pocket under a new lease, and is handed the lapsed pocket's records again when that is
+the pocket it claims, or answers `no_pocket`.
 
 A lease route checks, in this order, the order of the rules' `requires`: the path's
 `lease_id` parses as 32 lower-case hexadecimal digits (400 `bad_request`, before

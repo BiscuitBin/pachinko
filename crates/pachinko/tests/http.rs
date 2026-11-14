@@ -613,15 +613,17 @@ async fn readyz_answers_204_while_serving_and_a_publish_answers_under_the_defaul
 }
 
 /// Polls `GET /consumers/{consumer}/lease` until it answers 204, failing on a
-/// deadline: the sweep has lapsed the consumer's lease and decided its pocket.
+/// deadline or on any answer but the 200 of a lease still active before it: the
+/// sweep has lapsed the consumer's lease and decided its pocket.
 fn wait_for_lapse(client: &Client, consumer: &str) {
     let deadline = Instant::now() + REQUEST_BOUND;
     loop {
-        let answer = client.lease(consumer);
-        assert!(Instant::now() < deadline, "the lease never lapsed");
-        if answer == (204, Value::Null) {
-            return;
+        match client.lease(consumer) {
+            (204, Value::Null) => return,
+            (200, _) => {}
+            other => panic!("the lease read answered {other:?}"),
         }
+        assert!(Instant::now() < deadline, "the lease never lapsed");
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -652,9 +654,11 @@ async fn a_lease_nobody_renews_lapses_and_its_record_goes_to_another_consumer() 
     .await;
 }
 
-/// The flags of the two expiry-count tests: a pocket parks at its second
-/// consecutive lapse, and the lease outlives the gap between a pull and the
-/// action after it by a wide margin.
+/// The flags of the two expiry-count tests: a pocket parks at its second lapse
+/// with no ack, release or revive since its first. The one real-time bound the
+/// tests lean on is the lease's: the ack or nack must be applied within 300 ms
+/// of the pull before it, or it is refused `lease_not_active` and the test
+/// fails; it cannot pass late.
 const PARK_AT_TWO: [&str; 6] = [
     "--max-consecutive-expiries",
     "2",
@@ -689,6 +693,7 @@ fn claimed_after_one_lapse(client: &Client) -> String {
 // it, so the next pull claims it again and receives the record the ack left.
 // scenario: S077 (exercised over HTTP; the library test owns it)
 // obligation: rule-success.AckSettlesRecord
+// obligation: rule-success.LeaseExpiryKeepsPocketAtFront
 fn ack_resets_count(client: &Client) {
     let lease = claimed_after_one_lapse(client);
     assert_eq!(
@@ -702,6 +707,7 @@ fn ack_resets_count(client: &Client) {
         (200, &json!("pk")),
         "the pocket is still queued after its second lapse: {batch}"
     );
+    assert_ne!(lease_of(&batch), lease, "a third lease");
     assert_eq!(records(&batch), [record("k2", 1, b"k2")]);
 }
 
@@ -717,6 +723,7 @@ async fn an_ack_resets_the_expiry_count_over_http() {
 // scenario: S064 (exercised over HTTP; the library test owns it)
 // obligation: rule-success.NackSettlesRecord
 // obligation: rule-success.LeaseExpiryParksPocket
+// obligation: rule-success.ReviveParkedPocket
 fn nack_keeps_count(client: &Client) {
     let lease = claimed_after_one_lapse(client);
     assert_eq!(
