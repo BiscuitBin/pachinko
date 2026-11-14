@@ -54,6 +54,10 @@ snapshot.
 | T29 | Operability: readiness, logging, timeouts, shutdown grace | `T29-operability.md` | T24 | T25, T27 | done |
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | done |
 | T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | done |
+| T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | todo |
+| T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | todo |
+| T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
+| T35 | Decide and land the held-version shed (Q1) and stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -74,9 +78,9 @@ T00 ─┬─ T01 ────────────┐
 The MVP wave, after T19:
 
 ```text
-T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31
-                 ├─ T27 ───────┴─ T30 ─┤
-                 └─ T29 ───────────────┘
+T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35
+                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33
+                 └─ T29 ───────────────┘       └─ T34
 ```
 
 The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2, then T19 and
@@ -164,6 +168,28 @@ the MVP wave.
   to Open points. Twenty-one fixes were applied, and no third round runs: anything a
   later reader finds goes to the ticket's Open points or a `main` pull request. The
   raw briefs, findings, verdicts and run logs stayed under `ai_tmp/`, uncommitted.
+- **The follow-up wave, T32 to T35.** T31 handed back its review findings as Open
+  points for the maintainer, and these four tickets carry them. T32 is the
+  specification follow-up: an ack resets its pocket's expiry count, the module says what
+  an empty pull does, and the held-version shed (Q1) and stale revival (Q2) become open
+  questions 10 and 11. T33 fixes three robustness defects: fallible lease ids, the tick
+  receiver passed by value and a header-read deadline. T34 closes four gate gaps:
+  default-features doctests, untracked files, quoted evidence and loadgen in CI. T32,
+  T33 and T34 are parallel lanes on the wave-2 rule, each editing only its own lines in
+  the shared files (CONVENTIONS.md §11). T35 decides Q1 and Q2 and lands the decision;
+  it waits for T32 because both edit `docs/specs/pachinko.allium`.
+- **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
+  they were committed, on the same §14 procedure, from a baseline `just check` ending
+  `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex
+  (`codex-cli 0.166.0`) `gpt-6-astra` reviewers per ticket, one lens each, read-only;
+  fresh-context Claude subagents triaged each finding and one writer per ticket applied
+  the valid ones. Round one found 33, all valid, none high and twelve medium (T33 four,
+  T34 three, T35 five, T32 none). The medium findings in T33, T34 and T35 forced a second
+  round over each, which found eighteen, seventeen valid and twelve of them medium; all
+  were applied. No third round runs. A completeness critic then checked the set against
+  its breakdown, and its one medium (T35 called the external reference sketch the
+  behaviour the maintainer expects) and seven lows were fixed by hand after it, with no
+  further review. The raw files stayed under `ai_tmp/`, uncommitted.
 
 ## How to pick up a ticket
 

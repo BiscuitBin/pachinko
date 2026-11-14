@@ -62,5 +62,6 @@ recipes = [
   "check-specs",
   "analyse-specs",
   "snapshots-check",
+  "test-doc-default",
 ]
 predicates = {}
