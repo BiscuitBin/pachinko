@@ -698,13 +698,14 @@ This ticket owns:
 | `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; the step-1 refinements, with `open question` 1 removed |
 | `docs/decisions/0020-held-set-until-lease-ends.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, shared | Decision 0020, its index row and its manifest entry |
 | `docs/operations/troubleshooting.md` | shared, own lines | The `equal_rank` sentence that called the refusal a placeholder |
+| `docs/project/purpose-and-scope.md` | shared, own lines | The list of open questions, which still named equal-rank publishes |
 | `crates/libpachinko/src/records.rs`, `records/memory.rs`, `records/contract.rs` | shared, own lines | `RecordStatus`, `RecordView`, the `PocketRecords` trait, `MemoryRecords` and the contract: marks, the nack time, the arrival position, the lease-end step |
 | `crates/libpachinko/src/queue.rs`, `queue/pockets.rs`, `queue/settle.rs`, `queue/publish.rs`, `queue/renew.rs`, `queue/expiry.rs`, `queue/shed.rs`, `queue/types.rs`, `queue/inspect.rs` | shared, own lines | Publish's defer branch, the mark step, the lease-end reconciliation and its stamps, the outcome types, the lease view's marks, the docs and doctests |
 | `crates/libpachinko/src/ids.rs`, `error.rs`, `lib.rs`, `config.rs` | shared, own lines | `Mark` and `MarkedRecord`, and the `HeldRecord` docs; the refusal for a changed mark; the `EqualRank` message, no longer a placeholder; the crate docs and doctest; the S005 doc if the dead-letter TTL wording changes; the `max_consecutive_expiries` doc (impact map, section 8) |
 | `crates/libpachinko/tests/queue/*.rs`, `crates/libpachinko/tests/queue/walk/model.rs` | shared, own lines, one new | The scenarios, the walk model (split out of `walk.rs` into `walk/model.rs`), the invariant checks, the fixture and the counting store |
 | `crates/libpachinko/benches/workloads.rs` | shared, own lines | W3's doc comment, if its wording is no longer true |
 | `crates/libpachinko/README.md` | shared, own lines | The signatures, the record state diagram, the sequence and the usage |
-| `crates/pachinko/src/http.rs`, `http/leases.rs`, `http/batch.rs`, `actor.rs` | shared, own lines | The ack and nack outcome mapping, the refusal's status and code, the lease read's marks, the publish outcome if step 1 adds one |
+| `crates/pachinko/src/http.rs`, `http/leases.rs`, `http/lease_read.rs`, `http/batch.rs`, `actor.rs` | shared, own lines, one new | The ack and nack outcome mapping, the refusal's status and code, the lease read's marks, the publish outcome if step 1 adds one |
 | `crates/pachinko/tests/http.rs`, `tests/batch_publish.rs` | shared, own lines | The wire drivers for S040, S047, S068 and the new wire scenarios; `a_nack_leaves_the_expiry_count_over_http` and the `PARK_AT_TWO` comment |
 | `loadgen/src/client.rs` | shared, own lines | The outcome strings it accepts |
 | `docs/reference/testing.md` | shared, own lines | The catalog rows, the scenario and invariant counts, the tag legend |
@@ -1191,13 +1192,211 @@ All checks passed and the worktree is unchanged.
 
 ### The plan (step 3)
 
-### The specification for the wire answers, and T35-3 (step 4)
+Planned on 2026-11-16 and approved with the step-1 answers; a design subagent proposed the seams and the lead
+adopted them. Decided before any test:
+
+- **The store seam.** `PocketRecords` gains `defer_behind_held`, `mark` and `end_lease() -> Vec<EndedVersion>`;
+  `settle`, `defer` and `free_held` go; `supersede` returns `None` for a held record with nothing deferred, so it
+  never sheds a held version; `held()` returns `MarkedRecord`s. `RecordStatus::Held` carries `mark`, `nacked_at`
+  and `deferred_position`, and `RecordView::new` keeps five parameters. `MemoryRecords` keys its held index by
+  `(Position, RecordKey)`, so `end_lease` costs O(held × log n).
+- **The lease-end plumbing.** No context goes down: `Pockets::release` and `Pockets::lapse` return the versions a
+  lease's end removed, and `keep_ended`, beside `authorise` in `queue/renew.rs`, stamps them from the one `now` the
+  release or the tick read.
+- **The order at one lease end**, which the specification leaves open: smallest held position first, pinned in
+  the store contract and by S091, and written in `docs/reference/testing.md`.
+- **`AckRepeats` and `NackRepeats`** skip the count reset, as the rules do; the count is 0 under that lease
+  either way (`MarkedPocketHasNoExpiries`). A repeat nack keeps the first `nacked_at` (S086).
+- **Ack and nack** run every guard before reading the clock, so a refused mark reads no clock.
+- **The walk's split.** The model moves to `crates/libpachinko/tests/queue/walk/model.rs`; `free` becomes
+  `freed`, `Turn.settled` goes, and the model stops touching on stale.
+- The tests to flip and add, the new scenarios from S078, and the handbook lines are those of steps 5 and 7.
+  Files outside Files touched: decision 0020 and its index and manifest entries,
+  `docs/operations/troubleshooting.md`, `walk/model.rs` and `http/lease_read.rs`, each added to Files touched at
+  the step that needed it.
+
+### The specification for the step-1 refinements, and T35-3 (step 4)
+
+No step-1 wire answer needed a rule. The refinements did, and landed at `d84ba92e589f76a59d350d699209cf267fab2d58`:
+
+- Refinement 1: `ending_records`, `Supersede`, `DeferBehindHeldVersion` and the six lease-end rules tell a
+  deferred version by `deferred_position != null` (or `= null`); `DeferredHasArrivalPosition` and
+  `OnlyDeferredHasArrivalPosition` are unchanged. Each rule keeps its clauses in their order, so the
+  `rule-failure` ids keep their numbers.
+- Refinements 3 and 4: `Record.HeldCopiesAgree` and `MarkedPocketHasNoExpiries`, cited in the lapse comment.
+- Refinement 5: `Supersede` requires `record.status = queued or (record.status = held and
+  record.deferred_position != null)`.
+- Refinements 6 and 7: the Lease end comment says a lease's end and its `Freed` rules are one outcome; the
+  Publish comment says a publish at the held rank is rejected when nothing is deferred and stale when a newer
+  version is.
+- Refinement 8: the Publish comment states the equal-rank rejection as decided on 2026-11-16, closing question 1;
+  its `open question` line is gone, and the numbering comment says the six lines left are questions 2 to 7. Both
+  handbook lists drop it.
+- Refinement 2 was dropped whole. A `transitions mark { unsettled -> acked; unsettled -> nacked }` block, with
+  or without `terminal: acked, nacked`, makes the pinned checker report Record's status edges as undeclared:
+
+  ```text
+  allium.status.undeclaredTransition 178 Rule produces transition 'queued' → 'held' on entity 'Record', but this edge is not in the declared transition graph.
+  allium.status.undeclaredTransition 178 Rule produces transition 'held' → 'queued' on entity 'Record', but this edge is not in the declared transition graph.
+  ```
+
+  The language reference allows two graphs on one entity (its `Document` example), so this is the checker's
+  limit, not the model's: allium 3.6.1 keeps one graph per entity. The other half, `nacked_at: Timestamp when
+  mark = nacked`, passed the checker but breaks the reference's rule 7g without the graph (T35-3, below), so
+  `nacked_at` stays `Timestamp? when status = held` with `NackedHasItsTime` and `OnlyNackedHasNackTime`.
+
+At `d84ba92e589f76a59d350d699209cf267fab2d58`:
+
+```text
+$ just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+$ just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+$ just plan-spec pachinko   (obligations counted from its JSON)
+238 obligations
+$ rg -c '^open question' docs/specs/pachinko.allium
+6
+$ just check-docs
+Validated 47 pages and 48 canonical topics.
+```
+
+Against `25cdbea`'s 236 ids, two are new and none is gone: `invariant.MarkedPocketHasNoExpiries` and
+`invariant.Record.HeldCopiesAgree`. The module declares 35 invariants.
+
+### T35-3: the specification for the step-1 refinements
+
+Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, on 2026-11-16, over the uncommitted edit with
+refinement 2's `nacked_at` half still in it. Two reviewers ran in parallel, one lens each, with the step-4
+questions: each rule against its answer; the rebased guards disjoint, complete and equivalent to `983b785`'s;
+the two new invariants and the `when mark = nacked` field in every reachable state; stale text and the question
+counts; any other question answered. A fresh Claude subagent (`claude-opus-5-5`) triaged. The raw files stayed
+under `ai_tmp/review/T35-3/`, uncommitted.
+
+| Finding | Severity | Verdict | Fix |
+| --- | --- | --- | --- |
+| `nacked_at: Timestamp when mark = nacked` names a field with no `transitions` block, which the language reference's rule 7g forbids; the pinned checker accepts it, so the gate hid it (both lenses) | medium | valid | Refinement 2 reverted whole, as above, before the commit |
+
+Both reviewers found the rebased guards equivalent to `983b785`'s under `HeldVersionNotNewer` and the two
+arrival-position invariants, the six `Freed` rules disjoint and complete, `HeldCopiesAgree` and
+`MarkedPocketHasNoExpiries` true in every reachable state reading a lease's end as one outcome, the text and
+counts right, and no other question answered. No high finding was valid, so no second round ran. The triage also
+asked for the Goal's Rules row, which still named the dropped graph, to be corrected, and a long line rewrapped;
+both are in `d84ba92e589f76a59d350d699209cf267fab2d58`.
 
 ### Shown to bite (step 5)
 
+The red tests were written against the skeleton at `11e5bb6`, which added the new types beside the old ones with
+neutral bodies, so every red test compiled and failed on behaviour. Four agents wrote them, one after another
+where they shared a test binary. Their full reports, with each first failure, stayed under `ai_tmp/T35/red/`,
+uncommitted. `NEXTEST_PROFILE=ci just test` at `11e5bb6` plus the red tests ran 265 tests: 213 passed and 52
+failed, each for the reason the decision gives:
+
+- 38 library scenario tests, among them S040 (`Ok(Settled)` where `Ok(Acked)` is due), S043 and S082
+  (`deferred_position: None` where the publish defers), S045 and S076 (the held v1 shed while held), S047, S087
+  and S089 (a dead letter before the lease ends), S053 (the ack removed the record), S064 (the nack left the
+  count at 1), S071 and S072 (`Ok(NewKey)` where the key waits), S074 and S007 (decay before the lease ends),
+  S075 (the publish at the held rank was not `EqualRank`), S078 to S081 (scenarios A to D), S085
+  (`RecordNotHeld` where `MarkConflict` is due), S091 (two entries shed while held) and S092 (a stale publish
+  revived the parked pocket);
+- the 2 walk tests: the shrunk case nacks a held record, and the queue answers `Ok(Settled)` where the model
+  answers `Ok(Nacked)`;
+- 8 wire tests: `"settled"` where `"acked"` or `"nacked"` is due (the S040, S047, S068 and S077 drivers), 404
+  `record_not_held` where 409 `mark_conflict` is due, `no_pocket` where the nack reset keeps the pocket queued,
+  and the `EqualRank` message calling itself a placeholder (the wire test and a service unit test);
+- 4 store tests: the contract (and its run through the counting store) at "supersede of a held record with nothing
+  deferred changes nothing", the held index in key order rather than position order, and the index not emptied by
+  `end_lease`.
+
+Pinning tests, each shown failing under a scratch mutation of one library file, restored with `cp`, and checked
+with `git diff --quiet`:
+
+| Test | Mutation | Failure |
+| --- | --- | --- |
+| S041 | the ack no longer extends the lease | `Timestamp(1000010)` vs `Timestamp(1000014)` |
+| S049 | the lease extended before the `RecordNotHeld` guard | "a refused action changed the queue" |
+| S017, S025 | `rank < stored.rank` became `<=` | `Ok(Stale)` vs `Err(EqualRank{..})` |
+| S024 | `Supersede` returned before touching | `(Parked, 0, 3)` vs `(Queued, 5, 0)` |
+| S060 | requeued records left out of the queued index | `[]` vs `["a1", "a2"]` |
+| S070 | the lease check skipped the owner | `unwrap_err()` on an `Ok` |
+| S027 | `hold_oldest` set `Acked`, then a `deferred_position` | `mark: Acked` vs `Unsettled`; `Some(Position(1))` vs `None` |
+| the backward-clock test, repaired | `Queue::now` without its clamp | `Ok(1000010)` vs `Ok(1000110)` |
+| S055 | the release never idled | `Queued` vs `Idle` |
+| S061 | the lapse never idled | `(Queued, 1)` vs `(Idle, 1)` |
+| S037 | the store's `supersede` requeued a held record | `["r0", "r1"]` vs `["r1"]` |
+
+**A review of the red tests**, asked for by the maintainer on 2026-11-16 ("When you are done or at any key moment,
+request an adversarial review from Codex (Astra)") and run before the code: Codex `codex-cli 0.167.2`,
+`-m gpt-6-astra -s read-only`, one reviewer, on 2026-11-17, over `git diff -- crates` at `11e5bb6`. It found no
+wrong test, and five gaps; the lead triaged them, since this review is not one of the ticket's checkpoints. The
+raw files stayed under `ai_tmp/review/T35-red/`.
+
+| Finding | Severity | Verdict | Fix, at `8be2162` |
+| --- | --- | --- | --- |
+| Same-tick decay after a lapse untested | medium | valid | `with_zero_ttls_a_lapses_entries_decay_in_the_tick_that_made_them`; with decay moved before the lapses it fails `(0, 0)` vs `(1, 1)` |
+| Lease-end stamps from one `now` untested under an advancing clock | medium | valid | `a_lease_ends_entries_are_stamped_from_its_one_ended_at`, with a clock that moves on every read; with `keep_ended` reading the clock per entry it fails `(Timestamp(1006), Timestamp(6006))` vs `(Timestamp(1005), Timestamp(6005))` |
+| The pull batch's wire shape unprotected | low | valid | the batch record asserted exactly, with no `mark` |
+| S024 tagged `rule-failure.ReviveParkedPocket.1`, unreachable by public triggers (predates T35) | low | valid | moved to the walk's unreachable-guard list |
+| S069 tagged `rule-failure.Renew.2` but exercises `Renew.1` (predates T35) | low | valid | retagged |
+
 ### The code (step 6)
 
+`f927967` holds the code with the red tests, and `8be2162` the review's fixes and the `EqualRank` tests asserting
+the decided wording. At `8be2162`:
+
+```text
+$ NEXTEST_PROFILE=ci just test
+267 tests run: 267 passed; doctests 108, 4 and 27 passed
+$ just fmt-check; just clippy; just doc; just effects; just metrics; just test-loadgen; just snapshots-check
+each exit 0; effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs
+$ just coverage
+99.13% of lines
+```
+
+The walk's generator weights changed (`1,1,8,6,4,3,2,2,5,1,3` to `1,1,10,7,5,4,1,3,6,1,4`) because two labels
+were never reached under the old ones; every label is reached now, the rarest in 2 of 512 walks with the fixed
+seed. The `compile_fail` doctest still fails only with E0277: a scratch copy with `Arc` compiles.
+
+Obligation tags in `crates/`: at `25cdbea`, 318 tag lines over 198 distinct ids, 35 of them ids the planner no
+longer prints; at `8be2162`, 450 lines over 248 ids, all of them planner ids or guarantees, and every planner id is
+tagged. The scenarios run S001 to S092.
+
+`just semver` against its default baseline, `611a86e` on `main`, checks nothing, since that library has only
+`version()`. Against `25cdbea`, before this ticket's code (exit 100, advisory before 1.0):
+
+```text
+--- failure enum_variant_missing: pub enum variant removed or renamed ---
+  variant RecordStatus::Deferred
+  variant SettleOutcome::Settled
+  variant SettleOutcome::Deferred
+--- failure trait_method_added: pub trait method added ---
+  trait method libpachinko::records::PocketRecords::defer_behind_held
+  trait method libpachinko::records::PocketRecords::mark
+  trait method libpachinko::records::PocketRecords::end_lease
+--- failure trait_method_missing: pub trait method removed or renamed ---
+  method settle of trait PocketRecords
+  method defer of trait PocketRecords
+  method free_held of trait PocketRecords
+     Summary semver requires new major version: 4 major and 0 minor checks failed
+```
+
 ### The handbook (step 7)
+
+At `3d209d7`, with the `review-docs` skill: every page of impact-map sections 6 and 8, the question-1 lines, both
+`[Unreleased]` sections of `CHANGELOG.md`, and decision 0020 with its index row and manifest entry. The catalog in
+`docs/reference/testing.md` runs to S092 with 35 invariants; the `oq:1`, `oq:9`, `oq:10` and `oq:11` tags are gone
+and S026's `oq:7` stays; the Q1 scenarios carry `decision:0020`; "What the specification leaves open is pinned"
+states the order at one lease end. `docs/project/purpose-and-scope.md` still listed equal-rank publishes as open
+and was corrected, so it joined Files touched.
+
+```text
+$ just check-docs
+Validated 48 pages and 49 canonical topics.
+```
+
+The changelog's lines on section 8's list, checked by hand, since the Verification pattern does not read the
+changelog: libpachinko's reset bullets (ack only, "a nack ... leaves the count"), the 25 invariants and 76
+scenarios (now 35 and 92), "ack, release or revive", the settled and deferred outcomes and "a nacked payload";
+pachinko's "a nack does not". `CHANGELOG.md` has no released section yet, so they were corrected in place.
 
 ### T35-4: the whole diff (step 8)
 
@@ -1212,6 +1411,10 @@ All checks passed and the worktree is unchanged.
   ack or a nack under the lease resets the count. Parking it then is the old rule's
   behaviour for an emptied pocket and was not revisited; the module's question 7 asks
   what else revives a parked pocket.
+- The pinned checker (allium 3.6.1) keeps one transition graph per entity, so the
+  `mark` graph of refinement 2 could not land, and `nacked_at` stays `when status = held`
+  with two invariants standing in for `when mark = nacked`. Whether to land it after a
+  checker upgrade, or behind a waiver, is the maintainer's.
 - The W3 figures in decision 0019 were measured with the ack removing its record; the
   cost moves to the lease's end. A decision record is history and is not edited;
   whether to re-measure is the maintainer's.

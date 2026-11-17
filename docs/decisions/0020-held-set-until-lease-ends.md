@@ -49,7 +49,7 @@ Why:
 - **Nothing held is shed or dead-lettered while the lease is active.** That removes the
   double shed: each version that leaves ends in exactly one place, the superseded queue
   for a version no consumer acked or nacked and the dead letters for a nacked one.
-- **One rule judges a publish.** The kept record's rank decides whether the record is
+- **One rule judges a publish.** The kept record's rank decides, whether that record is
   unsettled, acked or nacked, which closed question 9.
 - **Total fairness of positions,** the maintainer's own note. A key no consumer acked or
   nacked keeps its place in the pocket's order, so its newer version takes the held
