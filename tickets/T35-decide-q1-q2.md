@@ -669,7 +669,7 @@ This ticket owns:
 | Kind | Names |
 | --- | --- |
 | Decisions | Q1, Q2 (the module's question 11) and the nack reset, all decided and recorded above; the wire names, the decision record and the eight data-model refinements of step 1, among them the module's question 1 closed as "reject" |
-| Rules | The step-1 refinements: the nine guards that tell a deferred version by `deferred_position`, `Supersede`'s explicit guard, the `mark` transition graph, the invariants `HeldCopiesAgree` and `MarkedPocketHasNoExpiries`, and the equal-rank rejection stated as decided. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
+| Rules | The step-1 refinements: the nine guards that tell a deferred version by `deferred_position`, `Supersede`'s explicit guard, the invariants `HeldCopiesAgree` and `MarkedPocketHasNoExpiries`, and the equal-rank rejection stated as decided. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
 | Scenarios | Every row of "Scenarios" in the impact map; S024 split and S026 rechecked under Q2; S063's nacked case, S064 and `a_nack_leaves_the_expiry_count_over_http` flipped by the nack reset; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
 | Obligations | Every id `just plan-spec pachinko` prints for the rules changed at `a338355`, at `983b785` and at step 4 |
 

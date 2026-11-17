@@ -129,7 +129,7 @@ entity Pocket {
     -- The records a lease's end removes: held, acked or nacked, and with no
     -- newer version deferred behind them. Every other record is queued
     -- once the lease has ended.
-    ending_records: records where status = held and mark != unsettled and held_rank = rank
+    ending_records: records where status = held and mark != unsettled and deferred_position = null
     leases: Lease with pocket = this
     active_leases: leases where status = active
 
@@ -164,9 +164,10 @@ entity Pocket {
 -- alone. While a record is held, held_rank and held_payload are the
 -- version the consumer was handed and mark is what the consumer has said
 -- of it. rank and payload move on when a newer version is deferred behind
--- the held one, so held_rank < rank says a version is deferred, and
--- deferred_position is the position the first such version was given
--- when it arrived, which a version that supersedes it inherits.
+-- the held one. deferred_position is the position the first such version
+-- was given when it arrived, which a version that supersedes it inherits,
+-- so deferred_position != null says a version is deferred; the rules read
+-- that, and the two invariants on it tie it to held_rank < rank.
 -- nacked_at is when the nack that marked the record was processed.
 entity Record {
     pocket: Pocket
@@ -208,6 +209,12 @@ entity Record {
 
     invariant DeferredArrivedAfterHeld {
         status = held and deferred_position != null implies deferred_position > position
+    }
+
+    -- With nothing deferred, the held version is the record's version, and
+    -- its two copies agree.
+    invariant HeldCopiesAgree {
+        status = held and deferred_position = null implies held_payload = payload
     }
 }
 
@@ -296,17 +303,22 @@ rule ConsumerJoins {
 
 -- Publish --------------------------------------------------
 -- Five rules share the trigger with disjoint guards. No rule covers
--- rank = stored rank: the checker treats that publish as rejected, which
--- is a placeholder, not a decision; see the first open question.
+-- rank = stored rank, so that publish is rejected and changes nothing,
+-- whatever its payload. Decided by the maintainer on 2026-11-16, closing
+-- open question 1: an equal rank stays rejected.
 --
 -- The stored rank is record.rank whatever the record's state: queued, or
 -- held and unsettled, acked or nacked. A key acked or nacked under a lease
 -- keeps its record until that lease ends, so a publish of that key is
 -- judged against the kept record like any other: a higher rank is
--- deferred behind the held version, an equal rank is the first open
--- question's, and a lower rank is stale. The key is therefore not
--- pullable again under that lease. Decided by the maintainer on
--- 2026-11-13, closing open question 9.
+-- deferred behind the held version, an equal rank is rejected, and a
+-- lower rank is stale. The key is therefore not pullable again under that
+-- lease. Decided by the maintainer on 2026-11-13, closing open question 9.
+--
+-- The stored rank is the newest version's, not the held one's. Publishing
+-- again at the held rank is therefore rejected when nothing is deferred
+-- behind the held version, since it equals the stored rank, and stale
+-- when a newer version is deferred, since it is below it.
 
 rule PublishIntoNewPocket {
     when: Publish(publisher, pocket_key, record_key, rank, payload)
@@ -369,7 +381,7 @@ rule Supersede {
     let record = Record{pocket: pocket, key: record_key}
     requires: exists record
     requires: rank > record.rank
-    requires: record.status = queued or record.held_rank < record.rank
+    requires: record.status = queued or (record.status = held and record.deferred_position != null)
     let old_rank = record.rank
     let old_payload = record.payload
     ensures: SupersededRecord.created(
@@ -400,7 +412,7 @@ rule DeferBehindHeldVersion {
     requires: exists record
     requires: rank > record.rank
     requires: record.status = held
-    requires: record.held_rank = record.rank
+    requires: record.deferred_position = null
     let position = queue.next_position
     ensures: record.rank = rank
     ensures: record.payload = payload
@@ -733,7 +745,8 @@ rule LeaseExpiryKeepsPocketAtFront {
 -- loses records only when a lease ends (see PullWithinLease), so such a
 -- pocket still has a record, and every record it has was marked under
 -- this lease. An ack or a nack resets the count, so it is 0 before the
--- lapse, and such a pocket parks only when max_consecutive_expiries is 1.
+-- lapse (MarkedPocketHasNoExpiries), and such a pocket parks only when
+-- max_consecutive_expiries is 1.
 rule LeaseExpiryIdlesEmptyPocket {
     when: LeaseLapsed(lease)
     requires: lease.status = active
@@ -755,8 +768,10 @@ rule LeaseExpiryIdlesEmptyPocket {
 -- A lease ends by release or by lapse, and either way it emits Freed for
 -- each record of its held set. That is the only time a held record is
 -- removed and the only time the version a consumer holds becomes a
--- SupersededRecord or a DeadLetter. Six rules answer Freed with disjoint
--- guards, one per row:
+-- SupersededRecord or a DeadLetter. The rule that ends a lease and the
+-- rules that answer its Freed are one outcome, as a pull and its
+-- HoldRecord are, so the invariants hold after the whole of it. Six rules
+-- answer Freed with disjoint guards, one per row:
 --
 --   held version | newer deferred | held version goes to | record afterwards
 --   unsettled    | no             | nowhere              | queued, same position
@@ -786,7 +801,7 @@ rule RequeueUnsettledRecord {
     requires: exists record
     requires: record.status = held
     requires: record.mark = unsettled
-    requires: record.held_rank = record.rank
+    requires: record.deferred_position = null
     ensures: record.status = queued
     ensures: record.held_rank = null
     ensures: record.held_payload = null
@@ -802,7 +817,7 @@ rule SupersedeUnsettledHeldVersion {
     requires: exists record
     requires: record.status = held
     requires: record.mark = unsettled
-    requires: record.held_rank < record.rank
+    requires: record.deferred_position != null
     let held_rank = record.held_rank
     let held_payload = record.held_payload
     ensures: SupersededRecord.created(
@@ -828,7 +843,7 @@ rule ConsumeAckedRecord {
     requires: exists record
     requires: record.status = held
     requires: record.mark = acked
-    requires: record.held_rank = record.rank
+    requires: record.deferred_position = null
     ensures: not exists record
 }
 
@@ -838,7 +853,7 @@ rule ConsumeAckedVersionQueueDeferred {
     requires: exists record
     requires: record.status = held
     requires: record.mark = acked
-    requires: record.held_rank < record.rank
+    requires: record.deferred_position != null
     let arrival_position = record.deferred_position
     ensures: record.status = queued
     ensures: record.position = arrival_position
@@ -856,7 +871,7 @@ rule DeadLetterNackedRecord {
     requires: exists record
     requires: record.status = held
     requires: record.mark = nacked
-    requires: record.held_rank = record.rank
+    requires: record.deferred_position = null
     let held_rank = record.held_rank
     let held_payload = record.held_payload
     let nacked_at = record.nacked_at
@@ -879,7 +894,7 @@ rule DeadLetterNackedVersionQueueDeferred {
     requires: exists record
     requires: record.status = held
     requires: record.mark = nacked
-    requires: record.held_rank < record.rank
+    requires: record.deferred_position != null
     let held_rank = record.held_rank
     let held_payload = record.held_payload
     let nacked_at = record.nacked_at
@@ -994,6 +1009,15 @@ invariant OneActiveLeasePerConsumer {
 invariant OutstandingOnlyWhileLeased {
     for r in Records:
         r.status = held implies r.pocket.status = leased
+}
+
+-- An ack or a nack resets its pocket's consecutive_expiries, and the
+-- count rises only when a lease lapses, which ends the lease and clears
+-- every mark. So while a held record is marked its pocket's count is 0.
+invariant MarkedPocketHasNoExpiries {
+    for r in Records:
+        r.status = held and r.mark != unsettled
+            implies r.pocket.consecutive_expiries = 0
 }
 
 invariant UniquePocketPosition {
@@ -1191,10 +1215,11 @@ surface Consuming {
 -- shed, and the held set is reconciled when the lease ends (see
 -- DeferBehindHeldVersion and the Lease end comment). The maintainer closed
 -- question 11, a stale publish touching its pocket, on 2026-11-16: it
--- does not (see the comment above PublishNewKey). So the seven lines
--- below are questions 1 to 7.
+-- does not (see the comment above PublishNewKey). On 2026-11-16 the
+-- maintainer also closed question 1, equal rank with a different
+-- payload: the publish is rejected (see the Publish comment). So the six
+-- lines below are questions 2 to 7.
 
-open question "Equal rank, different payload for one key: reject the publish, last arrival wins, keep both for the consumer to reconcile, or make it configurable? Decide from the conflict-resolution literature and from what comparable queues and databases do and what their users expect. Until then no rule covers rank = stored rank, so the checker treats that publish as rejected; that is a placeholder, not a decision."
 open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
 open question "Capacity beyond shedding the decaying queues first: which superseded records and dead letters shed first, a bound on records, disk spill, a back-pressure signal to publishers, or none? Request-shape limits (rows, bytes, timeouts) are not capacity refusals."
 open question "Routing by worker pool or priority (standard against high-memory workers, newly onboarded tenants first, spot against reserved): separate deployments, or a property of pockets?"
