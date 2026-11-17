@@ -68,9 +68,10 @@ Why:
   marks one record, and the end reconciles the whole held set. The W3 figures in
   [decision 0019](0019-service-runtime-tokio-and-http.md#evidence-from-the-mvp) were
   measured with the ack removing its record and were not taken again.
-- A publish onto a held key answers `superseded` though nothing is shed, as the
-  maintainer chose at step 1, and an ack of a nacked record or a nack of an acked one is
-  a new refusal, `MarkConflict`, 409 `mark_conflict` on the wire.
+- A higher-ranked publish onto a held key with nothing deferred behind it answers
+  `superseded` though nothing is shed, as the maintainer chose at step 1; a still higher
+  one sheds the deferred version at once. An ack of a nacked record or a nack of an
+  acked one is a new refusal, `MarkConflict`, 409 `mark_conflict` on the wire.
 - The specification leaves the order of the entries one lease end creates open; the
   library pins one, smallest held position first
   ([Testing](../reference/testing.md#tests-from-the-specifications)).

@@ -181,7 +181,7 @@ These rules hold for every module the specifications add.
 
 ## Scenario catalog
 
-The 92 scenarios, each with the one library test whose `// scenario:` tag pins it,
+The 93 scenarios, each with the one library test whose `// scenario:` tag pins it,
 found by `rg -n 'scenario: S0NN'`, and for the thirteen `wire` scenarios the test that
 also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
 boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
@@ -283,6 +283,7 @@ both.
 | S090 | The lease read shows every held record with its mark, smallest position first | core | `crates/libpachinko/tests/queue/settle.rs`, `the_lease_read_shows_every_held_record_with_its_mark_smallest_position_first` | |
 | S091 | The entries one lease end creates come out smallest held position first, the implementation's pinned order | edge | `crates/libpachinko/tests/queue/lease.rs`, `the_entries_one_lease_end_creates_come_out_smallest_held_position_first` | |
 | S092 | A stale publish into a parked pocket leaves it parked with its count, and records the arrival as stale | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_stale_publish_into_a_parked_pocket_leaves_it_parked_with_its_count` | |
+| S093 | At an expiry limit of 1, a pocket whose held version was acked or nacked with a newer version deferred behind it parks with that version queued at its arrival position | edge | `crates/libpachinko/tests/queue/lease.rs`, `at_an_expiry_limit_of_one_a_marked_version_with_a_deferred_one_parks_with_it_queued` | |
 
 ## Coverage
 

@@ -937,12 +937,14 @@ rg -o --no-filename 'scenario: S[0-9]+' crates/libpachinko/tests crates/libpachi
   | sort -u | diff - <(seq -f 'scenario: S%03g' 1 "$((10#$last))"); echo "exit $?"
 rg -o '^\| (S[0-9]{3}) \|' -r '$1' docs/reference/testing.md \
   | sort | diff - <(seq -f 'S%03g' 1 "$((10#$last))"); echo "exit $?"
-# each test a catalog row names exists; S005 names a doctest, checked by hand
-rg -o '^\| S[0-9]{3} \|.*\| `([^`]+\.rs)`, `([a-z0-9_]+)`' -r '$1 $2' \
-  docs/reference/testing.md \
-  | ( bad=0; while read -r f n; do
-        rg -q "fn $n\b" "$f" || { echo "MISSING $f $n"; bad=1; }
-      done; exit "$bad" ); echo "exit $?"
+# each test, half and driver every catalog row names exists, in the file its cell
+# names, library and wire alike; S005 names a doctest, checked by hand
+rg '^\| S[0-9]{3} \|' docs/reference/testing.md \
+  | rg -o '`[^`]+\.rs`, `[a-z0-9_]+`( \(driver `[a-z0-9_]+`|; [a-z]+ half: `[a-z0-9_]+`)?' \
+  | sed -E 's/^`([^`]+)`, `([a-z0-9_]+)`[^`]*`?([a-z0-9_]*)`?$/\1 \2 \3/' \
+  | ( bad=0; n=0; while read -r f a b; do
+        for t in $a $b; do n=$((n + 1)); rg -q "fn $t\b" "$f" || { echo "MISSING $f $t"; bad=1; }; done
+      done; echo "checked $n"; [ "$n" -gt 0 ] && exit "$bad"; exit 1 ); echo "exit $?"
 # positive control first: the labels of the questions still open must match (exit 0)
 rg -c 'oq:[0-9]+\b' docs/reference/testing.md crates/libpachinko/tests; echo "exit $?"
 ! rg -n 'oq:(1|9|10|11)\b|oq9_|open.question.(9|10|11)\b' docs/reference/testing.md \
@@ -984,7 +986,11 @@ The placeholder line was widened at step 3 to what
 (decisions excluded) and `loadgen`; at `25cdbea` it matches 26 lines, so it can fire.
 It leaves out the general uses of "placeholder" (the documentation contract, the
 how-to's template names, the walk's placeholder id and the tag legend) and the dated
-note that closes question 1.
+note that closes question 1. The catalog line selects the rows, then takes every
+file and name pair from them, so a wire row's library test, each driver and the second
+halves of S066 and S067 are checked too; its first form matched one pair a row, the
+last, and the T35-4 review (T35-B2) showed it passing with S040's library test renamed.
+With that rename in a copy, the line prints `MISSING` and exits 1.
 
 ## Hand-back notes
 

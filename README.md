@@ -106,11 +106,13 @@ sequenceDiagram
     Q-->>C1: lease on tenant-a, batch [k1 rank 3]
 ```
 
-A pocket whose lease ends with no records left goes idle until a publish into it, and a
-pocket whose lease lapses three times (by default), with no ack, nack, release or
-revival in between, parks until a publish adds or raises a record in it. Expiry runs on
-a sweep, so a late action the service applies before the lapse is not refused for being
-late; its other checks still apply
+A pocket whose lease ends with no records left goes idle until a publish into it, unless
+the lease lapsed and the lapse parks it. A pocket whose lease lapses three times (by
+default), with no ack, nack, release or revival in between, parks until a publish adds
+or raises a record in it; an ack or a nack resets that count, so a pocket left with no
+records parks only when the limit is one. Expiry runs on a sweep, so a late action the
+service applies before the lapse is not refused for being late; its other checks still
+apply
 ([decision 0019](docs/decisions/0019-service-runtime-tokio-and-http.md)). The
 [HTTP API](docs/reference/http-api.md) has every route and reply, and the specification,
 [`docs/specs/pachinko.allium`](docs/specs/pachinko.allium), decides the behaviour.

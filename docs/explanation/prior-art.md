@@ -192,7 +192,7 @@ record with its deferred successor, and the parking of a whole pocket to be buil
 
 | Path | What it gives | What is still to build |
 | --- | --- | --- |
-| PostgreSQL tables | Durability, transactions, atomic ack batches, the replace-on-comparison insert | A sweeper for lapsed leases, the held and deferred states, parking, the decay of retained records, the HTTP service |
+| PostgreSQL tables | Durability, transactions, atomic ack batches, the replace-on-comparison insert | A sweeper for lapsed leases, the held record with its deferred successor, parking, the decay of retained records, the HTTP service |
 | Service Bus sessions with a versioned store | The lease, recovery, dead-lettering of single messages | Rank, deferral, parking, fairness, consistency between the two systems; it runs on Azure only |
 | BullMQ Pro | Exclusion, fairness, deferral of the newest by arrival | Rank, the lease's behaviour, parking; it needs a commercial licence and Redis or PostgreSQL |
 | Temporal, one workflow for each pocket | Exclusion, durable state, fairness keys | All of the queue's logic as workflow code; a limit of 10,000 signals on a workflow's history forces Continue-As-New ([Limits](https://docs.temporal.io/workflow-execution/limits)) |

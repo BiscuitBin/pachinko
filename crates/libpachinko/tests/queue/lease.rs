@@ -16,7 +16,7 @@ use libpachinko::{
 
 use crate::fixture::{
     DEAD_LETTER_TTL, Fixture, LEASE_TTL, SUPERSEDED_TTL, T0, config, consumer, held_as, invariants,
-    keys, letter_rows, marked_keys, shed_rows,
+    keys, letter_rows, marked_keys, shed_rows, text,
 };
 
 /// `T0` plus `millis`.
@@ -706,6 +706,63 @@ fn at_an_expiry_limit_of_one_a_pocket_of_nacks_parks_with_no_records_and_its_dea
             ("a", "a2", 1, "a2", "c1", at(20), expires_at)
         ]
     );
+}
+
+// scenario: S093
+// obligation: rule-success.LeaseExpiryParksPocket
+// obligation: rule-success.ConsumeAckedVersionQueueDeferred
+// obligation: rule-success.DeadLetterNackedVersionQueueDeferred
+// obligation: rule-entity-creation.DeadLetterNackedVersionQueueDeferred.1
+// obligation: rule-failure.LeaseExpiryKeepsPocketAtFront.4
+#[test]
+fn at_an_expiry_limit_of_one_a_marked_version_with_a_deferred_one_parks_with_it_queued() {
+    for mark in [Mark::Acked, Mark::Nacked] {
+        let mut limit_one = config();
+        limit_one.max_consecutive_expiries = 1;
+        let mut fixture = Fixture::with_config(limit_one);
+        fixture.publish("pk", "k", 1, "v1").unwrap();
+        fixture.publish("pk", "early", 1, "e").unwrap();
+        fixture.publish("other", "o", 1, "o").unwrap();
+        let lease = fixture.pull("c1", 1).lease;
+        fixture.at(10);
+        fixture.publish("pk", "k", 3, "v3").unwrap();
+        let held = held_as(1, "v1", Mark::Unsettled, None, Some(5));
+        assert_eq!(fixture.record("pk", "k").status, held, "{mark:?}");
+        fixture.at(20);
+        fixture.mark_as("c1", lease, "k", mark);
+        let ended = Ending::Lapse.end(&mut fixture, lease);
+        let pocket = fixture.pocket("pk");
+        assert_eq!(
+            (pocket.status, pocket.consecutive_expiries),
+            (PocketStatus::Parked, 1),
+            "{mark:?}"
+        );
+        assert_eq!(fixture.order(), ["other"], "{mark:?}");
+        let records: Vec<_> = (pocket.records.iter())
+            .map(|r| {
+                (
+                    r.key.as_str(),
+                    r.status.clone(),
+                    r.rank.get(),
+                    text(&r.payload),
+                )
+            })
+            .collect();
+        let queued = RecordStatus::Queued;
+        let expected = [("early", queued.clone(), 1, "e"), ("k", queued, 3, "v3")];
+        assert_eq!(records, expected, "{mark:?}: v3 is kept, queued");
+        let positions: Vec<u64> = (pocket.records.iter())
+            .map(|record| record.position.get())
+            .collect();
+        assert_eq!(positions, [2, 5], "{mark:?}: v3 at its arrival position");
+        let snapshot = fixture.snapshot();
+        assert_eq!(shed_rows(&snapshot), [], "{mark:?}");
+        let letters = match mark {
+            Mark::Nacked => vec![("pk", "k", 1, "v1", "c1", at(20), ended + DEAD_LETTER_TTL)],
+            _ => vec![],
+        };
+        assert_eq!(letter_rows(&snapshot), letters, "{mark:?}");
+    }
 }
 
 // scenario: S091
