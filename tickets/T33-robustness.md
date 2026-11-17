@@ -537,7 +537,8 @@ All checks passed and the worktree is unchanged.
 ```
 
 Commit A is `5d15371` (the change); `a4b8273` merges `origin/wave-2-tickets` (`c0f28e8`,
-T34); commit B carries this section and `status:`.
+T34); commit B carries this section and `status:`; `3acf093` merges
+`origin/wave-2-tickets` again (`7a79743`, T32).
 
 ### Overrides
 
@@ -545,7 +546,8 @@ T34); commit B carries this section and `status:`.
   Every `origin/main` in this ticket's diff checks, Step 10's merge and the T33-2 review
   reads `origin/wave-2-tickets`.
 - Worked on the existing branch `ticket/t33-robustness.md`, not `ticket/t33-robustness`.
-- Push and the pull request were not run: each needs its own authorisation.
+- The maintainer authorised the push and PR #46 (against `wave-2-tickets`) separately,
+  then the push of the T32 merge.
 - Implementation, the §14 reviewers' triage and the fix writer ran as subagents; the lead
   wrote the red tests and the briefs, and read each diff. Working notes are in
   `ai_tmp/t33/` and `ai_tmp/review/T33-{1,2}/` (gitignored).
@@ -749,6 +751,13 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
   (T34). The merge had no conflicts. T34's pachinko `CHANGELOG` bullets were folded into
   T33's `### Changed`, so the section has one such heading. `configuration.md` keeps both
   tickets' lines.
+- **The second merge.** `git fetch origin` moved `origin/wave-2-tickets` to `7a79743`
+  (T32). The one conflict was `CHANGELOG.md`: libpachinko's `### Changed` keeps
+  T32's `Queue::ack` bullet, then T33's `LeaseIds::next` one, and T32's pachinko bullet
+  joins T33's `### Changed`, which stays above `### Added`, so each crate has one such
+  heading. `Cargo.lock` merged clean, and `pockets.rs`, `architecture.md`,
+  `configuration.md` and `http-api.md` merged without conflicts. `just check` at
+  `3acf093` exits 0.
 - **`just semver`.** It cannot fire on this break. Run as discovered, its baseline is the
   merge base with `origin/main`, `611a86e`, which has no `lease_ids`; with
   `origin/wave-2-tickets` as the baseline it also passes. cargo-semver-checks 0.51.0
@@ -756,7 +765,7 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
   for a changed trait-method return type. It reports no incompatibility at all, none
   outside the intended one included; the `CHANGELOG` names the break by hand.
 
-The Verification block ran at `a4b8273`, with `origin/main` read as
+The Verification block ran at `3acf093`, the T32 merge, with `origin/main` read as
 `origin/wave-2-tickets`. A scratch script ran it, printing each command, the tail of its
 log (`ai_tmp/t33/verify/`) and its exit status. The quote is verbatim, except that the
 worktree's absolute path reads `<worktree>`. Three points are commentary, not output:
@@ -768,19 +777,19 @@ worktree's absolute path reads `<worktree>`. Three points are commentary, not ou
   same log follows the block (regions, functions, lines; 98.96% of lines).
 
 ```text
-HEAD a4b8273
+HEAD 3acf093
 
 $ just plan-spec pachinko   (output in ai_tmp/t33/verify/plan-spec.log; tail shown)
 }
 exit 0
 
 $ rg -n 'LeaseLapses' docs/specs/pachinko.allium
-605:rule LeaseLapses {
-874:        LeaseLapses
+622:rule LeaseLapses {
+894:        LeaseLapses
 exit 0
 
 $ rg -n -i 'lease.?id' docs/specs/pachinko.allium
-575:rule ReleaseIdlesEmptyPocket {
+592:rule ReleaseIdlesEmptyPocket {
 exit 0
 
 $ rg -n -i '\blease.?id' docs/specs/pachinko.allium
@@ -797,12 +806,12 @@ cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked -- -D war
 exit 0
 
 $ just test   (output in ai_tmp/t33/verify/test.log; tail shown)
-test crates/pachinko/src/error.rs - error::ServeError::Task (line 51) ... ok
-test crates/pachinko/src/lib.rs - exit_code (line 68) ... ok
+test crates/pachinko/src/error.rs - error::ServeError::RandomSource (line 67) ... ok
+test crates/pachinko/src/lib.rs - run (line 47) ... ok
 
 test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-all doctests ran in 0.52s; merged doctests compilation took 0.29s
+all doctests ran in 0.54s; merged doctests compilation took 0.31s
 exit 0
 
 $ just doc   (output in ai_tmp/t33/verify/doc.log; tail shown)
@@ -817,30 +826,30 @@ effects: the fixture trips every ban exactly once, and pachinko trips none.
 exit 0
 
 $ just coverage   (output in ai_tmp/t33/verify/coverage.log; tail shown)
+<worktree>/target/llvm-cov-target/t33-robustness.md-21192-15851350013603388649_6.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
 <worktree>/target/llvm-cov-target/t33-robustness.md-21193-15851350013603388649_7.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
 <worktree>/target/llvm-cov-target/t33-robustness.md-21194-15851350013603388649_8.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
-<worktree>/target/llvm-cov-target/t33-robustness.md-21166-1335675195453789462_16.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
 <worktree>/target/llvm-cov-target/t33-robustness.md-21198-1335675195453789462_12.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
 
     Finished report saved to target/llvm-cov/lcov.info
 exit 0
 
 $ just semver   (output in ai_tmp/t33/verify/semver.log; tail shown)
-     Checked [   0.005s] 202 checks: 202 pass, 58 skip
+     Checked [   0.007s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.410s] libpachinko
+    Finished [   0.461s] libpachinko
 exit 0
 
 $ just semver origin/wave-2-tickets   (output in ai_tmp/t33/verify/semver-base.log; tail shown)
-     Checked [   0.006s] 202 checks: 202 pass, 58 skip
+     Checked [   0.007s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.497s] libpachinko
+    Finished [   0.517s] libpachinko
 exit 0
 
 $ rg -n 'impl LeaseIds' crates
+crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
 crates/libpachinko/src/queue/pull.rs:158:    impl LeaseIds for Repeating {
 crates/libpachinko/src/queue/pull.rs:218:    impl LeaseIds for AlwaysOne {
-crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
 crates/pachinko/src/lease_ids.rs:83:impl LeaseIds for EpochSerialLeaseIds {
 crates/libpachinko/tests/queue/pull.rs:330:impl LeaseIds for OneId {
 crates/libpachinko/tests/queue/pull.rs:345:impl LeaseIds for RepeatsOne {
@@ -865,25 +874,26 @@ $ rg -n -i 'no trickle|slowloris bound exists|after its last byte|of the last by
 exit 1
 
 $ git diff --stat origin/wave-2-tickets...HEAD
- CHANGELOG.md                            |  41 +++--
+ CHANGELOG.md                            |  45 +++-
  crates/libpachinko/README.md            |   2 +-
- crates/libpachinko/src/error.rs         |  57 ++++++-
- crates/libpachinko/src/lease_ids.rs     |  54 +++++--
+ crates/libpachinko/src/error.rs         |  57 ++++-
+ crates/libpachinko/src/lease_ids.rs     |  54 ++++-
  crates/libpachinko/src/lib.rs           |  12 +-
  crates/libpachinko/src/queue/pockets.rs |   7 +
- crates/libpachinko/src/queue/pull.rs    | 142 +++++++++++++----
- crates/libpachinko/tests/queue/pull.rs  | 147 +++++++++++++++++-
- crates/pachinko/src/actor.rs            | 144 +++++++++--------
- crates/pachinko/src/error.rs            |   6 +-
+ crates/libpachinko/src/queue/pull.rs    | 142 +++++++++---
+ crates/libpachinko/tests/queue/pull.rs  | 147 +++++++++++-
+ crates/pachinko/src/actor.rs            | 144 ++++++------
+ crates/pachinko/src/error.rs            |   7 +-
  crates/pachinko/src/http.rs             |   9 +-
- crates/pachinko/src/lease_ids.rs        |  66 ++++----
- crates/pachinko/src/serve.rs            | 263 +++++++++++++++++++++++---------
- docs/explanation/architecture.md        |  19 ++-
+ crates/pachinko/src/lease_ids.rs        |  66 +++---
+ crates/pachinko/src/serve.rs            | 263 ++++++++++++++++------
+ docs/explanation/architecture.md        |  19 +-
  docs/explanation/security-model.md      |   6 +-
  docs/reference/api.md                   |   4 +-
  docs/reference/configuration.md         |   2 +-
- docs/reference/http-api.md              |  21 ++-
- 18 files changed, 750 insertions(+), 252 deletions(-)
+ docs/reference/http-api.md              |  21 +-
+ tickets/T33-robustness.md               | 383 +++++++++++++++++++++++++++++++-
+ 19 files changed, 1131 insertions(+), 259 deletions(-)
 exit 0
 
 $ git diff --stat origin/wave-2-tickets...HEAD -- Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml Cargo.lock docs/decisions docs/specs
@@ -904,7 +914,7 @@ exit 0
 ```
 
 ```text
-TOTAL                                      7541               143    98.10%         624                 4    99.36%        4531                47    98.96%           0                 0         -
+TOTAL                                      7554               144    98.09%         625                 4    99.36%        4537                47    98.96%           0                 0         -
 ```
 
 ## Open points
