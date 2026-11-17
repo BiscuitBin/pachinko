@@ -1406,6 +1406,34 @@ pachinko's "a nack does not". `CHANGELOG.md` has no released section yet, so the
 
 ### T35-4: the whole diff (step 8)
 
+Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, on 2026-11-17, over `git diff 71c65ec..HEAD` at
+`48cedc1`. Two reviewers ran in parallel, one lens each, with step 8's questions and three more: whether a refused
+ack or nack reads the clock, whether the order at one lease end matches the pin in the store, the queue, the model
+and the docs, and whether `end_lease`'s cost is bounded by the held set. A fresh Claude subagent
+(`claude-opus-5-5`) triaged the findings and applied the valid fixes one at a time, at `6abd0a6aa1ae288ebf232663a926cf74e15ebefb`. The raw files
+stayed under `ai_tmp/review/T35-4/`, uncommitted.
+
+| Finding | Severity | Verdict | Fix |
+| --- | --- | --- | --- |
+| No test parks a pocket at `max_consecutive_expiries` 1 while a marked record has a version deferred behind it; the walk fixes the limit at 2 and a mark resets the count (breakage) | medium | valid | S093, for an ack and a nack: the deferred version is kept, queued at its arrival position, and the nacked one is dead-lettered. A mutation writing the held version back over the deferred one fails only S093 |
+| The catalog check in Verification read only the last file and test of each row, so a missing library test on a row with a wire test passed (breakage; predates T35) | low | valid | The check selects the rows and then every pair, driver and half on each; it checks 120 names and fails closed on none |
+| `README.md` said a pocket with no records left goes idle when its lease ends; at limit 1 the lapse parks it (conformance) | low | valid | Qualified |
+| Decision 0020 said a publish onto a held key sheds nothing; a second higher rank sheds the deferred version (both lenses) | low | valid | Narrowed to the first higher rank with nothing deferred |
+| `docs/explanation/prior-art.md` still spoke of a deferred record state (breakage) | low | valid | "the held record with its deferred successor" |
+
+Both lenses found no defect in the code: every arm of the reconciliation table by release and by lapse, no held
+version shed, dead-lettered or removed while its lease is active, the nack reset and no touch on stale in the
+library, the model and the wire, every tag a planner id, every outcome and refusal mapped, no file outside Files
+touched, guards before the clock, and the order and cost as pinned. No high finding was valid, so no second round
+ran. Neither reviewer could run `just check` in its sandbox. At `6abd0a6aa1ae288ebf232663a926cf74e15ebefb`:
+
+```text
+$ NEXTEST_PROFILE=ci just test
+268 tests run: 268 passed, 0 skipped
+$ just clippy; just fmt-check; just check-docs
+exit 0 each; Validated 48 pages and 49 canonical topics.
+```
+
 ### Step 9: review, merge and gate
 
 ## Open points
