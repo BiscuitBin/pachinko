@@ -186,7 +186,8 @@ holds, defer a newer version behind a held one, hold the oldest queued records, 
 held record acked or nacked, list the held records with their marks, and end a lease
 over every held record by the six `Freed` rows in O(held × log records), smallest held
 position first, returning the versions it superseded or dead-lettered. The queue
-decides every rule and asks the store for one step; the store decides nothing.
+decides every rule and asks the store for one step. The store decides one thing: at a
+lease's end it picks each held record's `Freed` row from that record's own state.
 `MemoryRecords` is the one store (decision 0019). The trait holds only the steps the
 queue calls: reading every record back is `testing::InspectRecords`, a second trait a
 store implements for tests, as `MemoryRecords` does behind the `testing` feature. `testing::check_contract` is the one contract every store passes, over a store

@@ -223,15 +223,15 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     }
 
     /// The `Consuming` surface's `exposes` for `consumer_id`: its active lease's
-    /// pocket key, `expires_at` and held records, or `None` for a joined consumer
-    /// with no active lease.
+    /// pocket key, `expires_at` and held records, each with its mark, smallest
+    /// position first, or `None` for a joined consumer with no active lease.
     ///
     /// # Errors
     ///
     /// [`PullError::UnknownConsumer`] when no consumer with this id has joined.
     ///
     /// ```
-    /// use libpachinko::{ConsumerId, PocketKey};
+    /// use libpachinko::{ConsumerId, Mark, PocketKey};
     /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
     /// # use libpachinko::{Config, Payload, Publication, PublisherId, Queue, Rank, RecordKey};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
@@ -248,6 +248,7 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// let view = queue.lease_view(&consumer).unwrap().unwrap();
     /// assert_eq!(view.pocket_key, PocketKey::new("pk"));
     /// assert_eq!(view.records[0].key.as_str(), "rk");
+    /// assert_eq!(view.records[0].mark, Mark::Unsettled);
     /// ```
     pub fn lease_view(&self, consumer_id: &ConsumerId) -> Result<Option<LeaseView>, PullError> {
         let active = self.active_lease(consumer_id)?;

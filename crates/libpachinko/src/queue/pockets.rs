@@ -95,19 +95,25 @@ impl<R: PocketRecords> Pockets<R> {
         publication: Publication,
         stamp: Stamp,
     ) -> Result<(PublishOutcome, Option<SupersededRecord>), PublishError> {
-        let pocket_key = publication.pocket_key.clone();
+        let Publication {
+            pocket_key,
+            record_key,
+            rank,
+            payload,
+        } = publication;
         let Some(pocket) = self.by_key.get_mut(&pocket_key) else {
-            let Publication {
-                record_key,
-                rank,
-                payload,
-                ..
-            } = publication;
             self.create(pocket_key, record_key, rank, payload);
             return Ok((PublishOutcome::Created, None));
         };
-        let (outcome, shed) = raise(pocket, &mut self.next_position, publication, stamp)?;
-        if outcome != PublishOutcome::Stale {
+        let arrival = (record_key, rank, payload);
+        let (outcome, shed) = raise(pocket, &mut self.next_position, &pocket_key, arrival, stamp)?;
+        // Exhaustive, so a new outcome must say whether it touches its pocket: only
+        // a rule that adds or raises a record does (a stale publish does not).
+        let touches = match outcome {
+            PublishOutcome::Created | PublishOutcome::NewKey | PublishOutcome::Superseded => true,
+            PublishOutcome::Stale => false,
+        };
+        if touches {
             touch(
                 &pocket_key,
                 pocket,
@@ -281,15 +287,10 @@ impl<R: PocketRecords> Pockets<R> {
 fn raise<R: PocketRecords>(
     pocket: &mut Pocket<R>,
     next_position: &mut Position,
-    publication: Publication,
+    pocket_key: &PocketKey,
+    (record_key, rank, payload): (RecordKey, Rank, Payload),
     stamp: Stamp,
 ) -> Result<(PublishOutcome, Option<SupersededRecord>), PublishError> {
-    let Publication {
-        pocket_key,
-        record_key,
-        rank,
-        payload,
-    } = publication;
     let Some(stored) = pocket.records.lookup(&record_key) else {
         let position = take_position(next_position);
         pocket
@@ -305,7 +306,7 @@ fn raise<R: PocketRecords>(
     }
     if rank < stored.rank {
         let stale = (record_key, rank, payload);
-        let shed = shed(&pocket_key, stale, ShedReason::Stale, stamp);
+        let shed = shed(pocket_key, stale, ShedReason::Stale, stamp);
         return Ok((PublishOutcome::Stale, Some(shed)));
     }
     if let RecordStatus::Held {
@@ -322,7 +323,7 @@ fn raise<R: PocketRecords>(
     let loser = pocket.records.supersede(&record_key, rank, payload);
     let shed = loser.map(|(rank, payload)| {
         shed(
-            &pocket_key,
+            pocket_key,
             (record_key, rank, payload),
             ShedReason::Superseded,
             stamp,
