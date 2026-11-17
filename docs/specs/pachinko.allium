@@ -375,6 +375,15 @@ rule ReviveParkedPocket {
 -- PullClaimsFrontPocket creates that lease in the same rule, so its
 -- emission looks the lease up, which reads the resulting state.
 
+-- PullWithinLease extends the lease whatever the batch holds, an empty
+-- batch included: a consumer that pulls in a loop keeps its pocket after
+-- acking or nacking every record, as long as each pull is processed
+-- before the lease lapses (see the Lease expiry comment), and releasing
+-- it is the consumer's action. That is intended. No lease is granted on
+-- an empty pocket: PullClaimsFrontPocket claims only a queued pocket,
+-- every rule that makes a pocket queued creates a record, requires one
+-- or answers a publish that leaves one, and a pocket loses records only
+-- under an active lease, while it is leased.
 rule PullWithinLease {
     when: Pull(consumer, limit)
     let lease = Lease{consumer: consumer, status: active}
@@ -439,6 +448,12 @@ rule PullFindsNoPocket {
 -- it to be active and the consumer's. An action meant for a lease that has
 -- ended is rejected, even when the same consumer holds the same pocket
 -- again under a new lease and the same key at a newer rank.
+--
+-- An ack is progress: both ack rules reset the pocket's
+-- consecutive_expiries to 0, so lapses are consecutive only while no
+-- ack, release or revive comes between them. A nack, a renew and a pull
+-- leave the count as the rules stand: the maintainer decided the ack
+-- only, and a reset on a nack is neither chosen nor ruled out.
 
 rule AckSettlesRecord {
     when: Ack(consumer, lease, record_key)
@@ -450,6 +465,7 @@ rule AckSettlesRecord {
     requires: record.status = held
     requires: record.held_rank = record.rank
     ensures: lease.expires_at = now + config.lease_ttl
+    ensures: pocket.consecutive_expiries = 0
     ensures: not exists record
 }
 
@@ -464,6 +480,7 @@ rule AckDefersNewerVersion {
     requires: record.held_rank < record.rank
     let position = queue.next_position
     ensures: lease.expires_at = now + config.lease_ttl
+    ensures: pocket.consecutive_expiries = 0
     ensures: record.status = deferred
     ensures: record.position = position
     ensures: record.held_rank = null
@@ -649,6 +666,9 @@ rule LeaseExpiryKeepsPocketAtFront {
 -- records were all acked or nacked before its lease lapses follows the
 -- release rule and goes idle, the state of a pocket with no records; at the
 -- parking threshold it parks instead, since parking has no records guard.
+-- An ack resets the count, so an emptied pocket reaches the threshold
+-- only if no ack was processed since its earlier lapses, or when
+-- max_consecutive_expiries is 1.
 rule LeaseExpiryIdlesEmptyPocket {
     when: LeaseLapsed(lease)
     requires: lease.status = active
@@ -877,11 +897,13 @@ surface Consuming {
 ------------------------------------------------------------
 -- Open Questions
 ------------------------------------------------------------
--- The questions keep the numbers T19 gave them, counted in the order
--- below. The eighth, a late action after expires_at but before the
--- lapse is processed, was closed by decision 0019 (see the Lease expiry
--- comment), and the last below is still the ninth: scenario tags and
--- OneVisitPerKeyPerLease name it so.
+-- The questions keep their numbers, counted in the order below; the
+-- numbering never compacts. T19 numbered the first nine, and the eighth,
+-- a late action after expires_at but before the lapse is processed, was
+-- closed by decision 0019 (see the Lease expiry comment), so the eighth
+-- line below is question 9: scenario tags and OneVisitPerKeyPerLease name
+-- it so. The ninth and tenth lines below are questions 10 and 11, added
+-- from the T31 review.
 
 open question "Equal rank, different payload for one key: reject the publish, last arrival wins, keep both for the consumer to reconcile, or make it configurable? Decide from the conflict-resolution literature and from what comparable queues and databases do and what their users expect. Until then no rule covers rank = stored rank, so the checker treats that publish as rejected; that is a placeholder, not a decision."
 open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
@@ -891,3 +913,5 @@ open question "Adaptive lease TTL: should lease_ttl be derived from observed lea
 open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
 open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"
 open question "A key acked or nacked under a lease, its record removed, is published again before that lease ends: is the new record pullable in the same lease, as the rules allow today because publish creates it queued, or does one visit per key per lease hold for the key itself, so that it waits for the lease to end?"
+open question "A supersede of a held record sheds the version the consumer still holds: Supersede copies record.payload, which is the held payload while the held rank is current, into a SupersededRecord, and a later nack of that held version (NackDefersNewerVersion) makes a DeadLetter of the same payload, so that payload is shed twice, once into each shed queue. Should the held version be shed when it is settled rather than when it is superseded, and should a nack of a superseded held version still dead-letter it? The rules do both today; that is a placeholder, not a decision. Ticket T35 decides it."
+open question "A stale publish touches its pocket: DropStalePublish emits PocketTouched like PublishNewKey and Supersede, so a stale publish into a parked pocket revives it through ReviveParkedPocket and resets its consecutive_expiries although no record changed. Should a stale publish touch the pocket? It does today; that is a placeholder, not a decision. Ticket T35 decides it."

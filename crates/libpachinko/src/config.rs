@@ -66,7 +66,8 @@ pub struct Config {
     /// How long a lease lasts after its claim or its consumer's last pull, ack, nack
     /// or renewal. Zero is admitted.
     pub lease_ttl: Duration,
-    /// How many consecutive lease expiries park a pocket; at least 1.
+    /// How many lease expiries, with no ack, release or revive between them, park a
+    /// pocket; at least 1.
     pub max_consecutive_expiries: u32,
     /// The most records one pull hands out; at least 1.
     pub max_pull_batch: u32,

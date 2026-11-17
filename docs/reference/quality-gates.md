@@ -18,7 +18,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
 | 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `loadgen/Cargo.toml` with `loadgen/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
-| 3 | `lint` | `prek run --all-files`, then `prek run --files` over every untracked file Git does not ignore | The whole hook gate passes over every tracked file, and over every untracked file Git does not ignore. |
+| 3 | `lint` | `prek run --all-files`, then `prek run --files` over every untracked file Git does not ignore | The whole hook gate passes over every tracked file, and every hook that reads the files it is given passes over every untracked file Git does not ignore. |
 | 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every Rust file, the fuzz and loadgen crates' included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
 | 6 | `clippy` | `cargo clippy -- -D warnings`, then the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every lint in the workspace table is clean over every crate target and feature, and every lint in the fuzz and loadgen crates' copies of it over their targets, for the host platform, with warnings as errors. |
@@ -204,7 +204,10 @@ it moves under `ai_tmp/` or into `.git/info/exclude`. A hook that takes no file 
 whose `files` pattern matches an untracked path runs twice. prek hands paths to its hooks
 without `--`, so an untracked path that begins with `-`, such as `--help`, would reach a
 hook as an option: the second run names it and fails rather than check it, and still
-checks the other untracked files. A fresh checkout in CI has no
+checks the other untracked files. The second run reaches every hook that reads the files
+it is given, but `check-added-large-files` reads staged files only, whatever files it is
+given, so an untracked file over its limit passes `just lint` and fails at the commit
+that stages it. A fresh checkout in CI has no
 untracked file, so the second run never happens there.
 
 | Hook | Checks |

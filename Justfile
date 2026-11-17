@@ -234,12 +234,11 @@ fix:
     just lint
 
 # The same two fixer passes over untracked files Git does not ignore, which
-# `--all-files` leaves out, as `lint` reads them; the first may fail on what a
-# fixer repaired, the second must pass. The leading underscore keeps it out of
-# `just --list`.
+# `--all-files` leaves out, as `lint` reads them, over one list; the first pass
+# may fail on what a fixer repaired, the second must pass. The leading
+# underscore keeps it out of `just --list`.
 _fix-untracked:
-    -just _prek-untracked .pre-commit-fix.yaml
-    just _prek-untracked .pre-commit-fix.yaml
+    just _prek-untracked .pre-commit-fix.yaml 2
 
 # prek over every untracked file Git does not ignore, with the given hook
 # configuration; skipped when there is none. The list goes through a file
@@ -248,10 +247,17 @@ _fix-untracked:
 # hands paths to hooks without `--`, so a path that begins with `-`, such as
 # `--help`, would be read as an option: it is named and fails the recipe
 # instead, and the other paths are still checked. Nothing is staged:
-# `git add -N` would change the index `just check` snapshots.
-_prek-untracked config:
+# `git add -N` would change the index `just check` snapshots. With `passes` 2
+# the same list is run twice, and only the first run's failure is ignored.
+_prek-untracked config passes="1":
     #!/bin/sh
     set -eu
+    config=$1
+    passes=$2
+    case $passes in
+        1 | 2) ;;
+        *) printf "%s\n" "passes must be 1 or 2, not $passes" >&2; exit 2 ;;
+    esac
     list=$(mktemp)
     trap 'rm -f "$list"' EXIT
     git ls-files -z --others --exclude-standard >"$list"
@@ -259,21 +265,27 @@ _prek-untracked config:
         exit 0
     fi
     # The inner shell takes the configuration as $0 and the paths as $@.
-    xargs -0 sh -c '
-        bad=0
-        n=$#
-        for f do
-            case $f in
-                -*) printf "%s\n" "untracked path begins with -: $f" >&2; bad=1 ;;
-                *) set -- "$@" "$f" ;;
-            esac
-        done
-        shift "$n"
-        if [ "$#" -gt 0 ]; then
-            prek run --config "$0" --files "$@" || bad=1
-        fi
-        exit "$bad"
-    ' "$1" <"$list"
+    run() {
+        xargs -0 sh -c '
+            bad=0
+            n=$#
+            for f do
+                case $f in
+                    -*) printf "%s\n" "untracked path begins with -: $f" >&2; bad=1 ;;
+                    *) set -- "$@" "$f" ;;
+                esac
+            done
+            shift "$n"
+            if [ "$#" -gt 0 ]; then
+                prek run --config "$0" --files "$@" || bad=1
+            fi
+            exit "$bad"
+        ' "$config" <"$list"
+    }
+    if [ "$passes" = 2 ]; then
+        run || true
+    fi
+    run
 
 # ------------------------------------------------------------------ check ---
 

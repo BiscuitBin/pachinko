@@ -36,7 +36,7 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | --- | --- | --- |
 | `--listen` | `127.0.0.1:8080` | The address the HTTP listener binds; loopback unless set. Port 0 picks a free port, which the `listening on <address>` line names. |
 | `--lease-ttl-ms` | `300000` (5 minutes) | `lease_ttl`: how long a lease lasts after its claim or its consumer's last pull. |
-| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many consecutive lease expiries park a pocket; at least 1. |
+| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many lease expiries, with no ack, release or revive between them, park a pocket; at least 1. |
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
 | `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
