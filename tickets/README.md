@@ -55,7 +55,7 @@ snapshot.
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | done |
 | T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | done |
 | T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | done |
-| T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | todo |
+| T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | done |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
 | T35 | Decide and land the held-version shed (Q1) and stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
 

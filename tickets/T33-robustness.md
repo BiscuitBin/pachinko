@@ -551,6 +551,8 @@ T34); commit B carries this section and `status:`; `3acf093` merges
 - Implementation, the §14 reviewers' triage and the fix writer ran as subagents; the lead
   wrote the red tests and the briefs, and read each diff. Working notes are in
   `ai_tmp/t33/` and `ai_tmp/review/T33-{1,2}/` (gitignored).
+- The maintainer authorised the T33 row's Status cell in `tickets/README.md`, outside
+  Files touched, after the T32 merge.
 
 ### The plan (step 2)
 
@@ -756,14 +758,19 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
   T32's `Queue::ack` bullet, then T33's `LeaseIds::next` one, and T32's pachinko bullet
   joins T33's `### Changed`, which stays above `### Added`, so each crate has one such
   heading. `Cargo.lock` merged clean, and `pockets.rs`, `architecture.md`,
-  `configuration.md` and `http-api.md` merged without conflicts. `just check` at
-  `3acf093` exits 0.
+  `configuration.md` and `http-api.md` merged without conflicts. T32 also changed
+  `docs/reference/configuration.md`'s `--max-consecutive-expiries` row, on a page this
+  ticket's Files touched names only for T34. The maintainer authorised it in T32's
+  close-out, decision 7. It is not T33's `--request-timeout-ms` row, and it merged
+  cleanly. `just check` at `3acf093` exits 0.
 - **`just semver`.** It cannot fire on this break. Run as discovered, its baseline is the
   merge base with `origin/main`, `611a86e`, which has no `lease_ids`; with
   `origin/wave-2-tickets` as the baseline it also passes. cargo-semver-checks 0.51.0
   passes even at `--release-type patch` (a diagnostic, not a gate), so it has no lint
   for a changed trait-method return type. It reports no incompatibility at all, none
   outside the intended one included; the `CHANGELOG` names the break by hand.
+- **After the T32 merge.** A read-only review of `65d834c` against T32's rules, comments
+  and close-out decisions found no drift.
 
 The Verification block ran at `3acf093`, the T32 merge, with `origin/main` read as
 `origin/wave-2-tickets`. A scratch script ran it, printing each command, the tail of its
