@@ -18,8 +18,8 @@ questions 10 and 11:
 
 - **Q1, the held-version shed (open question 10).** A supersede of a held record shed
   the version the consumer still held, and a later nack dead-lettered it again.
-- **Q2, the stale revival (open question 11).** `DropStalePublish` touches the pocket,
-  so a stale publish revives a parked pocket and resets its expiry count.
+- **Q2, the stale revival (open question 11).** `DropStalePublish` touched the pocket,
+  so a stale publish revived a parked pocket and reset its expiry count.
 
 Q1 and Q2 are this ticket's names; they are not the module's questions 1 and 2.
 
@@ -668,7 +668,7 @@ This ticket owns:
 | --- | --- |
 | Decisions | Q1, Q2 (the module's question 11) and the nack reset, all decided and recorded above; the wire names in step 1 |
 | Rules | Only a rule a step-1 wire answer needs. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
-| Scenarios | Every row of "Scenarios" in the impact map; S024 split under Q2; S063's nacked case, S064 and `a_nack_leaves_the_expiry_count_over_http` flipped by the nack reset; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
+| Scenarios | Every row of "Scenarios" in the impact map; S024 split and S026 rechecked under Q2; S063's nacked case, S064 and `a_nack_leaves_the_expiry_count_over_http` flipped by the nack reset; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
 | Obligations | Every id `just plan-spec pachinko` prints for the rules changed at `a338355`, at `983b785` and at step 4 |
 
 ## Non-goals
@@ -1086,8 +1086,8 @@ $ just analyse-specs
 allium analyse: 1 specifications, no diagnostics and no findings.
 exit 0
 $ just plan-spec pachinko   (obligations counted from its JSON)
-236 obligations; diagnostics []
 exit 0
+236 obligations; diagnostics []
 $ rg -c '^open question' docs/specs/pachinko.allium
 7
 exit 0
@@ -1104,13 +1104,14 @@ follow the old rules.
 
 Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, on 2026-11-16, over the
 uncommitted edit that became `983b785`. Two reviewers ran in parallel, one lens each,
-with the five questions of the approved plan: whether a stale publish still reaches
-`PocketTouched`, whether a supersede, a deferral or a new key stopped reaching it,
-whether any text still says a nack leaves the count or describes the old Q2 behaviour,
-whether any other open question was answered, and whether the lapse comment's "only
-when `max_consecutive_expiries` is 1" is true. A fresh Claude subagent triaged the
-findings. The raw briefs, findings and verdicts stayed under `ai_tmp/review/T35-2/`,
-uncommitted.
+with six questions: whether a stale publish still reaches `PocketTouched`, whether a
+supersede, a deferral or a new key stopped reaching it, whether any text still says a
+nack leaves the count or describes the old Q2 behaviour, whether any other open
+question was answered, whether the lapse comment's "only when
+`max_consecutive_expiries` is 1" is true, and whether the numbering comment and the
+handbook's counts agree with the seven `open question` lines left. A fresh Claude
+subagent triaged the findings. The raw briefs, findings and verdicts stayed under
+`ai_tmp/review/T35-2/`, uncommitted.
 
 | Finding | Severity | Verdict | Fix |
 | --- | --- | --- | --- |
