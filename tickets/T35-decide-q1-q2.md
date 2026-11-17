@@ -1,6 +1,6 @@
 ---
 id: T35
-title: "Land the held set that lasts until the lease ends (Q1, decided), and decide the stale revival (Q2)"
+title: "Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided"
 status: todo
 depends_on: [T32]
 parallel_with: []
@@ -8,7 +8,7 @@ branch: ticket/t35-decide-q1-q2
 estimated_size: L
 ---
 
-# T35: Land the held set that lasts until the lease ends (Q1, decided), and decide the stale revival (Q2)
+# T35: Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided
 
 ## Context
 
@@ -27,11 +27,13 @@ Q1 and Q2 are this ticket's names; they are not the module's questions 1 and 2.
 on the step-through page (`https://claude.ai/artifact/3X1JB236GK4MRvj3f69UE2`) and, in an
 elicitation on 2026-11-13, chose a design that is none of them. It also closes the
 module's open question 9, which this ticket first excluded. The specification already
-says it: commit `a338355` on this branch. **Q2 is not decided** and is still this
-ticket's step 1.
+says it: commit `a338355` on this branch. **Q2 and the nack reset are decided too.**
+T32's close-out decided on 2026-11-13 that a nack resets `consecutive_expiries` and that
+the change lands here, and on 2026-11-16 the maintainer chose "No touch on stale" for
+Q2. Both are in the specification at `983b785` on this branch.
 
 This ticket now carries the rest: the tests, the library, the service and the handbook
-follow the specification at `a338355`, and Q2 is decided and landed.
+follow the specification at `a338355` and `983b785`.
 
 ### The decision on Q1 (maintainer, 2026-11-13)
 
@@ -121,7 +123,46 @@ Approved with the plan, as assumptions the maintainer did not correct:
 - "Deferred" stays the word for a newer version waiting behind a held one; `deferred`
   stops being a record status.
 - The lease read shows each held record's mark.
-- The ack still resets `consecutive_expiries` when it is processed (T32, unchanged).
+- The ack resets `consecutive_expiries` when it is processed (T32), and so does the
+  nack (T32's close-out, below).
+
+### The decisions on the nack reset and Q2
+
+**The nack reset (T32's close-out, 2026-11-13).** From `tickets/T32-spec-follow-up.md`,
+"Close-out, 2026-11-13", where the questions are abridged and the answers verbatim:
+
+| # | Question | Answer |
+| --- | --- | --- |
+| 4 | Should a nack reset a pocket's `consecutive_expiries`? | "Yes: a nack resets too" |
+| 5 | Where does the nack reset land, since it is a specification change and cannot land here? | "T35" |
+
+The maintainer's note on decision 4, in full:
+
+> Because the consecutive_expiries feature is mean to capture pockets that keep killing
+> workers (unrecoverable bugs), And cordon them off to avoid unnecessary churn and
+> turbulence, in a situation where we may or may not be able to attribute the issue to a
+> specific record. NACKs, while they are a negative for an individual record, they are
+> still a part of the natural and expected workflow/lifecycle. Individual records can be
+> cracked without affecting the other records in the pocket.
+
+The same close-out's decision 6 gives the `QueuedHasRecords` invariant to a ticket after
+T35.
+
+**Q2 and this ticket's scope (maintainer, 2026-11-16).** The questions, verbatim, with
+the label the maintainer chose; the "(Recommended)" label the dialog put on one option
+is dropped:
+
+- "Q2, the stale revival (the module's open question 11): a stale (lower-rank) publish
+  into a parked pocket currently revives it and resets consecutive_expiries although no
+  record changed. Which do you choose?" Answer: "No touch on stale".
+- "T35 is taking on the nack reset (a nack resets the pocket's consecutive_expiries, as
+  T32's close-out decided). Should this session also land the specification change now,
+  as a338355 did for Q1, or only rewrite the T35 ticket so its own step 4 lands it?"
+  Answer: "Land spec now + ticket".
+
+The maintainer chose none of the other open items for that session: the step-1 wire
+answers, the order of entries at a lease's end, the emptied-pocket pull test, the
+decision record and the qsketch lines stay where they were.
 
 ### What landed at `a338355`
 
@@ -161,13 +202,37 @@ still carry `oq:10` and `oq:9`. `just check` passes there because no gate compar
 tags or the tests with the specification. Invariant 1 of `AGENTS.md` makes that
 difference a defect of the code, and this ticket removes it.
 
-### Q2: the options
+### What landed at `983b785`
 
-No option is chosen.
+The specification, by rule name, in the commit
+`983b78554dff6d6d6e2cb78b3fd7f4a9a6de9072`:
 
-- **Today.** A stale publish revives a parked pocket; the specification says so.
-- **No touch on stale.** `DropStalePublish` loses `ensures: PocketTouched`, so a stale
-  resend is recorded as `stale` and changes nothing else, as an equal-rank publish
+| Area | At `983b785` |
+| --- | --- |
+| Ack and nack | `NackMarksRecord` gains `ensures: pocket.consecutive_expiries = 0`, as `AckMarksRecord` has; `NackRepeats` gains nothing, as `AckRepeats` has nothing. The comment above `AckMarksRecord` says an ack or a nack is progress, gives the maintainer's reason in one clause, and says a renew and a pull leave the count |
+| Lease expiry | The comment above `LeaseExpiryIdlesEmptyPocket` says every record of such a pocket was marked under the lease, so its count is 0 before the lapse and it parks only when `max_consecutive_expiries` is 1 |
+| Publish | `DropStalePublish` no longer emits `PocketTouched`. The comment above `PublishNewKey` names the three rules that touch a pocket (`PublishNewKey`, `Supersede`, `DeferBehindHeldVersion`) and says a stale publish leaves a parked pocket parked, closing question 11. That also replaces "Every publish into an existing pocket emits PocketTouched", T32-1's handed-back point |
+| Open questions | 11 removed; seven remain, questions 1 to 7, and the numbering comment says so |
+
+`just plan-spec pachinko` printed 236 obligations before and after, with the same ids.
+Its JSON differs only in `dependencies`: the five `DropStalePublish` obligations lose
+`PocketTouched` from `trigger_emissions`, and the six `NackMarksRecord` obligations gain
+`Pocket` in `entities_written`. The same commit drops question 11 from the lists in
+`docs/how-to/work-with-the-specs.md` and `docs/explanation/specifications.md`.
+
+As at `a338355`, the library, its tests, the service and the behaviour pages still
+follow the old rules there: a nack leaves the count, and a stale publish revives a
+parked pocket. No gate compares them with the specification, so `just check` passes.
+
+### Q2: the decision
+
+The maintainer chose "No touch on stale" on 2026-11-16 (above). The two options as they
+were offered:
+
+- **Before, at `a338355`.** A stale publish revives a parked pocket; the specification
+  says so.
+- **No touch on stale, chosen.** `DropStalePublish` loses `ensures: PocketTouched`, so a
+  stale resend is recorded as `stale` and changes nothing else, as an equal-rank publish
   already changes nothing. The comment above `PublishNewKey` ("Every publish into an
   existing pocket emits PocketTouched") changes; `ReviveParkedPocket`,
   `ReviveIdlePocket` and the module's question 7 do not.
@@ -175,7 +240,7 @@ No option is chosen.
 Pocket `a` parked after three consecutive lapses, its record `a1` at rank 1. A publish
 into it:
 
-| Publish into parked `a` | Rule | Today | No touch on stale |
+| Publish into parked `a` | Rule | Before | No touch on stale (decided) |
 | --- | --- | --- | --- |
 | A new key | `PublishNewKey` | revives | revives |
 | A higher rank | `Supersede` | revives | revives |
@@ -183,9 +248,10 @@ into it:
 | An equal rank | none (rejected) | stays parked | stays parked |
 
 The `SupersededRecord` with `reason: stale` is created under both. Under the Q1
-decision a pocket can also park with no records (every record nacked, at the
-threshold); a stale publish needs a stored record, so such a pocket is revived only by
-`PublishNewKey`, under either option.
+decision and the nack reset a pocket can also park with no records, but only at
+`max_consecutive_expiries` 1: every record was acked or nacked under the lease, so the
+count is 0 before the lapse. A stale publish needs a stored record, so such a pocket is
+revived only by `PublishNewKey`, under either option.
 
 Verified at `62efe41` and unchanged at `a338355`: `DropStalePublish` requires
 `rank < record.rank`, sheds the arrival as `reason: stale` and emits `PocketTouched`;
@@ -193,7 +259,8 @@ Verified at `62efe41` and unchanged at `a338355`: `DropStalePublish` requires
 (`crates/libpachinko/src/queue/pockets.rs:82-148`) calls `touch` on every branch that
 does not return an error. S024, `a_supersede_or_a_stale_publish_revives_a_parked_pocket`
 (`crates/libpachinko/tests/queue/expiry.rs`), pins it and carries `oq:11`; S025 pins
-that an equal rank does not revive.
+that an equal rank does not revive. At `983b785` `DropStalePublish` no longer emits
+`PocketTouched`; the code and S024 change at steps 5 and 6.
 
 The maintainer's xzibitq repository holds `qsketch.py`, a reference sketch outside this
 repository. As read there on 2026-11-07, `MultiLeaseQueue.push` (lines 533-545) takes a
@@ -209,7 +276,8 @@ Surveyed read-only on 2026-11-13 against the specification's edit (the lines of
 `a338355` and have moved a little; find rules by name). Code, test and handbook lines
 are as of `62efe41`, which `a338355` does not change. The merge of T32's pull request 48
 at `b5d4a83` later changed seven of the files cited (step 2's hand-back), so their lines
-have moved too. Every line is re-read at step 3 before it is relied on.
+have moved too. Section 8's lines are as of `8f15563`, T32's head, where T32's ticket
+records them. Every line is re-read at step 3 before it is relied on.
 
 Abbreviations: `LQ/` is `crates/libpachinko/tests/queue/`, `LS/` is
 `crates/libpachinko/src/`, `PT/` is `crates/pachinko/tests/`, `PS/` is
@@ -324,8 +392,8 @@ Each row below gives the catalog line, the test at `path:line` of its fn, what t
 | S055 core | testing.md:235 | LQ/lease.rs:220 | Ack both, release gives Idle | Same result through `ending_records` |
 | S060 core | testing.md:240 | LQ/expiry.rs:171 | Lapse requeues unsettled records in place | Same (`RequeueUnsettledRecord`) |
 | S061 edge | testing.md:241 | LQ/expiry.rs:208 | Ack both, lapse gives Idle | Same result; the records are removed at the lapse |
-| S063 edge | testing.md:243 | LQ/expiry.rs:489 | `once.ack == Ok(Settled)` (:502); parked with 0 records; nacked pocket parked with 0 | Same fates; the outcome type changes; nacked records become dead letters at the parking lapse (not asserted) |
-| S064 edge | testing.md:244 | LQ/expiry.rs:400 | `nack == Ok(Settled)` (:406) | Outcome type only |
+| S063 edge | testing.md:243 | LQ/expiry.rs:489 | `once.ack == Ok(Settled)` (:502); parked with 0 records; nacked pocket parked with 0 | The outcome type changes; nacked records become dead letters at the parking lapse (not asserted). The nack reset flips the nacked case (section 8) |
+| S064 edge | testing.md:244 | LQ/expiry.rs:400 | `nack == Ok(Settled)` (:406) | The outcome type changes, and the nack reset inverts "after the nack" (section 8) |
 | S067 decision:0019 | testing.md:247 | LQ/expiry.rs:593 | `second.ack == Ok(Settled)` (:596) | Outcome type only |
 | S068 edge, wire | testing.md:248 | LQ/lease.rs:268 (:285-286 `Ok(Settled)`); wire PT/http.rs:489 `old_lease_fenced` (:509 `"settled"`), test :514 | Fencing | Outcome name only |
 | S071 oq:9 | testing.md:251 | LQ/settle.rs:326 | Ack, then publish k@2 gives `NewKey`; record Queued; pulled again in the same lease | Inverted: `DeferBehindHeldVersion`; record Held (acked) with the version deferred; the pull returns nothing; after release k@2 is queued at its arrival position. Retag: drop `oq:9`; rename |
@@ -517,7 +585,7 @@ What a client would see differently. These are open points, not decided here:
 6. **Lease-end plumbing.** `Pockets::release` and `Pockets::lapse` (pockets.rs:251, :274) have no `now`, consumer id, TTLs or access to `Shed`; the reconciliation needs all four. rustqual limits (`max_parameters = 5`, `max_methods = 20`, `max_fields = 12` in `rustqual.toml`) may force a parameter struct.
 7. **Ordering of several shed entries created at one lease end** is not specified (the spec's `for record in pocket.held_records`). `Shed` keys by `(expires_at, arrival)`, so the arrival order the implementation chooses (for example by position or key) is observable in `Snapshot` and must be pinned and documented ("What the specification leaves open is pinned", testing.md:154-157). The walk compares the `Vec`s in order (walk.rs:221-222).
 8. **The tick order.** In one tick, lapses run before decay with the same `now` (LS/queue/expiry.rs:126-141), so with `dead_letter_ttl = 0` or `superseded_ttl = 0` an entry created by a lapse decays in that same tick. That is consistent with the spec; the model must predict it.
-9. **`AckRepeats` does not reset `consecutive_expiries`.** The code's `ack` resets it unconditionally (LS/queue/settle.rs:69). The spec argues the count is already 0 under that lease (pachinko.allium Ack comment), so an unconditional reset is observationally equal. Say so in the code or test, or skip the reset.
+9. **`AckRepeats` does not reset `consecutive_expiries`.** The code's `ack` resets it unconditionally (LS/queue/settle.rs:69). The spec argues the count is already 0 under that lease (pachinko.allium Ack comment), so an unconditional reset is observationally equal. Say so in the code or test, or skip the reset. Since `983b785` the same holds for `NackRepeats`: `NackMarksRecord` resets and `NackRepeats` does not.
 10. **Refusal for a conflicting mark.** `LeaseActionError` has no variant; the service maps unknown variants to 503 `not_ready` (PS/http.rs:256-260, :297-305), so the library and service must land together.
 11. **`HeldRecord` is shared** by `PullOutcome::Batch`, `LeaseView`, `PocketRecords::held`/`Batch` and `RecordReply`. Putting `mark` on it puts an always-`unsettled` field on batches and the batch wire (open, section 5).
 12. **`RecordView::new`** already takes 5 params, the rustqual limit. The new fields go into `RecordStatus::Held`, whose variant is not `#[non_exhaustive]`, so adding fields is breaking.
@@ -527,6 +595,34 @@ What a client would see differently. These are open points, not decided here:
     - A dead letter's `nacked_by` is `lease.consumer` at the lease end. That equals the nacker, since only the lease holder can nack, so it is fine.
     - Decision 7 positions: `ConsumeAckedVersionQueueDeferred` and `DeadLetterNackedVersionQueueDeferred` set `record.position = deferred_position`, while `RequeueUnsettledRecord` and `SupersedeUnsettledHeldVersion` keep the held position. The store must therefore keep both positions while held. That fits the invariants `ArrivalPositionUnoccupied` and `UniqueArrivalPosition`, but the `MemoryRecords` queued index (memory.rs:26) must be keyed by the final position at the lease end, not at publish.
     - `DeferBehindHeldVersion` consumes a counter value on publish into a held key (a visible `next_position` change the walk must predict), and a later `Supersede` of the deferred version keeps that arrival position, shedding the deferred loser at once with `shed_at = now`.
+
+#### 8. The nack reset
+
+T32's "What T35 must flip" (`tickets/T32-spec-follow-up.md`, under Close-out) lists what
+follows the reset, with lines as of `8f15563`. The specification's half landed at
+`983b785`. The rest:
+
+- `crates/libpachinko/tests/queue/expiry.rs`: S063's "nacked" case, which ends
+  `(Parked, 3, 0)` at the default limit and, with the nacks resetting the count, idles
+  with a count of 1; S064's "after the nack" assertion, now a reset; S064's title in
+  the catalog.
+- The walk's model, which must reset the count on a nack, and its reach label "nack
+  keeps a counted pocket" (`crates/libpachinko/tests/queue/walk.rs:957`,
+  `invariants.rs:405`).
+- `a_nack_leaves_the_expiry_count_over_http` in `crates/pachinko/tests/http.rs`, with
+  its driver `nack_keeps_count` and its S064 row in the catalog: red once the reset
+  lands, so it is inverted and renamed.
+- `Queue::nack` and the module doc in `crates/libpachinko/src/queue/settle.rs` ("a nack
+  leaves it", line 3).
+- `docs/reference/http-api.md:64`, "a nack leaves it".
+- `CHANGELOG.md:40`, "A nack, renew or pull leaves the count", and `:137`, "a nack does
+  not".
+- Every sentence that lists the resets as "ack, release or revive":
+  `crates/libpachinko/src/config.rs:69`, `crates/libpachinko/src/queue/types.rs:168`,
+  `crates/libpachinko/src/queue/inspect.rs:47`, `docs/reference/configuration.md:39`,
+  `docs/project/terminology.md:36`, `docs/reference/http-api.md:86`, `README.md:108`,
+  `CHANGELOG.md:39` and `:59`, and the comment on `PARK_AT_TWO` in
+  `crates/pachinko/tests/http.rs`.
 
 ### Risks (`CONVENTIONS.md` §13)
 
@@ -550,28 +646,30 @@ What a client would see differently. These are open points, not decided here:
   grow it. Plan a split at step 3.
 - **lychee and typos over `tickets/`.** The hand-back notes quote test names and paths
   as code spans, never as links.
-- **The specification moves first.** For Q2 and for any wire decision that needs a rule,
-  the specification changes before the code (`AGENTS.md`, invariant 1).
+- **The specification moves first.** For any wire decision that needs a rule, the
+  specification changes before the code (`AGENTS.md`, invariant 1), as it did for Q2 and
+  the nack reset at `983b785`.
 
 ## Goal
 
 The library, the service, loadgen, the tests and the handbook do what the specification
-at `a338355` says, and Q2 is decided and landed. Every scenario the Q1 decision changes
-or adds is pinned by a tagged library test that was red before the code changed; every
-`// obligation:` tag names an id `just plan-spec pachinko` prints; no test, catalog row
-or page carries `oq:9`, `oq:10` or `oq:11`; the walk model predicts the decided
-behaviour and checks all the module's invariants; a client of the service sees marks
-on the lease read, a repeat ack succeed and a changed mark refused, under names the
-maintainer chose at step 1.
+at `a338355` and `983b785` says: a record stays held until its lease ends, a nack resets
+its pocket's expiry count, and a stale publish leaves a parked pocket parked. Every
+scenario the decisions change or add is pinned by a tagged library test that was red
+before the code changed; every `// obligation:` tag names an id
+`just plan-spec pachinko` prints; no test, catalog row or page carries `oq:9`, `oq:10`
+or `oq:11`; the walk model predicts the decided behaviour and checks all the module's
+invariants; a client of the service sees marks on the lease read, a repeat ack succeed
+and a changed mark refused, under names the maintainer chose at step 1.
 
 This ticket owns:
 
 | Kind | Names |
 | --- | --- |
-| Decisions | Q1, decided on 2026-11-13 and recorded above; Q2 (the module's question 11); the wire names in step 1 |
-| Rules | For Q2: `DropStalePublish` and the `PocketTouched` comment, if the answer changes them. For Q1: none, unless a step-1 answer needs one; any defect found in the rules at `a338355` is fixed in the specification first |
-| Scenarios | Every row of "Scenarios" in the impact map; S024 and S026 under Q2; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
-| Obligations | Every id `just plan-spec pachinko` prints for the rules changed at `a338355` and at step 4 |
+| Decisions | Q1, Q2 (the module's question 11) and the nack reset, all decided and recorded above; the wire names in step 1 |
+| Rules | Only a rule a step-1 wire answer needs. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
+| Scenarios | Every row of "Scenarios" in the impact map; S024 split under Q2; S063's nacked case, S064 and `a_nack_leaves_the_expiry_count_over_http` flipped by the nack reset; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
+| Obligations | Every id `just plan-spec pachinko` prints for the rules changed at `a338355`, at `983b785` and at step 4 |
 
 ## Non-goals
 
@@ -580,7 +678,9 @@ This ticket owns:
   (capacity) or 7 (what else revives a parked pocket).
 - No change to the Q1 decision. A finding that the decision is wrong goes to the
   maintainer as a question, never into a fix.
-- No reset of `consecutive_expiries` on a nack; T32's reset on an ack stays.
+- No reset of `consecutive_expiries` on a renew or a pull; an ack and a nack reset it.
+- No `QueuedHasRecords` invariant: T32's close-out (decision 6) gives it to a ticket
+  after T35.
 - No route that reads the superseded or dead-letter queues.
 - No "transaction" vocabulary (decision 8).
 - No decision record unless the maintainer asks for one at step 1; if asked, it is
@@ -593,21 +693,22 @@ This ticket owns:
 
 | Path | Class | Content |
 | --- | --- | --- |
-| `docs/specs/pachinko.allium` | shared, own lines | Q2's decision; `open question` 11 removed with it; any rule a step-1 wire answer needs |
+| `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; any rule a step-1 wire answer needs |
 | `crates/libpachinko/src/records.rs`, `records/memory.rs`, `records/contract.rs` | shared, own lines | `RecordStatus`, `RecordView`, the `PocketRecords` trait, `MemoryRecords` and the contract: marks, the nack time, the arrival position, the lease-end step |
 | `crates/libpachinko/src/queue.rs`, `queue/pockets.rs`, `queue/settle.rs`, `queue/publish.rs`, `queue/renew.rs`, `queue/expiry.rs`, `queue/shed.rs`, `queue/types.rs`, `queue/inspect.rs` | shared, own lines | Publish's defer branch, the mark step, the lease-end reconciliation and its stamps, the outcome types, the lease view's marks, the docs and doctests |
-| `crates/libpachinko/src/ids.rs`, `error.rs`, `lib.rs`, `config.rs` | shared, own lines | `HeldRecord` if it carries the mark; the refusal for a changed mark; the crate docs and doctest; the S005 doc if the dead-letter TTL wording changes |
+| `crates/libpachinko/src/ids.rs`, `error.rs`, `lib.rs`, `config.rs` | shared, own lines | `HeldRecord` if it carries the mark; the refusal for a changed mark; the crate docs and doctest; the S005 doc if the dead-letter TTL wording changes; the `max_consecutive_expiries` doc (impact map, section 8) |
 | `crates/libpachinko/tests/queue/*.rs` | shared, own lines | The scenarios, the walk model, the invariant checks, the fixture and the counting store |
 | `crates/libpachinko/benches/workloads.rs` | shared, own lines | W3's doc comment, if its wording is no longer true |
 | `crates/libpachinko/README.md` | shared, own lines | The signatures, the record state diagram, the sequence and the usage |
 | `crates/pachinko/src/http.rs`, `http/leases.rs`, `http/batch.rs`, `actor.rs` | shared, own lines | The ack and nack outcome mapping, the refusal's status and code, the lease read's marks, the publish outcome if step 1 adds one |
-| `crates/pachinko/tests/http.rs`, `tests/batch_publish.rs` | shared, own lines | The wire drivers for S040, S047, S068 and the new wire scenarios |
+| `crates/pachinko/tests/http.rs`, `tests/batch_publish.rs` | shared, own lines | The wire drivers for S040, S047, S068 and the new wire scenarios; `a_nack_leaves_the_expiry_count_over_http` and the `PARK_AT_TWO` comment |
 | `loadgen/src/client.rs` | shared, own lines | The outcome strings it accepts |
 | `docs/reference/testing.md` | shared, own lines | The catalog rows, the scenario and invariant counts, the tag legend |
 | `docs/reference/http-api.md`, `docs/reference/api.md` | shared, own lines | The ack, nack, lease-read, release and error text |
+| `docs/reference/configuration.md` | shared, own lines | The `--max-consecutive-expiries` sentence, CR5's, on T32's flip list |
 | `docs/explanation/architecture.md`, `docs/project/terminology.md`, `docs/how-to/test-and-debug.md` | shared, own lines | The store seam, the shed queues, the terms (held set, mark, deferred), the lease-read example |
-| `docs/how-to/work-with-the-specs.md`, `docs/explanation/specifications.md` | shared, own lines | The `oq:9` and `oq:10` sentence goes; question 11 goes with Q2 |
-| `docs/explanation/prior-art.md` | shared, own lines | A sentence on the section about a key re-published within the lease, saying question 9 is closed |
+| `docs/how-to/work-with-the-specs.md`, `docs/explanation/specifications.md` | shared, own lines | Question 11 left both lists at `983b785`; the sentence on the `oq:9`, `oq:10` and `oq:11` tags goes at step 7 |
+| `docs/explanation/prior-art.md` | shared, own lines | A sentence on the section about a key re-published within the lease, saying question 9 is closed; the count of closed questions at :229-230 and :415 |
 | `README.md` | shared, own lines | The sequences' `settled`, `superseded` and `deferred` replies |
 | `CHANGELOG.md` | shared, own lines | libpachinko and pachinko Unreleased, Changed |
 | `tickets/README.md` | shared, own lines | T35's Status cell |
@@ -618,7 +719,6 @@ This ticket owns:
 1. **Authorisation required: the product decisions that remain.** Ask the maintainer,
    citing the step-through page `https://claude.ai/artifact/3X1JB236GK4MRvj3f69UE2` and this
    ticket's Context:
-   - **Q2:** today, or no touch on stale.
    - **The ack and nack reply.** `settled` and `deferred` have lost their meanings: an
      ack or nack now always marks. Which names does the library's outcome type and the
      wire use, and does a repeat answer differently from the first mark?
@@ -636,10 +736,8 @@ This ticket owns:
      them.
 
    Then stop until the maintainer answers, and quote the answers in the hand-back,
-   dated. An answer of "today" on Q2 still resolves it: the `open question` line goes,
-   the decision is written as a comment on the rule, and no code changes for it. An
-   answer that names something outside these options is a new design: record it and
-   stop again.
+   dated. An answer that names something outside these options is a new design: record
+   it and stop again.
 2. **The worktree.** The branch `ticket/t35-decide-q1-q2` and its worktree exist,
    stacked on `ticket/t32-spec-follow-up` at `62efe41`, with the specification at
    `a338355`. T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, not
@@ -663,28 +761,24 @@ This ticket owns:
    - the order of several entries created at one lease end, which the specification
      leaves open: choose one, pin it in a test and say so in
      `docs/reference/testing.md` ("What the specification leaves open is pinned");
-   - whether `AckRepeats` skips the count reset or performs it (it is 0 either way);
+   - whether `AckRepeats` and `NackRepeats` skip the count reset or perform it (it is 0
+     either way);
    - the split of `LQ/walk.rs`;
    - each test that must flip, each new scenario with its id from S078, and each
      handbook line the decisions reach. A file the plan needs outside Files touched is
      handed back.
-4. **The specification, for Q2 and the wire answers.** Use the `spec-change` skill.
-   Remove `open question` 11 in the same commit as its decision is stated, and extend
-   the numbering comment. For "no touch on stale", remove `ensures: PocketTouched` from
-   `DropStalePublish` and reword the comment above `PublishNewKey`; for "today", a
-   comment on the rule says the revival is decided. Under either answer that comment
-   stops saying "Every publish into an existing pocket emits PocketTouched": a publish
-   at the stored rank matches no rule and emits nothing, so it reads "Every accepted
-   publish" (handed to this ticket by T32-1, in T32's Open points). Run `just check-specs`,
-   `just analyse-specs` and `just plan-spec pachinko`, and diff the obligation list
-   against step 3's.
+4. **The specification for the step-1 wire answers, if any needs a rule.** Q2 and the
+   nack reset landed at `983b785` (Hand-back notes). Use the `spec-change` skill for a
+   rule a step-1 answer needs; with none, this step is skipped and says so in the
+   hand-back. Run `just check-specs`, `just analyse-specs` and `just plan-spec pachinko`,
+   and diff the obligation list against step 3's.
    **Adversarial review** (`CONVENTIONS.md` §14), only if a rule changed here: checkpoint
-   T35-2, the specification diff against the quoted answers. Ask whether a stale publish
-   still reaches `PocketTouched` under no touch, whether a supersede, a deferral or a
-   new key stopped reaching it, whether any text still describes the old behaviour, and
-   whether any other open question was answered. The commands are in §14;
-   findings go to `ai_tmp/review/T35-2/`, with `-o` on a path the reviewer does not
-   write itself.
+   T35-3, the specification diff against the quoted answers. Ask whether each rule says
+   what its answer says, whether any text still describes the old behaviour, and whether
+   any open question was answered. The commands are in §14; findings go to
+   `ai_tmp/review/T35-3/`, with `-o` on a path the reviewer does not write itself.
+   Checkpoints are numbered in the order they run: T35-1 and T35-2 reviewed the
+   specification at `a338355` and `983b785`, T35-3 is this one and T35-4 is step 8's.
 5. **The red tests.** Use the `rust-change` skill. Derive the tests from the
    specification's clauses before any code changes; each carries `// scenario:` with
    its id and `// obligation:` with ids from `just plan-spec pachinko`. The designs:
@@ -703,8 +797,9 @@ This ticket owns:
      published in between so the order is observable;
    - the pocket at the lease's end: every record acked or nacked and none deferred
      (idle on release; idle or parked on lapse); every record acked with one deferred
-     version (queued); only nacks at the parking threshold (parked with no records,
-     dead letters created);
+     version (queued); only nacks with `max_consecutive_expiries = 1` (parked with no
+     records, dead letters created), since at a higher limit the nacks reset the count
+     and the lapse idles the pocket;
    - a dead letter created at the lease's end with `nacked_at` at the nack and
      `expires_at` at the end plus `dead_letter_ttl`, and its decay;
    - every row of "Scenarios" in the impact map rewritten to the decided behaviour,
@@ -712,8 +807,13 @@ This ticket owns:
      test repaired;
    - the walk model rewritten to the new rules with all 33 invariants, so the invariant
      walk fails until the code follows;
-   - Q2 as decided: under no touch, S024 splits into a supersede that revives and a
-     stale publish that leaves the pocket parked.
+   - Q2 as decided: S024 splits into a supersede that revives and a stale publish that
+     leaves the pocket parked with its count, and drops `oq:11`;
+   - the nack reset (impact map, section 8): S063's nacked case idles with a count of 1,
+     S064 is inverted so the nack resets the count, the walk's model resets on a nack
+     and its label "nack keeps a counted pocket" changes, and
+     `a_nack_leaves_the_expiry_count_over_http` and its driver are inverted and
+     renamed.
 
    Run `just test` and quote the failures, each red for the reason the decision gives.
    A test whose scenario keeps today's behaviour is a pinning test: on a scratch copy
@@ -721,20 +821,26 @@ This ticket owns:
 6. **The code.** Use the `rust-change` skill. Implement along step 3's plan until
    step 5's tests pass: the library, then the service and loadgen in the same commit
    series, so no commit leaves a library refusal unmapped. Every entry created at a
-   lease's end is stamped from the one `now` the release or the tick read. Update the
-   docs and doctests the impact map lists. Run `just fmt-check`, `just clippy`,
-   `just test`, `just doc`, `just coverage`, `just effects` and `just semver`, quoting
-   the semver report.
+   lease's end is stamped from the one `now` the release or the tick read. `Queue::nack`
+   resets the count, and a stale publish no longer touches its pocket. Update the docs
+   and doctests the impact map lists, among them section 8's: "ack, release or revive"
+   becomes "ack, nack, release or revive", and "a nack leaves it" goes. Run
+   `just fmt-check`, `just clippy`, `just test`, `just doc`, `just coverage`,
+   `just effects` and `just semver`, quoting the semver report.
 7. **The handbook.** Use the `review-docs` skill. Every line under "Handbook, READMEs,
    changelog" in the impact map; the catalog rows, counts and legend in
    `docs/reference/testing.md`; the terms in `docs/project/terminology.md` (held set,
    mark, deferred in its new sense, superseded record, dead letter, position);
-   `CHANGELOG.md` for both crates, naming what a client observes. Run `just check-docs`.
-8. **Adversarial review** (`CONVENTIONS.md` §14), checkpoint T35-3, the whole diff
+   `CHANGELOG.md` for both crates, naming what a client observes; the handbook lines of
+   section 8, and its `CHANGELOG.md` lines by hand, since the Verification pattern does
+   not read the changelog. Run `just check-docs`.
+8. **Adversarial review** (`CONVENTIONS.md` §14), checkpoint T35-4, the whole diff
    before the final commit, against the quoted decisions, the Goal table, Files touched
    and the specification. Ask: whether the code does what each rule says in every arm
    of the reconciliation table, by release and by lapse, including a lapse that parks;
    whether any path sheds or dead-letters a held version while its lease is active;
+   whether a nack resets the count and a stale publish touches nothing, in the library,
+   the model and the wire;
    whether any test passes with the code reverted to `62efe41`'s behaviour; whether the
    walk model and the queue agree only because both were changed the same wrong way;
    whether any obligation tag names an id `just plan-spec pachinko` does not print;
@@ -743,7 +849,7 @@ This ticket owns:
    changed without its doctest; whether the service maps every library outcome and
    refusal; and whether any file outside Files touched changed. Two reviewers, one lens
    each, `conformance` and `breakage`, with the harness the executing agent is not;
-   separate triage writes `ai_tmp/review/T35-3/verdicts.md`; one writer applies the
+   separate triage writes `ai_tmp/review/T35-4/verdicts.md`; one writer applies the
    valid fixes; two rounds at most.
 9. **Review, merge and gate.** Use the `review-change` skill over the diff, then the
    `project-check` skill: `just check`, with `fix-quality` for any failing recipe. Run
@@ -764,6 +870,10 @@ This ticket owns:
   nothing before them chose an option.
 - `docs/specs/pachinko.allium` carries no `open question` for questions 9, 10 or 11;
   `rg -c '^open question' docs/specs/pachinko.allium` prints 7.
+- A nack resets its pocket's `consecutive_expiries` when it is processed, in the library
+  and over the wire (S064 and the renamed wire test), and a renew or a pull leaves it.
+- A stale publish into a parked pocket leaves it parked with its count, and records the
+  arrival as `stale` (S024's stale half).
 - Each row of the reconciliation table holds by release and by lapse, each pinned by a
   tagged library test; no path sheds, dead-letters or removes a held version while its
   lease is active, and no version leaves a pocket without being acked, dead-lettered or
@@ -830,6 +940,9 @@ rg -c 'oq:[0-9]+\b' docs/reference/testing.md crates/libpachinko/tests; echo "ex
 # the old names are gone from code and pages (the changelog and tickets keep history)
 ! rg -n 'SettleOutcome::(Settled|Deferred)|RecordStatus::Deferred|free_held' \
   crates loadgen docs README.md --glob '!docs/decisions/**'; echo "exit $?"
+# the nack reset's flip list is gone (impact map, section 8)
+! rg -U -n '\back,[\s/]*release[\s/]+or[\s/]+(publish[\s/]+)?reviv|nack leaves (it|the count)|nack keeps a counted pocket' \
+  crates docs README.md --glob '!docs/decisions/**'; echo "exit $?"
 just fmt-check; echo "exit $?"
 just clippy; echo "exit $?"
 just test; echo "exit $?"
@@ -848,7 +961,11 @@ its pattern matches 313 of the 315 tag lines, the other two being the placeholde
 the module doc of `crates/libpachinko/tests/queue/main.rs`. The checker gives a
 guarantee no id, so its tag is `guarantee.<Name>`. The two `! rg` lines both match at
 `e812f5d`, so they can fire. The line that greps for the old names is adjusted at
-step 3 if the plan keeps one of those names with a new meaning.
+step 3 if the plan keeps one of those names with a new meaning. The nack-reset line is
+the third `! rg`: at `983b785` it matches 13 lines, the flip list of section 8 outside
+`CHANGELOG.md`, so it can fire. It reads across lines (`-U`) because one doc comment
+wraps the list, and `\back,` keeps it from matching the corrected "ack, nack, release or
+revive". `CHANGELOG.md` keeps released history, so step 7 checks its lines by hand.
 
 ## Hand-back notes
 
@@ -951,11 +1068,64 @@ exit=0
 
 `git status --short` then printed nothing.
 
+### The decisions on Q2 and the nack reset (2026-11-16)
+
+Recorded in Context, quoted and dated: T32's close-out decisions 4 and 5 with the
+maintainer's note, the answer "No touch on stale" to Q2, and "Land spec now + ticket".
+
+### The specification for Q2 and the nack reset, at `983b785`
+
+`just plan-spec pachinko` printed 236 obligations at `71c65ec`, before the edit. At
+`983b78554dff6d6d6e2cb78b3fd7f4a9a6de9072`:
+
+```text
+$ just check-specs
+allium check: 1 specifications, no diagnostics and no findings.
+exit 0
+$ just analyse-specs
+allium analyse: 1 specifications, no diagnostics and no findings.
+exit 0
+$ just plan-spec pachinko   (obligations counted from its JSON)
+236 obligations; diagnostics []
+exit 0
+$ rg -c '^open question' docs/specs/pachinko.allium
+7
+exit 0
+$ just check-docs
+Validated 47 pages and 48 canonical topics.
+exit 0
+```
+
+The ids are the same before and after; Context says what changed in the JSON. The
+library, its tests, the service and the behaviour pages were not changed and still
+follow the old rules.
+
+### T35-2: the specification for Q2 and the nack reset
+
+Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, on 2026-11-16, over the
+uncommitted edit that became `983b785`. Two reviewers ran in parallel, one lens each,
+with the five questions of the approved plan: whether a stale publish still reaches
+`PocketTouched`, whether a supersede, a deferral or a new key stopped reaching it,
+whether any text still says a nack leaves the count or describes the old Q2 behaviour,
+whether any other open question was answered, and whether the lapse comment's "only
+when `max_consecutive_expiries` is 1" is true. A fresh Claude subagent triaged the
+findings. The raw briefs, findings and verdicts stayed under `ai_tmp/review/T35-2/`,
+uncommitted.
+
+| Finding | Severity | Verdict | Fix |
+| --- | --- | --- | --- |
+| The ticket still forbade the nack reset in Non-goals and listed Q2 as undecided (conformance) | medium, triaged low | valid | Not in the specification commit: this ticket's realignment, the commit after `983b785`, carries it |
+
+The breakage reviewer reported no findings, having traced every publish path, the nack
+rules, the lapse comment and the counts. No high finding was valid, so no second round
+ran. Neither reviewer could run `just check` in its read-only sandbox; the checks above
+were run outside it.
+
 ### The decisions at step 1
 
 ### The plan (step 3)
 
-### The specification for Q2 (step 4)
+### The specification for the wire answers, and T35-3 (step 4)
 
 ### Shown to bite (step 5)
 
@@ -963,20 +1133,21 @@ exit=0
 
 ### The handbook (step 7)
 
-### T35-3: the whole diff (step 8)
+### T35-4: the whole diff (step 8)
 
 ### Step 9: review, merge and gate
 
 ## Open points
 
-- The answers step 1 asks for: Q2, the ack and nack reply names, the refusal of a
+- The answers step 1 asks for: the ack and nack reply names, the refusal of a
   changed mark, the publish outcome for a deferral, where the mark is shown, and
   whether a decision record is wanted. Owner: maintainer.
 - The specification leaves the order of several entries created at one lease end open;
   step 3 pins one. Whether the specification should fix it is the maintainer's.
-- A pocket can park with no records (every record nacked, at the threshold). That is
-  the old rule's behaviour for an emptied pocket and was not revisited; the module's
-  question 7 asks what else revives a parked pocket.
+- A pocket can park with no records, now only at `max_consecutive_expiries` 1, since an
+  ack or a nack under the lease resets the count. Parking it then is the old rule's
+  behaviour for an emptied pocket and was not revisited; the module's question 7 asks
+  what else revives a parked pocket.
 - The W3 figures in decision 0019 were measured with the ack removing its record; the
   cost moves to the lease's end. A decision record is history and is not edited;
   whether to re-measure is the maintainer's.
@@ -987,18 +1158,20 @@ exit=0
   accepted its out-of-scope edits as recorded and had one §14 round run over `2681bd6`
   (T32's Close-out, decisions 1 and 2). `wave-2-tickets` is not yet in `main`; when it
   lands there is the maintainer's.
+- `docs/explanation/prior-art.md` still counts the closed questions as at T31: :229-230
+  say questions 10 and 11 came later, and :415 names "the one open question that is no
+  longer in the module", stale since `a338355`. Step 7 corrects them.
 - The qsketch lines in Context were read outside this repository; step 1 asks the
   maintainer to confirm them.
 - T32's Open points that this ticket inherits or leaves, as T32's ticket records them
   at its merge:
-  - The comment above `PublishNewKey` is corrected at step 4.
-  - **The nack reset conflicts with this ticket's Non-goals.** On 2026-11-13 the
-    maintainer decided that a nack resets `consecutive_expiries` and that the change
-    lands in T35 (T32's Close-out, decisions 4 and 5), but Non-goals here still say
-    "No reset of `consecutive_expiries` on a nack". T32 leaves that edit to the
-    maintainer, and its "What T35 must flip" lists what follows the rule, including
-    `a_nack_leaves_the_expiry_count_over_http`, which goes red when the reset lands.
-    Until the maintainer rescopes this ticket, the Non-goal stands. Owner: maintainer.
+  - The comment above `PublishNewKey` was corrected at `983b785`.
+  - **Resolved: the nack reset.** On 2026-11-13 the maintainer decided that a nack
+    resets `consecutive_expiries` and that the change lands in T35 (T32's Close-out,
+    decisions 4 and 5), while this ticket's Non-goals still excluded it. On 2026-11-16
+    the maintainer had it landed: the Non-goal is gone, the reset is in the
+    specification at `983b785`, and section 8 of the impact map carries T32's flip list
+    for steps 5 to 7.
   - The four handed-back wording and test points (the "consecutive" wording, an HTTP
     test of the ack's reset, the `lease_not_active` sentence in
     `docs/reference/http-api.md`, the `spec-change` skill's "placeholder" wording) were
