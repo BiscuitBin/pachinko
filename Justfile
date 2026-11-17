@@ -417,6 +417,12 @@ analyse-specs:
 plan-spec module:
     .tools/bin/allium plan "docs/specs/$1.allium"
 
+# Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
+# which owns their layout and words: edit the script, never an SVG. It writes
+# under docs/decisions/, so it is not a check and is outside `just check`.
+diagrams:
+    python scripts/diagrams.py
+
 check-links-online:
     prek run --all-files --hook-stage manual lychee-online
 

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 610 222" width="610" height="222" role="img" aria-labelledby="title desc">
+<title id="title">Where a key's newer version is queued when the lease ends</title>
+<desc id="desc">A pocket's records by position. The lease holds k at rank 1 at position 11; b and c are queued at 12 and 13; k at rank 2 then arrives, is deferred and is given arrival position 14. If k rank 1 is unsettled when the lease ends, it goes to the superseded queue and k rank 2 is queued at 11, its place. If k rank 1 was acked or nacked, it is consumed or becomes a dead letter, and k rank 2 is queued at 14, where it arrived, behind b and c.</desc>
+<style>
+svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; } }
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: var(--fg); }
+text.muted { fill: var(--muted); }
+.bg { fill: var(--bg); }
+.lane { stroke: var(--line); stroke-width: 1; }
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.edge.accent { stroke: var(--accent); }
+.edge.dash { stroke-dasharray: 5 4; }
+.head { fill: var(--fg); }
+.head.accent { fill: var(--accent); }
+.frame { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.box { stroke: var(--line); stroke-width: 1.2; }
+.box.dash { stroke-dasharray: 5 4; }
+.box.plain { fill: var(--box); } .box.info { fill: var(--info); } .box.ok { fill: var(--ok); }
+.box.warn { fill: var(--warn); } .box.bad { fill: var(--bad); } .box.none { fill: var(--bg); }
+</style>
+<rect width="610" height="222" rx="8" class="bg"/>
+<text x="10" y="30" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">position</tspan></text>
+<text x="275" y="30" font-size="12" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="275" dy="0">11</tspan></text>
+<text x="365" y="30" font-size="12" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="365" dy="0">12</tspan></text>
+<text x="445" y="30" font-size="12" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="445" dy="0">13</tspan></text>
+<text x="525" y="30" font-size="12" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="525" dy="0">14</tspan></text>
+<text x="10" y="59" font-size="12" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="10" dy="0">while the lease holds k r1</tspan></text>
+<rect x="230" y="44" width="90" height="30" rx="6" class="box info"/>
+<text x="275" y="59" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="275" dy="0">k r1, held</tspan></text>
+<rect x="330" y="44" width="70" height="30" rx="6" class="box plain"/>
+<text x="365" y="59" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="365" dy="0">b</tspan></text>
+<rect x="410" y="44" width="70" height="30" rx="6" class="box plain"/>
+<text x="445" y="59" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="445" dy="0">c</tspan></text>
+<rect x="490" y="44" width="100" height="30" rx="6" class="box none dash"/>
+<text x="540" y="59" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="540" dy="0">k r2 deferred</tspan></text>
+<text x="10" y="111" font-size="12" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="10" dy="0">lease end, k r1 unsettled</tspan></text>
+<text x="10" y="129" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">k r1 → superseded queue</tspan></text>
+<rect x="230" y="96" width="90" height="30" rx="6" class="box warn"/>
+<text x="275" y="111" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="275" dy="0">k r2</tspan></text>
+<rect x="330" y="96" width="70" height="30" rx="6" class="box plain"/>
+<text x="365" y="111" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="365" dy="0">b</tspan></text>
+<rect x="410" y="96" width="70" height="30" rx="6" class="box plain"/>
+<text x="445" y="111" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="445" dy="0">c</tspan></text>
+<text x="10" y="163" font-size="12" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="10" dy="0">lease end, k r1 acked or nacked</tspan></text>
+<text x="10" y="181" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">k r1 consumed, or a dead letter</tspan></text>
+<rect x="330" y="148" width="70" height="30" rx="6" class="box plain"/>
+<text x="365" y="163" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="365" dy="0">b</tspan></text>
+<rect x="410" y="148" width="70" height="30" rx="6" class="box plain"/>
+<text x="445" y="163" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="445" dy="0">c</tspan></text>
+<rect x="490" y="148" width="70" height="30" rx="6" class="box warn"/>
+<text x="525" y="163" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="525" dy="0">k r2</tspan></text>
+<text x="10" y="208" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">k r2 arrived after c, so it was given arrival position 14.</tspan></text>
+</svg>

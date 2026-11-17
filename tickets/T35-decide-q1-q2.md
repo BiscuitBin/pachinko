@@ -697,6 +697,7 @@ This ticket owns:
 | --- | --- | --- |
 | `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; the step-1 refinements, with `open question` 1 removed |
 | `docs/decisions/0020-held-set-until-lease-ends.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, shared | Decision 0020, its index row and its manifest entry |
+| `docs/decisions/0020/*.svg`, `scripts/diagrams.py`, `Justfile`, `docs/reference/commands.md` | new, shared, own lines | Decision 0020's diagrams, redrawn after the close at the maintainer's request: the four SVGs, the script that draws them, the `just diagrams` recipe and its row |
 | `docs/project/purpose-and-scope.md` | shared, own lines | The list of open questions, which still named equal-rank publishes |
 | `crates/libpachinko/src/records.rs`, `records/memory.rs`, `records/contract.rs` | shared, own lines | `RecordStatus`, `RecordView`, the `PocketRecords` trait, `MemoryRecords` and the contract: marks, the nack time, the arrival position, the lease-end step |
 | `crates/libpachinko/src/queue.rs`, `queue/pockets.rs`, `queue/settle.rs`, `queue/publish.rs`, `queue/renew.rs`, `queue/expiry.rs`, `queue/shed.rs`, `queue/types.rs`, `queue/inspect.rs` | shared, own lines | Publish's defer branch, the mark step, the lease-end reconciliation and its stamps, the outcome types, the lease view's marks, the docs and doctests |
@@ -1507,6 +1508,34 @@ The reference count the final review added, run on the closing commit's catalog,
 `references 121 parsed 120` and exit 0. The closing commit changes only this ticket, `tickets/README.md`, the
 architecture page's sentence and Verification's new lines. `just check` runs again on it before the hand-back,
 and its last line goes to the maintainer with the hand-back, since a commit cannot quote a run on itself.
+
+### Decision 0020 redrawn (2026-11-17)
+
+After the close, the maintainer asked for decision 0020 to be terse, with diagrams wherever they are clearer than
+prose. A preview showed each diagram in two to five forms, in GitHub's light and dark views, and the maintainer
+picked one each: SVG for the defect (open questions 10 and 9 under the old rules), the held record's life, the six
+lease-end outcomes and the fairness of positions; a `diff` block for where the work moved; a Markdown table for a
+publish onto a held key. The lease-end matrix copies the specification's table and says the specification wins.
+`scripts/diagrams.py`, standard-library Python, draws the four SVGs into `docs/decisions/0020/`, each with its own
+light and dark colours under `prefers-color-scheme` and an opaque background; `just diagrams` reruns it. Nothing
+checks that the SVGs match the script; a check recipe would be a new gate, the maintainer's to ask for. Every
+image's alt text restates the diagram, so a reader of the Markdown loses nothing.
+
+**Review.** Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, over the uncommitted change on `c7cf2ae`:
+each diagram, the diff block and the table checked against the rules, the old rules for the defect, lost context
+and ambiguity. No high or medium finding; two lows, both fixed: the diff's old ack line now says the held version
+was dropped, and the Context says question 9 was already open rather than found by the review. The raw files
+stayed under `ai_tmp/review/T35-0020/`, uncommitted.
+
+**Gates**, on the change before its commit, on `c7cf2ae`:
+
+```text
+just diagrams        regenerated the four SVGs; byte-identical across the script's reindent
+just check-docs      Validated 48 pages and 49 canonical topics.
+just lint            exit 0, the untracked script and SVGs included
+```
+
+`just check` runs on the commit itself; its last line goes to the maintainer with the hand-back.
 
 ## Open points
 

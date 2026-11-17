@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 810 296" width="810" height="296" role="img" aria-labelledby="title desc">
+<title id="title">A held record's life under decision 0020</title>
+<desc id="desc">A record is queued until a pull under a lease makes it held. While held it is unsettled until an ack marks it acked or a nack marks it nacked; the first mark stands, a repeat only extends the lease, and the other mark is refused with MarkConflict. A publish above the stored rank waits behind the held version, and a still higher one replaces only the waiting version; nothing held changes. The lease ends by release or by lapse: a record that is unsettled, or has a newer version deferred behind it, is queued again; an acked or nacked record with nothing deferred is removed.</desc>
+<style>
+svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; } }
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: var(--fg); }
+text.muted { fill: var(--muted); }
+.bg { fill: var(--bg); }
+.lane { stroke: var(--line); stroke-width: 1; }
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.edge.accent { stroke: var(--accent); }
+.edge.dash { stroke-dasharray: 5 4; }
+.head { fill: var(--fg); }
+.head.accent { fill: var(--accent); }
+.frame { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.box { stroke: var(--line); stroke-width: 1.2; }
+.box.dash { stroke-dasharray: 5 4; }
+.box.plain { fill: var(--box); } .box.info { fill: var(--info); } .box.ok { fill: var(--ok); }
+.box.warn { fill: var(--warn); } .box.bad { fill: var(--bad); } .box.none { fill: var(--bg); }
+</style>
+<rect width="810" height="296" rx="8" class="bg"/>
+<rect x="20" y="120" width="90" height="40" rx="6" class="box plain"/>
+<text x="65" y="140" font-size="13" text-anchor="middle" dominant-baseline="middle" font-weight="600"><tspan x="65" dy="0">queued</tspan></text>
+<rect x="170" y="50" width="310" height="190" rx="10" class="frame"/>
+<text x="184" y="68" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="184" dy="0">held, under one lease</tspan></text>
+<rect x="190" y="122" width="96" height="36" rx="6" class="box info"/>
+<text x="238" y="140" font-size="13" text-anchor="middle" dominant-baseline="middle"><tspan x="238" dy="0">unsettled</tspan></text>
+<rect x="366" y="84" width="90" height="36" rx="6" class="box ok"/>
+<text x="411" y="102" font-size="13" text-anchor="middle" dominant-baseline="middle"><tspan x="411" dy="0">acked</tspan></text>
+<rect x="366" y="160" width="90" height="36" rx="6" class="box bad"/>
+<text x="411" y="178" font-size="13" text-anchor="middle" dominant-baseline="middle"><tspan x="411" dy="0">nacked</tspan></text>
+<path d="M286 132 L366 104" class="edge"/>
+<polygon points="366,104 357.0,102.4 359.9,110.9" class="head"/>
+<text x="316" y="108" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="316" dy="0">ack</tspan></text>
+<path d="M286 148 L366 176" class="edge"/>
+<polygon points="366,176 359.9,169.1 357.0,177.6" class="head"/>
+<text x="312" y="174" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="312" dy="0">nack</tspan></text>
+<text x="184" y="214" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="184" dy="0">The first mark stands: a repeat only extends</tspan><tspan x="184" dy="14.3">the lease, the other is refused (MarkConflict).</tspan></text>
+<path d="M110 140 L190 140" class="edge"/>
+<polygon points="190,140 182.0,135.5 182.0,144.5" class="head"/>
+<text x="130" y="128" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="130" dy="0">pull</tspan></text>
+<path d="M325 22 L325 50" class="edge accent dash"/>
+<polygon points="325,50 329.5,42.0 320.5,42.0" class="head accent"/>
+<text x="335" y="16" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="335" dy="0">A publish above the stored rank waits behind the held version, and a</tspan><tspan x="335" dy="14.3">still higher one replaces only the waiting one. Nothing held changes.</tspan></text>
+<rect x="560" y="120" width="110" height="40" rx="6" class="box warn"/>
+<text x="615" y="140" font-size="13" text-anchor="middle" dominant-baseline="middle" font-weight="600"><tspan x="615" dy="0">lease end</tspan></text>
+<path d="M480 140 L560 140" class="edge"/>
+<polygon points="560,140 552.0,135.5 552.0,144.5" class="head"/>
+<text x="492" y="126" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="492" dy="0">release</tspan></text>
+<text x="492" y="156" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="492" dy="0">or lapse</tspan></text>
+<rect x="712" y="120" width="84" height="40" rx="6" class="box none dash"/>
+<text x="754" y="140" font-size="13" text-anchor="middle" dominant-baseline="middle"><tspan x="754" dy="0">removed</tspan></text>
+<path d="M670 140 L712 140" class="edge"/>
+<polygon points="712,140 704.0,135.5 704.0,144.5" class="head"/>
+<text x="678" y="96" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="678" dy="0">acked or nacked,</tspan><tspan x="678" dy="14.3">nothing deferred</tspan></text>
+<path d="M615 160 L615 280 L65 280 L65 160" class="edge"/>
+<polygon points="65,160 60.5,168.0 69.5,168.0" class="head"/>
+<text x="340" y="268" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="340" dy="0">unsettled, or a newer version deferred: queued again</tspan></text>
+</svg>

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 490" width="760" height="490" role="img" aria-labelledby="title desc">
+<title id="title">The defect before decision 0020</title>
+<desc id="desc">Two timelines under the rules before decision 0020. Open question 10: consumer c1 pulls k at rank 1; a publish of rank 2 makes Supersede shed rank 1, which c1 still holds, into the superseded queue; c1's nack then makes rank 1 a dead letter too. Open question 9: under lease L, c1 pulls k at rank 1 and acks it, which removes the record; a publish of rank 2 creates a new, queued record; c1 pulls again under L and is handed k a second time.</desc>
+<style>
+svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; } }
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: var(--fg); }
+text.muted { fill: var(--muted); }
+.bg { fill: var(--bg); }
+.lane { stroke: var(--line); stroke-width: 1; }
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.edge.accent { stroke: var(--accent); }
+.edge.dash { stroke-dasharray: 5 4; }
+.head { fill: var(--fg); }
+.head.accent { fill: var(--accent); }
+.frame { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.box { stroke: var(--line); stroke-width: 1.2; }
+.box.dash { stroke-dasharray: 5 4; }
+.box.plain { fill: var(--box); } .box.info { fill: var(--info); } .box.ok { fill: var(--ok); }
+.box.warn { fill: var(--warn); } .box.bad { fill: var(--bad); } .box.none { fill: var(--bg); }
+</style>
+<rect width="760" height="490" rx="8" class="bg"/>
+<text x="130" y="14" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="130" dy="0">Open question 10: one version shed twice</tspan></text>
+<text x="10" y="40" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">publisher</tspan></text>
+<line x1="130" y1="40" x2="750" y2="40" class="lane"/>
+<text x="10" y="84" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">consumer c1</tspan></text>
+<line x1="130" y1="84" x2="750" y2="84" class="lane"/>
+<text x="10" y="128" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">record k</tspan></text>
+<line x1="130" y1="128" x2="750" y2="128" class="lane"/>
+<text x="10" y="176" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">superseded queue</tspan></text>
+<line x1="130" y1="176" x2="750" y2="176" class="lane"/>
+<text x="10" y="220" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">dead letters</tspan></text>
+<line x1="130" y1="220" x2="750" y2="220" class="lane"/>
+<path d="M200 90 L200 118" class="edge"/>
+<polygon points="200,118 204.5,110.0 195.5,110.0" class="head"/>
+<text x="208" y="104" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="208" dy="0">pull</tspan></text>
+<rect x="154" y="141" width="100" height="24" rx="6" class="box info"/>
+<text x="204" y="153" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="204" dy="0">rank 1, held</tspan></text>
+<path d="M360 46 L360 118" class="edge"/>
+<polygon points="360,118 364.5,110.0 355.5,110.0" class="head"/>
+<text x="368" y="58" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="368" dy="0">publish rank 2</tspan></text>
+<rect x="318" y="141" width="84" height="24" rx="6" class="box plain"/>
+<text x="360" y="153" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="360" dy="0">rank 2</tspan></text>
+<path d="M402 155 L440 170" class="edge accent"/>
+<polygon points="440,170 434.2,162.9 430.9,171.2" class="head accent"/>
+<rect x="440" y="164" width="64" height="24" rx="6" class="box bad"/>
+<text x="472" y="176" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="472" dy="0">rank 1</tspan></text>
+<text x="330" y="199" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="330" dy="0">Supersede sheds the version c1 holds</tspan></text>
+<path d="M580 90 L580 118" class="edge"/>
+<polygon points="580,118 584.5,110.0 575.5,110.0" class="head"/>
+<text x="588" y="104" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="588" dy="0">nack k</tspan></text>
+<path d="M580 132 L580 208" class="edge accent"/>
+<polygon points="580,208 584.5,200.0 575.5,200.0" class="head accent"/>
+<rect x="548" y="208" width="64" height="24" rx="6" class="box bad"/>
+<text x="580" y="220" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="580" dy="0">rank 1</tspan></text>
+<text x="590" y="199" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="590" dy="0">nack dead-letters it too</tspan></text>
+<text x="130" y="254" font-size="12" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="130" dy="0">Rank 1 ends in both shed queues.</tspan></text>
+<text x="130" y="294" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="130" dy="0">Open question 9: one lease handed k twice</tspan></text>
+<text x="10" y="320" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">publisher</tspan></text>
+<line x1="130" y1="320" x2="750" y2="320" class="lane"/>
+<text x="10" y="364" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">consumer c1</tspan></text>
+<line x1="130" y1="364" x2="750" y2="364" class="lane"/>
+<text x="10" y="408" font-size="12" text-anchor="start" dominant-baseline="middle" class="muted"><tspan x="10" dy="0">record k</tspan></text>
+<line x1="130" y1="408" x2="750" y2="408" class="lane"/>
+<path d="M190 370 L190 398" class="edge"/>
+<polygon points="190,398 194.5,390.0 185.5,390.0" class="head"/>
+<text x="198" y="384" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="198" dy="0">pull, lease L</tspan></text>
+<rect x="144" y="421" width="100" height="24" rx="6" class="box info"/>
+<text x="194" y="433" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="194" dy="0">rank 1, held</tspan></text>
+<path d="M320 370 L320 398" class="edge"/>
+<polygon points="320,398 324.5,390.0 315.5,390.0" class="head"/>
+<text x="328" y="384" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="328" dy="0">ack k</tspan></text>
+<rect x="280" y="421" width="80" height="24" rx="6" class="box none dash"/>
+<text x="320" y="433" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="320" dy="0">removed</tspan></text>
+<path d="M450 326 L450 398" class="edge"/>
+<polygon points="450,398 454.5,390.0 445.5,390.0" class="head"/>
+<text x="458" y="338" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="458" dy="0">publish rank 2</tspan></text>
+<rect x="394" y="421" width="112" height="24" rx="6" class="box plain"/>
+<text x="450" y="433" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="450" dy="0">rank 2, queued</tspan></text>
+<path d="M620 370 L620 398" class="edge"/>
+<polygon points="620,398 624.5,390.0 615.5,390.0" class="head"/>
+<text x="628" y="384" font-size="12" text-anchor="start" dominant-baseline="middle"><tspan x="628" dy="0">pull, lease L</tspan></text>
+<rect x="570" y="421" width="100" height="24" rx="6" class="box bad"/>
+<text x="620" y="433" font-size="12" text-anchor="middle" dominant-baseline="middle"><tspan x="620" dy="0">rank 2, held</tspan></text>
+<text x="130" y="470" font-size="12" text-anchor="start" dominant-baseline="middle" font-weight="600"><tspan x="130" dy="0">Lease L is handed k a second time.</tspan></text>
+</svg>
