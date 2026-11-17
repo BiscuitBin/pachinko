@@ -72,14 +72,14 @@ made, and none is permission to invent an answer in code.
 The module numbers its questions in order, and the numbers do not compact. Question 8,
 a late action before its lapse is processed, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md). The maintainer
-closed questions 9 and 10 on 2026-11-13: a record stays held until its lease ends, so
-a key published again under the lease that acked or nacked it is not a new record, and
-a supersede does not shed the version a consumer holds. The maintainer closed question
+closed questions 9 and 10 on 2026-11-13, and
+[decision 0020](../decisions/0020-held-set-until-lease-ends.md) records why: a record
+stays held until its lease ends, so a key published again under the lease that acked or
+nacked it is not a new record, and a supersede does not shed the version a consumer
+holds. The maintainer closed question
 11 on 2026-11-16: a stale publish does not touch its pocket, so it leaves a parked
 pocket parked. The same day the maintainer closed question 1: a publish at the stored
-rank is rejected, whatever its payload. The scenarios tagged `oq:9`, `oq:10` and
-`oq:11` keep those tags until their tests follow the specification. The six that
-remain:
+rank is rejected, whatever its payload. The six that remain:
 
 - Question 2, who reads the superseded and dead-letter queues, and what an entry must
   carry.

@@ -8,11 +8,12 @@ requires: []
 
 # Prior art
 
-The root module's first open question asks for a decision "from the conflict-resolution
-literature and from what comparable queues and databases do". This page records what a
-survey of those queues and databases found, so that the maintainer can decide the open
-questions, and whether to build or adopt, from evidence. The model the candidates were
-compared with is the one [`pachinko.allium`](../specs/pachinko.allium) specifies and
+The root module's open question on an equal rank asked for a decision "from the
+conflict-resolution literature and from what comparable queues and databases do"; the
+maintainer closed it on 2026-11-16 as "reject". This page records what a survey of those
+queues and databases found, so that the maintainer can decide the open questions, and
+whether to build or adopt, from evidence. The model the candidates were compared with
+is the one [`pachinko.allium`](../specs/pachinko.allium) specifies and
 [Purpose and scope](../project/purpose-and-scope.md) summarises.
 
 Nothing found reproduces that model. Every piece of it exists somewhere, and the part no
@@ -226,10 +227,10 @@ and against no others.
 
 ## Evidence for the open questions
 
-This research covers the eight questions the root module carried when it was done;
-questions 10 and 11 came later, from the wave's code review, and have no section here.
-Each section below lists what comparable systems do, in the module's order, and ends
-with what was not found. None of it answers
+This research covers the eight questions the root module carried when it was done.
+The maintainer has since closed two of them, questions 1 and 9. Questions 10 and 11
+came later, from the wave's code review, have no section here, and are closed too. Each section below lists what comparable systems
+do, in the module's order, and ends with what was not found. None of it answers
 a question: the questions stay the maintainer's, as
 [Specifications](specifications.md) explains. Items are one reader's unless marked.
 
@@ -279,8 +280,10 @@ ruled out or settled by a rule that ignores arrival.
   arrive or are replayed.
 
 Not found: a queue's answer to an equal rank. Every keep-the-newest mechanism found in
-a queue decides by arrival order, so the precedents above come from stores. What users of these systems expect, which the question also asks for,
-was not surveyed.
+a queue decides by arrival order, so the precedents above come from stores. What users
+of these systems expect, which the question also asks for, was not surveyed. The
+maintainer closed the question on 2026-11-16 as "reject", the first option above: a
+publish at the stored rank is rejected and changes nothing.
 
 ### Reading superseded and dead-letter records
 
@@ -382,6 +385,10 @@ a choice on each call between updating the held value, rejecting, and buffering 
 copy ([`leasedkeyq`](https://github.com/nickweedon/leasedkeyq)).
 
 Not found: anything that compares the new publish with the version just settled.
+The maintainer closed this question, question 9, on 2026-11-13: an acked or nacked
+record stays held until its lease ends, so a publish of its key is judged against it,
+and a newer version waits behind it rather than becoming new work
+([decision 0020](../decisions/0020-held-set-until-lease-ends.md)).
 
 ## What this page does not establish
 
@@ -411,6 +418,8 @@ Not found: anything that compares the new publish with the version just settled.
 - [Specifications](specifications.md)
 - [Purpose and scope](../project/purpose-and-scope.md)
 - [Terminology](../project/terminology.md)
-- [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which closed the
-  one open question that is no longer in the module
+- [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which closed
+  question 8, one of the five questions no longer in the module
+- [Decision 0020](../decisions/0020-held-set-until-lease-ends.md), why a record stays
+  held until its lease ends, the answer that closed questions 9 and 10
 - [`pachinko.allium`](../specs/pachinko.allium), the root module

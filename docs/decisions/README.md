@@ -40,6 +40,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0017](0017-mutation-bench-and-fuzz.md) | Mutation testing, benchmarks and fuzzing |
 | [0018](0018-renovate.md) | Dependency updates through Renovate |
 | [0019](0019-service-runtime-tokio-and-http.md) | The service runtime: tokio, one owner task and HTTP/JSON |
+| [0020](0020-held-set-until-lease-ends.md) | A held record stays held until its lease ends |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019,
@@ -60,8 +61,9 @@ here is rendered from a template, so no frozen inventory of numbers applies.
 Numbers 0015 to 0018 were reserved for the wave-2 tickets that took those decisions: 0015
 for the container image (T13), 0016 for the release process (T14), 0017 for mutation
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
-Renovate (T17). Each added its file, its manifest entry and its row above. The next
-decision is 0020.
+Renovate (T17). Each added its file, its manifest entry and its row above. Decision
+0020 is about what the queue does, which the specification already states; the
+maintainer asked for a record of why (T35). The next decision is 0021.
 
 ## Writing a new one
 

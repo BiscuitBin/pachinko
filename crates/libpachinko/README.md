@@ -44,14 +44,17 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
 | `*_joins` | `()` | `PublisherExists`, `ConsumerExists` |
 | `publish` | `Created`, `NewKey`, `Superseded`, `Stale` | `UnknownPublisher`, `EqualRank` |
 | `pull` | `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | `UnknownConsumer` |
-| `lease_view` | `Some(view)` or `None` | `UnknownConsumer` |
-| `ack`, `nack` | `Settled`, `Deferred` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
+| `lease_view` | `Some(view)`, its held records each with its `Mark`, or `None` | `UnknownConsumer` |
+| `ack`, `nack` | `Acked`, `Nacked` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld`, `MarkConflict` |
 | `renew` | the new `expires_at` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours` |
 | `release` | `(Queued or Idle, the ended lease)` | `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours` |
 | `tick` | `TickReport { lapsed, decayed_superseded, decayed_dead_letters }` | none |
 
 A refusal changes nothing. `NoPocketAvailable` is an outcome, not an error.
-`EqualRank` is a placeholder for the specification's open question 1, not a decision.
+`EqualRank` answers a publish at the stored rank, which the specification rejects. An
+ack or a nack marks a held record and removes nothing; a repeat of the first mark
+answers as the first did, and the other mark is `MarkConflict`. The lease's end, by
+release or lapse, acts on every mark.
 
 ## Lifecycles
 
@@ -71,11 +74,15 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> Queued: publish
     Queued --> Held: pull
-    Held --> [*]: ack or nack, Settled
-    Held --> Deferred: ack or nack after a newer version arrived
-    Held --> Queued: lease ends
-    Deferred --> Queued: lease ends
+    Held --> Held: ack or nack marks it, or a newer version is deferred behind it
+    Held --> Queued: lease ends, unsettled or with a newer version deferred
+    Held --> [*]: lease ends, acked or nacked with nothing deferred
 ```
+
+A held record leaves the held set only when its lease ends. Then an unsettled held
+version is queued again, or superseded by the version deferred behind it, which takes
+its position; an acked version is consumed and a nacked one becomes a dead letter, and
+a version deferred behind either is queued at its arrival position.
 
 A lease is `Active`, then `Released` or `Expired`. Only `tick` expires a lease, so an
 action the queue processes before that tick still succeeds, even past `expires_at`.
@@ -91,11 +98,11 @@ sequenceDiagram
     Consumer->>Queue: pull 10
     Queue-->>Consumer: Batch under lease L, o-1 at rank 2
     Publisher->>Queue: publish orders/o-1 rank 3
-    Queue-->>Publisher: Superseded, o-1 stays held at rank 2
+    Queue-->>Publisher: Superseded, rank 3 is deferred behind the held rank 2
     Consumer->>Queue: ack o-1 under L
-    Queue-->>Consumer: Deferred
+    Queue-->>Consumer: Acked, o-1 stays held at rank 2
     Consumer->>Queue: release L
-    Queue-->>Consumer: Queued, o-1 is pullable at rank 3
+    Queue-->>Consumer: Queued, rank 2 is consumed and o-1 is pullable at rank 3
 ```
 
 ## Usage
@@ -108,7 +115,7 @@ use libpachinko::lease_ids::CountingLeaseIds;
 use libpachinko::records::MemoryRecords;
 use libpachinko::{
     Config, ConsumerId, Payload, PocketFate, PocketKey, Publication, PublishOutcome, PublisherId,
-    PullOutcome, Queue, Rank, RecordKey, SettleOutcome, Timestamp,
+    Mark, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, Timestamp,
 };
 
 let clock = FakeClock::new(Timestamp::from_millis(0));
@@ -123,7 +130,9 @@ assert_eq!(queue.publish(&p, o1(2)), Ok(PublishOutcome::Superseded));
 let Ok(PullOutcome::Batch { lease, records, .. }) = queue.pull(&c, 10) else { panic!() };
 assert_eq!(records[0].rank, Rank::new(2));
 assert_eq!(queue.publish(&p, o1(3)), Ok(PublishOutcome::Superseded));
-assert_eq!(queue.ack(&c, lease, &RecordKey::new("o-1")), Ok(SettleOutcome::Deferred));
+assert_eq!(queue.ack(&c, lease, &RecordKey::new("o-1")), Ok(SettleOutcome::Acked));
+let view = queue.lease_view(&c).unwrap().unwrap();
+assert_eq!((view.records[0].rank, view.records[0].mark), (Rank::new(2), Mark::Acked));
 let (fate, _ended) = queue.release(&c, lease).unwrap();
 assert_eq!(fate, PocketFate::Queued);
 ```

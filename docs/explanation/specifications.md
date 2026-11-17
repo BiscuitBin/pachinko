@@ -62,9 +62,10 @@ but before the lapse, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md): such an action
 succeeds. The maintainer closed questions 9 and 10 on 2026-11-13, a key published
 again under the lease that acked or nacked it and a supersede shedding the version a
-consumer still holds, by keeping a record held until its lease ends. On 2026-11-16 they
-closed question 11, a gap the wave's code review exposed: a stale publish does not
-touch its pocket, so it no longer revives a parked one. The same day they closed
+consumer still holds, by keeping a record held until its lease ends
+([decision 0020](../decisions/0020-held-set-until-lease-ends.md) records why). On
+2026-11-16 they closed question 11, a gap the wave's code review exposed: a stale
+publish does not touch its pocket, so it no longer revives a parked one. The same day they closed
 question 1: an equal-rank publish is rejected, as the rules had read it. Where the
 rules' reading matters meanwhile, the question says what it is, and no code answers
 one. A change that reaches an unanswered decision adds a question rather than guessing.
