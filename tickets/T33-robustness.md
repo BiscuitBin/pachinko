@@ -924,7 +924,66 @@ exit 0
 TOTAL                                      7554               144    98.09%         625                 4    99.36%        4537                47    98.96%           0                 0         -
 ```
 
+### T33-3: the whole branch, after the hand-back
+
+The maintainer asked for one more review of the committed branch after the hand-back
+(`git diff origin/wave-2-tickets...HEAD` at `56e835c`, the T32 merge `3acf093`
+included). `codex exec -m gpt-6-astra -s read-only`, two lenses, each exit 0. Two fresh
+Claude subagents triaged the findings, read-only, against the code and the pinned hyper
+1.12.0 and tokio sources. Every finding was valid at least in part, and each was
+downgraded to low:
+
+- **B1 = C1** (reported medium): once a whole request has arrived with bytes the client
+  sent after it, hyper stops reading the connection until it replies (`conn.rs:497`,
+  `mid_message_detect_eof`). The deadline is checked only on a pending read, so the
+  request is bounded by its handler instead: its reply or its 408 comes within one
+  timeout of its head, under three after its first byte, or four behind a pipelined
+  reply. A head that never completes is still cut at two. The fix is docs only, in
+  `http-api.md`, `configuration.md`, `security-model.md`, `CHANGELOG.md` and the `Idle`
+  doc comments; see Open points. C1's narrower case, a deadline that expired before a
+  ready read, is scheduler delay, and its fix would not close B1.
+- **C2 = B2** (reported medium): the slow-head 400 test could fail on a server read that
+  lagged about 250 ms, or in theory pass with the fix reverted under a runtime frozen for
+  500 ms or more. It now asserts that the 400 arrives at least 990 ms and under 1700 ms
+  after the first write. Measured 1.012 s. With the base `Idle::read` it fails with a
+  408. With the base `Idle::read` and the handler bound tripled in `http.rs`, a stand-in
+  for the freeze, it fails on the new assertion (`answered after 1.761142708s`). Both
+  mutations were reverted.
+- **B3** (low): the timing tests can fail on a slow CI host but cannot pass on a broken
+  fix. Not changed.
+- **C3** (low): `api.md` and `architecture.md` said the lease-id source refuses with
+  `StillActive`. The queue does, after a successful draw. Both are reworded.
+
+The maintainer declined the optional regression test for B1. It would widen
+`serve.rs`'s Files touched row, it would be another client-timed socket test, and it
+would pin hyper's current behaviour. No finding was high, so there was no second round.
+The reviewers otherwise found the branch sound:
+
+- a refused pull changes nothing, and within-lease and no-pocket pulls never draw;
+- neither source repeats an id, at the `u64` boundary included;
+- only `PullError::LeaseId` stops the owner;
+- invariants 3 and 10 hold, and no spec change is needed;
+- the T32 merge lost and altered nothing;
+- the only file changed outside Files touched is `tickets/README.md`, whose status edit
+  was authorised.
+
+```text
+HEAD 2b2e51e
+
+$ just check   (output in ai_tmp/t33/check-t33-3.log; tail shown)
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+`cargo nextest` ran 253 tests, 253 passed, and line coverage is 98.96%.
+
 ## Open points
+
+- Whether the head deadline should also be enforced on a request buffered with bytes
+  after it (T33-3, B1). The deadline could be checked from `Connection::poll_flush`, the
+  one hook hyper still polls there, but that rests on an undocumented hyper detail, and
+  it would turn a late but correct reply into a silent cut. It is not done here; the
+  docs state the exception. The maintainer decides.
 
 - Whether the lead prefers hyper's own `header_read_timeout`, through a hand-driven
   hyper-util accept loop with `hyper` and `hyper-util` as direct dependencies, to the
