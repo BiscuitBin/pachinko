@@ -57,7 +57,7 @@ snapshot.
 | T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | done |
 | T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | todo |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
-| T35 | Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided | `T35-decide-q1-q2.md` | T32 | none | todo |
+| T35 | Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided | `T35-decide-q1-q2.md` | T32 | none | done |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that

@@ -1,7 +1,7 @@
 ---
 id: T35
 title: "Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided"
-status: todo
+status: done
 depends_on: [T32]
 parallel_with: []
 branch: ticket/t35-decide-q1-q2
@@ -945,6 +945,13 @@ rg '^\| S[0-9]{3} \|' docs/reference/testing.md \
   | ( bad=0; n=0; while read -r f a b; do
         for t in $a $b; do n=$((n + 1)); rg -q "fn $t\b" "$f" || { echo "MISSING $f $t"; bad=1; }; done
       done; echo "checked $n"; [ "$n" -gt 0 ] && exit "$bad"; exit 1 ); echo "exit $?"
+# every test reference on a catalog row parsed above: only S005's doctest has no name
+rows=$(rg '^\| S[0-9]{3} \|' docs/reference/testing.md)
+refs=$(printf '%s\n' "$rows" | rg -o '`[^`]+\.rs`, |half: |\(driver ' | wc -l)
+parsed=$(printf '%s\n' "$rows" \
+  | rg -o '`[^`]+\.rs`, `[a-z0-9_]+`|half: `[a-z0-9_]+`|\(driver `[a-z0-9_]+`' | wc -l)
+echo "references $refs parsed $parsed"
+[ "$refs" -gt 0 ] && [ "$refs" -eq "$((parsed + 1))" ]; echo "exit $?"
 # positive control first: the labels of the questions still open must match (exit 0)
 rg -c 'oq:[0-9]+\b' docs/reference/testing.md crates/libpachinko/tests; echo "exit $?"
 ! rg -n 'oq:(1|9|10|11)\b|oq9_|open.question.(9|10|11)\b' docs/reference/testing.md \
@@ -1436,6 +1443,67 @@ exit 0 each; Validated 48 pages and 49 canonical topics.
 
 ### Step 9: review, merge and gate
 
+**`review-change`**, run by a fresh Claude subagent over `71c65ec..HEAD` at `6abd0a6aa1ae288ebf232663a926cf74e15ebefb`, step by step: no high or
+medium finding. The spec matches the code rule by rule; invariant 3 holds for `Mark`, `MarkedRecord`,
+`EndedVersion` and `RecordStatus::Held`; every new public item has an asserting doctest; `just effects` passes and
+libpachinko's diff adds no direct effect; no scope creep. Two lows, both fixed at `4854fc1`: the architecture page
+said the store decides nothing, and the `Queue::lease_view` doc and doctest did not show the mark.
+
+**`code-review`**, at high effort over `71c65ec..HEAD`: no correctness bug. Of its eight findings, two were fixed at
+`4854fc1` and six declined:
+
+| Finding | Disposition |
+| --- | --- |
+| Whether a publish touches its pocket was decided by `outcome != Stale` | Fixed: an exhaustive match, so a new outcome must say whether it touches |
+| `Pockets::publish` cloned the pocket key on every publish | Fixed: the publication is taken apart once |
+| `RecordStatus::Held` keeps `mark` and `nacked_at` apart, so a store could hold `Nacked` with no time and drop its dead letter | Declined: the approved shape; `MemoryRecords` sets both together behind private state, the contract pins it, and the walk checks `NackedHasItsTime` after every step |
+| The store, not the queue, picks the `Freed` row | Declined: the approved design (step 3) |
+| `mark_of` and `raise` clone payloads through `lookup` | Declined here: the fix widens the public `PocketRecords` trait (Open points) |
+| `LeaseRecordReply` repeats `RecordReply`'s encoding | Declined here: a refactor beyond the ticket; the wire tests assert both shapes exactly (Open points) |
+| Three fallback arms in `MemoryRecords` are unreachable | Declined: the private held index holds only held keys, so the current API cannot reach them |
+| The first-mark guard is checked in the queue and in the store | Declined: `PocketRecords::mark` promises a direct store call keeps the first mark, and the contract pins it |
+
+**A final review**, asked for by the maintainer ("When you are done or at any key moment, request an adversarial
+review from Codex (Astra)"): Codex `codex-cli 0.167.2`, `-m gpt-6-astra -s read-only`, on 2026-11-17, over
+`48cedc1..HEAD` at `8020a17`, with the six declines to judge. It found no high or medium defect, judged all six
+declines sound (the unreachable arms by reachability, not by the coverage figure first given), and raised three
+lows, all fixed in the closing commit: the catalog check skipped a test reference it could not parse, now
+cross-checked by counting every reference against those parsed (a renamed reference fails it, in bash and zsh);
+the architecture sentence still opened with "the queue decides every rule"; and this section was empty. The raw
+files stayed under `ai_tmp/review/T35-final/`, uncommitted.
+
+**The merge.** `git fetch origin` exited 0 and left `origin/wave-2-tickets` at
+`7a7974307e60ca744af6468af23bfa5bd019384b`, which `b5d4a83` already merged, so
+`git merge-base --is-ancestor origin/wave-2-tickets HEAD` held and there was nothing to merge; `Cargo.lock` was
+untouched and `just lock` did not run.
+
+**The Verification block**, run whole at `8020a17` with `set -o pipefail` (each `echo "exit $?"` printed 0):
+
+```text
+just check-specs     allium check: 1 specifications, no diagnostics and no findings.
+just analyse-specs   allium analyse: 1 specifications, no diagnostics and no findings.
+just plan-spec       exit 0
+open questions       6
+ids.txt              249 lines (238 obligations and the module's guarantees)
+comm (unknown tags)  nothing
+scenario tags        no duplicates; last S093; tags and catalog rows both S001 to S093
+catalog references   checked 120
+oq: positive control docs/reference/testing.md:1 (S026's oq:7)
+four ! rg lines      nothing printed
+just fmt-check, just clippy, just doc, just effects   exit 0
+just test            268 tests run: 268 passed, 0 skipped; doctests 108, 4 and 27
+just coverage        lines 99.13%
+just semver          202 checks: 202 pass, 58 skip; no semver update required (baseline 611a86e, see step 6)
+just check-docs      Validated 48 pages and 49 canonical topics.
+just check           All checks passed and the worktree is unchanged.
+git status --short   nothing
+```
+
+The reference count the final review added, run on the closing commit's catalog, printed
+`references 121 parsed 120` and exit 0. The closing commit changes only this ticket, `tickets/README.md`, the
+architecture page's sentence and Verification's new lines. `just check` runs again on it before the hand-back,
+and its last line goes to the maintainer with the hand-back, since a commit cannot quote a run on itself.
+
 ## Open points
 
 - **Resolved: step 1's answers**, given on 2026-11-16 and quoted in the hand-back.
@@ -1449,6 +1517,9 @@ exit 0 each; Validated 48 pages and 49 canonical topics.
   `mark` graph of refinement 2 could not land, and `nacked_at` stays `when status = held`
   with two invariants standing in for `when mark = nacked`. Whether to land it after a
   checker upgrade, or behind a waiver, is the maintainer's.
+- Declined from step 9's `code-review`, for a later ticket if wanted: `Pockets::mark_of` and the publish path
+  clone a record's payloads through `lookup` only to read its mark or rank (a narrower store query would widen
+  the public `PocketRecords` trait), and the lease read's record reply repeats the batch reply's encoding.
 - The W3 figures in decision 0019 were measured with the ack removing its record; the
   cost moves to the lease's end. A decision record is history and is not edited;
   whether to re-measure is the maintainer's.
