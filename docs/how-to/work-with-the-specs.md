@@ -61,7 +61,7 @@ a fresh suite with `propagate`.
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-carries eight today, listed at its end; each marks a decision the maintainer has not
+carries seven today, listed at its end; each marks a decision the maintainer has not
 made, and none is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.
@@ -74,9 +74,10 @@ a late action before its lapse is processed, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md). The maintainer
 closed questions 9 and 10 on 2026-11-13: a record stays held until its lease ends, so
 a key published again under the lease that acked or nacked it is not a new record, and
-a supersede does not shed the version a consumer holds. The scenarios tagged `oq:9` and
-`oq:10` keep those tags until their tests follow the specification. The eight that
-remain:
+a supersede does not shed the version a consumer holds. The maintainer closed question
+11 on 2026-11-16: a stale publish does not touch its pocket, so it leaves a parked
+pocket parked. The scenarios tagged `oq:9`, `oq:10` and `oq:11` keep those tags until
+their tests follow the specification. The seven that remain:
 
 - Question 1, equal-rank publishes: an equal rank with a different payload for one key.
 - Question 2, who reads the superseded and dead-letter queues, and what an entry must
@@ -86,7 +87,6 @@ remain:
 - Question 5, an adaptive lease TTL.
 - Question 6, a new pocket jumping the queue.
 - Question 7, reviving a parked pocket other than by a publish.
-- Question 11, a stale publish reviving a parked pocket.
 
 ## Tooling
 

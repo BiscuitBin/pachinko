@@ -330,8 +330,14 @@ rule PublishIntoNewPocket {
     ensures: queue.next_position = record_position + 1
 }
 
--- Every publish into an existing pocket emits PocketTouched; the two
--- revive rules below answer it only when the pocket is idle or parked.
+-- A publish into an existing pocket that adds or raises a record emits
+-- PocketTouched: PublishNewKey, Supersede and DeferBehindHeldVersion. The
+-- two revive rules below answer it only when the pocket is idle or
+-- parked. A stale publish changes no record and does not touch the
+-- pocket, so a parked pocket stays parked and keeps its
+-- consecutive_expiries, as it does when a publish at the stored rank is
+-- rejected. Decided by the maintainer on 2026-11-16, closing open
+-- question 11.
 
 rule PublishNewKey {
     when: Publish(publisher, pocket_key, record_key, rank, payload)
@@ -419,7 +425,6 @@ rule DropStalePublish {
         shed_at: now,
         expires_at: now + config.superseded_ttl
     )
-    ensures: PocketTouched(pocket_key: pocket_key)
 }
 
 rule ReviveIdlePocket {
@@ -547,13 +552,15 @@ rule PullFindsNoPocket {
 -- nacked record or a nack of an acked one, so that action is rejected.
 -- Decided by the maintainer on 2026-11-13.
 --
--- An ack is progress: AckMarksRecord resets the pocket's
--- consecutive_expiries to 0 when it is processed, so lapses are
--- consecutive only while no ack, release or revive comes between them.
--- AckRepeats needs no reset: the count rises only when a lease lapses, so
--- under the lease of the first ack it is still 0. A nack, a renew and a
--- pull leave the count as the rules stand: the maintainer decided the ack
--- only, and a reset on a nack is neither chosen nor ruled out.
+-- An ack or a nack is progress: AckMarksRecord and NackMarksRecord reset
+-- the pocket's consecutive_expiries to 0 when they are processed, so
+-- lapses are consecutive only while no ack, nack, release or revive comes
+-- between them. The count catches pockets that keep killing consumers,
+-- and a nack is part of the expected lifecycle of a record. AckRepeats
+-- and NackRepeats need no reset: the count rises only when a lease
+-- lapses, so under the lease of the first mark it is still 0. A renew
+-- and a pull leave the count. Decided by the maintainer on 2026-11-13,
+-- for the ack in T32 and for the nack in T32's close-out.
 
 rule AckMarksRecord {
     when: Ack(consumer, lease, record_key)
@@ -591,6 +598,7 @@ rule NackMarksRecord {
     requires: record.status = held
     requires: record.mark = unsettled
     ensures: lease.expires_at = now + config.lease_ttl
+    ensures: pocket.consecutive_expiries = 0
     ensures: record.mark = nacked
     ensures: record.nacked_at = now
 }
@@ -721,9 +729,11 @@ rule LeaseExpiryKeepsPocketAtFront {
 -- processed. It follows the release rule and goes idle, the state of a
 -- pocket with no records; at the parking threshold it parks instead,
 -- since parking has no records guard, and its nacked records still become
--- dead letters. An ack resets the count, so such a pocket reaches the
--- threshold only if no ack was processed since its earlier lapses, or
--- when max_consecutive_expiries is 1.
+-- dead letters. No lease is granted on an empty pocket, and a pocket
+-- loses records only when a lease ends (see PullWithinLease), so such a
+-- pocket still has a record, and every record it has was marked under
+-- this lease. An ack or a nack resets the count, so it is 0 before the
+-- lapse, and such a pocket parks only when max_consecutive_expiries is 1.
 rule LeaseExpiryIdlesEmptyPocket {
     when: LeaseLapsed(lease)
     requires: lease.status = active
@@ -1179,8 +1189,10 @@ surface Consuming {
 -- judged against it (see the Publish comment). Question 10, a supersede
 -- shedding the version a consumer still holds: the held version is not
 -- shed, and the held set is reconciled when the lease ends (see
--- DeferBehindHeldVersion and the Lease end comment). So the first seven
--- lines below are questions 1 to 7 and the eighth line is question 11.
+-- DeferBehindHeldVersion and the Lease end comment). The maintainer closed
+-- question 11, a stale publish touching its pocket, on 2026-11-16: it
+-- does not (see the comment above PublishNewKey). So the seven lines
+-- below are questions 1 to 7.
 
 open question "Equal rank, different payload for one key: reject the publish, last arrival wins, keep both for the consumer to reconcile, or make it configurable? Decide from the conflict-resolution literature and from what comparable queues and databases do and what their users expect. Until then no rule covers rank = stored rank, so the checker treats that publish as rejected; that is a placeholder, not a decision."
 open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
@@ -1189,4 +1201,3 @@ open question "Routing by worker pool or priority (standard against high-memory 
 open question "Adaptive lease TTL: should lease_ttl be derived from observed lease durations to shorten recovery after a consumer dies?"
 open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
 open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"
-open question "A stale publish touches its pocket: DropStalePublish emits PocketTouched like PublishNewKey and Supersede, so a stale publish into a parked pocket revives it through ReviveParkedPocket and resets its consecutive_expiries although no record changed. Should a stale publish touch the pocket? It does today; that is a placeholder, not a decision. Ticket T35 decides it."
