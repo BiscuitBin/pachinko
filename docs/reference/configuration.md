@@ -36,7 +36,7 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | --- | --- | --- |
 | `--listen` | `127.0.0.1:8080` | The address the HTTP listener binds; loopback unless set. Port 0 picks a free port, which the `listening on <address>` line names. |
 | `--lease-ttl-ms` | `300000` (5 minutes) | `lease_ttl`: how long a lease lasts after its claim or its consumer's last pull. |
-| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many consecutive lease expiries park a pocket; at least 1. |
+| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many lease expiries, with no ack, release or revive between them, park a pocket; at least 1. |
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
 | `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
@@ -108,7 +108,7 @@ constants belong in source where they can be reviewed.
 | `.dockerignore` | What the image's build context leaves out: `.gitignore`'s entries, kept in step with it by hand, plus `.git` and `tickets/`. |
 | `renovate.json` | Renovate's configuration: which pins it reads, how it groups them, and the dependency-dashboard approval its updates wait for. [Decision 0018](../decisions/0018-renovate.md) is the record, and [Maintain dependencies](../how-to/maintain-dependencies.md) the procedure. |
 | `.pre-commit-config.yaml` | The read-only hook gate `just lint` runs and `just install-hooks` installs. |
-| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`. |
+| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`; the trailing-whitespace fixer skips the Markdown under `tickets/`, whose hand-backs quote output verbatim. |
 | `.markdownlint-cli2.jsonc` | markdownlint's rules and the directories it ignores. |
 | `lychee.toml` | The link checker's settings and excluded paths. |
 | `_typos.toml` | The only typos configuration: the excluded lockfiles and directories, and the allowlisted `mis`, `als` and `ede`. A `[tool.typos]` table in `pyproject.toml` would be ignored. |

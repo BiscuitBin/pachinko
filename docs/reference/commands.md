@@ -23,7 +23,7 @@ checkout), and is the one command a fresh clone needs the network for. Nothing i
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
 rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants`,
 `bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
-so is every recipe that writes.
+so is every recipe that writes. CI's `loadgen` job runs `test-loadgen`.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
 `recipes` list in `pyproject.toml`. [Quality gates](quality-gates.md) says what each gate
@@ -50,12 +50,13 @@ proves and why.
 | --- | --- |
 | `just bench [args…]` | Run the divan benchmarks manually, the `version` smoke bench and W1 to W5 over the queue, with optional Cargo arguments. Never in CI or `just check`. See [Benchmarks](testing.md#benchmarks). |
 | `just loadgen <workload> [--name value…]` | Run the load generator or the lapse probe in the excluded `loadgen/` crate against a running `pachinko serve`; `just loadgen --help` lists the workloads and flags. A run with any error prints no rate and exits non-zero. Never in CI or `just check`. See [Load generation](testing.md#load-generation). |
-| `just test-loadgen` | Run the excluded `loadgen/` crate's unit tests, which `just test` cannot reach. Outside `just check`. |
+| `just test-loadgen` | Run the excluded `loadgen/` crate's unit tests, which `just test` cannot reach. Outside `just check`; CI's `loadgen` job runs it. |
 | `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all four locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
 | `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. Over the network: the build pulls the digest-pinned base images and fetches the crates inside the container. See [Build the container image](../how-to/build-the-container-image.md). |
 | `just build` | Build every crate with every feature. Outside `just check`. |
 | `just test` | Every unit and integration test through cargo-nextest with `INSTA_UPDATE=no`: a snapshot mismatch fails without writing pending files. Then every doctest through `cargo test --doc`, because nextest cannot run doctests. Outside `just check`, where `coverage` and `test-doc` run the same tests. |
 | `just test-doc` | Every doctest. Gate 10. |
+| `just test-doc-default` | Every doctest with default features, libpachinko and pachinko each in its own `cargo test --doc --package` run, after `cargo tree` shows that neither package's dependencies enable `testing`, so a doc example that needs the `testing` feature fails unless it guards its lines with `# #[cfg(feature = "testing")]`. Gate 20. |
 | `just semver [baseline]` | Report library API compatibility against an explicit Git revision, the last reachable `libpachinko-v*` tag, or, before the first release, the merge base with `origin/main` (`main` in a clone without that remote branch). Checks all four locks, then runs cargo-semver-checks offline. Outside `just check`; advisory on pull requests until 1.0. |
 | `just snapshots-check` | Check all four locks, then run every unit and integration test with every feature through cargo-insta and nextest offline. cargo-insta cannot pass `--locked` through to nextest, so the locks are checked first. Fails mismatches without writing snapshots or pending files, and rejects unreferenced `.snap` files; doctests are left to gate 10. Gate 19. |
 | `just snapshots-review` | Open cargo-insta's interactive review of pending snapshots for a person at a terminal. |
@@ -66,13 +67,13 @@ proves and why.
 | Recipe | Purpose |
 | --- | --- |
 | `just format` | rustfmt and taplo, writing. |
-| `just fix` | The mutating hook set, twice, because one fixer's first pass may fail on what another then repairs; then `cargo clippy --fix`; then `just lint`. The recipe that repairs what a check reports. Not the only one that writes: `just format`, `just initialize`, `just site`, `just snapshots-accept` and the lock recipes do too, and none of them is a check. |
+| `just fix` | The mutating hook set, twice, because one fixer's first pass may fail on what another then repairs, over every tracked file and then over every untracked file Git does not ignore; then `cargo clippy --fix`; then `just lint`. The trailing-whitespace fixer leaves the Markdown under `tickets/` alone, because a hand-back quotes command output verbatim; markdownlint still repairs a trailing space in ticket prose. The recipe that repairs what a check reports. Not the only one that writes: `just format`, `just initialize`, `just site`, `just snapshots-accept` and the lock recipes do too, and none of them is a check. |
 
 ## Check
 
 | Recipe | Purpose |
 | --- | --- |
-| `just lint` | The whole read-only hook gate over every file. Gate 3. |
+| `just lint` | The whole read-only hook gate over every tracked file, then over every untracked file Git does not ignore, which prek's `--all-files` leaves out; the large-file check reads staged files only, so it passes an untracked file. Stages nothing. An untracked path that begins with `-` fails the gate by name, because a hook would read it as an option. An untracked scratch file belongs under `ai_tmp/`, or its faults fail the gate. Gate 3. |
 | `just fmt-check` | rustfmt, checking. Gate 4. |
 | `just toml-check` | taplo's formatting check and its lint over every TOML file. Gate 5. |
 | `just clippy` | Clippy over every crate target (the library, the binary, their tests, and any examples or benches) with every feature, for the host platform, with warnings as errors. The manifests say `warn`, so a local build never breaks mid-edit; this is where warnings become failures. Gate 6. |
@@ -107,7 +108,7 @@ has not run `just initialize` must run `just install-allium` first.
 
 | Recipe | Purpose |
 | --- | --- |
-| `just check` | The nineteen gates in order, proving the worktree is unchanged between each, then `check-clean`. |
+| `just check` | The twenty gates in order, proving the worktree is unchanged between each, then `check-clean`. |
 | `just check-clean` | Assert the worktree is clean, or matches a supplied baseline. Runs last in `just check`. |
 
 ## Related pages

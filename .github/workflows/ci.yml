@@ -53,6 +53,7 @@ jobs:
       - run: just effects
       - run: just features
       - run: just test
+      - run: just test-doc-default
       - run: just snapshots-check
       - run: just doc
       - run: just deps-unused
@@ -151,6 +152,25 @@ jobs:
           cache-to: type=gha,mode=max
       - run: docker run --rm pachinko:dev
 
+  # The excluded loadgen/ crate's unit tests, which `just test` cannot reach.
+  # A CI job, not a gate in `just check`, so the local gate keeps its length;
+  # the crate's fmt and clippy passes are already gates 4 and 6. The setup
+  # action fetches loadgen/Cargo.lock, but its Rust cache does not save
+  # loadgen/target/, so every run compiles loadgen's dependencies cold.
+  loadgen:
+    name: loadgen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: loadgen
+      - run: just test-loadgen
+      - run: just check-clean
+
   # Advisory before 1.0; independent of the required check aggregate.
   semver:
     name: semver
@@ -176,7 +196,7 @@ jobs:
   # no setup action, and no `${{ }}` inside a shell line.
   check:
     name: check
-    needs: [rust, coverage, deny, documents, image]
+    needs: [rust, coverage, deny, documents, image, loadgen]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

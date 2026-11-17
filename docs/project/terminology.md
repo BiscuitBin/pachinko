@@ -33,7 +33,7 @@ naming the module it comes from.
 | Consumer | The party that pulls, acks, nacks, renews and releases. Never holder, subscriber or worker, and never the library's caller, which is the row below. |
 | Publisher | The party that publishes records into pockets. Never producer. |
 | Batch | What a pull hands back: the lease, the pocket key and zero or more records, smallest position first. An empty batch is not an error. |
-| Queued, leased, idle, parked | A pocket's states. Queued waits in the pocket order; leased is held by one consumer; idle has no records; parked was set aside after consecutive lease expiries until a publish revives it. |
+| Queued, leased, idle, parked | A pocket's states. Queued waits in the pocket order; leased is held by one consumer; idle has no records; parked was set aside after `max_consecutive_expiries` lease expiries with no ack, release or revive between them, until a publish revives it. |
 | Queued, held, deferred | A record's states. Queued waits in its pocket; held has been handed to the pocket's consumer; deferred means a newer version arrived while the key was held and the held version was acked or nacked, so it restarts at the back with a fresh position and is pullable again once the lease ends. |
 | Queue | The deployment's one queue: it owns the pocket order and hands out positions. One deployment is one queue; never topic. |
 | Position | Where a pocket stands in the pocket order and a record in its pocket: the queue's counter when it entered or re-entered, smallest first. A supersede and an expiry requeue keep it; a deferral takes a fresh one for the record, a release or revival for the pocket. Never timestamp. |

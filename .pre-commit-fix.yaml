@@ -39,7 +39,13 @@ repos:
   - repo: builtin
     hooks:
       - id: end-of-file-fixer
+      # Ticket hand-backs quote command output verbatim, trailing spaces
+      # included, so the fixer leaves tickets/ alone. .editorconfig already
+      # leaves Markdown's trailing whitespace alone, and markdownlint's MD009
+      # still reports, and `markdownlint --fix` below still repairs, a trailing
+      # space in ticket prose; fenced output is outside MD009.
       - id: trailing-whitespace
+        exclude: ^tickets/.*\.md$
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: 341e2a331ba578029e66c2e01183e7a6b5ca9ab4 # v0.24.0

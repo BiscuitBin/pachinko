@@ -1,7 +1,7 @@
 ---
 id: T34
 title: "Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI"
-status: todo
+status: done
 depends_on: [T31]
 parallel_with: [T32, T33]
 branch: ticket/t34-gate-gaps
@@ -475,25 +475,521 @@ runs of steps 3 to 6 are quoted in their own hand-back sections, not here.
 
 ### Baseline
 
+Worktree `ticket/t34-gate-gaps`, cut from `wave-2-tickets` at `53d64b7` (which contains
+`4daf9df`); by the maintainer's choice `wave-2-tickets` stands in for `main` as the merge
+target and the pull request base. `just initialize` ran (network, authorised by step 1)
+and exited 0.
+
+At `53d64b7`, untouched:
+
+```text
+$ just check
+exit 0
+All checks passed and the worktree is unchanged.
+```
+
 ### Step 2: the plan
+
+Read the four source bullets, the recipes, `pyproject.toml`, both hook configurations,
+`.editorconfig`, `.markdownlint-cli2.jsonc`, `ci.yml`, the setup action and the pages in
+Files touched. At `53d64b7` every Context fact holds (the `Justfile` lines, the
+`pyproject.toml` recipe list ending at `snapshots-check`, `.pre-commit-fix.yaml` line 42,
+`ci.yml`'s `check.needs` and the `deny` job, the setup action's line 77 and Rust cache,
+`.gitignore` line 68, prek 0.5.7, the five trailing spaces in T30, and
+`docs/reference/commands.md:110` the only `nineteen`), except one that moved:
+
+- **The step 3 break target moved.** `816af9a` ("Make libpachinko's crate root the
+  caller's interface"), after `4daf9df`, moved `leases_examined` from `TickReport` to
+  `testing::TickCost`, so the guard at `crates/libpachinko/src/queue/expiry.rs` lines 40
+  to 42 no longer exists. The remaining `testing`-guarded doctests are in
+  `crates/libpachinko/src/queue/types.rs` (lines 147, 240, 265 and 349). Step 3's break
+  used the smallest, the `PocketStatus` example: its guard lines 147 and 150. The error
+  it names is `could not find testing in libpachinko`, not `leases_examined`.
+- libpachinko's default-features doctest count is 95, and with every feature 103.
+
+`just plan-spec` was not run; the specification is untouched.
 
 ### Step 3: doctests with default features
 
+The manifest check, at `53d64b7`:
+
+```text
+$ printf 'x = { features = ["testing"] }\n' | rg 'features\s*=.*"testing"'
+x = { features = ["testing"] }
+exit 0
+$ rg -n 'features\s*=.*"testing"' Cargo.toml crates/*/Cargo.toml
+exit 1
+```
+
+T34-1 (below) found that this check misses a multi-line `features` array, and that
+`pachinko`'s own dev-dependencies could still turn `testing` on for its doctests. The
+recipe therefore became a `#!/bin/sh` recipe that first runs
+`cargo tree --edges features --package <p> --invert libpachinko --locked --offline` per
+package, fails unless it lists libpachinko, and fails if it lists
+`libpachinko feature "testing"`; then it runs the ticket's two
+`cargo test --doc --package … --locked` lines. Triage showed it fail under a scratch
+multi-line dev-dependency (reverted, `Cargo.lock` unchanged). The quotes below are the
+rerun after that fix.
+
+At `53d64b7` with uncommitted changes (the final recipe; scratch break: `types.rs`
+guard lines 147 and 150 deleted):
+
+```text
+$ just test-doc
+exit 0
+test result: ok. 103 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+$ just test-doc-default
+exit 101
+test crates/libpachinko/src/queue/types.rs - queue::types::PocketStatus (line 146) ... FAILED
+error[E0432]: unresolved import `libpachinko::testing`
+    |                  ^^^^^^^ could not find `testing` in `libpachinko`
+```
+
+The break reverted, at `53d64b7` with uncommitted changes:
+
+```text
+$ git diff --exit-code -- crates/
+exit 0
+$ just test-doc-default
+exit 0
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+`"test-doc-default"` follows `"snapshots-check"` in `pyproject.toml` (gate 20), and
+`- run: just test-doc-default` follows `- run: just test` in `ci.yml`'s `rust` job.
+`just lock-check` exited 0 and `pixi.lock` is unchanged, so `just lock` did not run.
+
 ### Step 4: untracked files in the hook gate
+
+Red, at `53d64b7` with uncommitted changes (step 3's edits; `lint` unchanged; probes
+`t34-probe.yml`, `t34 probe.yml` and `ai_tmp/t34-probe.yml`, each `a: 1` plus a trailing
+space):
+
+```text
+$ git ls-files --others --exclude-standard
+t34 probe.yml
+t34-probe.yml
+exit 0
+$ just lint
+exit 0
+EditorConfig.............................................................Passed
+```
+
+`lint` now runs `prek run --all-files`, then a private shebang recipe,
+`_prek-untracked <config>`, which writes `git ls-files -z --others --exclude-standard`
+to a `mktemp` file under `set -eu`, skips when it is empty, and otherwise runs
+`xargs -0 … prek run --config <config> --files`. `fix` calls `_fix-untracked` after its
+two `--all-files` passes; it runs `_prek-untracked .pre-commit-fix.yaml 2`, whose second
+parameter makes the helper run the one list twice, the first run with `|| true` and the
+second without, so a listing failure still fails `fix` (T34-2's conformance-1 replaced
+two calls, the first with a leading `-` that also hid a listing failure). One helper replaced the ticket's three inline copies after
+T34-1, whose breakage-1 finding (a root path named `--help` reached prek as an option,
+and `lint` exited 0) added a guard: a path beginning with `-` is named on stderr and
+fails the recipe, and the other paths are still checked. The rejected `git add -N` and
+`GIT_INDEX_FILE` mechanisms are as the ticket says; the trade-off is in
+`docs/reference/quality-gates.md`, "What the hook gate contains".
+
+With the probes present, at `d433690` with uncommitted changes (the recipes after
+T34-2's fix):
+
+```text
+$ just lint
+exit 1
+EditorConfig.............................................................Failed
+- hook id: editorconfig-checker
+  t34 probe.yml:
+      1: Trailing whitespace
+  t34-probe.yml:
+      1: Trailing whitespace
+```
+
+No line of that output names `ai_tmp/`. With a fourth probe, `./--help`, added and then
+removed:
+
+```text
+$ just lint
+exit 1
+untracked path begins with -: --help
+  t34 probe.yml:
+  t34-probe.yml:
+error: recipe `_prek-untracked` failed with exit code 1
+```
+
+Then, `--help` removed, at `d433690` with uncommitted changes:
+
+```text
+$ git diff --exit-code -- tickets/T30-performance-evidence.md
+exit 0
+$ just fix
+exit 0
+$ rg -c '[ \t]+$' t34-probe.yml
+exit 1
+$ rg -c '[ \t]+$' 't34 probe.yml'
+exit 1
+$ rg -c '[ \t]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+```
+
+The first run of this step, before step 5, did strip T30's five spaces as the ticket
+foresaw; its diff had exited 0 first, so `git restore tickets/T30-performance-evidence.md`
+ran for that one path. The rerun above came after step 5, so T30 stayed whole. The
+probes deleted:
+
+```text
+$ git status --short | diff ai_tmp/t34-pre-lint.status -
+exit 0
+$ just lint
+exit 0
+```
 
 ### Step 5: `just fix` and quoted evidence
 
+Red, at `53d64b7` with uncommitted changes (`.pre-commit-fix.yaml` unchanged; `prek`
+from `.pixi/envs/default/bin`):
+
+```text
+$ git diff --exit-code -- tickets/T30-performance-evidence.md
+exit 0
+$ rg -c '[ \t]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+$ prek run trailing-whitespace --all-files --config .pre-commit-fix.yaml
+- hook id: trailing-whitespace
+- files were modified by this hook
+  Fixing tickets/T30-performance-evidence.md
+exit 1
+$ rg -c '[ \t]+$' tickets/T30-performance-evidence.md
+exit 1
+$ git restore tickets/T30-performance-evidence.md
+exit 0
+$ rg -c '[ \t]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+```
+
+`exclude: ^tickets/.*\.md$` is on the `trailing-whitespace` hook, with its reason in a
+comment. `.pre-commit-config.yaml` is unchanged. Green, at `53d64b7` with uncommitted
+changes:
+
+```text
+$ just fix
+exit 0
+$ rg -c '[ \t]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+$ git diff --exit-code -- tickets/
+exit 0
+```
+
+The gate still bites, rerun at `d433690` with uncommitted changes, after T34-2's fix
+(one trailing space added at `Justfile:17`, `docs/reference/commands.md:11` and
+`tickets/README.md:3`):
+
+```text
+$ just lint
+exit 1
+  Justfile:
+      17: Trailing whitespace
+  docs/reference/commands.md:11:86 error MD009/no-trailing-spaces Trailing spaces [Expected: 0 or 2; Actual: 1]
+  tickets/README.md:3:85 error MD009/no-trailing-spaces Trailing spaces [Expected: 0 or 2; Actual: 1]
+$ just fix
+exit 0
+$ git diff -- Justfile docs/reference/commands.md tickets/README.md | diff ai_tmp/t34-pre-fix.diff -
+exit 0
+$ git diff --exit-code -- tickets/
+exit 0
+```
+
+Each fixer restored its file byte for byte, so no `git restore` ran.
+editorconfig-checker indents its findings with a tab; the quotes in steps 4 and 5
+show it as four spaces, because markdownlint forbids hard tabs.
+
 ### Step 6: loadgen in CI
+
+The recipe's control, at `53d64b7` with uncommitted changes (scratch break:
+`loadgen/src/report.rs:98`, `2_000` to `2_001`):
+
+```text
+$ just test-loadgen
+exit 101
+test report::tests::the_rate_is_per_second_of_the_elapsed_time ... FAILED
+thread 'report::tests::the_rate_is_per_second_of_the_elapsed_time' (478522207) panicked at src/report.rs:98:9:
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+Reverted:
+
+```text
+$ git diff --exit-code -- loadgen/
+exit 0
+$ just test-loadgen
+exit 0
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+The structural check, at `53d64b7` with uncommitted changes:
+
+```text
+$ git show 53d64b7:.github/workflows/ci.yml | rg -n '^  loadgen:'
+exit 1
+$ rg -n 'if:|continue-on-error' .github/workflows/ci.yml
+177:    if: github.event_name == 'pull_request'
+194:  # `if: always()` is what makes it report on a failure instead of being
+200:    if: always()
+204:      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+exit 0
+```
+
+Lines 177, 194, 200 and 204 are `semver` and `check`, outside the `loadgen` job (lines
+160 to 172, quoted under Final `just check`), so the job has no `if:` and no
+`continue-on-error`. It runs `just test-loadgen`, and `check`'s `needs` holds `loadgen`
+(line 199). `just lint`, which runs actionlint, exited 0. The `test-loadgen` comment in
+the `Justfile` names the CI job. The job's timeout stays at 15 minutes: its first run
+took 1m30s.
 
 ### Step 7: the handbook
 
+`docs/reference/quality-gates.md`: rows 3, 20 and 21; lines 45 to 49; "Outside the
+gate"; the new `test-doc-default` row under "When a gate fails"; "What the hook gate
+contains" (the untracked run, the trade-off, and the `-` guard); "The mutating
+counterpart"; "In continuous integration" (five gate jobs, `image` the sixth, `check`
+the seventh needing six, `semver` the eighth, `test-doc-default` in `rust`'s row, a
+`loadgen` row, and the mapping paragraph); and "On `main`". `docs/reference/commands.md`:
+lines 24 to 26, the `test-loadgen`, `test-doc-default`, `fix`, `lint` and `check` rows.
+`docs/reference/testing.md`: "Framework", the `testing` feature bullet and "Load
+generation". `docs/reference/configuration.md`: the `.pre-commit-fix.yaml` row.
+`CHANGELOG.md`: pachinko Unreleased, a new Changed section.
+
+At `53d64b7` with uncommitted changes:
+
+```text
+$ git show 53d64b7:docs/reference/commands.md | rg -n -i 'nineteen'
+110:| `just check` | The nineteen gates in order, proving the worktree is unchanged between each, then `check-clean`. |
+exit 0
+$ rg -n -i 'nineteen' docs --glob '!docs/decisions/*'
+exit 1
+$ just check-docs
+exit 0
+Validated 47 pages and 48 canonical topics.
+```
+
+A sweep for stale text outside Files touched found
+`docs/project/repository-map.md:103`, which says `just test-loadgen` runs "by hand and
+never in CI or the gate". It is outside Files touched, so it is in Open points.
+
 ### T34-1: the whole diff before the push (step 8)
+
+Harness: Codex, `codex exec -m gpt-6-astra -s read-only`, two reviewers in parallel
+(`conformance`, `breakage`) with fresh contexts; the executing agent is Claude Code.
+Triage and apply: one fresh-context Claude subagent (`claude-opus-5-5`), the single
+writer. Raw files: `ai_tmp/review/T34-1/` (not committed).
+
+- **conformance**: no findings.
+- **breakage-1** (medium, `Justfile` `lint` and `_fix-untracked`): an untracked root file
+  named `--help` reached prek as an option, so `just lint` printed help and exited 0.
+  **Valid.** A `./` prefix does not help, because prek normalises it away and
+  editorconfig-checker takes no `--`. Fixed with a guard that names a path beginning with
+  `-` and fails, still checking the rest; the executing agent then folded the three
+  inline copies into `_prek-untracked`. Handed back: a *tracked* such path has the same
+  exposure through `--all-files` and the commit hook (Open points).
+- **breakage-2** (medium, `Justfile` `test-doc-default`): a future pachinko
+  dev-dependency enabling `testing` would reach pachinko's doctests, and the manual
+  manifest regex misses a multi-line array. **Valid**, shown with a scratch dev-dependency
+  (reverted, `Cargo.lock` unchanged). Fixed with the `cargo tree` assertion in step 3.
+
+No finding was high, so there was no second round. Steps 3 to 5 were rerun after the
+fixes. Steps 4 and 5 were rerun again after T34-2, and their quotes above are those
+reruns. Then `just check`, at `53d64b7` with
+uncommitted changes, exited 0 with `All checks passed and the worktree is unchanged.`
 
 ### Step 9: commit, merge, push and CI
 
+Commit A is `5988ea7`. `git fetch origin` ran; `origin/wave-2-tickets` and
+`wave-2-tickets` were both `53d64b7`, so `git merge --no-edit origin/wave-2-tickets`
+printed `Already up to date.`; there was no lockfile to regenerate. The Verification
+block ran at `5988ea7` and every line matched (quoted under Final `just check`, rerun at
+the final commit). The first run of the block, in a child `zsh` whose `.zshenv` puts
+`~/.pixi/bin` (a global rustc 1.96.0) before rustup's proxy, failed `check-toolchain` on
+the cargo lines. That was the shell, not the tree; the rerun put `~/.cargo/bin` first.
+
+The maintainer authorised the push, the pull request and the scratch-break push
+together. Pull request: `https://github.com/BiscuitBin/pachinko/pull/45`, base
+`wave-2-tickets`.
+
+Run `https://github.com/BiscuitBin/pachinko/actions/runs/43390117588`, head `5988ea7`,
+tested merge commit `d0cc846` ("Merge 5988ea7… into 53d64b7…"):
+
+```text
+rust      pass  3m46s   (step "Run just test-doc-default": success)
+loadgen   pass  1m30s   (steps "Run just test-loadgen" and "Run just check-clean": success)
+coverage  pass; deny pass; documents pass; image pass; semver pass
+check     pass  3s      (needs: [rust, coverage, deny, documents, image, loadgen])
+rust / Run just test-doc-default:
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+loadgen / Run just test-loadgen:
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+The scratch break, commit `0fc36a6` (`loadgen/src/report.rs:98`, `2_000` to `2_001`).
+Run `https://github.com/BiscuitBin/pachinko/actions/runs/43390686273`, tested merge commit
+`2211197` ("Merge 0fc36a6… into 53d64b7…"), conclusion failure:
+
+```text
+loadgen: failure
+test report::tests::the_rate_is_per_second_of_the_elapsed_time ... FAILED
+thread 'report::tests::the_rate_is_per_second_of_the_elapsed_time' (2987) panicked at src/report.rs:98:9:
+test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+check: failure   (step "Run exit 1")
+rust, coverage, deny, documents, image, semver: success
+```
+
+Its revert, commit `d433690` (`git diff --exit-code 5988ea7 -- loadgen/` exited 0, and
+`git diff 5988ea7 d433690` is empty). Run
+`https://github.com/BiscuitBin/pachinko/actions/runs/43391164522`, tested merge commit
+`06eedd9` ("Merge d433690… into 53d64b7…"), conclusion success:
+
+```text
+loadgen: success   test result: ok. 12 passed; 0 failed; …
+check: success
+rust: success      test-doc-default: 95, 4 and 27 passed
+coverage, deny, documents, image, semver: success
+```
+
+The scratch-break commit was made with `--no-verify`, which skipped the shared
+pre-commit hook for that one commit. Commit A and the revert ran the hook, and it passed.
+
 ### T34-2: the whole diff before the final commit (step 10)
 
+Harness: Codex, `codex exec -m gpt-6-astra -s read-only`, two reviewers in parallel
+over `git diff 53d64b7` with the hand-back notes uncommitted on top of `d433690`, and the
+three CI runs of step 9. Triage and apply: one fresh-context Claude subagent
+(`claude-opus-5-5`), the single writer. Raw files: `ai_tmp/review/T34-2/`.
+
+- **conformance-1** (medium, `Justfile` `_fix-untracked`): its first call,
+  `-just _prek-untracked …`, ignored a failing `git ls-files` too, contrary to step 4.
+  **Valid.** Fixed: `_prek-untracked config passes="1"` lists once under `set -eu` and,
+  with `passes` 2, runs the list with `|| true` and then again without; `_fix-untracked`
+  is one call with `2`. Smoke runs: `GIT_DIR=/nonexistent just _fix-untracked` exits 128
+  (`fatal: not a git repository`), and a `passes` of 3 exits 2.
+- **conformance-2** (medium, this ticket): "Final `just check`" was empty. **Invalid at
+  the checkpoint.** Step 10 orders the final `just check` after triage, and §11 makes any
+  earlier quote stale. It is filled below.
+- **breakage-1** (medium, `docs/reference/quality-gates.md`): `check-added-large-files`
+  reads staged additions only, even under `--files`, so an untracked 1 MiB file passes
+  `just lint`. **Valid**, shown with a scratch probe (deleted). The hook change is outside
+  this ticket's comment-only line in `.pre-commit-config.yaml`, so it is handed back to
+  Open points. Gate row 3, "What the hook gate contains" and the `just lint` row in
+  `docs/reference/commands.md` now state the limit.
+
+No finding was high, so there was no second round. Steps 4 and 5 were rerun, and
+`just lint` and `just check-docs` exited 0.
+
 ### Final `just check`
+
+The Verification block, at `d433690` with uncommitted changes (this commit's content:
+T34-2's fixes and these notes), with `~/.cargo/bin` first on `PATH`:
+
+```text
+$ just lock-check >/dev/null 2>&1
+exit 0
+$ just test-doc 2>&1 | rg "^test result"
+test result: ok. 103 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+exit 0
+$ just test-doc-default 2>&1 | rg "^test result|FAILED|^error"
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+exit 0
+$ printf 'x = { features = ["testing"] }
+' | rg 'features\s*=.*"testing"'
+x = { features = ["testing"] }
+exit 0
+$ rg -n 'features\s*=.*"testing"' Cargo.toml crates/*/Cargo.toml
+exit 1
+$ rg -n '"test-doc-default"' pyproject.toml
+65:  "test-doc-default",
+exit 0
+$ rg -n 'just test-doc-default|just test-loadgen|^  loadgen:|needs: \[' .github/workflows/ci.yml
+56:      - run: just test-doc-default
+160:  loadgen:
+171:      - run: just test-loadgen
+199:    needs: [rust, coverage, deny, documents, image, loadgen]
+exit 0
+$ rg -n -A12 '^  loadgen:' .github/workflows/ci.yml
+160:  loadgen:
+161-    name: loadgen
+162-    runs-on: ubuntu-latest
+163-    timeout-minutes: 15
+164-    steps:
+165-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+166-        with:
+167-          persist-credentials: false
+168-      - uses: ./.github/actions/setup
+169-        with:
+170-          cache-key: loadgen
+171-      - run: just test-loadgen
+172-      - run: just check-clean
+exit 0
+$ rg -n 'continue-on-error' tickets/T34-gate-gaps.md
+292:     the job nor any of its steps carries `continue-on-error` or an `if:`. Add
+301:     quote that the job has no `if:` and no `continue-on-error`, that it runs
+423:  `continue-on-error`, and the `rust` job runs
+452:rg -n 'continue-on-error' tickets/T34-gate-gaps.md; echo "exit $?"
+453:rg -n 'continue-on-error' .github/workflows/ci.yml; echo "exit $?"
+468:`<baseline>` is the commit step 1 quoted. The `continue-on-error` search over this ticket
+740:$ rg -n 'if:|continue-on-error' .github/workflows/ci.yml
+750:`continue-on-error`. It runs `just test-loadgen`, and `check`'s `needs` holds `loadgen`
+exit 0
+$ rg -n 'continue-on-error' .github/workflows/ci.yml
+exit 1
+$ git ls-files --others --exclude-standard
+exit 0
+$ just lint >/dev/null 2>&1
+exit 0
+$ rg -c '[     ]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+$ just fix >/dev/null 2>&1
+exit 0
+$ git diff --exit-code -- tickets/
+(the diff of tickets/T34-gate-gaps.md alone: this commit's hand-back notes and status, uncommitted when the block ran)
+exit 1
+$ rg -c '[     ]+$' tickets/T30-performance-evidence.md
+5
+exit 0
+$ just test-loadgen 2>&1 | rg "^test result"
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+exit 0
+$ git show 53d64b7:docs/reference/commands.md | rg -n -i 'nineteen'
+110:| `just check` | The nineteen gates in order, proving the worktree is unchanged between each, then `check-clean`. |
+exit 0
+$ rg -n -i 'nineteen' docs --glob '!docs/decisions/*'
+exit 1
+$ just check-docs >/dev/null 2>&1
+exit 0
+$ just check 2>&1 | tail -1
+All checks passed and the worktree is unchanged.
+exit 0
+$ git status --short
+ M Justfile
+ M docs/reference/commands.md
+ M docs/reference/quality-gates.md
+ M tickets/T34-gate-gaps.md
+exit 0
+```
+
+`git diff --exit-code -- tickets/` exited 1 only because these notes were uncommitted;
+no other ticket file differed, and `just fix` changed nothing. Commit B holds exactly
+the four files `git status --short` lists above.
 
 ## Open points
 
@@ -510,3 +1006,21 @@ runs of steps 3 to 6 are quoted in their own hand-back sections, not here.
   `just check` catches. Owner: maintainer.
 - Whether the `trailing-whitespace` fixer should skip every `*.md`, which would match
   `.editorconfig`, rather than `tickets/` alone. Owner: maintainer.
+- `docs/project/repository-map.md` line 103 says `just test-loadgen` runs "by hand and
+  never in CI or the gate". CI's `loadgen` job now runs it. The page is outside this
+  ticket's Files touched. Owner: maintainer.
+- A *tracked* file whose name begins with `-` reaches prek's hooks as an option through
+  `prek run --all-files` and through the pre-commit hook, as an untracked one did before
+  T34-1's guard (breakage-1). This predates T34. The root fix is hooks that end their
+  options with `--`, which is a hook change in `.pre-commit-config.yaml`, beyond this
+  ticket's comment-only line there. Owner: maintainer.
+- `check-added-large-files` reads staged files only, whatever `--files` gives it (prek
+  0.5.7), so `lint`'s untracked run never rejects an untracked file over 768 KiB; the
+  commit that stages it does (T34-2's breakage-1). The fix is `--enforce-all` on that
+  hook or a size check of its own, a hook change in `.pre-commit-config.yaml`, beyond
+  this ticket's comment-only line there. Owner: maintainer.
+- T34-1 made `test-doc-default` assert with `cargo tree … --offline` that no dependency
+  enables libpachinko's `testing`. That goes beyond step 3's two-line recipe, and the
+  manual manifest regex that the Verification block runs misses a multi-line
+  `features` array. The recipe's assertion is the one that holds. Owner: maintainer, to
+  accept the stronger recipe.
