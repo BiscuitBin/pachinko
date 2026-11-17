@@ -265,9 +265,11 @@ that an equal rank does not revive. At `983b785` `DropStalePublish` no longer em
 The maintainer's xzibitq repository holds `qsketch.py`, a reference sketch outside this
 repository. As read there on 2026-11-07, `MultiLeaseQueue.push` (lines 533-545) takes a
 waiting pocket back into circulation before the rank check runs, so any publish revives
-it, a stale one included. That is a fact about the sketch, not a recommendation, and
-the executor asks the maintainer to confirm it rather than citing it as checked. On Q1
-the sketch behaves as the old rules did; the decision above replaces it.
+it, a stale one included. That is a fact about the sketch, not a recommendation. At
+step 1 the maintainer pointed at the file, and it was read again on 2026-11-16: `push`
+pops the pocket from `_q_in_waiting` before `KeyedQueue.push` runs its rank check, so
+the lines above are right. On Q1 the sketch behaves as the old rules did; the decision
+above replaces it.
 
 ### The impact map
 
@@ -666,16 +668,17 @@ This ticket owns:
 
 | Kind | Names |
 | --- | --- |
-| Decisions | Q1, Q2 (the module's question 11) and the nack reset, all decided and recorded above; the wire names in step 1 |
-| Rules | Only a rule a step-1 wire answer needs. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
+| Decisions | Q1, Q2 (the module's question 11) and the nack reset, all decided and recorded above; the wire names, the decision record and the eight data-model refinements of step 1, among them the module's question 1 closed as "reject" |
+| Rules | The step-1 refinements: the nine guards that tell a deferred version by `deferred_position`, `Supersede`'s explicit guard, the `mark` transition graph, the invariants `HeldCopiesAgree` and `MarkedPocketHasNoExpiries`, and the equal-rank rejection stated as decided. Q2 and the nack reset landed at `983b785`; any defect found in the rules at `a338355` or `983b785` is fixed in the specification first |
 | Scenarios | Every row of "Scenarios" in the impact map; S024 split and S026 rechecked under Q2; S063's nacked case, S064 and `a_nack_leaves_the_expiry_count_over_http` flipped by the nack reset; new scenarios from S078 for the six lease-end rows by release and by lapse, the publish table, repeated and changed marks, positions, the lease read's marks, and a parked pocket left with no records |
 | Obligations | Every id `just plan-spec pachinko` prints for the rules changed at `a338355`, at `983b785` and at step 4 |
 
 ## Non-goals
 
-- No answer to any other open question: not the module's question 1 (equal rank), 2 (who
-  reads the superseded and dead-letter queues, and whether an entry can be replayed), 3
-  (capacity) or 7 (what else revives a parked pocket).
+- No answer to any other open question: not the module's question 2 (who reads the
+  superseded and dead-letter queues, and whether an entry can be replayed), 3 (capacity)
+  or 7 (what else revives a parked pocket). Question 1 (equal rank) is closed as
+  "reject" at step 1, and the rejection does not change.
 - No change to the Q1 decision. A finding that the decision is wrong goes to the
   maintainer as a question, never into a fix.
 - No reset of `consecutive_expiries` on a renew or a pull; an ack and a nack reset it.
@@ -683,9 +686,8 @@ This ticket owns:
   after T35.
 - No route that reads the superseded or dead-letter queues.
 - No "transaction" vocabulary (decision 8).
-- No decision record unless the maintainer asks for one at step 1; if asked, it is
-  handed back as its own `main` pull request, because a new record under
-  `docs/decisions/` is outside Files touched.
+- No decision record beyond decision 0020, which the maintainer asked for at step 1:
+  terse, the why of the Q1 decision, pointing at the specification for the detail.
 - No tombstones and no spilling of idle pockets to disk: the maintainer's notes leave
   both for later.
 
@@ -693,22 +695,24 @@ This ticket owns:
 
 | Path | Class | Content |
 | --- | --- | --- |
-| `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; any rule a step-1 wire answer needs |
+| `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; the step-1 refinements, with `open question` 1 removed |
+| `docs/decisions/0020-held-set-until-lease-ends.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, shared | Decision 0020, its index row and its manifest entry |
+| `docs/operations/troubleshooting.md` | shared, own lines | The `equal_rank` sentence that called the refusal a placeholder |
 | `crates/libpachinko/src/records.rs`, `records/memory.rs`, `records/contract.rs` | shared, own lines | `RecordStatus`, `RecordView`, the `PocketRecords` trait, `MemoryRecords` and the contract: marks, the nack time, the arrival position, the lease-end step |
 | `crates/libpachinko/src/queue.rs`, `queue/pockets.rs`, `queue/settle.rs`, `queue/publish.rs`, `queue/renew.rs`, `queue/expiry.rs`, `queue/shed.rs`, `queue/types.rs`, `queue/inspect.rs` | shared, own lines | Publish's defer branch, the mark step, the lease-end reconciliation and its stamps, the outcome types, the lease view's marks, the docs and doctests |
-| `crates/libpachinko/src/ids.rs`, `error.rs`, `lib.rs`, `config.rs` | shared, own lines | `HeldRecord` if it carries the mark; the refusal for a changed mark; the crate docs and doctest; the S005 doc if the dead-letter TTL wording changes; the `max_consecutive_expiries` doc (impact map, section 8) |
-| `crates/libpachinko/tests/queue/*.rs` | shared, own lines | The scenarios, the walk model, the invariant checks, the fixture and the counting store |
+| `crates/libpachinko/src/ids.rs`, `error.rs`, `lib.rs`, `config.rs` | shared, own lines | `Mark` and `MarkedRecord`, and the `HeldRecord` docs; the refusal for a changed mark; the `EqualRank` message, no longer a placeholder; the crate docs and doctest; the S005 doc if the dead-letter TTL wording changes; the `max_consecutive_expiries` doc (impact map, section 8) |
+| `crates/libpachinko/tests/queue/*.rs`, `crates/libpachinko/tests/queue/walk/model.rs` | shared, own lines, one new | The scenarios, the walk model (split out of `walk.rs` into `walk/model.rs`), the invariant checks, the fixture and the counting store |
 | `crates/libpachinko/benches/workloads.rs` | shared, own lines | W3's doc comment, if its wording is no longer true |
 | `crates/libpachinko/README.md` | shared, own lines | The signatures, the record state diagram, the sequence and the usage |
 | `crates/pachinko/src/http.rs`, `http/leases.rs`, `http/batch.rs`, `actor.rs` | shared, own lines | The ack and nack outcome mapping, the refusal's status and code, the lease read's marks, the publish outcome if step 1 adds one |
 | `crates/pachinko/tests/http.rs`, `tests/batch_publish.rs` | shared, own lines | The wire drivers for S040, S047, S068 and the new wire scenarios; `a_nack_leaves_the_expiry_count_over_http` and the `PARK_AT_TWO` comment |
 | `loadgen/src/client.rs` | shared, own lines | The outcome strings it accepts |
 | `docs/reference/testing.md` | shared, own lines | The catalog rows, the scenario and invariant counts, the tag legend |
-| `docs/reference/http-api.md`, `docs/reference/api.md` | shared, own lines | The ack, nack, lease-read, release and error text |
+| `docs/reference/http-api.md`, `docs/reference/api.md` | shared, own lines | The ack, nack, lease-read, release and error text, and the `equal_rank` text that called the refusal a placeholder |
 | `docs/reference/configuration.md` | shared, own lines | The `--max-consecutive-expiries` sentence, CR5's, on T32's flip list |
 | `docs/explanation/architecture.md`, `docs/project/terminology.md`, `docs/how-to/test-and-debug.md` | shared, own lines | The store seam, the shed queues, the terms (held set, mark, deferred), the lease-read example |
-| `docs/how-to/work-with-the-specs.md`, `docs/explanation/specifications.md` | shared, own lines | Question 11 left both lists at `983b785`; the sentence on the `oq:9`, `oq:10` and `oq:11` tags goes at step 7 |
-| `docs/explanation/prior-art.md` | shared, own lines | A sentence on the section about a key re-published within the lease, saying question 9 is closed; the count of closed questions at :229-230 and :415 |
+| `docs/how-to/work-with-the-specs.md`, `docs/explanation/specifications.md` | shared, own lines | Question 11 left both lists at `983b785` and question 1 leaves them at step 4; the sentence on the `oq:9`, `oq:10` and `oq:11` tags goes at step 7 |
+| `docs/explanation/prior-art.md` | shared, own lines | A sentence on the section about a key re-published within the lease, saying question 9 is closed; the count of closed questions at :229-230 and :415; question 1 closed as "reject" at :11 and :281 |
 | `README.md` | shared, own lines | The sequences' `settled`, `superseded` and `deferred` replies |
 | `CHANGELOG.md` | shared, own lines | libpachinko and pachinko Unreleased, Changed |
 | `tickets/README.md` | shared, own lines | T35's Status cell |
@@ -767,15 +771,17 @@ This ticket owns:
    - each test that must flip, each new scenario with its id from S078, and each
      handbook line the decisions reach. A file the plan needs outside Files touched is
      handed back.
-4. **The specification for the step-1 wire answers, if any needs a rule.** Q2 and the
-   nack reset landed at `983b785` (Hand-back notes). Use the `spec-change` skill for a
-   rule a step-1 answer needs; with none, this step is skipped and says so in the
-   hand-back. Run `just check-specs`, `just analyse-specs` and `just plan-spec pachinko`,
-   and diff the obligation list against step 3's.
-   **Adversarial review** (`CONVENTIONS.md` §14), only if a rule changed here: checkpoint
-   T35-3, the specification diff against the quoted answers. Ask whether each rule says
-   what its answer says, whether any text still describes the old behaviour, and whether
-   any open question was answered. The commands are in §14; findings go to
+4. **The specification for the step-1 refinements.** Q2 and the nack reset landed at
+   `983b785` (Hand-back notes). No step-1 wire answer needs a rule; the eight data-model
+   refinements the maintainer chose at step 1 do (Hand-back notes, "The decisions at
+   step 1"). Use the `spec-change` skill. Run `just check-specs`, `just analyse-specs`
+   and `just plan-spec pachinko`, diff the obligation list against step 3's, and check
+   that `rg -c '^open question' docs/specs/pachinko.allium` prints 6.
+   **Adversarial review** (`CONVENTIONS.md` §14): checkpoint T35-3, the specification
+   diff against the quoted answers. Ask whether each rule says what its answer says,
+   whether the rebased guards are still disjoint, complete and equivalent to the guards
+   at `983b785`, whether any text still describes the old behaviour, and whether any
+   open question other than question 1 was answered. The commands are in §14; findings go to
    `ai_tmp/review/T35-3/`, with `-o` on a path the reviewer does not write itself.
    Checkpoints are numbered in the order they run: T35-1 and T35-2 reviewed the
    specification at `a338355` and `983b785`, T35-3 is this one and T35-4 is step 8's.
@@ -868,8 +874,11 @@ This ticket owns:
 
 - The maintainer's answers at step 1 are quoted in the hand-back with their date, and
   nothing before them chose an option.
-- `docs/specs/pachinko.allium` carries no `open question` for questions 9, 10 or 11;
-  `rg -c '^open question' docs/specs/pachinko.allium` prints 7.
+- `docs/specs/pachinko.allium` carries no `open question` for questions 1, 9, 10 or 11;
+  `rg -c '^open question' docs/specs/pachinko.allium` prints 6, and no test, page or
+  message calls the equal-rank refusal a placeholder.
+- Decision 0020 records why the held set lasts until the lease ends, with its index row
+  and manifest entry.
 - A nack resets its pocket's `consecutive_expiries` when it is processed, in the library
   and over the wire (S064 and the renamed wire test), and a renew or a pull leaves it.
 - A stale publish into a parked pocket leaves it parked with its count, and records the
@@ -885,7 +894,7 @@ This ticket owns:
   the hand-back lists the before and after counts.
 - The scenario ids are each tagged once and run contiguously from S001 to the
   catalog's last row, and the catalog has one row per id naming an existing test.
-- No catalog row, test or page carries `oq:9`, `oq:10` or `oq:11`.
+- No catalog row, test or page carries `oq:1`, `oq:9`, `oq:10` or `oq:11`.
 - The walk model predicts the decided behaviour, checks every invariant the module
   declares, and the invariant walk passes.
 - The service answers the ack, the nack, the repeat, the changed mark and the lease
@@ -935,8 +944,11 @@ rg -o '^\| S[0-9]{3} \|.*\| `([^`]+\.rs)`, `([a-z0-9_]+)`' -r '$1 $2' \
       done; exit "$bad" ); echo "exit $?"
 # positive control first: the labels of the questions still open must match (exit 0)
 rg -c 'oq:[0-9]+\b' docs/reference/testing.md crates/libpachinko/tests; echo "exit $?"
-! rg -n 'oq:(9|10|11)\b|oq9_|open.question.(9|10|11)\b' docs/reference/testing.md \
+! rg -n 'oq:(1|9|10|11)\b|oq9_|open.question.(9|10|11)\b' docs/reference/testing.md \
   docs/how-to crates; echo "exit $?"
+# the equal-rank refusal is no longer called a placeholder (question 1 closed)
+! rg -n --pcre2 '(?i)first open question|placeholder for (the specification.s )?open question 1|\(open question 1\)|open_question_1|oq1 placeholder|open question 1 placeholder|equal.rank placeholder|equalrank. placeholder|refusal is a placeholder|placeholder, not a decision|"placeholder"|is_a_placeholder' \
+  crates docs loadgen README.md --glob '!docs/decisions/**'; echo "exit $?"
 # the old names are gone from code and pages (the changelog and tickets keep history)
 ! rg -n 'SettleOutcome::(Settled|Deferred)|RecordStatus::Deferred|free_held' \
   crates loadgen docs README.md --glob '!docs/decisions/**'; echo "exit $?"
@@ -966,6 +978,12 @@ the third `! rg`: at `983b785` it matches 13 lines, the flip list of section 8 o
 `CHANGELOG.md`, so it can fire. It reads across lines (`-U`) because one doc comment
 wraps the list, and `\back,` keeps it from matching the corrected "ack, nack, release or
 revive". `CHANGELOG.md` keeps released history, so step 7 checks its lines by hand.
+The placeholder line was widened at step 3 to what
+`rg -n 'first open question|placeholder|open.question.1\b'` found over `crates`, `docs`
+(decisions excluded) and `loadgen`; at `25cdbea` it matches 26 lines, so it can fire.
+It leaves out the general uses of "placeholder" (the documentation contract, the
+how-to's template names, the walk's placeholder id and the tag legend) and the dated
+note that closes question 1.
 
 ## Hand-back notes
 
@@ -1124,6 +1142,53 @@ were run outside it.
 
 ### The decisions at step 1
 
+Asked on 2026-11-16, in the planning session for steps 1 to 9. The questions are
+abridged; each answer is the label the maintainer chose, or their own words, quoted
+verbatim. A "(Recommended)" the dialog put on a label is dropped.
+
+| Question | Answer | What it decides |
+| --- | --- | --- |
+| The ack and nack reply, and whether a repeat answers differently | "acked / nacked, repeat same" | `SettleOutcome::{Acked, Nacked}` replace `Settled` and `Deferred`; the wire answers `{"outcome":"acked"}` or `{"outcome":"nacked"}`; a repeat answers as the first mark did |
+| The refusal of a changed mark | "409 mark_conflict" | `LeaseActionError::MarkConflict(RecordKey)`, checked after `RecordNotHeld`; the wire answers 409 `mark_conflict` |
+| The publish deferred behind a held version | "I think option 2, because the publisher does not need to know that another (lower rank version) is currently being processed. It just needs to know that its record has been published and is on track to being processed. I think this is the case. I think this is true. Unless I'm missing something, let me know." | Option 2 was "Keep `superseded`". No new outcome: the `PublishOutcome::Superseded` doc names both rules, and loadgen's `APPLIED` is unchanged. Nothing was found missing: the deferral is visible to consumers, through the lease read, and not to publishers |
+| Where the mark is shown | "I guess option 1. Double check to ensure that the datamodel captured by the allium specs makes sense and is well modeled." | Option 1 was "Lease read only". A new `MarkedRecord` goes in `LeaseView`, and the lease read's records gain `"mark"`; `HeldRecord`, the pull batch and its wire are unchanged. The data-model check is below |
+| A decision record for Q1 | "Go ahead and draft a decision record as part of ticket 35, because this is a key decision. But keep it fairly terse, minimum but sufficient, The spec captures the nitty gritty detail, the decision mostly needs to capture why." | Decision 0020, written here with its index row and manifest entry; the Non-goal that handed a record back is replaced |
+| Whether the qsketch lines in Context are right | "You can check here:" followed by the file's path in the maintainer's xzibitq repository | Read on 2026-11-16: `MultiLeaseQueue.push` (lines 533-545) pops the pocket from `_q_in_waiting` before `KeyedQueue.push` runs its `duel`, so any publish revives a waiting pocket. The Context lines were right and now say they were checked |
+
+**The data-model check.** An independent review of the specification's data model found
+it sound, with nothing reachable contradicting a decision, and raised refinements. Asked
+to choose among them, the maintainer answered: "Please ask me about each of these
+individually. Provide more context. and /show-me Where valuable, what they're about
+through visuals and diagrams that can better communicate and build understanding and
+alignment." Each was then asked on its own, with a diagram:
+
+| # | Refinement | Answer |
+| --- | --- | --- |
+| 1 | Tell a version waiting behind a held one by `deferred_position != null`, not `held_rank < rank`, in `ending_records`, `Supersede`, `DeferBehindHeldVersion` and the six lease-end rules. `DeferredHasArrivalPosition` and `OnlyDeferredHasArrivalPosition` stay, since they tie the ranks to the position | "Rebase on position", with the note "we will continue to reject requal rank versions." (read as "equal") |
+| 2 | A `transitions mark { unsettled -> acked; unsettled -> nacked }` block, with `nacked_at` made `when mark = nacked`, retiring `NackedHasItsTime` and `OnlyNackedHasNackTime`; dropped and recorded if the pinned checker rejects it | "Try it; drop if rejected" |
+| 3 | An invariant `HeldCopiesAgree`: a held record with nothing deferred has `held_payload = payload` | "Add it" |
+| 4 | An invariant `MarkedPocketHasNoExpiries`: a held, marked record's pocket has `consecutive_expiries = 0`, which the lapse comment relies on | "Add it" |
+| 5 | Guard `Supersede` explicitly: `status = queued or (status = held and deferred_position != null)` | "Guard explicitly" |
+| 6 | Say under Lease end that ending a lease and answering its `Freed` are one outcome, as a pull and its `HoldRecord` are | "State it" |
+| 7 | Say in the Publish comment that publishing again at the held rank is rejected when nothing waits and stale when a newer version waits, with a library test pinning both | "Document it" |
+| 8 | Whether the note on refinement 1 closes the module's open question 1 as "reject" | "Yes, close it: reject" |
+
+Step 1 says an answer outside the offered options is a new design, to be recorded before
+stopping again. Three answers went outside them: the decision record written in this
+ticket, the refinements, and question 1 closed. The maintainer approved the plan that
+carries all three on 2026-11-16, so the work goes on; the Goal, Non-goals, Files
+touched, step 4, Acceptance criteria and Verification were realigned with them in the
+commit after `25cdbea`. That leaves six `open question` lines, questions 2 to 7, since
+the numbering never compacts.
+
+### Baseline, at `25cdbea`
+
+`just check` on the untouched worktree, before this realignment, ended:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
 ### The plan (step 3)
 
 ### The specification for the wire answers, and T35-3 (step 4)
@@ -1140,9 +1205,7 @@ were run outside it.
 
 ## Open points
 
-- The answers step 1 asks for: the ack and nack reply names, the refusal of a
-  changed mark, the publish outcome for a deferral, where the mark is shown, and
-  whether a decision record is wanted. Owner: maintainer.
+- **Resolved: step 1's answers**, given on 2026-11-16 and quoted in the hand-back.
 - The specification leaves the order of several entries created at one lease end open;
   step 3 pins one. Whether the specification should fix it is the maintainer's.
 - A pocket can park with no records, now only at `max_consecutive_expiries` 1, since an
@@ -1162,8 +1225,7 @@ were run outside it.
 - `docs/explanation/prior-art.md` still counts the closed questions as at T31: :229-230
   say questions 10 and 11 came later, and :415 names "the one open question that is no
   longer in the module", stale since `a338355`. Step 7 corrects them.
-- The qsketch lines in Context were read outside this repository; step 1 asks the
-  maintainer to confirm them.
+- **Resolved: the qsketch lines**, read again on 2026-11-16 and right (hand-back, step 1).
 - T32's Open points that this ticket inherits or leaves, as T32's ticket records them
   at its merge:
   - The comment above `PublishNewKey` was corrected at `983b785`.
