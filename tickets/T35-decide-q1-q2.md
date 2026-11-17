@@ -207,8 +207,9 @@ the sketch behaves as the old rules did; the decision above replaces it.
 Surveyed read-only on 2026-11-13 against the specification's edit (the lines of
 `docs/specs/pachinko.allium` and of the two handbook pages below were read just before
 `a338355` and have moved a little; find rules by name). Code, test and handbook lines
-are as of `62efe41`, which `a338355` does not change. Every line is re-read at step 3
-before it is relied on.
+are as of `62efe41`, which `a338355` does not change. The merge of T32's pull request 48
+at `b5d4a83` later changed seven of the files cited (step 2's hand-back), so their lines
+have moved too. Every line is re-read at step 3 before it is relied on.
 
 Abbreviations: `LQ/` is `crates/libpachinko/tests/queue/`, `LS/` is
 `crates/libpachinko/src/`, `PT/` is `crates/pachinko/tests/`, `PS/` is
@@ -642,8 +643,8 @@ This ticket owns:
 2. **The worktree.** The branch `ticket/t35-decide-q1-q2` and its worktree exist,
    stacked on `ticket/t32-spec-follow-up` at `62efe41`, with the specification at
    `a338355`. T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, not
-   `main`, which stands in for `main` as the merge target and the pull request base, as
-   it did for T32 and T34; `origin/wave-2-tickets` was merged into the branch at
+   `main`. As for T32 and T34, `wave-2-tickets` stands in for `main` as the merge target
+   and the pull request base; `origin/wave-2-tickets` was merged into the branch at
    `b5d4a83` (Hand-back notes). Before any later merge, `git fetch origin` (network,
    authorised by this step) and merge `origin/wave-2-tickets` (`CONVENTIONS.md` §11), as
    T32 did. In a fresh worktree
@@ -754,8 +755,8 @@ This ticket owns:
    `tickets/README.md`, and commit with the hand-back notes, each quoted output headed
    by the commit it ran at. **Authorisation required: push and open a pull request.**
    Stop and ask. The pull request's base is `wave-2-tickets`, and its merge is the
-   maintainer's; `pages.yml` deploys the API reference only on a push to `main`
-   (decision 0013), which happens when `wave-2-tickets` itself merges there.
+   maintainer's; `pages.yml` deploys the API reference on a push to `main` or a manual
+   run (decision 0013), and a push happens when `wave-2-tickets` itself merges there.
 
 ## Acceptance criteria
 
@@ -932,9 +933,13 @@ concern about the decision itself.
 are the old head and T32's final head `8f155631f6b241f051a2097fb902a6ce48486dee`. The
 old head is written in full because the spell checker reads its seven-character form
 as a misspelt word. `origin/main` (`611a86e`) does not contain the merge. T32's commits
-after `62efe41` touch none of this ticket's files. `git merge --no-ff
+after `62efe41` touch none of the files this branch had changed. `git merge --no-ff
 origin/wave-2-tickets` made the merge commit `b5d4a83` with no conflict; it brought 17
-files and left `Cargo.lock` unchanged, so `just lock` did not run. At `b5d4a83`:
+files and left `Cargo.lock` unchanged, so `just lock` did not run. Seven of those files
+are in Files touched and later steps edit them: `CHANGELOG.md`,
+`crates/libpachinko/src/config.rs`, `crates/libpachinko/src/queue/types.rs`,
+`crates/pachinko/tests/http.rs`, `docs/project/terminology.md`,
+`docs/reference/http-api.md` and `docs/reference/testing.md`. At `b5d4a83`:
 
 ```text
 $ git merge-base --is-ancestor 7a79743 HEAD && echo "7a79743 is ancestor"
@@ -977,15 +982,25 @@ exit=0
   whether to re-measure is the maintainer's.
 - `CHANGELOG.md` says "76 scenarios" where `docs/reference/testing.md` says 77; the
   mismatch predates this ticket and step 7 corrects it with the new count.
-- T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, with its
-  out-of-scope edits and its commit `2681bd6`, and that merge is in this branch at
-  `b5d4a83`. `wave-2-tickets` is not yet in `main`; when it lands there is the
-  maintainer's.
+- T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, and that merge is
+  in this branch at `b5d4a83`. Its inherited items were settled first: the maintainer
+  accepted its out-of-scope edits as recorded and had one §14 round run over `2681bd6`
+  (T32's Close-out, decisions 1 and 2). `wave-2-tickets` is not yet in `main`; when it
+  lands there is the maintainer's.
 - The qsketch lines in Context were read outside this repository; step 1 asks the
   maintainer to confirm them.
-- T32's Open points that this ticket inherits or leaves: the comment above
-  `PublishNewKey` is corrected at step 4; whether a nack should also reset
-  `consecutive_expiries` stays the maintainer's and is a Non-goal here; T32's other
-  handed-back points (the "consecutive" wording in four places, an HTTP test of the
-  ack's reset, the `lease_not_active` sentence in `docs/reference/http-api.md`, the
-  `spec-change` skill's "placeholder" wording) are not this ticket's.
+- T32's Open points that this ticket inherits or leaves, as T32's ticket records them
+  at its merge:
+  - The comment above `PublishNewKey` is corrected at step 4.
+  - **The nack reset conflicts with this ticket's Non-goals.** On 2026-11-13 the
+    maintainer decided that a nack resets `consecutive_expiries` and that the change
+    lands in T35 (T32's Close-out, decisions 4 and 5), but Non-goals here still say
+    "No reset of `consecutive_expiries` on a nack". T32 leaves that edit to the
+    maintainer, and its "What T35 must flip" lists what follows the rule, including
+    `a_nack_leaves_the_expiry_count_over_http`, which goes red when the reset lands.
+    Until the maintainer rescopes this ticket, the Non-goal stands. Owner: maintainer.
+  - The four handed-back wording and test points (the "consecutive" wording, an HTTP
+    test of the ack's reset, the `lease_not_active` sentence in
+    `docs/reference/http-api.md`, the `spec-change` skill's "placeholder" wording) were
+    fixed on T32 under its decision 7 and arrived with the merge.
+  - T32's remaining Open points name their own owners and are not this ticket's.
