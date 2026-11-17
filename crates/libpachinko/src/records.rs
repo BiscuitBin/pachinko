@@ -14,7 +14,8 @@ mod memory;
 
 use std::fmt::Debug;
 
-use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
+use crate::ids::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey};
+use crate::timestamp::Timestamp;
 
 pub use memory::MemoryRecords;
 
@@ -68,14 +69,21 @@ impl Position {
 }
 
 /// A record's state. The held version, `held_rank` and `held_payload` in the
-/// specification, exists only while the record is held, so it lives in the
+/// specification, and the `mark`, `nacked_at` and `deferred_position` beside it,
+/// exist only while the record is held, so they live in the
 /// [`Held`](RecordStatus::Held) variant and nowhere else.
 ///
 /// ```
 /// use libpachinko::records::RecordStatus;
-/// use libpachinko::{Payload, Rank};
+/// use libpachinko::{Mark, Payload, Rank};
 ///
-/// let held = RecordStatus::Held { rank: Rank::new(1), payload: Payload::default() };
+/// let held = RecordStatus::Held {
+///     rank: Rank::new(1),
+///     payload: Payload::default(),
+///     mark: Mark::Unsettled,
+///     nacked_at: None,
+///     deferred_position: None,
+/// };
 /// assert_ne!(held, RecordStatus::Queued);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -89,10 +97,45 @@ pub enum RecordStatus {
         rank: Rank,
         /// The `held_payload`: the payload of the version handed out.
         payload: Payload,
+        /// What the consumer has said of the held version under the lease.
+        mark: Mark,
+        /// When the nack that marked the record was processed; `Some` exactly when
+        /// `mark` is [`Mark::Nacked`].
+        nacked_at: Option<Timestamp>,
+        /// Where the version that arrived while the record was held stands once
+        /// the lease ends; `Some` says a version is deferred.
+        deferred_position: Option<Position>,
     },
     /// A newer version arrived while the key was held and the held version was
     /// acked or nacked; pullable again once the lease ends.
     Deferred,
+}
+
+/// A held version a lease end takes out of the pocket, for the queue to keep in a
+/// shed queue: superseded by the version deferred behind it
+/// (`SupersedeUnsettledHeldVersion`), or nacked and dead-lettered with the time of
+/// its nack (`DeadLetterNackedRecord`, `DeadLetterNackedVersionQueueDeferred`).
+///
+/// ```
+/// use libpachinko::records::EndedVersion;
+/// use libpachinko::{HeldRecord, Payload, Rank, RecordKey, Timestamp};
+///
+/// let held = HeldRecord::new(RecordKey::new("k"), Rank::new(1), Payload::default());
+/// let letter = EndedVersion::DeadLettered { held: held.clone(), nacked_at: Timestamp::from_millis(3) };
+/// assert_ne!(letter, EndedVersion::Superseded(held));
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EndedVersion {
+    /// An unsettled held version a newer, deferred version replaces.
+    Superseded(HeldRecord),
+    /// A nacked held version, with the time its nack was processed.
+    DeadLettered {
+        /// The held version.
+        held: HeldRecord,
+        /// When the nack that marked it was processed.
+        nacked_at: Timestamp,
+    },
 }
 
 /// Every field of one record: its key, latest rank and payload, position and
@@ -178,7 +221,7 @@ impl RecordView {
 /// records.insert_queued(RecordKey::new("k"), Rank::new(1), Payload::default(), Position::new(0));
 /// let batch: Vec<_> = records.hold_oldest(5).into_iter().collect();
 /// assert_eq!(batch.len(), 1);
-/// assert_eq!(records.held(), batch);
+/// assert_eq!(records.held()[0].key, batch[0].key);
 /// ```
 pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// What [`hold_oldest`](Self::hold_oldest) returns: the records it held, at
@@ -237,6 +280,30 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
         rank: Rank,
         payload: Payload,
     ) -> Option<(Rank, Payload)>;
+
+    /// Gives a held record with nothing deferred the latest rank and payload and
+    /// stores `position` as its `deferred_position`, leaving its position, held
+    /// version and mark alone (`DeferBehindHeldVersion`). In any other state it
+    /// changes nothing.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    /// use libpachinko::{Payload, Rank, RecordKey};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// let key = RecordKey::new("k");
+    /// records.insert_queued(key.clone(), Rank::new(1), Payload::default(), Position::new(0));
+    /// records.defer_behind_held(&key, Rank::new(2), Payload::default(), Position::new(1));
+    /// let view = records.lookup(&key).unwrap();
+    /// assert_eq!((view.rank, view.status), (Rank::new(1), RecordStatus::Queued));
+    /// ```
+    fn defer_behind_held(
+        &mut self,
+        key: &RecordKey,
+        rank: Rank,
+        payload: Payload,
+        position: Position,
+    );
 
     /// Holds the `limit` queued records with the smallest positions, each at its
     /// latest version (`HoldRecord`), and returns them in that order: all of them
@@ -307,6 +374,43 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// ```
     fn free_held(&mut self) -> usize;
 
+    /// Marks a held, unsettled record with `mark`, storing `at` as its
+    /// `nacked_at` only when the mark is [`Mark::Nacked`] (`AckMarksRecord`,
+    /// `NackMarksRecord`). On a record that is not held, one already marked, or
+    /// with [`Mark::Unsettled`], it changes nothing, so the first mark and its time
+    /// stand.
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordStatus};
+    /// use libpachinko::{Mark, Payload, Rank, RecordKey, Timestamp};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// let key = RecordKey::new("k");
+    /// records.insert_queued(key.clone(), Rank::new(1), Payload::default(), Position::new(0));
+    /// records.mark(&key, Mark::Nacked, Timestamp::from_millis(5));
+    /// assert_eq!(records.lookup(&key).map(|view| view.status), Some(RecordStatus::Queued));
+    /// ```
+    fn mark(&mut self, key: &RecordKey, mark: Mark, at: Timestamp);
+
+    /// Ends the lease over every held record, smallest held position first, by
+    /// the six `Freed` rules: an unsettled record is queued again at its position,
+    /// shedding its held version when a version is deferred; a marked record is
+    /// queued at its `deferred_position` when a version is deferred and removed
+    /// when none is; a nacked held version is dead-lettered. Returns the versions
+    /// it took out, in that order. It costs O(held × log records).
+    ///
+    /// ```
+    /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
+    /// use libpachinko::{Payload, Rank, RecordKey};
+    ///
+    /// let mut records = MemoryRecords::default();
+    /// assert!(records.end_lease().is_empty());
+    /// records.insert_queued(RecordKey::new("k"), Rank::new(1), Payload::default(), Position::new(0));
+    /// assert!(records.end_lease().is_empty());
+    /// assert_eq!(records.record_count(), 1);
+    /// ```
+    fn end_lease(&mut self) -> Vec<EndedVersion>;
+
     /// How many records the pocket has, in any state.
     ///
     /// ```
@@ -320,7 +424,8 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// ```
     fn record_count(&self) -> usize;
 
-    /// The held records at their held version, smallest position first.
+    /// The held records at their held version, with their marks, smallest
+    /// position first.
     ///
     /// ```
     /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
@@ -333,7 +438,7 @@ pub trait PocketRecords: Clone + Debug + Default + Send + Sync + 'static {
     /// records.supersede(&key, Rank::new(2), Payload::default());
     /// assert_eq!(records.held()[0].rank, Rank::new(1));
     /// ```
-    fn held(&self) -> Vec<HeldRecord>;
+    fn held(&self) -> Vec<MarkedRecord>;
 }
 
 #[cfg(test)]

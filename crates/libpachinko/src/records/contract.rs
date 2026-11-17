@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 
 use super::{PocketRecords, Position, RecordStatus, RecordView};
-use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
+use crate::ids::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey};
 
 /// A store a test can read whole: every record it holds, as values.
 ///
@@ -66,6 +66,7 @@ pub fn check_contract<R: InspectRecords>() {
     insert_then_lookup::<R>();
     a_second_insert_is_refused::<R>();
     supersede_keeps_position_and_status::<R>();
+    supersede_keeps_a_deferred_record_deferred::<R>();
     hold_oldest_takes_smallest_positions::<R>();
     hold_oldest_with_limit_zero_holds_nothing::<R>();
     settle_removes_only_held::<R>();
@@ -84,6 +85,10 @@ fn payload(text: &str) -> Payload {
 
 fn held(text: &str, rank: i64, bytes: &str) -> HeldRecord {
     HeldRecord::new(key(text), Rank::new(rank), payload(bytes))
+}
+
+fn unsettled(text: &str, rank: i64, bytes: &str) -> MarkedRecord {
+    MarkedRecord::new(key(text), Rank::new(rank), payload(bytes), Mark::Unsettled)
 }
 
 fn insert<R: InspectRecords>(records: &mut R, text: &str, rank: i64, position: u64) {
@@ -113,17 +118,23 @@ fn agree<R: InspectRecords>(records: &R, step: &str) {
     );
     let keys: BTreeSet<&RecordKey> = views.iter().map(|view| &view.key).collect();
     assert_eq!(keys.len(), views.len(), "one record per key after {step}");
-    let mut from_views: Vec<(Position, HeldRecord)> = views
+    let mut from_views: Vec<(Position, MarkedRecord)> = views
         .into_iter()
         .filter_map(|view| match view.status {
-            RecordStatus::Held { rank, payload } => {
-                Some((view.position, HeldRecord::new(view.key, rank, payload)))
-            }
+            RecordStatus::Held {
+                rank,
+                payload,
+                mark,
+                ..
+            } => Some((
+                view.position,
+                MarkedRecord::new(view.key, rank, payload, mark),
+            )),
             RecordStatus::Queued | RecordStatus::Deferred => None,
         })
         .collect();
     from_views.sort_by_key(|(position, _)| *position);
-    let expected: Vec<HeldRecord> = from_views.into_iter().map(|(_, record)| record).collect();
+    let expected: Vec<MarkedRecord> = from_views.into_iter().map(|(_, record)| record).collect();
     assert_eq!(records.held(), expected, "held after {step}");
 }
 
@@ -182,7 +193,7 @@ fn a_second_insert_is_refused<R: InspectRecords>() {
     );
     assert_eq!(
         records.held(),
-        vec![held("a", 1, "a")],
+        vec![unsettled("a", 1, "a")],
         "a refused insert leaves the held version"
     );
     records.defer(&key("a"), Position::new(4));
@@ -230,6 +241,9 @@ fn supersede_keeps_position_and_status<R: InspectRecords>() {
     let expected_status = RecordStatus::Held {
         rank: Rank::new(2),
         payload: payload("new"),
+        mark: Mark::Unsettled,
+        nacked_at: None,
+        deferred_position: None,
     };
     assert_eq!(
         after.map(|v| (v.rank, v.position, v.status)),
@@ -240,6 +254,13 @@ fn supersede_keeps_position_and_status<R: InspectRecords>() {
         hold(&mut records, 10).is_empty(),
         "a superseded held record is never taken again"
     );
+}
+
+fn supersede_keeps_a_deferred_record_deferred<R: InspectRecords>() {
+    let mut records = R::default();
+    insert(&mut records, "a", 1, 4);
+    hold(&mut records, 1);
+    records.supersede(&key("a"), Rank::new(5), payload("newer"));
     records.defer(&key("a"), Position::new(8));
     agree(&records, "defer");
     assert_eq!(
@@ -399,7 +420,7 @@ fn free_held_requeues_held_and_deferred<R: InspectRecords>() {
 }
 
 /// What a store shows, to compare before and after a change to its clone.
-fn state<R: InspectRecords>(records: &R) -> (Vec<RecordView>, usize, Vec<HeldRecord>) {
+fn state<R: InspectRecords>(records: &R) -> (Vec<RecordView>, usize, Vec<MarkedRecord>) {
     (records.snapshot(), records.record_count(), records.held())
 }
 

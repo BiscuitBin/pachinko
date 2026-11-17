@@ -3,7 +3,9 @@
 //! [`DeadLetter`] are the second kind: the queue keeps them in every build, and the
 //! `testing` module alone exports them.
 
-use crate::ids::{ConsumerId, HeldRecord, LeaseId, Payload, PocketKey, Rank, RecordKey};
+use crate::ids::{
+    ConsumerId, HeldRecord, LeaseId, MarkedRecord, Payload, PocketKey, Rank, RecordKey,
+};
 use crate::timestamp::Timestamp;
 
 /// One publish: the pocket, the record key, its rank and its payload.
@@ -100,7 +102,8 @@ pub enum PullOutcome {
 }
 
 /// The `Consuming` surface's `exposes` for one consumer's active lease: the pocket
-/// key, `expires_at` and the held records at their held rank and payload.
+/// key, `expires_at` and the held records at their held rank and payload, each
+/// with its mark.
 ///
 /// ```
 /// use libpachinko::{LeaseView, PocketKey, Timestamp};
@@ -115,8 +118,8 @@ pub struct LeaseView {
     pub pocket_key: PocketKey,
     /// When the lease lapses.
     pub expires_at: Timestamp,
-    /// The held records, smallest position first.
-    pub records: Vec<HeldRecord>,
+    /// The held records with their marks, smallest position first.
+    pub records: Vec<MarkedRecord>,
 }
 
 impl LeaseView {
@@ -131,7 +134,7 @@ impl LeaseView {
     pub const fn new(
         pocket_key: PocketKey,
         expires_at: Timestamp,
-        records: Vec<HeldRecord>,
+        records: Vec<MarkedRecord>,
     ) -> Self {
         Self {
             pocket_key,
@@ -314,6 +317,7 @@ pub struct SupersededRecord {
 /// ```
 /// use libpachinko::SettleOutcome;
 /// assert_ne!(SettleOutcome::Settled, SettleOutcome::Deferred);
+/// assert_ne!(SettleOutcome::Acked, SettleOutcome::Nacked);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -325,6 +329,12 @@ pub enum SettleOutcome {
     /// while the key was held, so the record is deferred at a fresh position until
     /// the lease ends.
     Deferred,
+    /// `AckMarksRecord` or `AckRepeats`: the held record is marked acked, and the
+    /// lease's end acts on the mark.
+    Acked,
+    /// `NackMarksRecord` or `NackRepeats`: the held record is marked nacked, and
+    /// the lease's end acts on the mark.
+    Nacked,
 }
 
 /// Where a release left the pocket.

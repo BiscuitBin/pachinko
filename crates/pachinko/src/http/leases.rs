@@ -47,6 +47,8 @@ fn settle_outcome(outcome: SettleOutcome) -> Result<&'static str, Refusal> {
     match outcome {
         SettleOutcome::Settled => Ok("settled"),
         SettleOutcome::Deferred => Ok("deferred"),
+        SettleOutcome::Acked => Ok("acked"),
+        SettleOutcome::Nacked => Ok("nacked"),
         other => Err(unmapped(&other)),
     }
 }
@@ -124,4 +126,24 @@ pub(super) async fn release(
     Ok(Json(ReleaseReply {
         pocket: pocket_fate(fate)?,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use libpachinko::SettleOutcome;
+
+    #[test]
+    fn every_settle_outcome_has_its_name() {
+        let names = [
+            SettleOutcome::Settled,
+            SettleOutcome::Deferred,
+            SettleOutcome::Acked,
+            SettleOutcome::Nacked,
+        ]
+        .map(super::settle_outcome);
+        assert_eq!(
+            names,
+            [Ok("settled"), Ok("deferred"), Ok("acked"), Ok("nacked")]
+        );
+    }
 }

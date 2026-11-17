@@ -84,8 +84,8 @@ pub use types::{
 ///
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
-/// use libpachinko::records::{PocketRecords, Position, RecordView};
-/// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
+/// use libpachinko::records::{EndedVersion, PocketRecords, Position, RecordView};
+/// use libpachinko::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey, Timestamp};
 ///
 /// #[derive(Clone, Debug, Default)]
 /// struct RcRecords(Rc<Vec<RecordView>>);
@@ -95,12 +95,15 @@ pub use types::{
 ///     fn lookup(&self, _: &RecordKey) -> Option<RecordView> { None }
 ///     fn insert_queued(&mut self, _: RecordKey, _: Rank, _: Payload, _: Position) {}
 ///     fn supersede(&mut self, _: &RecordKey, _: Rank, _: Payload) -> Option<(Rank, Payload)> { None }
+///     fn defer_behind_held(&mut self, _: &RecordKey, _: Rank, _: Payload, _: Position) {}
 ///     fn hold_oldest(&mut self, _: usize) -> Vec<HeldRecord> { Vec::new() }
 ///     fn settle(&mut self, _: &RecordKey) -> Option<HeldRecord> { None }
 ///     fn defer(&mut self, _: &RecordKey, _: Position) -> Option<HeldRecord> { None }
 ///     fn free_held(&mut self) -> usize { 0 }
+///     fn mark(&mut self, _: &RecordKey, _: Mark, _: Timestamp) {}
+///     fn end_lease(&mut self) -> Vec<EndedVersion> { Vec::new() }
 ///     fn record_count(&self) -> usize { 0 }
-///     fn held(&self) -> Vec<HeldRecord> { Vec::new() }
+///     fn held(&self) -> Vec<MarkedRecord> { Vec::new() }
 /// }
 /// ```
 #[derive(Clone, Debug)]

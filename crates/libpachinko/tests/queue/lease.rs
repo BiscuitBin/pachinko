@@ -11,7 +11,7 @@ use libpachinko::{
     SettleOutcome,
 };
 
-use crate::fixture::{Fixture, LEASE_TTL, T0, config, consumer, invariants, keys};
+use crate::fixture::{Fixture, LEASE_TTL, T0, config, consumer, invariants, marked_keys};
 
 /// Pocket `a` with `a1` and `a2`, then pocket `b` with `b1`.
 fn two_pockets() -> Fixture {
@@ -343,7 +343,7 @@ fn the_consumer_view_exposes_only_the_active_lease_and_its_held_versions() {
     let view = fixture.lease_view("c1").unwrap();
     assert_eq!(view.pocket_key.as_str(), "pk");
     assert_eq!(view.expires_at, T0 + LEASE_TTL);
-    assert_eq!(keys(&view.records), ["k"], "only the held records");
+    assert_eq!(marked_keys(&view.records), ["k"], "only the held records");
     assert_eq!(
         (view.records[0].rank, &view.records[0].payload),
         (Rank::new(1), &Payload::from(b"v1".as_slice())),
@@ -351,5 +351,8 @@ fn the_consumer_view_exposes_only_the_active_lease_and_its_held_versions() {
     );
     fixture.release("c1", lease).unwrap();
     assert_eq!(fixture.lease_view("c1"), None);
-    assert_eq!(keys(&fixture.lease_view("c2").unwrap().records), ["x"]);
+    assert_eq!(
+        marked_keys(&fixture.lease_view("c2").unwrap().records),
+        ["x"]
+    );
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 use libpachinko::records::RecordStatus;
 use libpachinko::testing::ShedReason;
 use libpachinko::{
-    LeaseActionError, LeaseId, Payload, PublishError, PublishOutcome, Rank, RecordKey,
+    LeaseActionError, LeaseId, Mark, Payload, PublishError, PublishOutcome, Rank, RecordKey,
     SettleOutcome,
 };
 
@@ -208,7 +208,10 @@ fn a_stale_check_while_held_compares_with_the_latest_rank_not_the_held_one() {
         record.status,
         RecordStatus::Held {
             rank: Rank::new(1),
-            payload: Payload::from(b"v1".as_slice())
+            payload: Payload::from(b"v1".as_slice()),
+            mark: Mark::Unsettled,
+            nacked_at: None,
+            deferred_position: None,
         }
     );
 }

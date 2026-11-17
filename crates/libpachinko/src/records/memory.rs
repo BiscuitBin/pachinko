@@ -2,8 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{PocketRecords, Position, RecordStatus, RecordView};
-use crate::ids::{HeldRecord, Payload, Rank, RecordKey};
+use super::{EndedVersion, PocketRecords, Position, RecordStatus, RecordView};
+use crate::ids::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey};
+use crate::timestamp::Timestamp;
 
 /// One pocket's records in ordered collections: the records by key, an index of
 /// the queued ones by position, and an index of the outstanding keys, held and
@@ -51,9 +52,27 @@ impl Entry {
 /// The held version of a held entry, or `None`.
 fn held_version(key: &RecordKey, entry: &Entry) -> Option<HeldRecord> {
     match &entry.status {
-        RecordStatus::Held { rank, payload } => {
+        RecordStatus::Held { rank, payload, .. } => {
             Some(HeldRecord::new(key.clone(), *rank, payload.clone()))
         }
+        RecordStatus::Queued | RecordStatus::Deferred => None,
+    }
+}
+
+/// The held version of a held entry with its mark, or `None`.
+fn marked_version(key: &RecordKey, entry: &Entry) -> Option<MarkedRecord> {
+    match &entry.status {
+        RecordStatus::Held {
+            rank,
+            payload,
+            mark,
+            ..
+        } => Some(MarkedRecord::new(
+            key.clone(),
+            *rank,
+            payload.clone(),
+            *mark,
+        )),
         RecordStatus::Queued | RecordStatus::Deferred => None,
     }
 }
@@ -105,6 +124,10 @@ impl PocketRecords for MemoryRecords {
         Some((loser_rank, loser_payload))
     }
 
+    // Neutral until T35's store step lands: no held record has a deferred version
+    // to take yet.
+    fn defer_behind_held(&mut self, _: &RecordKey, _: Rank, _: Payload, _: Position) {}
+
     fn hold_oldest(&mut self, limit: usize) -> Vec<HeldRecord> {
         let mut batch = Vec::with_capacity(limit.min(self.queued.len()));
         while batch.len() < limit {
@@ -115,6 +138,9 @@ impl PocketRecords for MemoryRecords {
                 entry.status = RecordStatus::Held {
                     rank: entry.rank,
                     payload: entry.payload.clone(),
+                    mark: Mark::Unsettled,
+                    nacked_at: None,
+                    deferred_position: None,
                 };
                 batch.push(HeldRecord::new(
                     key.clone(),
@@ -152,17 +178,26 @@ impl PocketRecords for MemoryRecords {
         count
     }
 
+    // Neutral until T35's store step lands: ack and nack still settle or defer.
+    fn mark(&mut self, _: &RecordKey, _: Mark, _: Timestamp) {}
+
+    // Neutral until T35's store step lands: a lease end still frees with
+    // `free_held`.
+    fn end_lease(&mut self) -> Vec<EndedVersion> {
+        Vec::new()
+    }
+
     fn record_count(&self) -> usize {
         self.records.len()
     }
 
-    fn held(&self) -> Vec<HeldRecord> {
-        let mut held: Vec<(Position, HeldRecord)> = self
+    fn held(&self) -> Vec<MarkedRecord> {
+        let mut held: Vec<(Position, MarkedRecord)> = self
             .outstanding
             .iter()
             .filter_map(|key| {
                 let entry = self.records.get(key)?;
-                held_version(key, entry).map(|record| (entry.position, record))
+                marked_version(key, entry).map(|record| (entry.position, record))
             })
             .collect();
         held.sort_by_key(|(position, _)| *position);

@@ -101,6 +101,17 @@ pub enum LeaseActionError {
     /// An ack or nack named a record key the lease's pocket does not hold.
     #[error("record {0} is not held under this lease")]
     RecordNotHeld(RecordKey),
+    /// An ack named a record already nacked under the lease, or a nack one already
+    /// acked: the first mark stands. Checked after `RecordNotHeld`.
+    ///
+    /// ```
+    /// use libpachinko::{LeaseActionError, RecordKey};
+    ///
+    /// let error = LeaseActionError::MarkConflict(RecordKey::new("k"));
+    /// assert_eq!(error.to_string(), "record k is already marked the other way under this lease");
+    /// ```
+    #[error("record {0} is already marked the other way under this lease")]
+    MarkConflict(RecordKey),
 }
 
 /// A configuration the config invariants exclude.
@@ -155,6 +166,10 @@ mod tests {
             (
                 LeaseActionError::RecordNotHeld(RecordKey::new("k")).to_string(),
                 "record k is not held under this lease",
+            ),
+            (
+                LeaseActionError::MarkConflict(RecordKey::new("k")).to_string(),
+                "record k is already marked the other way under this lease",
             ),
             (
                 ConfigError::MaxConsecutiveExpiriesZero.to_string(),

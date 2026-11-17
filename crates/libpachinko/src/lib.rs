@@ -113,8 +113,8 @@ pub mod testing;
 pub use crate::config::Config;
 pub use crate::error::{ConfigError, JoinError, LeaseActionError, PublishError, PullError};
 pub use crate::ids::{
-    ConsumerId, HeldRecord, LeaseId, ParseLeaseIdError, Payload, PocketKey, PublisherId, Rank,
-    RecordKey,
+    ConsumerId, HeldRecord, LeaseId, Mark, MarkedRecord, ParseLeaseIdError, Payload, PocketKey,
+    PublisherId, Rank, RecordKey,
 };
 pub use crate::queue::{
     Lease, LeaseStatus, LeaseView, PocketFate, Publication, PublishOutcome, PullOutcome, Queue,

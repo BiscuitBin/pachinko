@@ -3,9 +3,9 @@
 
 use libpachinko::records::RecordStatus;
 use libpachinko::testing::PocketStatus;
-use libpachinko::{LeaseId, LeaseStatus, Payload, PullOutcome, Rank};
+use libpachinko::{LeaseId, LeaseStatus, Mark, Payload, PullOutcome, Rank};
 
-use crate::fixture::{Fixture, LEASE_TTL, T0, config, invariants, keys};
+use crate::fixture::{Fixture, LEASE_TTL, T0, config, invariants, keys, marked_keys};
 
 /// A fixture with `count` records `r0`, `r1`, ... published into pocket `pk`.
 fn pocket_of(count: usize) -> Fixture {
@@ -51,7 +51,10 @@ fn a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch() {
         record.status,
         RecordStatus::Held {
             rank: Rank::new(1),
-            payload: Payload::from(b"r0".as_slice())
+            payload: Payload::from(b"r0".as_slice()),
+            mark: Mark::Unsettled,
+            nacked_at: None,
+            deferred_position: None,
         }
     );
     let snapshot = fixture.snapshot();
@@ -166,7 +169,7 @@ fn a_pull_under_a_lease_extends_the_lease() {
     let before = fixture.lease_view("c1").unwrap();
     assert_eq!(before.expires_at, T0 + LEASE_TTL);
     assert_eq!(before.pocket_key.as_str(), "pk");
-    assert_eq!(keys(&before.records), ["r0"]);
+    assert_eq!(marked_keys(&before.records), ["r0"]);
     fixture.advance(400);
     let second = fixture.pull("c1", 1);
     let after = fixture.lease_view("c1").unwrap();
@@ -174,7 +177,7 @@ fn a_pull_under_a_lease_extends_the_lease() {
     assert_eq!(after.expires_at, extended);
     assert_eq!(second.expires_at, extended);
     assert_eq!(second.lease, first.lease);
-    assert_eq!(keys(&after.records), ["r0", "r1"]);
+    assert_eq!(marked_keys(&after.records), ["r0", "r1"]);
     let lease = &fixture.snapshot().leases[0];
     assert_eq!((lease.granted_at, lease.expires_at), (T0, extended));
 }

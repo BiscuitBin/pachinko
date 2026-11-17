@@ -395,6 +395,11 @@ fn ack_settles(client: &Client) {
     assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
     let lease = lease_of(&client.pull("c1", 10).1);
     assert_eq!(
+        client.lease("c1").1["records"],
+        json!([{"record_key": "k", "rank": 1, "payload": "dg==", "mark": "unsettled"}]),
+        "the lease read shows each held record's mark"
+    );
+    assert_eq!(
         client.ack("c1", &lease, "k"),
         (200, json!({"outcome": "settled"}))
     );

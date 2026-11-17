@@ -10,7 +10,7 @@ use super::types::{
     SupersededRecord,
 };
 use crate::error::PublishError;
-use crate::ids::{HeldRecord, Payload, PocketKey, Rank, RecordKey};
+use crate::ids::{HeldRecord, MarkedRecord, Payload, PocketKey, Rank, RecordKey};
 use crate::records::{PocketRecords, Position, RecordStatus};
 use crate::timestamp::Timestamp;
 
@@ -188,8 +188,8 @@ impl<R: PocketRecords> Pockets<R> {
             .unwrap_or_default()
     }
 
-    /// The pocket's held records, smallest position first.
-    pub(super) fn held(&self, key: &PocketKey) -> Vec<HeldRecord> {
+    /// The pocket's held records with their marks, smallest position first.
+    pub(super) fn held(&self, key: &PocketKey) -> Vec<MarkedRecord> {
         self.by_key
             .get(key)
             .map(|pocket| pocket.records.held())

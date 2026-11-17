@@ -12,8 +12,9 @@ use libpachinko::records::{MemoryRecords, Position, RecordStatus, RecordView};
 use libpachinko::testing::{PocketStatus, PocketView, Snapshot};
 use libpachinko::{
     Config, ConsumerId, HeldRecord, Lease, LeaseActionError, LeaseId, LeaseStatus, LeaseView,
-    Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome, PublisherId,
-    PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, TickReport, Timestamp,
+    MarkedRecord, Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome,
+    PublisherId, PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, TickReport,
+    Timestamp,
 };
 
 /// The instant every fixture starts at.
@@ -240,6 +241,11 @@ impl Fixture {
 
 /// The records' keys, in order.
 pub(crate) fn keys(records: &[HeldRecord]) -> Vec<&str> {
+    records.iter().map(|record| record.key.as_str()).collect()
+}
+
+/// The lease read's records' keys, in order.
+pub(crate) fn marked_keys(records: &[MarkedRecord]) -> Vec<&str> {
     records.iter().map(|record| record.key.as_str()).collect()
 }
 
