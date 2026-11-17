@@ -346,10 +346,11 @@ fn refusals(client: &Client) {
     assert_eq!(client.publish("pk", "k", 5, b"x").0, 200);
     let (status, body) = client.publish("pk", "k", 5, b"y");
     assert_eq!(refused((status, body.clone()), 409), "equal_rank");
-    let message = body["message"].as_str().unwrap();
-    assert!(
-        !message.contains("placeholder") && !message.contains("open question"),
-        "an equal rank is refused by decision: {body}"
+    assert_eq!(
+        body["message"],
+        "rank 5 equals the stored rank of k in pocket pk; a publish at the stored rank is \
+        rejected and changes nothing",
+        "an equal rank is rejected by decision: {body}"
     );
 }
 
@@ -418,7 +419,14 @@ fn marked(key: &str, mark: &str) -> (String, String) {
 fn ack_marks(client: &Client) {
     joined(client, &["c1"]);
     assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
-    let lease = lease_of(&client.pull("c1", 10).1);
+    let (status, batch) = client.pull("c1", 10);
+    assert_eq!(status, 200);
+    assert_eq!(
+        batch["records"],
+        json!([{"record_key": "k", "rank": 1, "payload": "dg=="}]),
+        "a batch record carries no mark: the batch wire is unchanged"
+    );
+    let lease = lease_of(&batch);
     assert_eq!(
         client.lease("c1").1["records"],
         json!([{"record_key": "k", "rank": 1, "payload": "dg==", "mark": "unsettled"}]),

@@ -821,15 +821,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn equal_rank_is_409_and_is_not_called_a_placeholder() {
+    async fn equal_rank_is_409_and_says_it_is_rejected() {
         let refusal = Refusal::EqualRank {
             pocket_key: PocketKey::new("pocket"),
             record_key: RecordKey::new("k"),
             rank: Rank::new(3),
         };
-        assert!(!refusal.to_string().contains("placeholder"));
-        assert!(!refusal.to_string().contains("open question"));
-        assert!(refusal.to_string().contains("pocket pocket"));
+        assert_eq!(
+            refusal.to_string(),
+            "rank 3 equals the stored rank of k in pocket pocket; a publish at the stored rank \
+            is rejected and changes nothing"
+        );
         assert_answered(refusal, StatusCode::CONFLICT, "equal_rank").await;
     }
 

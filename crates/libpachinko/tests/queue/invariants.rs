@@ -18,7 +18,8 @@
 //! so the rejection is unreachable; the walk's post-state prediction is what
 //! shows the guard holds:
 //!
-//! - `rule-failure.ReviveIdlePocket.1`: `PocketTouched` names the pocket a publish
+//! - `rule-failure.ReviveIdlePocket.1` and `rule-failure.ReviveParkedPocket.1`,
+//!   each rule's `exists pocket`: `PocketTouched` names the pocket a publish
 //!   found, and the predicted pocket is the one revived;
 //! - the `.1` guard, `exists record`, and the `.2` guard, `record.status = held`,
 //!   of each of the six rules that answer `Freed`: `RequeueUnsettledRecord`,
@@ -438,6 +439,7 @@ fn memory_walk(steps: &[WalkStep]) -> Walk {
 // obligation: rule-failure.LeaseExpiryKeepsPocketAtFront.3
 // obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.3
 // obligation: rule-failure.ReviveIdlePocket.1
+// obligation: rule-failure.ReviveParkedPocket.1
 // obligation: rule-failure.RequeueUnsettledRecord.1
 // obligation: rule-failure.RequeueUnsettledRecord.2
 // obligation: rule-failure.RequeueUnsettledRecord.3

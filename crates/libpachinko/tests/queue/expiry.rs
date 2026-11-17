@@ -273,7 +273,6 @@ fn three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it() {
 
 // scenario: S024
 // obligation: rule-success.ReviveParkedPocket
-// obligation: rule-failure.ReviveParkedPocket.1
 #[test]
 fn a_supersede_revives_a_parked_pocket() {
     let fixture = parked();
@@ -685,7 +684,7 @@ fn a_pull_after_expires_at_but_before_the_lapse_extends_the_lease() {
 }
 
 // scenario: S069
-// obligation: rule-failure.Renew.2
+// obligation: rule-failure.Renew.1
 #[test]
 fn after_a_lapse_the_old_lease_is_fenced_even_when_the_key_has_a_newer_rank() {
     let mut fixture = two_pockets();
