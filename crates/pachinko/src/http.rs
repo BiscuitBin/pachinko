@@ -141,11 +141,11 @@ pub(crate) enum Refusal {
     /// A pull or lease read named a consumer that has not joined.
     #[error("consumer {0} has not joined")]
     UnknownConsumer(ConsumerId),
-    /// A publish carried the stored record's rank: the placeholder for the
-    /// specification's first open question, not a decision.
+    /// A publish carried the stored record's rank, which no publish rule covers:
+    /// the specification rejects it, and it changes nothing.
     #[error(
-        "rank {rank} equals the stored rank of {record_key} in pocket {pocket_key}; no rule \
-        covers an equal rank (open question 1), so this refusal is a placeholder"
+        "rank {rank} equals the stored rank of {record_key} in pocket {pocket_key}; a publish \
+        at the stored rank is rejected and changes nothing"
     )]
     EqualRank {
         /// The pocket published into.
@@ -821,13 +821,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn equal_rank_is_409_and_says_it_is_a_placeholder() {
+    async fn equal_rank_is_409_and_is_not_called_a_placeholder() {
         let refusal = Refusal::EqualRank {
             pocket_key: PocketKey::new("pocket"),
             record_key: RecordKey::new("k"),
             rank: Rank::new(3),
         };
-        assert!(refusal.to_string().contains("placeholder"));
+        assert!(!refusal.to_string().contains("placeholder"));
+        assert!(!refusal.to_string().contains("open question"));
         assert!(refusal.to_string().contains("pocket pocket"));
         assert_answered(refusal, StatusCode::CONFLICT, "equal_rank").await;
     }

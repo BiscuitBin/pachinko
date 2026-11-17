@@ -19,11 +19,10 @@ use std::time::Duration;
 use libpachinko::clock::Clock;
 use libpachinko::lease_ids::LeaseIds;
 use libpachinko::records::{PocketRecords, RecordStatus};
-use libpachinko::testing::{InspectRecords, Snapshot};
+use libpachinko::testing::{InspectRecords, PocketStatus, PocketView, Snapshot};
 use libpachinko::{
-    Config, ConsumerId, Lease, LeaseActionError, LeaseId, Payload, PocketKey, Publication,
-    PublishError, PublishOutcome, PublisherId, PullOutcome, Queue, Rank, RecordKey, SettleOutcome,
-    Timestamp,
+    Config, ConsumerId, Lease, LeaseActionError, LeaseId, Mark, Payload, PocketKey, Publication,
+    PublishError, PublishOutcome, PublisherId, PullOutcome, Queue, Rank, RecordKey, Timestamp,
 };
 use proptest::prelude::*;
 use proptest::test_runner::{Config as RunnerConfig, RngAlgorithm, TestRng, TestRunner};
@@ -129,19 +128,19 @@ fn step() -> impl Strategy<Value = WalkStep> {
     prop_oneof![
         1 => (0..2_u8).prop_map(WalkStep::PublisherJoins),
         1 => (0..3_u8).prop_map(WalkStep::ConsumerJoins),
-        8 => (0..2_u8, 0..3_u8, 0..3_u8, 0..4_i64).prop_map(|(publisher, pocket, key, rank)| {
+        10 => (0..2_u8, 0..3_u8, 0..3_u8, 0..4_i64).prop_map(|(publisher, pocket, key, rank)| {
             WalkStep::Publish { publisher, pocket, key, rank }
         }),
-        6 => (0..3_u8, -1..=3_i64).prop_map(|(consumer, limit)| WalkStep::Pull { consumer, limit }),
-        4 => (0..3_u8, lease_choice(), 0..3_u8)
+        7 => (0..3_u8, -1..=3_i64).prop_map(|(consumer, limit)| WalkStep::Pull { consumer, limit }),
+        5 => (0..3_u8, lease_choice(), 0..3_u8)
             .prop_map(|(consumer, lease, key)| WalkStep::Ack { consumer, lease, key }),
-        3 => (0..3_u8, lease_choice(), 0..3_u8)
+        4 => (0..3_u8, lease_choice(), 0..3_u8)
             .prop_map(|(consumer, lease, key)| WalkStep::Nack { consumer, lease, key }),
-        2 => (0..3_u8, lease_choice()).prop_map(|(consumer, lease)| WalkStep::Renew { consumer, lease }),
-        2 => (0..3_u8, lease_choice()).prop_map(|(consumer, lease)| WalkStep::Release { consumer, lease }),
-        5 => (0..=FORWARD_MILLIS).prop_map(WalkStep::Advance),
+        1 => (0..3_u8, lease_choice()).prop_map(|(consumer, lease)| WalkStep::Renew { consumer, lease }),
+        3 => (0..3_u8, lease_choice()).prop_map(|(consumer, lease)| WalkStep::Release { consumer, lease }),
+        6 => (0..=FORWARD_MILLIS).prop_map(WalkStep::Advance),
         1 => (-BACKWARD_MILLIS..=0).prop_map(WalkStep::Advance),
-        3 => Just(WalkStep::Tick),
+        4 => Just(WalkStep::Tick),
     ]
 }
 
@@ -177,7 +176,9 @@ pub(crate) struct Walk {
     /// Every lease that has ended, as the release or the tick that ended it
     /// returned it.
     pub(crate) ended: BTreeMap<LeaseId, Lease>,
-    /// The `(pocket, record)` keys each lease has handed out and not settled.
+    /// The `(pocket, record)` keys each lease has handed out. A key stays until the
+    /// lease ends, acked, nacked or neither, so it is never handed out twice under
+    /// one lease.
     handed: BTreeMap<LeaseId, BTreeSet<(PocketKey, RecordKey)>>,
     /// The labels of the states and outcomes reached.
     pub(crate) reached: BTreeSet<String>,
@@ -192,7 +193,6 @@ struct Turn<'w> {
     behind: bool,
     config: Config,
     reads: bool,
-    settled: Option<(PocketKey, RecordKey)>,
     lapsed: Vec<Lease>,
     walk: &'w mut Walk,
 }
@@ -206,7 +206,6 @@ impl<'w> Turn<'w> {
             behind: walk.clock < walk.now,
             config,
             reads: false,
-            settled: None,
             lapsed: Vec::new(),
             walk,
         }
@@ -266,6 +265,7 @@ fn action_label<T: std::fmt::Debug>(got: &Result<T, LeaseActionError>) -> String
         Err(LeaseActionError::LeaseNotActive(_)) => "LeaseNotActive".to_owned(),
         Err(LeaseActionError::LeaseNotYours(_)) => "LeaseNotYours".to_owned(),
         Err(LeaseActionError::RecordNotHeld(_)) => "RecordNotHeld".to_owned(),
+        Err(LeaseActionError::MarkConflict(_)) => "MarkConflict".to_owned(),
         Err(other) => format!("{other:?}"),
     }
 }
@@ -306,15 +306,52 @@ fn publish<R: PocketRecords, C: Clock, L: LeaseIds>(
         Rank::new(rank),
         Payload::from(format!("{publisher}{pocket}{key}{rank}").into_bytes()),
     );
+    let pocket = find_pocket(&turn.pre, &publication.pocket_key);
+    let parked = pocket.is_some_and(|p| p.status == PocketStatus::Parked);
+    let held = pocket.and_then(|p| held_status(p, &publication.record_key));
+    let deferred = held.map(|(_, deferred)| deferred);
     let (now, ttl) = (turn.now, turn.config.superseded_ttl);
     let (expected, revived) = turn.expected.publish(&id, &publication, now, ttl);
     let got = queue.publish(&id, publication);
     assert_eq!(got, expected, "publish");
     turn.reads = turn.pre.publishers.contains(&id);
     turn.reach(format!("publish {}", publish_label(&got)));
+    match (&got, deferred) {
+        (Ok(PublishOutcome::Superseded), Some(false)) => {
+            turn.reach("publish defers behind a held version");
+        }
+        (Ok(PublishOutcome::Superseded), Some(true)) => {
+            turn.reach("publish supersedes a deferred version");
+        }
+        (Ok(PublishOutcome::Stale), _) if parked => {
+            turn.reach("stale publish leaves a parked pocket parked");
+        }
+        _ => {}
+    }
     if let Some(status) = revived {
         turn.reach(format!("revive {status:?}"));
     }
+}
+
+fn find_pocket<'s>(s: &'s Snapshot, key: &PocketKey) -> Option<&'s PocketView> {
+    s.pockets.iter().find(|pocket| &pocket.key == key)
+}
+
+/// A held record's mark and whether a version is deferred behind it; `None` when
+/// the pocket has no such record or it is queued.
+fn held_status(pocket: &PocketView, key: &RecordKey) -> Option<(Mark, bool)> {
+    pocket
+        .records
+        .iter()
+        .find(|record| &record.key == key)
+        .and_then(|record| match &record.status {
+            RecordStatus::Held {
+                mark,
+                deferred_position,
+                ..
+            } => Some((*mark, deferred_position.is_some())),
+            _ => None,
+        })
 }
 
 fn pull<R: PocketRecords, C: Clock, L: LeaseIds>(
@@ -369,19 +406,27 @@ const fn batch_label(len: usize) -> &'static str {
     }
 }
 
-fn settle<R: PocketRecords, C: Clock, L: LeaseIds>(
+fn mark_held<R: PocketRecords, C: Clock, L: LeaseIds>(
     queue: &mut Queue<R, C, L>,
     turn: &mut Turn<'_>,
-    (nack, consumer, choice, key): (bool, u8, LeaseChoice, u8),
+    (mark, consumer, choice, key): (Mark, u8, LeaseChoice, u8),
 ) {
     let consumer = ConsumerId::new(CONSUMERS[usize::from(consumer)]);
     let lease = turn.resolve(&consumer, choice);
     let key = RecordKey::new(KEYS[usize::from(key)]);
     let late = turn.late(&consumer, lease);
+    let pocket = (turn.pre.leases.iter())
+        .find(|l| l.id == lease)
+        .and_then(|l| find_pocket(&turn.pre, &l.pocket_key));
+    let counted = pocket.is_some_and(|p| p.consecutive_expiries > 0);
+    let before = pocket
+        .and_then(|p| held_status(p, &key))
+        .map(|(mark, _)| mark);
     let (now, config) = (turn.now, turn.config.clone());
     let expected = turn
         .expected
-        .settle((nack, &consumer, lease, &key), now, &config);
+        .mark((mark, &consumer, lease, &key), now, &config);
+    let nack = mark == Mark::Nacked;
     let got = if nack {
         queue.nack(&consumer, lease, &key)
     } else {
@@ -390,29 +435,15 @@ fn settle<R: PocketRecords, C: Clock, L: LeaseIds>(
     let name = if nack { "nack" } else { "ack" };
     assert_eq!(got, expected, "{name}");
     turn.reads = got.is_ok();
-    turn.reach(format!("{name} {}", action_label(&got)));
-    let pocket_key = turn
-        .pre
-        .leases
-        .iter()
-        .find(|l| l.id == lease)
-        .map(|l| l.pocket_key.clone());
-    let counted = (turn.pre.pockets.iter())
-        .any(|p| Some(&p.key) == pocket_key.as_ref() && p.consecutive_expiries > 0);
-    if counted && turn.reads {
-        turn.reach(if nack {
-            "nack keeps a counted pocket"
-        } else {
-            "ack resets a counted pocket"
-        });
-    }
-    if got == Ok(SettleOutcome::Settled) {
-        let settled = (
-            pocket_key.expect("a settled record's lease was active"),
-            key,
-        );
-        turn.walk.handed.entry(lease).or_default().remove(&settled);
-        turn.settled = Some(settled);
+    let first = before == Some(Mark::Unsettled);
+    let label = match &got {
+        Ok(_) if first => "marks".to_owned(),
+        Ok(_) => "repeats".to_owned(),
+        Err(_) => action_label(&got),
+    };
+    turn.reach(format!("{name} {label}"));
+    if counted && first && turn.reads {
+        turn.reach(format!("{name} resets a counted pocket"));
     }
     if late && turn.reads {
         turn.reach(format!("branch A {name}"));
@@ -449,7 +480,8 @@ fn release<R: PocketRecords, C: Clock, L: LeaseIds>(
     let consumer = ConsumerId::new(CONSUMERS[usize::from(consumer)]);
     let lease = turn.resolve(&consumer, choice);
     let late = turn.late(&consumer, lease);
-    let expected = turn.expected.release(&consumer, lease, turn.now);
+    let config = turn.config.clone();
+    let (expected, rows) = turn.expected.release(&consumer, lease, turn.now, &config);
     let got = queue.release(&consumer, lease);
     let fields = got
         .as_ref()
@@ -461,6 +493,9 @@ fn release<R: PocketRecords, C: Clock, L: LeaseIds>(
         "release {}",
         action_label(&fields.map(|(fate, _)| fate))
     ));
+    for row in rows {
+        turn.reach(format!("release {row}"));
+    }
     if let Ok((_, lease)) = got {
         turn.lapsed.push(lease);
     }
@@ -477,11 +512,11 @@ fn late_or_behind(turn: &mut Turn<'_>, name: &str, late: bool) {
 }
 
 fn tick<R: PocketRecords, C: Clock, L: LeaseIds>(queue: &mut Queue<R, C, L>, turn: &mut Turn<'_>) {
-    let limit = turn.config.max_consecutive_expiries;
-    let (lapses, shed, letters) = turn.expected.tick(turn.now, limit);
+    let config = turn.config.clone();
+    let (lapses, shed, letters) = turn.expected.tick(turn.now, &config);
     let report = queue.tick();
     let got: Vec<Ended> = report.lapsed.iter().map(ended).collect();
-    let expected: Vec<Ended> = lapses.iter().map(|(lease, _)| lease.clone()).collect();
+    let expected: Vec<Ended> = lapses.iter().map(|(lease, _, _)| lease.clone()).collect();
     assert_eq!(got, expected, "the lapses, in (expires_at, lease id) order");
     assert_eq!(
         (report.decayed_superseded, report.decayed_dead_letters),
@@ -489,8 +524,11 @@ fn tick<R: PocketRecords, C: Clock, L: LeaseIds>(queue: &mut Queue<R, C, L>, tur
         "the decays"
     );
     turn.reads = true;
-    for (_, fate) in &lapses {
+    for (_, fate, rows) in &lapses {
         turn.reach(format!("lapse {fate:?}"));
+        for row in rows {
+            turn.reach(format!("lapse {row}"));
+        }
     }
     if shed > 0 {
         turn.reach("decay superseded");
@@ -534,14 +572,14 @@ fn run<R: InspectRecords, C: Clock, L: LeaseIds>(
             lease,
             key,
         } => {
-            settle(queue, &mut turn, (false, consumer, lease, key));
+            mark_held(queue, &mut turn, (Mark::Acked, consumer, lease, key));
         }
         WalkStep::Nack {
             consumer,
             lease,
             key,
         } => {
-            settle(queue, &mut turn, (true, consumer, lease, key));
+            mark_held(queue, &mut turn, (Mark::Nacked, consumer, lease, key));
         }
         WalkStep::Renew { consumer, lease } => renew(queue, &mut turn, (consumer, lease)),
         WalkStep::Release { consumer, lease } => release(queue, &mut turn, (consumer, lease)),
@@ -559,7 +597,6 @@ fn finish(turn: Turn<'_>, post: &Snapshot, config: &Config) {
         expected,
         now,
         reads,
-        settled,
         lapsed,
         walk,
         ..
@@ -575,7 +612,7 @@ fn finish(turn: Turn<'_>, post: &Snapshot, config: &Config) {
         walk.now = now;
     }
     invariants::check_invariants(post, config);
-    invariants::check_transitions(&pre, post, settled.as_ref(), &lapsed, &walk.ended);
+    invariants::check_transitions(&pre, post, &lapsed, &walk.ended);
     for lease in lapsed {
         invariants::ended_after_grant(&lease);
         walk.ended.insert(lease.id, lease);
@@ -583,15 +620,16 @@ fn finish(turn: Turn<'_>, post: &Snapshot, config: &Config) {
     note_states(post, walk);
 }
 
-/// Labels every pocket state and every record state by its pocket's.
+/// Labels every pocket state and every record state, a held one by its mark, by
+/// its pocket's.
 fn note_states(snapshot: &Snapshot, walk: &mut Walk) {
     for pocket in &snapshot.pockets {
         walk.reached.insert(format!("pocket {:?}", pocket.status));
         for record in &pocket.records {
-            let status = match record.status {
-                RecordStatus::Held { .. } => "Held",
-                RecordStatus::Deferred => "Deferred",
-                _ => "Queued",
+            let status = match &record.status {
+                RecordStatus::Held { mark, .. } => format!("Held {mark:?}"),
+                RecordStatus::Queued => "Queued".to_owned(),
+                other => format!("{other:?}"),
             };
             walk.reached
                 .insert(format!("record {status} in {:?}", pocket.status));

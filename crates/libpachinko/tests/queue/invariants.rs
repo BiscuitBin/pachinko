@@ -1,6 +1,6 @@
 //! The invariant walk: every trigger in any order, refused ones included, with
 //! each step's outcome and post-state predicted from the snapshot before it (in
-//! `walk`), and after every step all 25 invariants, every declared transition and
+//! `walk`), and after every step all 35 invariants, every declared transition and
 //! the `Consuming` guarantees checked by name.
 //!
 //! Six guards no direct test can make fail, because an invariant the walk checks
@@ -14,26 +14,37 @@
 //!   `rule-failure.LeaseExpiryKeepsPocketAtFront.3` and
 //!   `rule-failure.LeaseExpiryIdlesEmptyPocket.3`.
 //!
-//! Three existence guards, whose trigger is only ever emitted for an entity the
-//! guard then finds, so the rejection is unreachable; the walk's post-state
-//! prediction is what shows the guard holds:
+//! Guards whose trigger is only ever emitted for an entity the guard then finds,
+//! so the rejection is unreachable; the walk's post-state prediction is what
+//! shows the guard holds:
 //!
 //! - `rule-failure.ReviveIdlePocket.1`: `PocketTouched` names the pocket a publish
 //!   found, and the predicted pocket is the one revived;
-//! - `rule-failure.RequeueHeldRecord.1` and `rule-failure.RequeueDeferredRecord.1`:
-//!   `Freed` names only a record of the pocket, and every release and lapse is
-//!   predicted to keep each record's key, rank, payload and position, queue the
-//!   held and the deferred, and leave a queued record as it was.
+//! - the `.1` guard, `exists record`, and the `.2` guard, `record.status = held`,
+//!   of each of the six rules that answer `Freed`: `RequeueUnsettledRecord`,
+//!   `SupersedeUnsettledHeldVersion`, `ConsumeAckedRecord`,
+//!   `ConsumeAckedVersionQueueDeferred`, `DeadLetterNackedRecord` and
+//!   `DeadLetterNackedVersionQueueDeferred`. A lease's end sends `Freed` only for
+//!   the records of its pocket's held set, so the record exists and is held. Every
+//!   release and lapse is predicted record by record, and a queued record, which
+//!   is sent no `Freed`, is predicted to stay as it was.
 //!
-//! One more is reached but cannot be observed:
+//! The six rules' `.3` guards, on the mark, and `.4` guards, on a deferred
+//! version, are disjoint and complete over the held records: each `Freed` passes
+//! one rule's and fails the other five's. The walk reaches every row of the
+//! reconciliation table on a release and on a lapse (`WANTED`) and predicts the
+//! post-state, the superseded records and the dead letters exactly, so a rule
+//! wrongly accepted shows as an entry too many, a record kept or removed, or a
+//! position moved, in at least one row where its guard fails. One is reached but
+//! cannot be observed:
 //!
-//! - `rule-failure.RequeueDeferredRecord.2`: reached whenever a release or lapse
-//!   frees a held record, because `Freed` is emitted for held records too. A
-//!   wrongly accepted `RequeueDeferredRecord` would also leave the record queued,
-//!   as `RequeueHeldRecord` does, so the rejection has no effect a test can see.
-//!   Only `RequeueHeldRecord` moves the record, and the walk shows the outcome the
-//!   spec requires: each freed held record ends queued at its own key, rank,
-//!   payload and position, with its held version dropped.
+//! - `rule-failure.RequeueUnsettledRecord.4`: it fails only where a version is
+//!   deferred, and in each of those rows the rule that does answer leaves the
+//!   record queued, as `RequeueUnsettledRecord` would, which adds no entry and
+//!   moves nothing, so the rejection has no effect a test can see. The walk shows
+//!   the outcome the spec requires: the deferred version queued, at the held
+//!   version's position for an unsettled one and at its arrival position for a
+//!   marked one, and the held version superseded or dead-lettered by its mark.
 //!
 //! The walk runs over `MemoryRecords`, `FakeClock` and `CountingLeaseIds`; its
 //! functions are generic over all three, so another store runs it unchanged.
@@ -45,8 +56,8 @@ use libpachinko::lease_ids::CountingLeaseIds;
 use libpachinko::records::{MemoryRecords, RecordStatus, RecordView};
 use libpachinko::testing::{PocketStatus, Snapshot};
 use libpachinko::{
-    Config, ConsumerId, HeldRecord, Lease, LeaseId, LeaseStatus, PocketKey, PullOutcome, Queue,
-    RecordKey, Timestamp,
+    Config, ConsumerId, HeldRecord, Lease, LeaseId, LeaseStatus, Mark, PocketKey, PullOutcome,
+    Queue, RecordKey, Timestamp,
 };
 
 use super::fixture::invariants;
@@ -58,7 +69,11 @@ pub(crate) use invariants::ended_after_grant;
 
 /// The five invariants over config, read from the queue under test. The three
 /// TTLs are `Duration`s, non-negative by type, so each is witnessed by what it
-/// guarantees and a wrong TTL would break: every stamp lands exactly one TTL on.
+/// guarantees and a wrong TTL would break: a superseded record expires exactly
+/// one TTL after it was shed, and a lease and a dead letter at least one TTL after
+/// their grant and their nack, since a lease's `expires_at` moves on with each
+/// extension and a dead letter's runs from its lease's end, at or after the nack.
+/// The walk's model predicts every stamp exactly.
 fn check_config(s: &Snapshot, config: &Config) {
     assert!(config.max_consecutive_expiries >= 1, "ExpiryLimitPositive");
     assert!(config.max_pull_batch >= 1, "PullBatchPositive");
@@ -78,10 +93,9 @@ fn check_config(s: &Snapshot, config: &Config) {
         );
     }
     for letter in &s.dead_letters {
-        assert_eq!(
-            letter.expires_at,
-            letter.nacked_at + config.dead_letter_ttl,
-            "DeadLetterTtlNonNegative: {}",
+        assert!(
+            letter.expires_at >= letter.nacked_at + config.dead_letter_ttl,
+            "DeadLetterTtlNonNegative: {} expires at least dead_letter_ttl after its nack",
             letter.key
         );
     }
@@ -97,6 +111,12 @@ pub(crate) fn check_invariants(s: &Snapshot, config: &Config) {
     invariants::idle_has_no_records(s);
     invariants::expiries_within_limit(s, config.max_consecutive_expiries);
     invariants::held_version_not_newer(s);
+    invariants::nacked_has_its_time(s);
+    invariants::only_nacked_has_nack_time(s);
+    invariants::deferred_has_arrival_position(s);
+    invariants::only_deferred_has_arrival_position(s);
+    invariants::deferred_arrived_after_held(s);
+    invariants::held_copies_agree(s);
     invariants::shed_before_expiry(s);
     invariants::nacked_before_expiry(s);
     invariants::granted_before_expiry(s);
@@ -107,10 +127,14 @@ pub(crate) fn check_invariants(s: &Snapshot, config: &Config) {
     invariants::one_active_lease_per_pocket(s);
     invariants::one_active_lease_per_consumer(s);
     invariants::outstanding_only_while_leased(s);
+    invariants::marked_pocket_has_no_expiries(s);
     invariants::unique_pocket_position(s);
     invariants::unique_record_position(s);
     invariants::pocket_positions_below_next(s);
     invariants::record_positions_below_next(s);
+    invariants::arrival_position_unoccupied(s);
+    invariants::unique_arrival_position(s);
+    invariants::arrival_positions_below_next(s);
     invariants::order_is_the_queued_pockets(s);
 }
 
@@ -123,21 +147,31 @@ const POCKET_EDGES: [(PocketStatus, PocketStatus); 6] = [
     (PocketStatus::Parked, PocketStatus::Queued),
 ];
 
-const RECORD_EDGES: [(&str, &str); 4] = [
-    ("queued", "held"),
-    ("held", "queued"),
-    ("held", "deferred"),
-    ("deferred", "queued"),
-];
+const RECORD_EDGES: [(&str, &str); 2] = [("queued", "held"), ("held", "queued")];
 
 const LEASE_EDGES: [(&str, &str); 2] = [("active", "released"), ("active", "expired")];
 
+/// A record's state as the module names it; any other is no state of the module,
+/// and no declared edge leads to or from it.
 fn record_state(status: &RecordStatus) -> &'static str {
     match status {
+        RecordStatus::Queued => "queued",
         RecordStatus::Held { .. } => "held",
-        RecordStatus::Deferred => "deferred",
-        _ => "queued",
+        _ => "undeclared",
     }
+}
+
+/// Whether the record is one of its pocket's `ending_records`: held, acked or
+/// nacked, with no newer version deferred behind it.
+fn ending(status: &RecordStatus) -> bool {
+    matches!(
+        status,
+        RecordStatus::Held {
+            mark,
+            deferred_position: None,
+            ..
+        } if *mark != Mark::Unsettled
+    )
 }
 
 fn lease_state(status: LeaseStatus) -> &'static str {
@@ -153,21 +187,19 @@ fn find<T>(items: &[T], matches: impl Fn(&T) -> bool) -> Option<&T> {
     items.iter().find(|item| matches(item))
 }
 
-/// One pocket's records across a step: each change of status is a declared edge,
-/// a held version does not change while held, a new record is queued, and a
-/// record leaves only by the settle of its held version.
-fn check_records(
-    key: &PocketKey,
-    before: &[RecordView],
-    after: &[RecordView],
-    settled: Option<&(PocketKey, RecordKey)>,
-) {
+/// One pocket's records across a step: each change of status is a declared edge
+/// and a new record is queued. While held, a record keeps its held version, its
+/// mark once set (`MarksStandHoweverLeaseEnds`) and its arrival position once
+/// given; it is queued again or leaves the pocket only in a step that ended the
+/// pocket's lease (`HeldSetStableUntilLeaseEnds`), and it leaves only as one of
+/// the pocket's `ending_records`. `lease_ended` says whether this step ended it.
+fn check_records(before: &[RecordView], after: &[RecordView], lease_ended: bool) {
     for record in before {
         let Some(now) = find(after, |r| r.key == record.key) else {
-            let leaves = (key.clone(), record.key.clone());
             assert!(
-                record_state(&record.status) == "held" && settled == Some(&leaves),
-                "transition-rejected.Record.status: {} left without a settle",
+                lease_ended && ending(&record.status),
+                "transition-rejected.Record.status: {} left other than as an ending record \
+                    at its lease's end",
                 record.key
             );
             continue;
@@ -178,12 +210,12 @@ fn check_records(
             "transition-rejected.Record.status: {} {edge:?}",
             record.key
         );
-        if edge == ("held", "held") {
-            assert_eq!(
-                record.status, now.status,
-                "a held version does not change while held"
-            );
-        }
+        assert!(
+            edge != ("held", "queued") || lease_ended,
+            "HeldSetStableUntilLeaseEnds: {} queued again while its lease is active",
+            record.key
+        );
+        check_held(record, now);
     }
     for record in after
         .iter()
@@ -197,6 +229,51 @@ fn check_records(
     }
 }
 
+/// A record held before and after a step keeps its held version, its mark once
+/// set and its arrival position once given.
+fn check_held(before: &RecordView, after: &RecordView) {
+    let (
+        RecordStatus::Held {
+            rank,
+            payload,
+            mark,
+            nacked_at,
+            deferred_position,
+        },
+        RecordStatus::Held {
+            rank: rank_now,
+            payload: payload_now,
+            mark: mark_now,
+            nacked_at: nacked_at_now,
+            deferred_position: deferred_now,
+        },
+    ) = (&before.status, &after.status)
+    else {
+        return;
+    };
+    assert_eq!(
+        (rank, payload),
+        (rank_now, payload_now),
+        "HeldSetStableUntilLeaseEnds: {}'s held version does not change while held",
+        before.key
+    );
+    if *mark != Mark::Unsettled {
+        assert_eq!(
+            (mark, nacked_at),
+            (mark_now, nacked_at_now),
+            "MarksStandHoweverLeaseEnds: {}'s first mark stands",
+            before.key
+        );
+    }
+    if deferred_position.is_some() {
+        assert_eq!(
+            deferred_position, deferred_now,
+            "{}: a version that supersedes a deferred one inherits its arrival position",
+            before.key
+        );
+    }
+}
+
 /// Every change of status across a step is an edge its entity declares. A pocket
 /// is created queued and never removed; a lease is created active and ends only
 /// as released or expired, both terminal: an ended lease never shows as active
@@ -204,7 +281,6 @@ fn check_records(
 pub(crate) fn check_transitions(
     pre: &Snapshot,
     post: &Snapshot,
-    settled: Option<&(PocketKey, RecordKey)>,
     ended: &[Lease],
     before: &BTreeMap<LeaseId, Lease>,
 ) {
@@ -217,7 +293,8 @@ pub(crate) fn check_transitions(
             "transition-rejected.Pocket.status: {} {edge:?}",
             pocket.key
         );
-        check_records(&pocket.key, &pocket.records, &after.records, settled);
+        let lease_ended = ended.iter().any(|lease| lease.pocket_key == pocket.key);
+        check_records(&pocket.records, &after.records, lease_ended);
     }
     for pocket in post
         .pockets
@@ -258,9 +335,9 @@ pub(crate) fn check_transitions(
 
 /// `OldestFirst`, `ExclusivePocket` and `OneVisitPerKeyPerLease` for one batch,
 /// against the snapshot before the pull. `size` is `min(limit, max_pull_batch)`,
-/// none for a limit that is not positive. A key leaves `handed` when its record
-/// is settled, so a key published again under the same lease is a new record
-/// (open question 9, as the rules stand).
+/// none for a limit that is not positive. A key stays in `handed` until its lease
+/// ends, acked, nacked or neither, so a key handed out twice under one lease fails
+/// `OneVisitPerKeyPerLease`.
 pub(crate) fn check_batch(
     pre: &Snapshot,
     handed: &mut BTreeMap<LeaseId, BTreeSet<(PocketKey, RecordKey)>>,
@@ -320,6 +397,12 @@ fn memory_walk(steps: &[WalkStep]) -> Walk {
 // obligation: invariant.Pocket.IdleHasNoRecords
 // obligation: invariant.Pocket.ExpiriesWithinLimit
 // obligation: invariant.Record.HeldVersionNotNewer
+// obligation: invariant.Record.NackedHasItsTime
+// obligation: invariant.Record.OnlyNackedHasNackTime
+// obligation: invariant.Record.DeferredHasArrivalPosition
+// obligation: invariant.Record.OnlyDeferredHasArrivalPosition
+// obligation: invariant.Record.DeferredArrivedAfterHeld
+// obligation: invariant.Record.HeldCopiesAgree
 // obligation: invariant.SupersededRecord.ShedBeforeExpiry
 // obligation: invariant.DeadLetter.NackedBeforeExpiry
 // obligation: invariant.Lease.GrantedBeforeExpiry
@@ -331,10 +414,14 @@ fn memory_walk(steps: &[WalkStep]) -> Walk {
 // obligation: invariant.OneActiveLeasePerPocket
 // obligation: invariant.OneActiveLeasePerConsumer
 // obligation: invariant.OutstandingOnlyWhileLeased
+// obligation: invariant.MarkedPocketHasNoExpiries
 // obligation: invariant.UniquePocketPosition
 // obligation: invariant.UniqueRecordPosition
 // obligation: invariant.PocketPositionsBelowNext
 // obligation: invariant.RecordPositionsBelowNext
+// obligation: invariant.ArrivalPositionUnoccupied
+// obligation: invariant.UniqueArrivalPosition
+// obligation: invariant.ArrivalPositionsBelowNext
 // obligation: invariant.ExpiryLimitPositive
 // obligation: invariant.PullBatchPositive
 // obligation: invariant.LeaseTtlNonNegative
@@ -351,13 +438,36 @@ fn memory_walk(steps: &[WalkStep]) -> Walk {
 // obligation: rule-failure.LeaseExpiryKeepsPocketAtFront.3
 // obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.3
 // obligation: rule-failure.ReviveIdlePocket.1
-// obligation: rule-failure.RequeueHeldRecord.1
-// obligation: rule-failure.RequeueDeferredRecord.1
-// obligation: rule-failure.RequeueDeferredRecord.2
+// obligation: rule-failure.RequeueUnsettledRecord.1
+// obligation: rule-failure.RequeueUnsettledRecord.2
+// obligation: rule-failure.RequeueUnsettledRecord.3
+// obligation: rule-failure.RequeueUnsettledRecord.4
+// obligation: rule-failure.SupersedeUnsettledHeldVersion.1
+// obligation: rule-failure.SupersedeUnsettledHeldVersion.2
+// obligation: rule-failure.SupersedeUnsettledHeldVersion.3
+// obligation: rule-failure.SupersedeUnsettledHeldVersion.4
+// obligation: rule-failure.ConsumeAckedRecord.1
+// obligation: rule-failure.ConsumeAckedRecord.2
+// obligation: rule-failure.ConsumeAckedRecord.3
+// obligation: rule-failure.ConsumeAckedRecord.4
+// obligation: rule-failure.ConsumeAckedVersionQueueDeferred.1
+// obligation: rule-failure.ConsumeAckedVersionQueueDeferred.2
+// obligation: rule-failure.ConsumeAckedVersionQueueDeferred.3
+// obligation: rule-failure.ConsumeAckedVersionQueueDeferred.4
+// obligation: rule-failure.DeadLetterNackedRecord.1
+// obligation: rule-failure.DeadLetterNackedRecord.2
+// obligation: rule-failure.DeadLetterNackedRecord.3
+// obligation: rule-failure.DeadLetterNackedRecord.4
+// obligation: rule-failure.DeadLetterNackedVersionQueueDeferred.1
+// obligation: rule-failure.DeadLetterNackedVersionQueueDeferred.2
+// obligation: rule-failure.DeadLetterNackedVersionQueueDeferred.3
+// obligation: rule-failure.DeadLetterNackedVersionQueueDeferred.4
 // obligation: surface-provides.Consuming
 // obligation: guarantee.OldestFirst
 // obligation: guarantee.ExclusivePocket
 // obligation: guarantee.OneVisitPerKeyPerLease
+// obligation: guarantee.HeldSetStableUntilLeaseEnds
+// obligation: guarantee.MarksStandHoweverLeaseEnds
 #[test]
 fn every_invariant_holds_after_every_step_of_any_walk() {
     walk::runner(512)
@@ -378,7 +488,10 @@ const WANTED: &[&str] = &[
     "publish Created",
     "publish NewKey",
     "publish Superseded",
+    "publish defers behind a held version",
+    "publish supersedes a deferred version",
     "publish Stale",
+    "stale publish leaves a parked pocket parked",
     "publish EqualRank",
     "publish UnknownPublisher",
     "revive Idle",
@@ -389,20 +502,22 @@ const WANTED: &[&str] = &[
     "pull within lease",
     "empty batch",
     "batch of several",
-    "ack Settled",
-    "ack Deferred",
+    "ack marks",
+    "ack repeats",
+    "ack MarkConflict",
     "ack UnknownConsumer",
     "ack LeaseNotActive",
     "ack LeaseNotYours",
     "ack RecordNotHeld",
     "ack resets a counted pocket",
-    "nack Settled",
-    "nack Deferred",
+    "nack marks",
+    "nack repeats",
+    "nack MarkConflict",
     "nack UnknownConsumer",
     "nack LeaseNotActive",
     "nack LeaseNotYours",
     "nack RecordNotHeld",
-    "nack keeps a counted pocket",
+    "nack resets a counted pocket",
     "renew accepted",
     "renew UnknownConsumer",
     "renew LeaseNotActive",
@@ -412,6 +527,18 @@ const WANTED: &[&str] = &[
     "release UnknownConsumer",
     "release LeaseNotActive",
     "release LeaseNotYours",
+    "release RequeueUnsettledRecord",
+    "release SupersedeUnsettledHeldVersion",
+    "release ConsumeAckedRecord",
+    "release ConsumeAckedVersionQueueDeferred",
+    "release DeadLetterNackedRecord",
+    "release DeadLetterNackedVersionQueueDeferred",
+    "lapse RequeueUnsettledRecord",
+    "lapse SupersedeUnsettledHeldVersion",
+    "lapse ConsumeAckedRecord",
+    "lapse ConsumeAckedVersionQueueDeferred",
+    "lapse DeadLetterNackedRecord",
+    "lapse DeadLetterNackedVersionQueueDeferred",
     "lapse Queued",
     "lapse Idle",
     "lapse Parked",
@@ -424,8 +551,9 @@ const WANTED: &[&str] = &[
     "record Queued in Queued",
     "record Queued in Leased",
     "record Queued in Parked",
-    "record Held in Leased",
-    "record Deferred in Leased",
+    "record Held Unsettled in Leased",
+    "record Held Acked in Leased",
+    "record Held Nacked in Leased",
     "branch A pull",
     "branch A ack",
     "branch A nack",

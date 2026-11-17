@@ -1,17 +1,28 @@
 //! Renew, release, revive, fencing and the consumer's view: `Renew`,
-//! `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket`, `RequeueHeldRecord`,
-//! `ReviveIdlePocket`, and the guard order every lease action shares.
+//! `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket`, `ReviveIdlePocket`, and the
+//! guard order every lease action shares; and the lease's end, by release or by
+//! lapse, through the six rules that answer `Freed`, one per row of the
+//! reconciliation table, with the pocket's fate and the order of the entries one
+//! end creates.
 
 use std::time::Duration;
 
-use libpachinko::records::RecordStatus;
-use libpachinko::testing::PocketStatus;
+use libpachinko::records::{Position, RecordStatus};
+use libpachinko::testing::{PocketStatus, ShedReason};
 use libpachinko::{
-    LeaseActionError, LeaseId, LeaseStatus, Payload, PocketFate, PublishOutcome, PullOutcome, Rank,
-    SettleOutcome,
+    LeaseActionError, LeaseId, LeaseStatus, Mark, Payload, PocketFate, PublishOutcome, PullOutcome,
+    Rank, SettleOutcome, Timestamp,
 };
 
-use crate::fixture::{Fixture, LEASE_TTL, T0, config, consumer, invariants, marked_keys};
+use crate::fixture::{
+    DEAD_LETTER_TTL, Fixture, LEASE_TTL, SUPERSEDED_TTL, T0, config, consumer, held_as, invariants,
+    keys, letter_rows, marked_keys, shed_rows,
+};
+
+/// `T0` plus `millis`.
+const fn at(millis: u64) -> Timestamp {
+    T0.saturating_add_millis(millis)
+}
 
 /// Pocket `a` with `a1` and `a2`, then pocket `b` with `b1`.
 fn two_pockets() -> Fixture {
@@ -144,7 +155,8 @@ fn a_renew_of_an_ended_lease_is_rejected_and_moves_nothing() {
 
 // scenario: S053
 // obligation: rule-success.ReleaseRequeuesPocket
-// obligation: rule-success.RequeueHeldRecord
+// obligation: rule-success.RequeueUnsettledRecord
+// obligation: rule-success.ConsumeAckedRecord
 // obligation: rule-failure.ReleaseIdlesEmptyPocket.4
 // obligation: transition-edge.Pocket.leased.queued
 // obligation: transition-edge.Record.held.queued
@@ -157,6 +169,11 @@ fn a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place() {
     let a2 = fixture.record("a", "a2").position;
     let lease = fixture.pull("c1", 10).lease;
     fixture.ack("c1", lease, "a1").unwrap();
+    assert_eq!(
+        fixture.record("a", "a1").status,
+        held_as(1, "a1", Mark::Acked, None, None),
+        "an acked record stays until the lease ends"
+    );
     fixture.advance(7);
     let next = fixture.snapshot().next_position;
     let (fate, ended) = fixture.release("c1", lease).unwrap();
@@ -179,6 +196,7 @@ fn a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place() {
     );
     let record = fixture.record("a", "a2");
     assert_eq!((record.status, record.position), (RecordStatus::Queued, a2));
+    assert_eq!(pocket.records.len(), 1, "the acked a1 is consumed");
     assert_eq!(fixture.order(), ["b", "a"]);
     let snapshot = fixture.snapshot();
     assert!(
@@ -192,20 +210,26 @@ fn a_release_requeues_the_pocket_at_the_back_and_its_held_records_in_place() {
 
 // scenario: S054
 // obligation: rule-success.ReleaseRequeuesPocket
-// obligation: rule-success.RequeueDeferredRecord
-// obligation: rule-failure.RequeueHeldRecord.2
+// obligation: rule-success.ConsumeAckedVersionQueueDeferred
+// obligation: rule-failure.ReleaseIdlesEmptyPocket.4
+// obligation: projection.Pocket.ending_records
 #[test]
-fn a_release_with_only_deferred_records_requeues_the_pocket_rather_than_idling_it() {
+fn a_release_with_only_an_acked_record_and_its_deferred_version_requeues_the_pocket() {
     let (mut fixture, lease) = short_lease();
     fixture.publish("pk", "k", 2, "v2").unwrap();
-    assert_eq!(fixture.ack("c1", lease, "k"), Ok(SettleOutcome::Deferred));
+    fixture.ack("c1", lease, "k").unwrap();
+    assert_eq!(
+        fixture.record("pk", "k").status,
+        held_as(1, "v", Mark::Acked, None, Some(2)),
+        "acked, with v2 deferred: not one of the ending records"
+    );
     let (fate, _) = fixture.release("c1", lease).unwrap();
     assert_eq!(fate, PocketFate::Queued);
     assert_eq!(fixture.pocket("pk").status, PocketStatus::Queued);
     let record = fixture.record("pk", "k");
     assert_eq!(
-        (record.status, record.rank),
-        (RecordStatus::Queued, Rank::new(2))
+        (record.status, record.rank, record.position),
+        (RecordStatus::Queued, Rank::new(2), Position::new(2))
     );
     invariants::all(&fixture.snapshot());
 }
@@ -261,7 +285,7 @@ fn a_second_release_is_rejected_and_a_release_at_the_grant_instant_is_legal() {
 
 // scenario: S068
 // obligation: guarantee.ActionsNameTheirLease
-// obligation: rule-failure.AckSettlesRecord.1
+// obligation: rule-failure.AckMarksRecord.1
 // obligation: rule-failure.Renew.1
 // obligation: rule-failure.ReleaseRequeuesPocket.1
 #[test]
@@ -281,15 +305,12 @@ fn a_consumer_that_re_claims_the_same_pocket_cannot_use_its_old_lease() {
     fixture.refused(&ended, |f| f.ack("c1", old, "k"));
     fixture.refused(&ended, |f| f.nack("c1", old, "k"));
     fixture.refused(&ended, |f| f.release("c1", old));
-    assert_eq!(
-        fixture.ack("c1", new.lease, "k"),
-        Ok(SettleOutcome::Settled)
-    );
+    assert_eq!(fixture.ack("c1", new.lease, "k"), Ok(SettleOutcome::Acked));
 }
 
 // scenario: S070
-// obligation: rule-failure.AckSettlesRecord.2
-// obligation: rule-failure.NackSettlesRecord.2
+// obligation: rule-failure.AckMarksRecord.2
+// obligation: rule-failure.NackMarksRecord.2
 // obligation: rule-failure.Renew.2
 // obligation: rule-failure.ReleaseRequeuesPocket.2
 // obligation: rule-failure.ReleaseIdlesEmptyPocket.2
@@ -340,6 +361,11 @@ fn the_consumer_view_exposes_only_the_active_lease_and_its_held_versions() {
     let lease = fixture.pull("c1", 1).lease;
     fixture.pull("c2", 10);
     fixture.publish("pk", "k", 3, "v3").unwrap();
+    assert_eq!(
+        fixture.snapshot().superseded.len(),
+        0,
+        "v1 is held, not shed"
+    );
     let view = fixture.lease_view("c1").unwrap();
     assert_eq!(view.pocket_key.as_str(), "pk");
     assert_eq!(view.expires_at, T0 + LEASE_TTL);
@@ -349,10 +375,401 @@ fn the_consumer_view_exposes_only_the_active_lease_and_its_held_versions() {
         (Rank::new(1), &Payload::from(b"v1".as_slice())),
         "the held version, not the latest"
     );
+    assert_eq!(view.records[0].mark, Mark::Unsettled);
     fixture.release("c1", lease).unwrap();
     assert_eq!(fixture.lease_view("c1"), None);
     assert_eq!(
         marked_keys(&fixture.lease_view("c2").unwrap().records),
         ["x"]
     );
+}
+
+/// How a test ends `c1`'s lease: released at 50 ms, or lapsed by a tick at
+/// 2,000 ms, past every expiry these tests reach and before any entry they shed
+/// decays.
+#[derive(Clone, Copy, Debug)]
+enum Ending {
+    Release,
+    Lapse,
+}
+
+const ENDINGS: [Ending; 2] = [Ending::Release, Ending::Lapse];
+
+impl Ending {
+    /// Ends `lease` this way and returns the instant it ended.
+    fn end(self, fixture: &mut Fixture, lease: LeaseId) -> Timestamp {
+        match self {
+            Self::Release => {
+                fixture.at(50);
+                let (_, ended) = fixture.release("c1", lease).unwrap();
+                assert_eq!(ended.status, LeaseStatus::Released { ended_at: at(50) });
+                at(50)
+            }
+            Self::Lapse => {
+                fixture.at(2_000);
+                let report = fixture.tick();
+                let lapsed: Vec<LeaseId> = report.lapsed.iter().map(|l| l.id).collect();
+                assert_eq!(lapsed, [lease], "the lease lapsed");
+                at(2_000)
+            }
+        }
+    }
+
+    /// The pocket's consecutive-expiry count after this end of a lease that
+    /// started at 0: a release resets it and a lapse counts one.
+    const fn count(self) -> u32 {
+        match self {
+            Self::Release => 0,
+            Self::Lapse => 1,
+        }
+    }
+}
+
+/// `pk` with `k` at rank 1, payload `v1`, at position 1 and `early` at 2; `c1`
+/// pulls `k` alone at `T0`, and `v3` arrives at 10 ms, deferred behind `v1` at
+/// arrival position 3.
+fn v3_deferred_behind_v1() -> (Fixture, LeaseId) {
+    let mut fixture = Fixture::new();
+    fixture.publish("pk", "k", 1, "v1").unwrap();
+    fixture.publish("pk", "early", 1, "e").unwrap();
+    let lease = fixture.pull("c1", 1).lease;
+    fixture.at(10);
+    assert_eq!(
+        fixture.publish("pk", "k", 3, "v3"),
+        Ok(PublishOutcome::Superseded)
+    );
+    let record = fixture.record("pk", "k");
+    assert_eq!(
+        (record.status, record.rank),
+        (
+            held_as(1, "v1", Mark::Unsettled, None, Some(3)),
+            Rank::new(3)
+        ),
+        "v3 is deferred behind the held v1"
+    );
+    (fixture, lease)
+}
+
+/// Checks that `pk` is queued with the count `ending` leaves, that `k` is queued
+/// at `rank` and `position`, and that `c2` is handed `order`.
+fn after_the_end(
+    fixture: &mut Fixture,
+    ending: Ending,
+    (rank, position): (i64, u64),
+    order: &[&str],
+) {
+    let pocket = fixture.pocket("pk");
+    assert_eq!(
+        (pocket.status, pocket.consecutive_expiries),
+        (PocketStatus::Queued, ending.count()),
+        "{ending:?}"
+    );
+    let record = fixture.record("pk", "k");
+    assert_eq!(
+        (record.status, record.rank, record.position),
+        (
+            RecordStatus::Queued,
+            Rank::new(rank),
+            Position::new(position)
+        ),
+        "{ending:?}"
+    );
+    assert_eq!(keys(&fixture.pull("c2", 10).records), order, "{ending:?}");
+}
+
+// scenario: S078
+// obligation: rule-success.ConsumeAckedVersionQueueDeferred
+// obligation: rule-failure.ConsumeAckedRecord.4
+// obligation: guarantee.MarksStandHoweverLeaseEnds
+// obligation: guarantee.EveryDropIsVisible
+// obligation: guarantee.OldestSlotNewestPayload
+#[test]
+fn scenario_a_an_acked_version_is_consumed_and_the_deferred_one_queued_at_its_arrival() {
+    for ending in ENDINGS {
+        let (mut fixture, lease) = v3_deferred_behind_v1();
+        fixture.at(20);
+        fixture.ack("c1", lease, "k").unwrap();
+        ending.end(&mut fixture, lease);
+        let snapshot = fixture.snapshot();
+        assert_eq!(
+            shed_rows(&snapshot),
+            [],
+            "{ending:?}: v1 is recorded nowhere"
+        );
+        assert_eq!(letter_rows(&snapshot), [], "{ending:?}");
+        after_the_end(&mut fixture, ending, (3, 3), &["early", "k"]);
+    }
+}
+
+// scenario: S079
+// obligation: rule-success.DeadLetterNackedVersionQueueDeferred
+// obligation: rule-entity-creation.DeadLetterNackedVersionQueueDeferred.1
+// obligation: rule-failure.DeadLetterNackedRecord.4
+// obligation: guarantee.MarksStandHoweverLeaseEnds
+#[test]
+fn scenario_b_a_nacked_version_is_dead_lettered_and_the_deferred_one_queued_at_its_arrival() {
+    for ending in ENDINGS {
+        let (mut fixture, lease) = v3_deferred_behind_v1();
+        fixture.at(20);
+        fixture.nack("c1", lease, "k").unwrap();
+        assert_eq!(fixture.snapshot().dead_letters.len(), 0, "{ending:?}");
+        let ended = ending.end(&mut fixture, lease);
+        let snapshot = fixture.snapshot();
+        let letter = ("pk", "k", 1, "v1", "c1", at(20), ended + DEAD_LETTER_TTL);
+        assert_eq!(letter_rows(&snapshot), [letter], "{ending:?}");
+        assert_eq!(shed_rows(&snapshot), [], "{ending:?}");
+        after_the_end(&mut fixture, ending, (3, 3), &["early", "k"]);
+    }
+}
+
+// scenario: S080
+// obligation: rule-success.Supersede
+// obligation: rule-success.DeadLetterNackedVersionQueueDeferred
+// obligation: guarantee.NothingLostWhileHeld
+// obligation: guarantee.OldestSlotNewestPayload
+#[test]
+fn scenario_c_v3_is_shed_when_v5_arrives_and_v5_takes_v3s_arrival_position() {
+    for ending in ENDINGS {
+        let (mut fixture, lease) = v3_deferred_behind_v1();
+        fixture.at(15);
+        fixture.publish("pk", "between", 1, "b").unwrap();
+        fixture.at(18);
+        fixture.publish("pk", "k", 5, "v5").unwrap();
+        let v3 = (
+            "pk",
+            "k",
+            3,
+            "v3",
+            ShedReason::Superseded,
+            at(18),
+            at(18) + SUPERSEDED_TTL,
+        );
+        assert_eq!(shed_rows(&fixture.snapshot()), [v3], "{ending:?}: at once");
+        fixture.at(20);
+        fixture.nack("c1", lease, "k").unwrap();
+        let ended = ending.end(&mut fixture, lease);
+        let snapshot = fixture.snapshot();
+        assert_eq!(shed_rows(&snapshot), [v3], "{ending:?}");
+        let letter = ("pk", "k", 1, "v1", "c1", at(20), ended + DEAD_LETTER_TTL);
+        assert_eq!(letter_rows(&snapshot), [letter], "{ending:?}");
+        after_the_end(&mut fixture, ending, (5, 3), &["early", "k", "between"]);
+    }
+}
+
+// scenario: S081
+// obligation: rule-success.SupersedeUnsettledHeldVersion
+// obligation: rule-entity-creation.SupersedeUnsettledHeldVersion.1
+// obligation: rule-failure.RequeueUnsettledRecord.4
+// obligation: guarantee.EveryDropIsVisible
+// obligation: guarantee.HeldSetStableUntilLeaseEnds
+// obligation: guarantee.ExpiryRecoversWithinTtl
+#[test]
+fn scenario_d_an_unsettled_version_is_superseded_at_the_end_and_v3_takes_its_position() {
+    for ending in ENDINGS {
+        let (mut fixture, lease) = v3_deferred_behind_v1();
+        assert_eq!(fixture.snapshot().superseded.len(), 0, "{ending:?}");
+        let ended = ending.end(&mut fixture, lease);
+        let snapshot = fixture.snapshot();
+        let v1 = (
+            "pk",
+            "k",
+            1,
+            "v1",
+            ShedReason::Superseded,
+            ended,
+            ended + SUPERSEDED_TTL,
+        );
+        assert_eq!(shed_rows(&snapshot), [v1], "{ending:?}: shed at the end");
+        assert_eq!(letter_rows(&snapshot), [], "{ending:?}");
+        after_the_end(&mut fixture, ending, (3, 1), &["k", "early"]);
+    }
+}
+
+// scenario: S087
+// obligation: rule-success.ReleaseIdlesEmptyPocket
+// obligation: rule-success.LeaseExpiryIdlesEmptyPocket
+// obligation: rule-success.ConsumeAckedRecord
+// obligation: rule-success.DeadLetterNackedRecord
+// obligation: rule-failure.ReleaseRequeuesPocket.4
+// obligation: rule-failure.LeaseExpiryKeepsPocketAtFront.5
+// obligation: projection.Pocket.ending_records
+#[test]
+fn a_pocket_whose_records_were_all_acked_or_nacked_idles_on_release_and_on_lapse() {
+    for ending in ENDINGS {
+        let mut fixture = two_pockets();
+        let lease = fixture.pull("c1", 10).lease;
+        fixture.at(20);
+        fixture.ack("c1", lease, "a1").unwrap();
+        fixture.nack("c1", lease, "a2").unwrap();
+        assert_eq!(fixture.snapshot().dead_letters.len(), 0, "{ending:?}");
+        let ended = ending.end(&mut fixture, lease);
+        let pocket = fixture.pocket("a");
+        assert_eq!(
+            (
+                pocket.status,
+                pocket.consecutive_expiries,
+                pocket.records.len()
+            ),
+            (PocketStatus::Idle, ending.count(), 0),
+            "{ending:?}"
+        );
+        let letter = ("a", "a2", 1, "a2", "c1", at(20), ended + DEAD_LETTER_TTL);
+        assert_eq!(letter_rows(&fixture.snapshot()), [letter], "{ending:?}");
+        assert_eq!(fixture.order(), ["b"], "{ending:?}");
+    }
+}
+
+// scenario: S088
+// obligation: rule-success.ReleaseRequeuesPocket
+// obligation: rule-success.LeaseExpiryKeepsPocketAtFront
+// obligation: rule-success.ConsumeAckedRecord
+// obligation: rule-success.ConsumeAckedVersionQueueDeferred
+// obligation: rule-failure.ReleaseIdlesEmptyPocket.4
+// obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.5
+#[test]
+fn a_pocket_whose_records_were_all_acked_with_one_deferred_version_is_queued() {
+    for ending in ENDINGS {
+        let mut fixture = two_pockets();
+        let lease = fixture.pull("c1", 10).lease;
+        fixture.at(10);
+        fixture.publish("a", "a2", 2, "newer").unwrap();
+        assert_eq!(
+            fixture.record("a", "a2").status,
+            held_as(1, "a2", Mark::Unsettled, None, Some(5)),
+            "{ending:?}"
+        );
+        fixture.at(20);
+        for key in ["a1", "a2"] {
+            fixture.ack("c1", lease, key).unwrap();
+        }
+        ending.end(&mut fixture, lease);
+        let pocket = fixture.pocket("a");
+        assert_eq!(
+            (pocket.status, pocket.consecutive_expiries),
+            (PocketStatus::Queued, ending.count()),
+            "{ending:?}"
+        );
+        let [record] = pocket.records.as_slice() else {
+            panic!("{ending:?}: only a2's newer version is left")
+        };
+        assert_eq!(
+            (record.key.as_str(), record.status.clone(), record.rank),
+            ("a2", RecordStatus::Queued, Rank::new(2)),
+            "{ending:?}"
+        );
+        assert_eq!(record.position, Position::new(5), "{ending:?}");
+        let snapshot = fixture.snapshot();
+        assert_eq!(
+            (shed_rows(&snapshot), letter_rows(&snapshot)),
+            (vec![], vec![])
+        );
+    }
+}
+
+// scenario: S089
+// obligation: rule-success.LeaseExpiryParksPocket
+// obligation: rule-success.DeadLetterNackedRecord
+// obligation: rule-entity-creation.DeadLetterNackedRecord.1
+// obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.4
+#[test]
+fn at_an_expiry_limit_of_one_a_pocket_of_nacks_parks_with_no_records_and_its_dead_letters() {
+    let mut limit_one = config();
+    limit_one.max_consecutive_expiries = 1;
+    let mut fixture = Fixture::with_config(limit_one);
+    fixture.publish("a", "a1", 1, "a1").unwrap();
+    fixture.publish("a", "a2", 1, "a2").unwrap();
+    let lease = fixture.pull("c1", 10).lease;
+    fixture.at(20);
+    for key in ["a1", "a2"] {
+        fixture.nack("c1", lease, key).unwrap();
+    }
+    assert_eq!(
+        fixture.snapshot().dead_letters.len(),
+        0,
+        "not before the lapse"
+    );
+    let ended = Ending::Lapse.end(&mut fixture, lease);
+    let pocket = fixture.pocket("a");
+    assert_eq!(
+        (
+            pocket.status,
+            pocket.consecutive_expiries,
+            pocket.records.len()
+        ),
+        (PocketStatus::Parked, 1, 0)
+    );
+    let expires_at = ended + DEAD_LETTER_TTL;
+    assert_eq!(
+        letter_rows(&fixture.snapshot()),
+        [
+            ("a", "a1", 1, "a1", "c1", at(20), expires_at),
+            ("a", "a2", 1, "a2", "c1", at(20), expires_at)
+        ]
+    );
+}
+
+// scenario: S091
+// obligation: rule-success.SupersedeUnsettledHeldVersion
+// obligation: rule-success.DeadLetterNackedRecord
+// obligation: guarantee.HeldSetStableUntilLeaseEnds
+#[test]
+fn the_entries_one_lease_end_creates_come_out_smallest_held_position_first() {
+    let mut fixture = Fixture::new();
+    // Positions 1 to 4; the key order is the reverse of the position order.
+    for key in ["z", "y", "b", "a"] {
+        fixture.publish("pk", key, 1, key).unwrap();
+    }
+    let lease = fixture.pull("c1", 10).lease;
+    fixture.at(10);
+    for key in ["b", "z"] {
+        fixture.publish("pk", key, 2, "newer").unwrap();
+    }
+    assert_eq!(
+        fixture.snapshot().superseded.len(),
+        0,
+        "nothing is shed while held"
+    );
+    fixture.at(20);
+    for key in ["a", "y"] {
+        fixture.nack("c1", lease, key).unwrap();
+    }
+    fixture.at(50);
+    fixture.release("c1", lease).unwrap();
+    let snapshot = fixture.snapshot();
+    let (shed_at, shed_expiry) = (at(50), at(50) + SUPERSEDED_TTL);
+    assert_eq!(
+        shed_rows(&snapshot),
+        [
+            (
+                "pk",
+                "z",
+                1,
+                "z",
+                ShedReason::Superseded,
+                shed_at,
+                shed_expiry
+            ),
+            (
+                "pk",
+                "b",
+                1,
+                "b",
+                ShedReason::Superseded,
+                shed_at,
+                shed_expiry
+            )
+        ]
+    );
+    let letter_expiry = at(50) + DEAD_LETTER_TTL;
+    assert_eq!(
+        letter_rows(&snapshot),
+        [
+            ("pk", "y", 1, "y", "c1", at(20), letter_expiry),
+            ("pk", "a", 1, "a", "c1", at(20), letter_expiry)
+        ]
+    );
+    let positions: Vec<(&str, u64)> = (snapshot.pockets[0].records.iter())
+        .map(|record| (record.key.as_str(), record.position.get()))
+        .collect();
+    assert_eq!(positions, [("b", 3), ("z", 1)], "held positions kept");
 }

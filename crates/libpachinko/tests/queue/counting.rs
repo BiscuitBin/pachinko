@@ -9,7 +9,7 @@ use std::cell::RefCell;
 
 use libpachinko::records::{EndedVersion, MemoryRecords, PocketRecords, Position, RecordView};
 use libpachinko::testing::{InspectRecords, check_contract};
-use libpachinko::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey, Timestamp};
+use libpachinko::{Mark, MarkedRecord, Payload, Rank, RecordKey, Timestamp};
 
 /// One call: the step's name and the record keys the pocket held when it ran.
 pub(crate) type Call = (&'static str, Vec<String>);
@@ -88,21 +88,6 @@ impl PocketRecords for Counting {
     fn hold_oldest(&mut self, limit: usize) -> Self::Batch {
         self.log("hold_oldest");
         self.inner.hold_oldest(limit)
-    }
-
-    fn settle(&mut self, key: &RecordKey) -> Option<HeldRecord> {
-        self.log("settle");
-        self.inner.settle(key)
-    }
-
-    fn defer(&mut self, key: &RecordKey, position: Position) -> Option<HeldRecord> {
-        self.log("defer");
-        self.inner.defer(key, position)
-    }
-
-    fn free_held(&mut self) -> usize {
-        self.log("free_held");
-        self.inner.free_held()
     }
 
     fn mark(&mut self, key: &RecordKey, mark: Mark, at: Timestamp) {

@@ -97,9 +97,6 @@ pub use types::{
 ///     fn supersede(&mut self, _: &RecordKey, _: Rank, _: Payload) -> Option<(Rank, Payload)> { None }
 ///     fn defer_behind_held(&mut self, _: &RecordKey, _: Rank, _: Payload, _: Position) {}
 ///     fn hold_oldest(&mut self, _: usize) -> Vec<HeldRecord> { Vec::new() }
-///     fn settle(&mut self, _: &RecordKey) -> Option<HeldRecord> { None }
-///     fn defer(&mut self, _: &RecordKey, _: Position) -> Option<HeldRecord> { None }
-///     fn free_held(&mut self) -> usize { 0 }
 ///     fn mark(&mut self, _: &RecordKey, _: Mark, _: Timestamp) {}
 ///     fn end_lease(&mut self) -> Vec<EndedVersion> { Vec::new() }
 ///     fn record_count(&self) -> usize { 0 }

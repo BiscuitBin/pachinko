@@ -23,7 +23,7 @@ pub(super) struct LeaseBody {
     consumer_id: String,
 }
 
-/// An ack's or nack's reply: the rule that took it.
+/// An ack's or nack's reply: the mark the record carries.
 #[derive(Debug, Serialize)]
 pub(super) struct SettleReply {
     outcome: &'static str,
@@ -45,8 +45,6 @@ pub(super) struct ReleaseReply {
 /// The settle outcome's name on the wire.
 fn settle_outcome(outcome: SettleOutcome) -> Result<&'static str, Refusal> {
     match outcome {
-        SettleOutcome::Settled => Ok("settled"),
-        SettleOutcome::Deferred => Ok("deferred"),
         SettleOutcome::Acked => Ok("acked"),
         SettleOutcome::Nacked => Ok("nacked"),
         other => Err(unmapped(&other)),
@@ -70,7 +68,8 @@ fn lease_id(path: Result<Path<String>, PathRejection>) -> Result<LeaseId, Refusa
         .map_err(|error| Refusal::BadRequest(format!("lease id {text:?}: {error}")))
 }
 
-/// `POST /leases/{lease_id}/ack`: 200 with `settled` or `deferred`.
+/// `POST /leases/{lease_id}/ack`: 200 with `acked`, for a first ack and a repeat
+/// alike.
 pub(super) async fn ack(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
@@ -85,7 +84,8 @@ pub(super) async fn ack(
     }))
 }
 
-/// `POST /leases/{lease_id}/nack`: 200 with `settled` or `deferred`.
+/// `POST /leases/{lease_id}/nack`: 200 with `nacked`, for a first nack and a
+/// repeat alike.
 pub(super) async fn nack(
     State(state): State<AppState>,
     path: Result<Path<String>, PathRejection>,
@@ -134,16 +134,7 @@ mod tests {
 
     #[test]
     fn every_settle_outcome_has_its_name() {
-        let names = [
-            SettleOutcome::Settled,
-            SettleOutcome::Deferred,
-            SettleOutcome::Acked,
-            SettleOutcome::Nacked,
-        ]
-        .map(super::settle_outcome);
-        assert_eq!(
-            names,
-            [Ok("settled"), Ok("deferred"), Ok("acked"), Ok("nacked")]
-        );
+        let names = [SettleOutcome::Acked, SettleOutcome::Nacked].map(super::settle_outcome);
+        assert_eq!(names, [Ok("acked"), Ok("nacked")]);
     }
 }

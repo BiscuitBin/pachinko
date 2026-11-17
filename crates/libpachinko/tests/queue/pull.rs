@@ -26,6 +26,9 @@ fn pocket_of(count: usize) -> Fixture {
 // obligation: transition-edge.Record.queued.held
 // obligation: when-set.HoldRecord.Record.held_rank
 // obligation: when-set.HoldRecord.Record.held_payload
+// obligation: when-set.HoldRecord.Record.mark
+// obligation: when-set.HoldRecord.Record.nacked_at
+// obligation: when-set.HoldRecord.Record.deferred_position
 // obligation: when-presence.Record.held_rank
 // obligation: when-presence.Record.held_payload
 // obligation: projection.Pocket.held_records
@@ -231,7 +234,7 @@ fn a_second_consumer_never_receives_records_from_a_leased_pocket() {
 }
 
 /// Three pockets, three consumers: two leased, one pocket left queued, records
-/// held, superseded while held, and pulled again under the lease.
+/// held, a newer version deferred behind each of two, and pulled again.
 fn leases_in_play() -> Fixture {
     let mut fixture = Fixture::new();
     for pocket in ["x", "y", "z"] {

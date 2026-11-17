@@ -7,8 +7,9 @@ use crate::ids::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey};
 use crate::timestamp::Timestamp;
 
 /// One pocket's records in ordered collections: the records by key, an index of
-/// the queued ones by position, and an index of the outstanding keys, held and
-/// deferred, so [`free_held`](PocketRecords::free_held) visits only those.
+/// the queued ones by position, and an index of the held ones by position, so
+/// [`end_lease`](PocketRecords::end_lease) visits only those, smallest position
+/// first.
 ///
 /// ```
 /// use libpachinko::records::{MemoryRecords, PocketRecords, Position};
@@ -25,7 +26,7 @@ use crate::timestamp::Timestamp;
 pub struct MemoryRecords {
     records: BTreeMap<RecordKey, Entry>,
     queued: BTreeSet<(Position, RecordKey)>,
-    outstanding: BTreeSet<RecordKey>,
+    outstanding: BTreeSet<(Position, RecordKey)>,
 }
 
 /// One record's slot.
@@ -49,46 +50,34 @@ impl Entry {
     }
 }
 
-/// The held version of a held entry, or `None`.
-fn held_version(key: &RecordKey, entry: &Entry) -> Option<HeldRecord> {
-    match &entry.status {
-        RecordStatus::Held { rank, payload, .. } => {
-            Some(HeldRecord::new(key.clone(), *rank, payload.clone()))
-        }
-        RecordStatus::Queued | RecordStatus::Deferred => None,
-    }
-}
-
-/// The held version of a held entry with its mark, or `None`.
-fn marked_version(key: &RecordKey, entry: &Entry) -> Option<MarkedRecord> {
-    match &entry.status {
-        RecordStatus::Held {
-            rank,
-            payload,
-            mark,
-            ..
-        } => Some(MarkedRecord::new(
-            key.clone(),
-            *rank,
-            payload.clone(),
-            *mark,
-        )),
-        RecordStatus::Queued | RecordStatus::Deferred => None,
-    }
-}
-
-impl MemoryRecords {
-    /// Takes the held version out of a held entry, leaving `status` in its place.
-    fn unhold(
-        &mut self,
-        key: &RecordKey,
-        status: RecordStatus,
-    ) -> Option<(HeldRecord, &mut Entry)> {
-        let entry = self.records.get_mut(key)?;
-        let held = held_version(key, entry)?;
-        entry.status = status;
-        Some((held, entry))
-    }
+/// What one held record's lease end does: the version it takes out, if any, and
+/// where the record stands afterwards, or `None` when it is removed.
+fn freed(key: &RecordKey, entry: &Entry) -> (Option<EndedVersion>, Option<Position>) {
+    let RecordStatus::Held {
+        rank,
+        payload,
+        mark,
+        nacked_at,
+        deferred_position,
+    } = &entry.status
+    else {
+        return (None, Some(entry.position));
+    };
+    let held = || HeldRecord::new(key.clone(), *rank, payload.clone());
+    let ended = match (mark, nacked_at, deferred_position) {
+        (Mark::Unsettled, _, Some(_)) => Some(EndedVersion::Superseded(held())),
+        (Mark::Nacked, Some(nacked_at), _) => Some(EndedVersion::DeadLettered {
+            held: held(),
+            nacked_at: *nacked_at,
+        }),
+        _ => None,
+    };
+    let position = if *mark == Mark::Unsettled {
+        Some(entry.position)
+    } else {
+        *deferred_position
+    };
+    (ended, position)
 }
 
 impl PocketRecords for MemoryRecords {
@@ -119,19 +108,43 @@ impl PocketRecords for MemoryRecords {
         payload: Payload,
     ) -> Option<(Rank, Payload)> {
         let entry = self.records.get_mut(key)?;
+        if let RecordStatus::Held {
+            deferred_position: None,
+            ..
+        } = entry.status
+        {
+            return None;
+        }
         let loser_rank = std::mem::replace(&mut entry.rank, rank);
         let loser_payload = std::mem::replace(&mut entry.payload, payload);
         Some((loser_rank, loser_payload))
     }
 
-    // Neutral until T35's store step lands: no held record has a deferred version
-    // to take yet.
-    fn defer_behind_held(&mut self, _: &RecordKey, _: Rank, _: Payload, _: Position) {}
+    fn defer_behind_held(
+        &mut self,
+        key: &RecordKey,
+        rank: Rank,
+        payload: Payload,
+        position: Position,
+    ) {
+        let Some(entry) = self.records.get_mut(key) else {
+            return;
+        };
+        if let RecordStatus::Held {
+            deferred_position: deferred @ None,
+            ..
+        } = &mut entry.status
+        {
+            *deferred = Some(position);
+            entry.rank = rank;
+            entry.payload = payload;
+        }
+    }
 
     fn hold_oldest(&mut self, limit: usize) -> Vec<HeldRecord> {
         let mut batch = Vec::with_capacity(limit.min(self.queued.len()));
         while batch.len() < limit {
-            let Some((_, key)) = self.queued.pop_first() else {
+            let Some((position, key)) = self.queued.pop_first() else {
                 break;
             };
             if let Some(entry) = self.records.get_mut(&key) {
@@ -147,44 +160,52 @@ impl PocketRecords for MemoryRecords {
                     entry.rank,
                     entry.payload.clone(),
                 ));
-                self.outstanding.insert(key);
+                self.outstanding.insert((position, key));
             }
         }
         batch
     }
 
-    fn settle(&mut self, key: &RecordKey) -> Option<HeldRecord> {
-        let (held, _) = self.unhold(key, RecordStatus::Queued)?;
-        self.records.remove(key);
-        self.outstanding.remove(key);
-        Some(held)
-    }
-
-    fn defer(&mut self, key: &RecordKey, position: Position) -> Option<HeldRecord> {
-        let (held, entry) = self.unhold(key, RecordStatus::Deferred)?;
-        entry.position = position;
-        Some(held)
-    }
-
-    fn free_held(&mut self) -> usize {
-        let outstanding = std::mem::take(&mut self.outstanding);
-        let count = outstanding.len();
-        for key in outstanding {
-            if let Some(entry) = self.records.get_mut(&key) {
-                entry.status = RecordStatus::Queued;
-                self.queued.insert((entry.position, key));
+    fn mark(&mut self, key: &RecordKey, mark: Mark, at: Timestamp) {
+        if mark == Mark::Unsettled {
+            return;
+        }
+        let Some(entry) = self.records.get_mut(key) else {
+            return;
+        };
+        if let RecordStatus::Held {
+            mark: stored @ Mark::Unsettled,
+            nacked_at,
+            ..
+        } = &mut entry.status
+        {
+            *stored = mark;
+            if mark == Mark::Nacked {
+                *nacked_at = Some(at);
             }
         }
-        count
     }
 
-    // Neutral until T35's store step lands: ack and nack still settle or defer.
-    fn mark(&mut self, _: &RecordKey, _: Mark, _: Timestamp) {}
-
-    // Neutral until T35's store step lands: a lease end still frees with
-    // `free_held`.
     fn end_lease(&mut self) -> Vec<EndedVersion> {
-        Vec::new()
+        let mut ended = Vec::new();
+        for (_, key) in std::mem::take(&mut self.outstanding) {
+            let Some(entry) = self.records.get_mut(&key) else {
+                continue;
+            };
+            let (version, position) = freed(&key, entry);
+            ended.extend(version);
+            match position {
+                Some(position) => {
+                    entry.position = position;
+                    entry.status = RecordStatus::Queued;
+                    self.queued.insert((position, key));
+                }
+                None => {
+                    self.records.remove(&key);
+                }
+            }
+        }
+        ended
     }
 
     fn record_count(&self) -> usize {
@@ -192,16 +213,23 @@ impl PocketRecords for MemoryRecords {
     }
 
     fn held(&self) -> Vec<MarkedRecord> {
-        let mut held: Vec<(Position, MarkedRecord)> = self
-            .outstanding
+        self.outstanding
             .iter()
-            .filter_map(|key| {
-                let entry = self.records.get(key)?;
-                marked_version(key, entry).map(|record| (entry.position, record))
+            .filter_map(|(_, key)| match &self.records.get(key)?.status {
+                RecordStatus::Held {
+                    rank,
+                    payload,
+                    mark,
+                    ..
+                } => Some(MarkedRecord::new(
+                    key.clone(),
+                    *rank,
+                    payload.clone(),
+                    *mark,
+                )),
+                RecordStatus::Queued => None,
             })
-            .collect();
-        held.sort_by_key(|(position, _)| *position);
-        held.into_iter().map(|(_, record)| record).collect()
+            .collect()
     }
 }
 
@@ -219,8 +247,9 @@ impl super::contract::InspectRecords for MemoryRecords {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{MemoryRecords, PocketRecords, Position, RecordStatus};
-    use crate::ids::{Payload, Rank, RecordKey};
+    use super::{MemoryRecords, PocketRecords, Position};
+    use crate::ids::{Mark, Payload, Rank, RecordKey};
+    use crate::timestamp::Timestamp;
 
     fn insert(records: &mut MemoryRecords, key: &str, position: u64) {
         records.insert_queued(
@@ -231,45 +260,73 @@ mod tests {
         );
     }
 
-    /// The keys `lookup` shows held or deferred, of every key the test inserts.
-    fn outstanding_in_views(records: &MemoryRecords) -> BTreeSet<RecordKey> {
-        ["a", "b", "c", "d"]
-            .into_iter()
-            .map(RecordKey::new)
-            .filter(|key| {
-                records
-                    .lookup(key)
-                    .is_some_and(|view| view.status != RecordStatus::Queued)
-            })
-            .collect()
+    fn entry(position: u64, key: &str) -> (Position, RecordKey) {
+        (Position::new(position), RecordKey::new(key))
+    }
+
+    /// The outstanding index, in its own order, as positions and keys.
+    fn index(records: &MemoryRecords) -> Vec<(Position, RecordKey)> {
+        records.outstanding.iter().cloned().collect()
     }
 
     #[test]
-    fn the_outstanding_index_is_exactly_the_held_and_deferred_keys() {
+    fn the_outstanding_index_is_exactly_the_held_keys_by_position() {
         let mut records = MemoryRecords::default();
-        for (key, position) in [("a", 1), ("b", 2), ("c", 3), ("d", 4)] {
+        for (key, position) in [("c", 1), ("b", 2), ("a", 3), ("d", 4)] {
             insert(&mut records, key, position);
         }
         records.hold_oldest(3);
-        assert_eq!(records.outstanding, outstanding_in_views(&records));
-        records.defer(&RecordKey::new("b"), Position::new(9));
-        assert_eq!(records.outstanding, outstanding_in_views(&records));
-        records.settle(&RecordKey::new("a"));
-        assert_eq!(records.outstanding, outstanding_in_views(&records));
-        assert_eq!(records.free_held(), 2);
-        assert!(records.outstanding.is_empty());
+        let held = vec![entry(1, "c"), entry(2, "b"), entry(3, "a")];
+        assert_eq!(
+            index(&records),
+            held,
+            "the held keys by position after hold_oldest"
+        );
+        records.mark(&RecordKey::new("b"), Mark::Acked, Timestamp::from_millis(1));
+        records.mark(
+            &RecordKey::new("a"),
+            Mark::Nacked,
+            Timestamp::from_millis(1),
+        );
+        assert_eq!(index(&records), held, "a mark keeps the index");
+        for (key, position) in [("c", 9), ("b", 8)] {
+            records.defer_behind_held(
+                &RecordKey::new(key),
+                Rank::new(2),
+                Payload::default(),
+                Position::new(position),
+            );
+        }
+        assert_eq!(index(&records), held, "a deferral keeps the held position");
+        records.end_lease();
+        assert!(
+            records.outstanding.is_empty(),
+            "end_lease empties the index"
+        );
+        assert_eq!(
+            records.queued,
+            BTreeSet::from([entry(1, "c"), entry(4, "d"), entry(8, "b")]),
+            "end_lease queues each record it keeps at its final position"
+        );
         assert_eq!(records.queued.len(), records.records.len());
     }
 
     #[test]
-    fn free_held_visits_only_the_outstanding() {
+    fn end_lease_visits_only_the_held_keys() {
         let mut records = MemoryRecords::default();
         for position in 0..1_000 {
             insert(&mut records, &format!("k{position:04}"), position);
         }
-        records.hold_oldest(1);
-        assert_eq!(records.outstanding.len(), 1);
-        assert_eq!(records.free_held(), 1);
-        assert_eq!(records.queued.len(), 1_000);
+        records.hold_oldest(2);
+        records.mark(
+            &RecordKey::new("k0001"),
+            Mark::Acked,
+            Timestamp::from_millis(1),
+        );
+        assert_eq!(index(&records).len(), 2);
+        assert_eq!(records.end_lease(), Vec::new());
+        assert!(records.outstanding.is_empty());
+        assert_eq!(records.queued.len(), 999);
+        assert_eq!(records.records.len(), 999);
     }
 }

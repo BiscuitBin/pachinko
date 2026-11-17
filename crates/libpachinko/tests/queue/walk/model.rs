@@ -58,8 +58,13 @@ struct ModelLetter {
 /// An ended lease's fields, as a release or a tick returns them.
 pub(super) type Ended = (LeaseId, ModelLease, LeaseStatus);
 
-/// One lapse the tick should process: the ended lease and its pocket's fate.
-type Lapse = (Ended, PocketStatus);
+/// The `Freed` rules a lease end applied, one name per held record, smallest held
+/// position first.
+pub(super) type Rows = Vec<&'static str>;
+
+/// One lapse the tick should process: the ended lease, its pocket's fate and the
+/// `Freed` rules it applied.
+pub(super) type Lapse = (Ended, PocketStatus, Rows);
 
 /// The queue's state as the rules read it, projected from a `Snapshot`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -187,8 +192,10 @@ impl Model {
         Ok(())
     }
 
-    /// The four publish rules, then `PocketTouched` for all but the first, which
-    /// returns the status a revive moved the pocket from.
+    /// The five publish rules, then `PocketTouched` for the three that add or raise
+    /// a record in an existing pocket, which returns the status a revive moved the
+    /// pocket from. `DropStalePublish` does not touch the pocket, and an equal rank
+    /// is rejected and changes nothing.
     pub(super) fn publish(
         &mut self,
         publisher: &PublisherId,
@@ -215,6 +222,15 @@ impl Model {
         };
         let outcome = match stored {
             None => self.publish_new_key(publication),
+            Some(RecordView {
+                rank,
+                status:
+                    RecordStatus::Held {
+                        deferred_position: None,
+                        ..
+                    },
+                ..
+            }) if publication.rank > rank => self.defer_behind_held_version(publication),
             Some(record) if publication.rank > record.rank => {
                 self.superseded
                     .push(shed(record.rank, record.payload, ShedReason::Superseded));
@@ -223,7 +239,7 @@ impl Model {
             Some(record) if publication.rank < record.rank => {
                 let (rank, payload) = (publication.rank, publication.payload.clone());
                 self.superseded.push(shed(rank, payload, ShedReason::Stale));
-                PublishOutcome::Stale
+                return (Ok(PublishOutcome::Stale), None);
             }
             Some(_) => {
                 let key = publication.record_key.clone();
@@ -271,8 +287,9 @@ impl Model {
         PublishOutcome::NewKey
     }
 
-    /// `Supersede`: rank and payload in place; position and status, and a held
-    /// version, untouched.
+    /// `Supersede`, for a queued record or a held one with a version deferred
+    /// behind it: rank and payload in place; position, status, the held version,
+    /// its mark and the arrival position untouched. The caller sheds the loser.
     fn supersede(&mut self, publication: &Publication) -> PublishOutcome {
         let pocket = self.pocket(&publication.pocket_key);
         let record = pocket
@@ -281,6 +298,28 @@ impl Model {
             .expect("the record a supersede replaces exists");
         record.rank = publication.rank;
         record.payload = publication.payload.clone();
+        PublishOutcome::Superseded
+    }
+
+    /// `DeferBehindHeldVersion`, for a held record with nothing deferred: rank and
+    /// payload move on, the held version stays, nothing is shed, and the newer
+    /// version takes the counter's value as its arrival position. The queue answers
+    /// `Superseded`.
+    fn defer_behind_held_version(&mut self, publication: &Publication) -> PublishOutcome {
+        let arrival = self.take_position();
+        let pocket = self.pocket(&publication.pocket_key);
+        let record = pocket
+            .records
+            .get_mut(&publication.record_key)
+            .expect("the record a version is deferred behind exists");
+        record.rank = publication.rank;
+        record.payload = publication.payload.clone();
+        if let RecordStatus::Held {
+            deferred_position, ..
+        } = &mut record.status
+        {
+            *deferred_position = Some(arrival);
+        }
         PublishOutcome::Superseded
     }
 
@@ -424,52 +463,49 @@ impl Model {
             .expires_at = expires_at;
     }
 
-    /// `AckSettlesRecord` and `AckDefersNewerVersion`, or with `nack` the two nack
-    /// rules, whose dead letter carries the held version.
-    pub(super) fn settle(
+    /// `AckMarksRecord` and `AckRepeats`, or with `Mark::Nacked` the two nack
+    /// rules. The guards come first and read no clock: the lease is the consumer's
+    /// and active, the record is held, and it is not marked the other way. A first
+    /// mark extends the lease, sets the mark, stamps `nacked_at` for a nack and
+    /// resets the pocket's `consecutive_expiries`; a repeat only extends the lease.
+    /// Nothing is removed and no entry is made.
+    pub(super) fn mark(
         &mut self,
-        (nack, consumer, lease, key): (bool, &ConsumerId, LeaseId, &RecordKey),
+        (mark, consumer, lease, key): (Mark, &ConsumerId, LeaseId, &RecordKey),
         now: Timestamp,
         config: &Config,
     ) -> Result<SettleOutcome, LeaseActionError> {
         let pocket_key = self.authorise(consumer, lease)?;
-        let record = self.pocket(&pocket_key).records.get(key).cloned();
-        let Some(RecordView {
-            rank,
-            status:
-                RecordStatus::Held {
-                    rank: held_rank,
-                    payload: held_payload,
-                    ..
-                },
-            ..
-        }) = record
-        else {
-            return Err(LeaseActionError::RecordNotHeld(key.clone()));
+        let current = match self.pocket(&pocket_key).records.get(key) {
+            Some(RecordView {
+                status: RecordStatus::Held { mark: held, .. },
+                ..
+            }) => *held,
+            _ => return Err(LeaseActionError::RecordNotHeld(key.clone())),
         };
+        if current != Mark::Unsettled && current != mark {
+            return Err(LeaseActionError::MarkConflict(key.clone()));
+        }
         self.extend(lease, now + config.lease_ttl);
-        if nack {
-            self.dead_letters.push(ModelLetter {
-                pocket_key: pocket_key.clone(),
-                key: key.clone(),
-                rank: held_rank,
-                payload: held_payload,
-                nacked_by: consumer.clone(),
-                nacked_at: now,
-                expires_at: now + config.dead_letter_ttl,
-            });
+        if current == Mark::Unsettled {
+            let pocket = self.pocket(&pocket_key);
+            pocket.consecutive_expiries = 0;
+            let record = pocket.records.get_mut(key).expect("held");
+            if let RecordStatus::Held {
+                mark: held_mark,
+                nacked_at,
+                ..
+            } = &mut record.status
+            {
+                *held_mark = mark;
+                *nacked_at = (mark == Mark::Nacked).then_some(now);
+            }
+        }
+        Ok(if mark == Mark::Nacked {
+            SettleOutcome::Nacked
         } else {
-            self.pocket(&pocket_key).consecutive_expiries = 0;
-        }
-        if held_rank == rank {
-            self.pocket(&pocket_key).records.remove(key);
-            return Ok(SettleOutcome::Settled);
-        }
-        let position = self.take_position();
-        let record = self.pocket(&pocket_key).records.get_mut(key).expect("held");
-        record.status = RecordStatus::Deferred;
-        record.position = position;
-        Ok(SettleOutcome::Deferred)
+            SettleOutcome::Acked
+        })
     }
 
     /// `Renew`.
@@ -493,34 +529,40 @@ impl Model {
     }
 
     /// `ReleaseRequeuesPocket` or `ReleaseIdlesEmptyPocket`, with `Freed` for each
-    /// held and deferred record.
+    /// held record. The pocket is queued when a record outlasts the lease, which is
+    /// when any is left once the `Freed` rules have run, and idle otherwise.
     pub(super) fn release(
         &mut self,
         consumer: &ConsumerId,
         lease: LeaseId,
         now: Timestamp,
-    ) -> Result<(PocketFate, Ended), LeaseActionError> {
-        let pocket_key = self.authorise(consumer, lease)?;
+        config: &Config,
+    ) -> (Result<(PocketFate, Ended), LeaseActionError>, Rows) {
+        let pocket_key = match self.authorise(consumer, lease) {
+            Ok(key) => key,
+            Err(refused) => return (Err(refused), Rows::new()),
+        };
         let ended = self.end(lease, LeaseStatus::Released { ended_at: now });
+        let rows = self.freed(&pocket_key, &ended.1.consumer_id, now, config);
         let pocket = self.pocket(&pocket_key);
-        free(pocket);
         pocket.consecutive_expiries = 0;
         if pocket.records.is_empty() {
             pocket.status = PocketStatus::Idle;
-            return Ok((PocketFate::Idle, ended));
+            return (Ok((PocketFate::Idle, ended)), rows);
         }
         let position = self.take_position();
         let pocket = self.pocket(&pocket_key);
         pocket.status = PocketStatus::Queued;
         pocket.position = position;
         self.enqueue(&pocket_key, position);
-        Ok((PocketFate::Queued, ended))
+        (Ok((PocketFate::Queued, ended)), rows)
     }
 
     /// `LeaseLapses` for every active lease with `expires_at <= now`, in
     /// `(expires_at, lease id)` order, then `SupersededRecordDecays` and
-    /// `DeadLetterDecays`; the counts are the decayed entries.
-    pub(super) fn tick(&mut self, now: Timestamp, limit: u32) -> (Vec<Lapse>, usize, usize) {
+    /// `DeadLetterDecays` at the same `now`, so an entry a lapse makes with a zero
+    /// TTL decays in that tick; the counts are the decayed entries.
+    pub(super) fn tick(&mut self, now: Timestamp, config: &Config) -> (Vec<Lapse>, usize, usize) {
         let mut due: Vec<(Timestamp, LeaseId)> = self
             .leases
             .iter()
@@ -530,7 +572,7 @@ impl Model {
         due.sort();
         let lapsed = due
             .into_iter()
-            .map(|(_, id)| self.lapse(id, now, limit))
+            .map(|(_, id)| self.lapse(id, now, config))
             .collect();
         let (shed, letters) = (self.superseded.len(), self.dead_letters.len());
         self.superseded.retain(|entry| entry.expires_at > now);
@@ -543,13 +585,15 @@ impl Model {
     }
 
     /// `LeaseExpiryParksPocket`, `LeaseExpiryKeepsPocketAtFront` or
-    /// `LeaseExpiryIdlesEmptyPocket`, by their guards on the pre-lapse count.
-    fn lapse(&mut self, lease: LeaseId, now: Timestamp, limit: u32) -> Lapse {
+    /// `LeaseExpiryIdlesEmptyPocket`, by their guards on the pre-lapse count and on
+    /// whether a record outlasts the lease, with `Freed` for each held record.
+    fn lapse(&mut self, lease: LeaseId, now: Timestamp, config: &Config) -> Lapse {
         let ended = self.end(lease, LeaseStatus::Expired { ended_at: now });
         let key = ended.1.pocket_key.clone();
+        let count = self.pocket(&key).consecutive_expiries;
+        let at_threshold = count + 1 >= config.max_consecutive_expiries;
+        let rows = self.freed(&key, &ended.1.consumer_id, now, config);
         let pocket = self.pocket(&key);
-        let at_threshold = pocket.consecutive_expiries + 1 >= limit;
-        free(pocket);
         pocket.consecutive_expiries += 1;
         pocket.status = if at_threshold {
             PocketStatus::Parked
@@ -562,14 +606,248 @@ impl Model {
         if status == PocketStatus::Queued {
             self.enqueue(&key, position);
         }
-        (ended, status)
+        (ended, status, rows)
+    }
+
+    /// `Freed` for every held record of the pocket, smallest held position first;
+    /// a queued record is sent no `Freed` and stays as it is. The shed queues are
+    /// kept by expiry, then arrival, as the queue keeps them.
+    fn freed(
+        &mut self,
+        key: &PocketKey,
+        consumer: &ConsumerId,
+        ended_at: Timestamp,
+        config: &Config,
+    ) -> Rows {
+        let mut held: Vec<(Position, RecordKey)> = self.pockets[key]
+            .records
+            .values()
+            .filter(|record| matches!(record.status, RecordStatus::Held { .. }))
+            .map(|record| (record.position, record.key.clone()))
+            .collect();
+        held.sort();
+        let rows = held
+            .into_iter()
+            .map(|(_, record_key)| self.free(key, &record_key, (consumer, ended_at), config))
+            .collect();
+        self.superseded.sort_by_key(|entry| entry.expires_at);
+        self.dead_letters.sort_by_key(|letter| letter.expires_at);
+        rows
+    }
+
+    /// One `Freed`, answered by the rule its mark and its deferred version select,
+    /// whose name it returns. `consumer` is the ended lease's; an entry the rule
+    /// makes is stamped from `ended_at`.
+    fn free(
+        &mut self,
+        key: &PocketKey,
+        record_key: &RecordKey,
+        (consumer, ended_at): (&ConsumerId, Timestamp),
+        config: &Config,
+    ) -> &'static str {
+        let records = &mut self
+            .pockets
+            .get_mut(key)
+            .expect("a lease's pocket exists")
+            .records;
+        let record = records
+            .get_mut(record_key)
+            .expect("Freed names a held record");
+        let RecordStatus::Held {
+            rank,
+            payload,
+            mark,
+            nacked_at,
+            deferred_position,
+        } = record.status.clone()
+        else {
+            panic!("Freed names a held record");
+        };
+        let rule = freed_rule(mark, deferred_position);
+        if rule == "SupersedeUnsettledHeldVersion" {
+            self.superseded.push(ModelShed {
+                pocket_key: key.clone(),
+                key: record_key.clone(),
+                rank,
+                payload: payload.clone(),
+                reason: ShedReason::Superseded,
+                shed_at: ended_at,
+                expires_at: ended_at + config.superseded_ttl,
+            });
+        }
+        if mark == Mark::Nacked {
+            self.dead_letters.push(ModelLetter {
+                pocket_key: key.clone(),
+                key: record_key.clone(),
+                rank,
+                payload,
+                nacked_by: consumer.clone(),
+                nacked_at: nacked_at.expect("NackedHasItsTime"),
+                expires_at: ended_at + config.dead_letter_ttl,
+            });
+        }
+        match (mark, deferred_position) {
+            (Mark::Unsettled, _) => record.status = RecordStatus::Queued,
+            (_, Some(arrival)) => {
+                record.status = RecordStatus::Queued;
+                record.position = arrival;
+            }
+            (_, None) => {
+                records.remove(record_key);
+            }
+        }
+        rule
     }
 }
 
-/// `Freed` for every record: `RequeueHeldRecord` and `RequeueDeferredRecord`; a
-/// queued record matches neither and stays as it is. No position changes.
-fn free(pocket: &mut ModelPocket) {
-    for record in pocket.records.values_mut() {
-        record.status = RecordStatus::Queued;
+/// The one of the six rules that answers `Freed` for a held record with this mark
+/// and this arrival position, by the reconciliation table's rows.
+fn freed_rule(mark: Mark, deferred_position: Option<Position>) -> &'static str {
+    match (mark, deferred_position) {
+        (Mark::Unsettled, None) => "RequeueUnsettledRecord",
+        (Mark::Unsettled, Some(_)) => "SupersedeUnsettledHeldVersion",
+        (Mark::Acked, None) => "ConsumeAckedRecord",
+        (Mark::Acked, Some(_)) => "ConsumeAckedVersionQueueDeferred",
+        (_, None) => "DeadLetterNackedRecord",
+        (_, Some(_)) => "DeadLetterNackedVersionQueueDeferred",
     }
+}
+
+/// A held record for the lease-end table: version 1 held, and version 2 deferred
+/// behind it at `deferred` when that is given.
+fn held_record(
+    key: &str,
+    position: u64,
+    mark: Mark,
+    nacked_at: Option<u64>,
+    deferred: Option<u64>,
+) -> (RecordKey, RecordView) {
+    let held = Payload::from(format!("{key} held").into_bytes());
+    let (rank, payload) = match deferred {
+        Some(_) => (
+            Rank::new(2),
+            Payload::from(format!("{key} newer").into_bytes()),
+        ),
+        None => (Rank::new(1), held.clone()),
+    };
+    let status = RecordStatus::Held {
+        rank: Rank::new(1),
+        payload: held,
+        mark,
+        nacked_at: nacked_at.map(Timestamp::from_millis),
+        deferred_position: deferred.map(Position::new),
+    };
+    let record = RecordView::new(
+        RecordKey::new(key),
+        rank,
+        payload,
+        Position::new(position),
+        status,
+    );
+    (RecordKey::new(key), record)
+}
+
+/// A model with one leased pocket, `a`, holding one record per row of the
+/// reconciliation table, keyed so that key order is the reverse of position
+/// order, beside a queued record, `k0`.
+fn six_rows() -> Model {
+    let queued = RecordView::new(
+        RecordKey::new("k0"),
+        Rank::new(1),
+        Payload::default(),
+        Position::new(7),
+        RecordStatus::Queued,
+    );
+    let records = BTreeMap::from([
+        held_record("k6", 1, Mark::Unsettled, None, None),
+        held_record("k5", 2, Mark::Unsettled, None, Some(10)),
+        held_record("k4", 3, Mark::Acked, None, None),
+        held_record("k3", 4, Mark::Acked, None, Some(11)),
+        held_record("k2", 5, Mark::Nacked, Some(300), None),
+        held_record("k1", 6, Mark::Nacked, Some(400), Some(12)),
+        (RecordKey::new("k0"), queued),
+    ]);
+    let pocket = ModelPocket {
+        status: PocketStatus::Leased,
+        position: Position::new(0),
+        consecutive_expiries: 0,
+        records,
+    };
+    Model {
+        next_position: Position::new(13),
+        publishers: BTreeSet::new(),
+        consumers: BTreeMap::new(),
+        pockets: BTreeMap::from([(PocketKey::new("a"), pocket)]),
+        pocket_order: Vec::new(),
+        leases: BTreeMap::new(),
+        pending: None,
+        superseded: Vec::new(),
+        dead_letters: Vec::new(),
+    }
+}
+
+/// The model's own lease end, which the walk cannot run against the queue until
+/// the queue follows the six `Freed` rules.
+#[test]
+fn freed_applies_the_six_rows_smallest_held_position_first() {
+    let config = super::config();
+    let (ended_at, consumer, a) = (
+        Timestamp::from_millis(500),
+        ConsumerId::new("c0"),
+        PocketKey::new("a"),
+    );
+    let mut model = six_rows();
+    let rows = model.freed(&a, &consumer, ended_at, &config);
+    let table = [
+        "RequeueUnsettledRecord",
+        "SupersedeUnsettledHeldVersion",
+        "ConsumeAckedRecord",
+        "ConsumeAckedVersionQueueDeferred",
+        "DeadLetterNackedRecord",
+        "DeadLetterNackedVersionQueueDeferred",
+    ];
+    assert_eq!(rows, table, "smallest held position first, not key order");
+    let after: Vec<(&str, u64, Rank, bool)> = (model.pockets[&a].records.values())
+        .map(|r| {
+            (
+                r.key.as_str(),
+                r.position.get(),
+                r.rank,
+                r.status == RecordStatus::Queued,
+            )
+        })
+        .collect();
+    let (one, two) = (Rank::new(1), Rank::new(2));
+    assert_eq!(
+        after,
+        [
+            ("k0", 7, one, true),
+            ("k1", 12, two, true),
+            ("k3", 11, two, true),
+            ("k5", 2, two, true),
+            ("k6", 1, one, true)
+        ],
+        "unsettled keep their position, marked take their arrival position, \
+            marked with nothing deferred are removed"
+    );
+    let shed = ModelShed {
+        pocket_key: a.clone(),
+        key: RecordKey::new("k5"),
+        rank: one,
+        payload: Payload::from(b"k5 held".as_slice()),
+        reason: ShedReason::Superseded,
+        shed_at: ended_at,
+        expires_at: ended_at + config.superseded_ttl,
+    };
+    assert_eq!(model.superseded, [shed]);
+    let letter = |key: &str, nacked_at| ModelLetter {
+        pocket_key: a.clone(),
+        key: RecordKey::new(key),
+        rank: one,
+        payload: Payload::from(format!("{key} held").into_bytes()),
+        nacked_by: consumer.clone(),
+        nacked_at: Timestamp::from_millis(nacked_at),
+        expires_at: ended_at + config.dead_letter_ttl,
+    };
+    assert_eq!(model.dead_letters, [letter("k2", 300), letter("k1", 400)]);
 }

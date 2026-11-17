@@ -1,12 +1,20 @@
 //! Publish: `PublishIntoNewPocket`, `PublishNewKey`, `Supersede`,
-//! `DropStalePublish`, the equal-rank placeholder, and the `PocketTouched` dispatch
-//! on a queued or leased pocket.
+//! `DeferBehindHeldVersion`, `DropStalePublish`, the rejected equal rank, and the
+//! `PocketTouched` dispatch on a queued or leased pocket; and the publish table
+//! against a held record, whatever its mark.
 
 use libpachinko::records::{Position, RecordStatus};
 use libpachinko::testing::{PocketStatus, ShedReason};
-use libpachinko::{Payload, PublishError, PublishOutcome, Rank, RecordKey};
+use libpachinko::{Mark, Payload, PublishError, PublishOutcome, Rank, RecordKey, Timestamp};
 
-use crate::fixture::{Fixture, SUPERSEDED_TTL, T0, invariants, keys};
+use crate::fixture::{
+    Fixture, SUPERSEDED_TTL, ShedRow, T0, held_as, invariants, keys, letter_rows, shed_rows,
+};
+
+/// `T0` plus `millis`.
+const fn at(millis: u64) -> Timestamp {
+    T0.saturating_add_millis(millis)
+}
 
 fn rank_and_payload(fixture: &Fixture, pocket: &str, key: &str) -> (i64, Vec<u8>) {
     let record = fixture.record(pocket, key);
@@ -94,6 +102,7 @@ fn the_same_record_key_in_two_pockets_is_two_records() {
 // obligation: rule-success.Supersede
 // obligation: rule-entity-creation.Supersede.1
 // obligation: rule-failure.PublishNewKey.2
+// obligation: rule-failure.DeferBehindHeldVersion.4
 // obligation: entity-fields.SupersededRecord
 // obligation: invariant.SupersededRecord.ShedBeforeExpiry
 // obligation: guarantee.EveryDropIsVisible
@@ -193,10 +202,11 @@ fn a_stale_publish_is_shed_not_applied_and_not_an_error() {
 
 // scenario: S017
 // obligation: rule-failure.DropStalePublish.3
-// Open question 1 placeholder: no rule covers an equal rank, so the publish is
-// refused with `EqualRank`; this pins the placeholder, not a decision.
+// No rule covers an equal rank, so the publish is refused with `EqualRank` and
+// changes nothing, whatever its payload: decided on 2026-11-16, closing open
+// question 1.
 #[test]
-fn an_equal_rank_publish_is_rejected_as_the_open_question_1_placeholder() {
+fn an_equal_rank_publish_is_rejected() {
     let mut fixture = Fixture::new();
     fixture.publish("pk", "a", 2, "first").unwrap();
     let before = fixture.snapshot();
@@ -308,6 +318,20 @@ fn publishing_into_a_leased_pocket_neither_requeues_it_nor_escapes_the_lease() {
         fixture.publish("pk", "a", 0, "a0"),
         Ok(PublishOutcome::Stale)
     );
+    let stale = (
+        "pk",
+        "a",
+        0,
+        "a0",
+        ShedReason::Stale,
+        T0,
+        T0 + SUPERSEDED_TTL,
+    );
+    assert_eq!(
+        shed_rows(&fixture.snapshot()),
+        [stale],
+        "the held a1 is not shed; a2 waits behind it"
+    );
     let pocket = fixture.pocket("pk");
     assert_eq!(pocket.status, PocketStatus::Leased);
     assert_eq!(pocket.position, pocket_before.position);
@@ -356,6 +380,7 @@ fn publish_storm() -> Fixture {
 
 // obligation: invariant.OnePocketPerKey
 // obligation: rule-failure.Supersede.1
+// obligation: rule-failure.DeferBehindHeldVersion.1
 // obligation: rule-failure.DropStalePublish.1
 #[test]
 fn one_pocket_per_key_holds_after_publishes_into_new_and_existing_pockets() {
@@ -366,6 +391,7 @@ fn one_pocket_per_key_holds_after_publishes_into_new_and_existing_pockets() {
 
 // obligation: invariant.OneRecordPerKeyPerPocket
 // obligation: rule-failure.Supersede.2
+// obligation: rule-failure.DeferBehindHeldVersion.2
 // obligation: rule-failure.DropStalePublish.2
 #[test]
 fn one_record_per_key_per_pocket_holds_after_new_keys_supersedes_and_stale_publishes() {
@@ -400,4 +426,160 @@ fn every_shed_entry_is_shed_before_it_expires() {
     let snapshot = publish_storm().snapshot();
     assert_ne!(snapshot.superseded.len(), 0);
     invariants::shed_before_expiry(&snapshot);
+}
+
+/// `pk` with `k` at rank 1, payload `v1`, held by `c1` from `T0` and marked at
+/// 10 ms as `mark` says. `k` stands at 1, so the next position is 2. Returns the
+/// time of the nack, if `mark` is a nack.
+fn held_and_marked(mark: Mark) -> (Fixture, Option<Timestamp>) {
+    let mut fixture = Fixture::new();
+    fixture.publish("pk", "k", 1, "v1").unwrap();
+    let lease = fixture.pull("c1", 10).lease;
+    fixture.at(10);
+    fixture.mark_as("c1", lease, "k", mark);
+    let nacked_at = (mark == Mark::Nacked).then_some(at(10));
+    (fixture, nacked_at)
+}
+
+/// A shed entry of `k` in `pk`, made at 30 ms.
+fn shed_at_30(rank: i64, payload: &'static str, reason: ShedReason) -> ShedRow<'static> {
+    (
+        "pk",
+        "k",
+        rank,
+        payload,
+        reason,
+        at(30),
+        at(30) + SUPERSEDED_TTL,
+    )
+}
+
+/// Decision 5's publish table against `k`, held and marked as `mark` says: a
+/// higher rank is deferred, and a second sheds the deferred version at once.
+fn the_publish_table_against_a_held_record(mark: Mark) {
+    let (mut fixture, nacked_at) = held_and_marked(mark);
+    let deferred = held_as(1, "v1", mark, nacked_at, Some(2));
+    fixture.at(20);
+    assert_eq!(
+        fixture.publish("pk", "k", 3, "v3"),
+        Ok(PublishOutcome::Superseded),
+        "{mark:?}: higher"
+    );
+    let record = fixture.record("pk", "k");
+    assert_eq!(
+        (record.status, record.rank),
+        (deferred.clone(), Rank::new(3)),
+        "{mark:?}: deferred behind the held version"
+    );
+    let snapshot = fixture.snapshot();
+    assert_eq!(shed_rows(&snapshot), [], "{mark:?}: nothing is shed");
+    assert_eq!(snapshot.next_position, Position::new(3), "{mark:?}");
+    fixture.at(30);
+    assert_eq!(
+        fixture.publish("pk", "k", 5, "v5"),
+        Ok(PublishOutcome::Superseded),
+        "{mark:?}: a second higher"
+    );
+    let v3 = shed_at_30(3, "v3", ShedReason::Superseded);
+    assert_eq!(shed_rows(&fixture.snapshot()), [v3], "{mark:?}: v3 at once");
+    equal_then_lower(&mut fixture, mark, deferred);
+}
+
+/// The rest of the table at 30 ms, with `v5` stored behind the held `v1` and `v3`
+/// shed: an equal rank is rejected and a lower one is stale.
+fn equal_then_lower(fixture: &mut Fixture, mark: Mark, deferred: RecordStatus) {
+    let before = fixture.snapshot();
+    assert_eq!(
+        fixture.publish("pk", "k", 5, "again"),
+        Err(PublishError::EqualRank {
+            key: RecordKey::new("k"),
+            rank: Rank::new(5)
+        }),
+        "{mark:?}: equal"
+    );
+    assert_eq!(
+        fixture.snapshot(),
+        before,
+        "{mark:?}: equal changes nothing"
+    );
+    assert_eq!(
+        fixture.publish("pk", "k", 4, "v4"),
+        Ok(PublishOutcome::Stale),
+        "{mark:?}: lower"
+    );
+    let snapshot = fixture.snapshot();
+    assert_eq!(
+        shed_rows(&snapshot),
+        [
+            shed_at_30(3, "v3", ShedReason::Superseded),
+            shed_at_30(4, "v4", ShedReason::Stale)
+        ],
+        "{mark:?}"
+    );
+    assert_eq!(
+        letter_rows(&snapshot),
+        [],
+        "{mark:?}: no dead letter while held"
+    );
+    let record = fixture.record("pk", "k");
+    assert_eq!(
+        (record.status, record.rank, record.position),
+        (deferred, Rank::new(5), Position::new(1)),
+        "{mark:?}: v5 keeps v3's arrival position"
+    );
+    invariants::all(&snapshot);
+}
+
+// scenario: S082
+// obligation: rule-success.DeferBehindHeldVersion
+// obligation: rule-failure.DeferBehindHeldVersion.3
+// obligation: rule-failure.DeferBehindHeldVersion.5
+// obligation: rule-failure.Supersede.4
+// obligation: rule-success.Supersede
+// obligation: rule-success.DropStalePublish
+// obligation: guarantee.OneVisitPerKeyPerLease
+// obligation: guarantee.NothingLostWhileHeld
+#[test]
+fn a_publish_onto_a_held_record_is_judged_alike_whether_it_is_unsettled_acked_or_nacked() {
+    for mark in [Mark::Unsettled, Mark::Acked, Mark::Nacked] {
+        the_publish_table_against_a_held_record(mark);
+    }
+}
+
+// scenario: S083
+// obligation: rule-failure.Supersede.3
+// obligation: rule-failure.DeferBehindHeldVersion.3
+// obligation: rule-failure.DropStalePublish.3
+#[test]
+fn publishing_again_at_the_held_rank_is_rejected_until_a_newer_version_is_deferred_then_stale() {
+    let (mut fixture, _) = held_and_marked(Mark::Unsettled);
+    let before = fixture.snapshot();
+    assert_eq!(
+        fixture.publish("pk", "k", 1, "again"),
+        Err(PublishError::EqualRank {
+            key: RecordKey::new("k"),
+            rank: Rank::new(1)
+        }),
+        "nothing deferred: the held rank is the stored rank"
+    );
+    assert_eq!(fixture.snapshot(), before);
+    fixture.publish("pk", "k", 3, "v3").unwrap();
+    let deferred = held_as(1, "v1", Mark::Unsettled, None, Some(2));
+    assert_eq!(fixture.record("pk", "k").status, deferred);
+    assert_eq!(
+        fixture.publish("pk", "k", 1, "again"),
+        Ok(PublishOutcome::Stale),
+        "v3 deferred: the held rank is below the stored rank"
+    );
+    let stale = (
+        "pk",
+        "k",
+        1,
+        "again",
+        ShedReason::Stale,
+        at(10),
+        at(10) + SUPERSEDED_TTL,
+    );
+    assert_eq!(shed_rows(&fixture.snapshot()), [stale]);
+    assert_eq!(fixture.record("pk", "k").status, deferred);
 }

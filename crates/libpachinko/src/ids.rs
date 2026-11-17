@@ -186,8 +186,8 @@ impl From<&[u8]> for Payload {
     }
 }
 
-/// A held record as a batch carries it and the `Consuming` surface exposes it: the
-/// key, the held rank and the held payload.
+/// A held record as a pull's batch carries it: the key, the held rank and the held
+/// payload. The lease read shows it with its mark, as a [`MarkedRecord`].
 ///
 /// ```
 /// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
