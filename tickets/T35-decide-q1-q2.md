@@ -697,7 +697,6 @@ This ticket owns:
 | --- | --- | --- |
 | `docs/specs/pachinko.allium` | shared, own lines | Q2 and the nack reset, landed at `983b785` with `open question` 11 removed; the step-1 refinements, with `open question` 1 removed |
 | `docs/decisions/0020-held-set-until-lease-ends.md`, `docs/decisions/README.md`, `docs/manifest.yml` | new, shared | Decision 0020, its index row and its manifest entry |
-| `docs/operations/troubleshooting.md` | shared, own lines | The `equal_rank` sentence that called the refusal a placeholder |
 | `docs/project/purpose-and-scope.md` | shared, own lines | The list of open questions, which still named equal-rank publishes |
 | `crates/libpachinko/src/records.rs`, `records/memory.rs`, `records/contract.rs` | shared, own lines | `RecordStatus`, `RecordView`, the `PocketRecords` trait, `MemoryRecords` and the contract: marks, the nack time, the arrival position, the lease-end step |
 | `crates/libpachinko/src/queue.rs`, `queue/pockets.rs`, `queue/settle.rs`, `queue/publish.rs`, `queue/renew.rs`, `queue/expiry.rs`, `queue/shed.rs`, `queue/types.rs`, `queue/inspect.rs` | shared, own lines | Publish's defer branch, the mark step, the lease-end reconciliation and its stamps, the outcome types, the lease view's marks, the docs and doctests |
@@ -990,7 +989,7 @@ wraps the list, and `\back,` keeps it from matching the corrected "ack, nack, re
 revive". `CHANGELOG.md` keeps released history, so step 7 checks its lines by hand.
 The placeholder line was widened at step 3 to what
 `rg -n 'first open question|placeholder|open.question.1\b'` found over `crates`, `docs`
-(decisions excluded) and `loadgen`; at `25cdbea` it matches 26 lines, so it can fire.
+(decisions excluded) and `loadgen`; at `25cdbea` it matches 24 lines, so it can fire.
 It leaves out the general uses of "placeholder" (the documentation contract, the
 how-to's template names, the walk's placeholder id and the tag legend) and the dated
 note that closes question 1. The catalog line selects the rows, then takes every
@@ -1224,9 +1223,10 @@ adopted them. Decided before any test:
 - **The walk's split.** The model moves to `crates/libpachinko/tests/queue/walk/model.rs`; `free` becomes
   `freed`, `Turn.settled` goes, and the model stops touching on stale.
 - The tests to flip and add, the new scenarios from S078, and the handbook lines are those of steps 5 and 7.
-  Files outside Files touched: decision 0020 and its index and manifest entries,
-  `docs/operations/troubleshooting.md`, `walk/model.rs` and `http/lease_read.rs`, each added to Files touched at
-  the step that needed it.
+  Files outside Files touched: decision 0020 and its index and manifest entries, `walk/model.rs`,
+  `http/lease_read.rs` and `docs/project/purpose-and-scope.md`, each added to Files touched at the step that
+  needed it. `docs/operations/troubleshooting.md` was listed at step 1 and then left alone: its `equal_rank`
+  sentence never called the refusal a placeholder.
 
 ### The specification for the step-1 refinements, and T35-3 (step 4)
 
@@ -1377,6 +1377,10 @@ tagged. The scenarios run S001 to S092.
 `version()`. Against `25cdbea`, before this ticket's code (exit 100, advisory before 1.0):
 
 ```text
+--- failure enum_struct_variant_field_added: pub enum struct variant field added ---
+  field mark of variant RecordStatus::Held
+  field nacked_at of variant RecordStatus::Held
+  field deferred_position of variant RecordStatus::Held
 --- failure enum_variant_missing: pub enum variant removed or renamed ---
   variant RecordStatus::Deferred
   variant SettleOutcome::Settled
@@ -1523,16 +1527,18 @@ and its last line goes to the maintainer with the hand-back, since a commit cann
 - The W3 figures in decision 0019 were measured with the ack removing its record; the
   cost moves to the lease's end. A decision record is history and is not edited;
   whether to re-measure is the maintainer's.
-- `CHANGELOG.md` says "76 scenarios" where `docs/reference/testing.md` says 77; the
-  mismatch predates this ticket and step 7 corrects it with the new count.
+- **Resolved: the scenario count.** `CHANGELOG.md` said "76 scenarios" where
+  `docs/reference/testing.md` said 77; both now say 93 (step 7 and T35-4).
 - T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, and that merge is
   in this branch at `b5d4a83`. Its inherited items were settled first: the maintainer
   accepted its out-of-scope edits as recorded and had one §14 round run over `2681bd6`
   (T32's Close-out, decisions 1 and 2). `wave-2-tickets` is not yet in `main`; when it
   lands there is the maintainer's.
-- `docs/explanation/prior-art.md` still counts the closed questions as at T31: :229-230
-  say questions 10 and 11 came later, and :415 names "the one open question that is no
-  longer in the module", stale since `a338355`. Step 7 corrects them.
+- **Resolved: the closed questions in `docs/explanation/prior-art.md`**, counted as at
+  T31 until step 7 corrected them.
+- No test proves that `end_lease` visits only the held records: the store's unit test
+  checks the result, not the records visited. The bound rests on `MemoryRecords`
+  walking its held index, which T35-4 and the final review confirmed by reading.
 - **Resolved: the qsketch lines**, read again on 2026-11-16 and right (hand-back, step 1).
 - T32's Open points that this ticket inherits or leaves, as T32's ticket records them
   at its merge:
