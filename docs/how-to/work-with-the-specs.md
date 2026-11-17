@@ -61,7 +61,7 @@ a fresh suite with `propagate`.
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-carries eight today, listed at its end; each marks a decision the maintainer has not
+carries ten today, listed at its end; each marks a decision the maintainer has not
 made, and none is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.
@@ -72,7 +72,7 @@ made, and none is permission to invent an answer in code.
 The module numbers its questions in order, and the numbers do not compact: question 8,
 a late action before its lapse is processed, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), and a scenario
-tagged `oq:9` keeps its tag. The eight that remain:
+tagged `oq:9` keeps its tag. The ten that remain:
 
 - Question 1, equal-rank publishes: an equal rank with a different payload for one key.
 - Question 2, who reads the superseded and dead-letter queues, and what an entry must
@@ -83,6 +83,9 @@ tagged `oq:9` keeps its tag. The eight that remain:
 - Question 6, a new pocket jumping the queue.
 - Question 7, reviving a parked pocket other than by a publish.
 - Question 9, a key published again under the lease that removed its record.
+- Question 10, a supersede of a held record shedding the version the consumer still
+  holds.
+- Question 11, a stale publish reviving a parked pocket.
 
 ## Tooling
 

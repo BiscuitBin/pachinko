@@ -105,9 +105,10 @@ sequenceDiagram
 ```
 
 A pocket whose lease ends with no records left goes idle until a publish into it, and a
-pocket whose lease lapses three times in a row (by default) parks until a publish into it
-is accepted. Expiry runs on a sweep, so a late action the service applies before the
-lapse is not refused for being late; its other checks still apply
+pocket whose lease lapses three times (by default), with no ack, release or revival in
+between, parks until a publish into it is accepted. Expiry runs on a sweep, so a late
+action the service applies before the lapse is not refused for being late; its other
+checks still apply
 ([decision 0019](docs/decisions/0019-service-runtime-tokio-and-http.md)). The
 [HTTP API](docs/reference/http-api.md) has every route and reply, and the specification,
 [`docs/specs/pachinko.allium`](docs/specs/pachinko.allium), decides the behaviour.

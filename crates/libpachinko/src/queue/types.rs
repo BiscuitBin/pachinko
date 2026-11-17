@@ -165,7 +165,8 @@ pub enum PocketStatus {
     Leased,
     /// No records.
     Idle,
-    /// Set aside after consecutive lease expiries, until a publish revives it.
+    /// Set aside after `max_consecutive_expiries` lease expiries with no ack, release
+    /// or revive between them, until a publish revives it.
     Parked,
 }
 

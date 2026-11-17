@@ -1,5 +1,6 @@
 //! Ack and nack: `AckSettlesRecord`, `AckDefersNewerVersion`, `NackSettlesRecord`
-//! and `NackDefersNewerVersion`.
+//! and `NackDefersNewerVersion`. An ack also resets its pocket's
+//! consecutive-expiry count; a nack leaves it.
 
 use super::Queue;
 use super::types::{DeadLetter, SettleOutcome};
@@ -27,7 +28,8 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// newer version arrived while it was held, the record is deferred at a fresh
     /// position and pulled again only once the lease ends
     /// (`AckDefersNewerVersion`, [`SettleOutcome::Deferred`]). Either way the
-    /// lease's `expires_at` moves to `now + lease_ttl`.
+    /// lease's `expires_at` moves to `now + lease_ttl` and the pocket's
+    /// consecutive-expiry count resets to 0.
     ///
     /// # Errors
     ///
@@ -63,12 +65,14 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         lease: LeaseId,
         record_key: &RecordKey,
     ) -> Result<SettleOutcome, LeaseActionError> {
-        self.settle_held(consumer_id, lease, record_key)
-            .map(|(outcome, _)| outcome)
+        let (outcome, settled) = self.settle_held(consumer_id, lease, record_key)?;
+        self.pockets.reset_expiries(&settled.pocket_key);
+        Ok(outcome)
     }
 
-    /// `Nack` of `record_key` under `lease`: as [`Queue::ack`], and the held
-    /// version becomes a dead letter stamped `nacked_at = now` and
+    /// `Nack` of `record_key` under `lease`: settles as [`Queue::ack`] does but
+    /// leaves the pocket's consecutive-expiry count, and the held version becomes
+    /// a dead letter stamped `nacked_at = now` and
     /// `expires_at = now + dead_letter_ttl`, kept beside the superseded records
     /// (`NackSettlesRecord`, `NackDefersNewerVersion`). The record is never handed
     /// out again under this lease.

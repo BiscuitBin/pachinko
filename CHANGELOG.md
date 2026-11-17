@@ -35,6 +35,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   release processed after its lease's `expires_at` but before the lapse succeeds. The
   root module keeps eight open questions, and decision 0019 confirms its five
   configuration defaults for the MVP.
+- `Queue::ack` resets its pocket's consecutive-expiry count, so only
+  `max_consecutive_expiries` lapses with no intervening ack, release or revive park a
+  pocket; lapses before an ack no longer count toward it. A nack, renew or pull leaves
+  the count. The specification gains open questions 10 and 11, ten in all, and says that
+  a pull within a lease extends it on an empty batch.
 
 ### Added
 
@@ -51,7 +56,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   has passed, in the time of the leases due rather than active, and reports them in
   `TickReport` with the superseded records and dead letters it decayed. A lapse keeps a
   pocket with records at the front, idles an empty one, and parks one after
-  `max_consecutive_expiries` lapses in a row, until a publish revives it.
+  `max_consecutive_expiries` lapses with no ack, release or revive between them, until
+  a publish revives it.
 - The lease actions: `Queue::ack`, `Queue::nack`, `Queue::renew` and `Queue::release`,
   each fenced to the lease it names and refusing, in rule order, with
   `LeaseActionError` (`UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`,
@@ -127,6 +133,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `just fix` repairs them; the trailing-whitespace fixer leaves the Markdown under
   `tickets/` alone.
 - CI runs the load generator's unit tests in a `loadgen` job, one of `check`'s `needs`.
+- An ack over HTTP resets the pocket's count of consecutive lapses that
+  `--max-consecutive-expiries` measures; a nack does not.
 
 [libpachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
 [pachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
