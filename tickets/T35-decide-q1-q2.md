@@ -641,8 +641,12 @@ This ticket owns:
    stop again.
 2. **The worktree.** The branch `ticket/t35-decide-q1-q2` and its worktree exist,
    stacked on `ticket/t32-spec-follow-up` at `62efe41`, with the specification at
-   `a338355`. Once T32 has merged, `git fetch origin` (network, authorised by this step)
-   and merge `origin/main` into the branch (`CONVENTIONS.md` §11). In a fresh worktree
+   `a338355`. T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, not
+   `main`, which stands in for `main` as the merge target and the pull request base, as
+   it did for T32 and T34; `origin/wave-2-tickets` was merged into the branch at
+   `b5d4a83` (Hand-back notes). Before any later merge, `git fetch origin` (network,
+   authorised by this step) and merge `origin/wave-2-tickets` (`CONVENTIONS.md` §11), as
+   T32 did. In a fresh worktree
    run `just initialize` (network, authorised by this step). Run `just check` before any
    edit and quote its last line as the baseline for the remaining steps.
 3. **The plan.** Use the `plan-change` skill. Read the whole module and
@@ -742,14 +746,16 @@ This ticket owns:
    valid fixes; two rounds at most.
 9. **Review, merge and gate.** Use the `review-change` skill over the diff, then the
    `project-check` skill: `just check`, with `fix-quality` for any failing recipe. Run
-   `git fetch origin` (network, authorised by this step) and merge `origin/main`
-   (`CONVENTIONS.md` §11); `Cargo.lock` is regenerated with `just lock` (network,
+   `git fetch origin` (network, authorised by this step) and merge
+   `origin/wave-2-tickets` (step 2, `CONVENTIONS.md` §11); `Cargo.lock` is regenerated
+   with `just lock` (network,
    authorised by this step) if the merge touched it. Rerun the Verification block at the
    merge commit and requote it. Set `status: done` and T35's Status cell in
    `tickets/README.md`, and commit with the hand-back notes, each quoted output headed
    by the commit it ran at. **Authorisation required: push and open a pull request.**
-   Stop and ask. Merging to `main` runs `pages.yml`, which deploys the API reference
-   (decision 0013), so the merge is the maintainer's.
+   Stop and ask. The pull request's base is `wave-2-tickets`, and its merge is the
+   maintainer's; `pages.yml` deploys the API reference only on a push to `main`
+   (decision 0013), which happens when `wave-2-tickets` itself merges there.
 
 ## Acceptance criteria
 
@@ -780,7 +786,7 @@ This ticket owns:
   reports at or above 90% of lines over `crates/*/src/**`; `just effects` passes; the
   `just semver` report is quoted.
 - Each adversarial review in Steps ran, and every valid finding is fixed or handed back.
-- `just check` is green at the commit that merges `origin/main`, and
+- `just check` is green at the commit that merges `origin/wave-2-tickets`, and
   `git status --short` prints nothing.
 
 ## Verification
@@ -918,6 +924,28 @@ every rule that assigns a position advances the counter. Those three fixes are c
 text and were not reviewed again; two rounds are the limit. Neither round raised a
 concern about the decision itself.
 
+### The merge of T32's pull request 48 (step 2)
+
+`git fetch origin` exited 0 and moved `origin/wave-2-tickets` from
+`ba070546a948417948f35c0d0e10d9acddea3c14` to
+`7a7974307e60ca744af6468af23bfa5bd019384b`, the merge of pull request 48, whose parents
+are the old head and T32's final head `8f155631f6b241f051a2097fb902a6ce48486dee`. The
+old head is written in full because the spell checker reads its seven-character form
+as a misspelt word. `origin/main` (`611a86e`) does not contain the merge. T32's commits
+after `62efe41` touch none of this ticket's files. `git merge --no-ff
+origin/wave-2-tickets` made the merge commit `b5d4a83` with no conflict; it brought 17
+files and left `Cargo.lock` unchanged, so `just lock` did not run. At `b5d4a83`:
+
+```text
+$ git merge-base --is-ancestor 7a79743 HEAD && echo "7a79743 is ancestor"
+7a79743 is ancestor
+$ just check; echo "exit=$?"   (last line of its log)
+All checks passed and the worktree is unchanged.
+exit=0
+```
+
+`git status --short` then printed nothing.
+
 ### The decisions at step 1
 
 ### The plan (step 3)
@@ -949,9 +977,10 @@ concern about the decision itself.
   whether to re-measure is the maintainer's.
 - `CHANGELOG.md` says "76 scenarios" where `docs/reference/testing.md` says 77; the
   mismatch predates this ticket and step 7 corrects it with the new count.
-- This branch is stacked on T32, which is not merged. T32's own open items (its
-  out-of-scope edits, its unreviewed commit `2681bd6`, its handed-back Open points and
-  its push authorisation) are inherited and are the maintainer's to settle first.
+- T32 merged on 2026-11-16 as pull request 48 into `wave-2-tickets`, with its
+  out-of-scope edits and its commit `2681bd6`, and that merge is in this branch at
+  `b5d4a83`. `wave-2-tickets` is not yet in `main`; when it lands there is the
+  maintainer's.
 - The qsketch lines in Context were read outside this repository; step 1 asks the
   maintainer to confirm them.
 - T32's Open points that this ticket inherits or leaves: the comment above
