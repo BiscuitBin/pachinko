@@ -146,7 +146,7 @@ the queue from outside.
 | The crate root | `Queue`, its operations and the values they take and return: `Publication`, `PublishOutcome`, `PullOutcome`, `LeaseView`, `SettleOutcome`, `PocketFate`, `Lease`, `LeaseStatus`, `TickReport` |
 | The crate root | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `HeldRecord`; `Timestamp`, milliseconds since the Unix epoch; `LeaseId`, an opaque `u128` written as 32 lower-case hex digits, and `ParseLeaseIdError` |
 | The crate root | `Config`, the specification's five values with its defaults, and `Config::check` |
-| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError`; and `LeaseIdError`, a lease-id source's refusal, which `PullError::LeaseId` carries |
+| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError`; and `LeaseIdError`, which `PullError::LeaseId` carries: `Exhausted` from the lease-id source, `StillActive` from the queue |
 | The crate root | `version()` |
 | `clock` | The `Clock` trait; `FakeClock` |
 | `lease_ids` | The `LeaseIds` trait; `CountingLeaseIds` |

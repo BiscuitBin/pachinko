@@ -198,15 +198,19 @@ a 408 can come before the command reaches the owner, for example while the body 
 being read. The usual cause is an owner far behind on its commands.
 
 The same flag bounds idle connections. A connection that sends nothing for one timeout
-is closed. One that has sent bytes and is still owed a reply is closed two timeouts
-after the first byte of the request if no reply has been written, however slowly the
-rest of the request trickles in. A head that arrives within one timeout always gets its
-reply or its 408 first, because the 408 comes one timeout after the head, unless it was
-pipelined behind an earlier request (below). A head slower than one timeout gets its
-reply only if the handler writes it within two timeouts of the first byte. Otherwise the
-connection's read fails at that deadline, before the 408 is due, so a handler still
-reading the request body answers 400 `bad_request` for the failed read, and a head that
-never completes gets no reply; the connection is just closed.
+is closed. One that has sent bytes and is still owed a reply has a deadline two
+timeouts after the first byte of the request, however slowly the rest of the request
+trickles in. The deadline is checked while the server is reading the connection, and a
+head that never completes is closed at it with no reply. A head that arrives within one
+timeout always gets its reply or its 408 first, because the 408 comes one timeout after
+the head, unless it was pipelined behind an earlier request (below). A head slower than
+one timeout gets its reply if the handler writes it within two timeouts of the first
+byte. Otherwise the connection's read fails at that deadline, before the 408 is due, so
+a handler still reading the request body answers 400 `bad_request` for the failed read.
+There is one exception. Once a whole request has arrived together with bytes the client
+sent after it, the server stops reading until it has replied, so the deadline is not
+checked. That request is bounded by its handler instead, and gets its reply or its 408
+within one timeout of its head, under three timeouts after its first byte.
 
 Any write restarts the deadline, a `100 Continue` included: a request that sent
 `Expect: 100-continue` is timed afresh from that interim reply, so its handler can still
@@ -214,7 +218,8 @@ answer 408 while it waits for the body. The deadline belongs to the connection, 
 each request. A pipelined request whose first bytes arrived before the previous reply
 was written is timed from that write: the connection is closed if nothing more arrives
 within one timeout of it, or two timeouts after the next byte that does, so within three
-timeouts of the previous reply. Such a request can also lose its 408: one whose head had
+timeouts of the previous reply, or four if its whole head arrives with bytes after it
+(above). Such a request can also lose its 408: one whose head had
 arrived in full before the previous reply was written, and whose body has not arrived a
 timeout after that write, can be answered 400 `bad_request` for the failed read instead.
 

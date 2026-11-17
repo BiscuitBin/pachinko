@@ -404,12 +404,17 @@ struct Idle {
     /// handler writes it within two bounds of the first byte; otherwise the read
     /// fails at the deadline, before the 408 is due. What it gets instead is the
     /// handler's: one still reading the body answers 400 for the failed read. A
-    /// partial head is closed unanswered. Any write clears it, a `100 Continue`
+    /// partial head is closed unanswered. The deadline is checked only on a
+    /// pending read, and hyper stops reading once a whole request is buffered
+    /// with bytes after it, until it writes: such a request is bounded by its
+    /// handler instead, and gets its reply or its 408 within one bound of its
+    /// head, under three of its first byte. Any write clears it, a `100 Continue`
     /// included, so a head that asked for one is timed afresh from that reply and
     /// its handler can still answer 408. The instant is the connection's, not the
     /// request's: a pipelined request whose first bytes arrived before the
     /// previous reply was written is timed from that write, and is closed within
-    /// three bounds of it, one with nothing owed and two from its next byte; one
+    /// three bounds of it, one with nothing owed and two from its next byte, or
+    /// answered within four if its whole head arrives with bytes after it; one
     /// whose whole head was buffered by then can get the 400 instead of its 408. A
     /// client trickling a head holds the connection at most two bounds per
     /// request, three after a pipelined reply; no deadline at all would let it
@@ -1043,8 +1048,9 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
 
     /// Serves with a request timeout of 500 ms while a client sends the first byte
     /// of a publish's head, the rest of the head `pause` later, and never the body,
-    /// returning what `serve` returned and the reply the client read.
-    fn publish_with_a_slow_head(pause: Duration) -> (Result<(), ServeError>, String) {
+    /// returning what `serve` returned, the reply the client read, and how long
+    /// after its first byte the client read it.
+    fn publish_with_a_slow_head(pause: Duration) -> (Result<(), ServeError>, String, Duration) {
         let body = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
         let rest = format!(
             "UT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
@@ -1052,7 +1058,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             body.len()
         );
         let runtime = runtime();
-        let (served, reply) = runtime.block_on(async {
+        let (served, (reply, waited)) = runtime.block_on(async {
             let config = config(&["--request-timeout-ms", "500"]);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
@@ -1060,13 +1066,15 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             let client = tokio::task::spawn_blocking(move || {
                 let mut stream = TcpStream::connect(address).unwrap();
                 stream.set_read_timeout(Some(BOUND)).unwrap();
+                let started = Instant::now();
                 stream.write_all(b"P").unwrap();
                 std::thread::sleep(pause);
                 stream.write_all(rest.as_bytes()).unwrap();
                 let mut reply = [0; 512];
                 let read = stream.read(&mut reply).unwrap();
+                let waited = started.elapsed();
                 drop(stop);
-                String::from_utf8_lossy(&reply[..read]).into_owned()
+                (String::from_utf8_lossy(&reply[..read]).into_owned(), waited)
             });
             let queue = service_queue(&config).unwrap();
             let (lifecycle, ticks) = Lifecycle::new(&config);
@@ -1078,7 +1086,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
                 .expect("serve returned within the bound")
         });
         drop(runtime);
-        (served, reply)
+        (served, reply, waited)
     }
 
     #[test]
@@ -1087,7 +1095,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
         // the handler overruns waiting for it: its 408 one bound after the head
         // (about 600 ms) comes before the idle bound's cut, two bounds after the
         // first byte (1000 ms).
-        let (served, reply) = publish_with_a_slow_head(Duration::from_millis(100));
+        let (served, reply, _) = publish_with_a_slow_head(Duration::from_millis(100));
         assert!(
             reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
             "{reply:?}"
@@ -1101,12 +1109,19 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
         // The head ends after the bound (about 750 ms), and the body never comes: the
         // idle bound fails the handler's body read two bounds after the first byte
         // (1000 ms), before its 408 would come one bound after the head (1250 ms).
-        let (served, reply) = publish_with_a_slow_head(Duration::from_millis(750));
+        let (served, reply, waited) = publish_with_a_slow_head(Duration::from_millis(750));
         assert!(
             reply.starts_with("HTTP/1.1 400 Bad Request\r\n"),
             "{reply:?}"
         );
         assert!(reply.contains(r#""error":"bad_request""#), "{reply:?}");
+        // A deadline from the head's last byte could fail the body read no sooner
+        // than two bounds after the client wrote it (1750 ms), however the threads
+        // were scheduled, so a 400 before then shows the deadline from the first.
+        assert!(
+            waited >= Duration::from_millis(990) && waited < Duration::from_millis(1700),
+            "answered after {waited:?}, not at two bounds from the first byte"
+        );
         assert_eq!(served, Ok(()));
     }
 
