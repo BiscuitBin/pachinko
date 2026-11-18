@@ -32,14 +32,42 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   fails on `tests/testing_feature.rs`, where it used to pass with the integration suites
   compiled to nothing.
 - The specification closes open question 8 by decision 0019: a pull, ack, nack, renew or
-  release processed after its lease's `expires_at` but before the lapse succeeds. The
-  root module keeps eight open questions, and decision 0019 confirms its five
-  configuration defaults for the MVP.
-- `Queue::ack` resets its pocket's consecutive-expiry count, so only
-  `max_consecutive_expiries` lapses with no intervening ack, release or revive park a
-  pocket; lapses before an ack no longer count toward it. A nack, renew or pull leaves
-  the count. The specification gains open questions 10 and 11, ten in all, and says that
-  a pull within a lease extends it on an empty batch.
+  release processed after its lease's `expires_at` but before the lapse succeeds, and
+  decision 0019 confirms its five configuration defaults for the MVP.
+- `Queue::ack` and `Queue::nack` reset their pocket's consecutive-expiry count, so only
+  `max_consecutive_expiries` lapses with no intervening ack, nack, release or revive park
+  a pocket; lapses before an ack or a nack no longer count toward it. A renew or pull
+  leaves the count, and a repeated ack or nack finds it at zero already. The
+  specification says that a pull within a lease extends it on an empty batch.
+- An ack or a nack marks its held record and removes nothing. `SettleOutcome` is `Acked`
+  or `Nacked`, replacing `Settled` and `Deferred`; a repeat of the first mark answers as
+  the first did and extends the lease, and the other mark is refused with the new
+  `LeaseActionError::MarkConflict`, checked after `RecordNotHeld`. The record stays in
+  the lease's held set, at the version handed out, until the lease ends, and
+  `LeaseView::records` lists each held record as a new `MarkedRecord` with its new
+  `Mark`. A release or a lapse reconciles every held record by its mark: an unsettled
+  one is queued again at its position, an acked version is consumed, and a nacked one
+  becomes a `DeadLetter` only then, decaying `dead_letter_ttl` after the lease's end.
+  Every entry one lease end creates is stamped from that end and comes out smallest held
+  position first. Decision 0020 records why.
+- A supersede never sheds a held version. A publish onto a held key answers
+  `Superseded` and waits behind the held version at a fresh arrival position, a still
+  higher publish replaces and sheds only that waiting version, and the lease's end
+  queues it: at its arrival position behind an acked or nacked version, or at the held
+  version's position behind an unsettled one, which is then a superseded record. A key
+  acked or nacked under a lease is not pullable again under it.
+- A stale publish no longer touches its pocket, so a parked pocket stays parked with its
+  count. `PublishError::EqualRank` is a decided refusal: its message says a publish at
+  the stored rank is rejected and changes nothing, and no longer calls it a placeholder.
+  The specification closes open questions 1 and 9, answers the two the wave's code
+  review raised, a supersede shedding a held version and a stale publish reviving a
+  parked pocket, and keeps six open questions.
+- The store seam: `PocketRecords` loses `settle`, `defer` and `free_held` and gains
+  `defer_behind_held`, `mark`, `held`, which lists the `MarkedRecord`s, and `end_lease`,
+  which applies the six lease-end rows and returns the new `records::EndedVersion`s.
+  `RecordStatus::Held` carries the mark, the nack's time and the deferred version's
+  arrival position, and `RecordStatus::Deferred` is gone. `check_contract` pins the new
+  steps.
 
 ### Added
 
@@ -48,23 +76,23 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   tick, each at 10, 1,000 and 100,000 pockets in ops per second, one op a library call;
   `just bench` runs them by hand, never in CI or the gate.
 - The invariant walk: a seeded proptest walk over every queue trigger that predicts each
-  step's outcome and post-state from the rules, checks all 25 invariants and every
+  step's outcome and post-state from the rules, checks all 35 invariants and every
   declared transition after every step, and proves its generator reaches every state
   and outcome; and the scenario catalog in the testing reference, mapping each of the
-  76 scenarios to the test that pins it.
+  93 scenarios to the test that pins it.
 - Lease expiry and decay: `Queue::tick` lapses every active lease whose `expires_at`
   has passed, in the time of the leases due rather than active, and reports them in
   `TickReport` with the superseded records and dead letters it decayed. A lapse keeps a
   pocket with records at the front, idles an empty one, and parks one after
-  `max_consecutive_expiries` lapses with no ack, release or revive between them, until
-  a publish revives it.
+  `max_consecutive_expiries` lapses with no ack, nack, release or revive between them,
+  until a publish that adds or raises a record revives it.
 - The lease actions: `Queue::ack`, `Queue::nack`, `Queue::renew` and `Queue::release`,
   each fenced to the lease it names and refusing, in rule order, with
   `LeaseActionError` (`UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`,
-  `RecordNotHeld`); `SettleOutcome` for a settled or deferred record, `PocketFate` for a
-  requeued or idled pocket, and `DeadLetter` for a nacked payload kept beside the
-  superseded records. An ended lease leaves the registry, and a publish revives an idle
-  pocket at the back.
+  `RecordNotHeld`, `MarkConflict`); `SettleOutcome` for an acked or nacked record,
+  `PocketFate` for a requeued or idled pocket, and `DeadLetter` for a nacked version
+  kept beside the superseded records once its lease ends. An ended lease leaves the
+  registry, and a publish revives an idle pocket at the back.
 - The library tracer: `Queue` over a record store, a clock and a lease-id source, with
   publisher and consumer joins, publish (new pocket, new key, supersede, stale shed),
   pull (claim the front pocket, pull within a lease, no pocket available) and the lease
@@ -133,8 +161,17 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   `just fix` repairs them; the trailing-whitespace fixer leaves the Markdown under
   `tickets/` alone.
 - CI runs the load generator's unit tests in a `loadgen` job, one of `check`'s `needs`.
-- An ack over HTTP resets the pocket's count of consecutive lapses that
-  `--max-consecutive-expiries` measures; a nack does not.
+- An ack or a nack over HTTP resets the pocket's count of consecutive lapses that
+  `--max-consecutive-expiries` measures.
+- An ack answers 200 `{"outcome": "acked"}` and a nack `{"outcome": "nacked"}`, replacing
+  `settled` and `deferred`; a repeat of the first mark answers the same, and the other
+  mark is refused with 409 `mark_conflict`. Each record on the lease read,
+  `GET /consumers/{consumer_id}/lease`, carries its `mark`, `unsettled`, `acked` or
+  `nacked`, and an acked or nacked record stays there until the lease ends. A nacked
+  record becomes a dead letter only when its lease is released or lapses. A publish onto
+  a held key answers `superseded` while the version the consumer holds stays held.
+- A stale publish leaves a parked pocket parked with its count, and the `equal_rank`
+  message no longer calls the refusal a placeholder.
 
 [libpachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/
 [pachinko-unreleased]: https://github.com/BiscuitBin/pachinko/commits/main/

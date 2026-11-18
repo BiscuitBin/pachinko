@@ -53,21 +53,23 @@ An `open question` records a product decision nobody has made yet. An unwritten
 gap is easily filled by whoever writes the code first; a written one stays visible
 until someone entitled to decide answers it.
 
-The root carries ten: equal-rank publishes, who reads the superseded and
-dead-letter queues, capacity beyond shedding the decaying queues, routing by pool
-or priority, an adaptive lease TTL, a pocket jumping the queue, reviving a parked
-pocket other than by a publish, a key published again under the lease that removed
-its record, a supersede of a held record shedding the version the consumer still
-holds, and a stale publish reviving a parked pocket. Seven mark decisions the
-maintainer declined to make in the elicitation, question 9 a gap that writing and
-reviewing the rules exposed, and questions 10 and 11 gaps that the wave's code review
-exposed after the implementation. The eighth by number, a consumer's action processed
-after its lease's time has passed but before the lapse, was closed by
+The root carries six: who reads the superseded and dead-letter queues, capacity
+beyond shedding the decaying queues, routing by pool or priority, an adaptive lease
+TTL, a pocket jumping the queue, and reviving a parked pocket other than by a publish. All six mark decisions the maintainer declined to
+make in the elicitation. Five numbers are closed, and the surviving questions keep
+theirs. The eighth, a consumer's action processed after its lease's time has passed
+but before the lapse, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md): such an action
-succeeds, and the surviving questions keep their numbers. Where the rules' reading
-matters meanwhile, the question says what it is, and no code answers one. A change
-that reaches an unanswered decision adds a question rather than guessing. A low count
-is normal for a settled module, but it is not a reason to hide uncertainty.
+succeeds. The maintainer closed questions 9 and 10 on 2026-11-13, a key published
+again under the lease that acked or nacked it and a supersede shedding the version a
+consumer still holds, by keeping a record held until its lease ends
+([decision 0020](../decisions/0020-held-set-until-lease-ends.md) records why). On
+2026-11-16 they closed question 11, a gap the wave's code review exposed: a stale
+publish does not touch its pocket, so it no longer revives a parked one. The same day they closed
+question 1: an equal-rank publish is rejected, as the rules had read it. Where the
+rules' reading matters meanwhile, the question says what it is, and no code answers
+one. A change that reaches an unanswered decision adds a question rather than guessing.
+A low count is normal for a settled module, but it is not a reason to hide uncertainty.
 
 ## What a specification is not
 

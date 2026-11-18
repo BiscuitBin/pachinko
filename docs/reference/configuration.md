@@ -36,10 +36,10 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | --- | --- | --- |
 | `--listen` | `127.0.0.1:8080` | The address the HTTP listener binds; loopback unless set. Port 0 picks a free port, which the `listening on <address>` line names. |
 | `--lease-ttl-ms` | `300000` (5 minutes) | `lease_ttl`: how long a lease lasts after its claim or its consumer's last pull. |
-| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many lease expiries, with no ack, release or revive between them, park a pocket; at least 1. |
+| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many lease expiries, with no ack, nack, release or revive between them, park a pocket; at least 1. |
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
-| `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
+| `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept, from the end of the lease that nacked it. |
 | `--max-batch-rows` | `1000` | The most rows one batch publish carries; more is 413 `too_many_rows`. |
 | `--max-payload-bytes` | `1048576` (1 MiB) | The largest decoded payload of a single publish or a batch row; more is 413 `payload_too_large`. |
 | `--max-body-bytes` | `16777216` (16 MiB) | The largest request body any route reads; more is 413 `body_too_large`. At least the minimum above. |

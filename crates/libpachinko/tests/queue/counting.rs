@@ -7,9 +7,9 @@
 
 use std::cell::RefCell;
 
-use libpachinko::records::{MemoryRecords, PocketRecords, Position, RecordView};
+use libpachinko::records::{EndedVersion, MemoryRecords, PocketRecords, Position, RecordView};
 use libpachinko::testing::{InspectRecords, check_contract};
-use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
+use libpachinko::{Mark, MarkedRecord, Payload, Rank, RecordKey, Timestamp};
 
 /// One call: the step's name and the record keys the pocket held when it ran.
 pub(crate) type Call = (&'static str, Vec<String>);
@@ -74,24 +74,30 @@ impl PocketRecords for Counting {
         self.inner.supersede(key, rank, payload)
     }
 
+    fn defer_behind_held(
+        &mut self,
+        key: &RecordKey,
+        rank: Rank,
+        payload: Payload,
+        position: Position,
+    ) {
+        self.log("defer_behind_held");
+        self.inner.defer_behind_held(key, rank, payload, position);
+    }
+
     fn hold_oldest(&mut self, limit: usize) -> Self::Batch {
         self.log("hold_oldest");
         self.inner.hold_oldest(limit)
     }
 
-    fn settle(&mut self, key: &RecordKey) -> Option<HeldRecord> {
-        self.log("settle");
-        self.inner.settle(key)
+    fn mark(&mut self, key: &RecordKey, mark: Mark, at: Timestamp) {
+        self.log("mark");
+        self.inner.mark(key, mark, at);
     }
 
-    fn defer(&mut self, key: &RecordKey, position: Position) -> Option<HeldRecord> {
-        self.log("defer");
-        self.inner.defer(key, position)
-    }
-
-    fn free_held(&mut self) -> usize {
-        self.log("free_held");
-        self.inner.free_held()
+    fn end_lease(&mut self) -> Vec<EndedVersion> {
+        self.log("end_lease");
+        self.inner.end_lease()
     }
 
     fn record_count(&self) -> usize {
@@ -99,7 +105,7 @@ impl PocketRecords for Counting {
         self.inner.record_count()
     }
 
-    fn held(&self) -> Vec<HeldRecord> {
+    fn held(&self) -> Vec<MarkedRecord> {
         self.log("held");
         self.inner.held()
     }

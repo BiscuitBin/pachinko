@@ -23,9 +23,8 @@ use axum::{Json, Router};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use libpachinko::{
-    ConsumerId, HeldRecord, JoinError, LeaseActionError, LeaseId, LeaseView, Payload, PocketKey,
-    Publication, PublishError, PublishOutcome, PublisherId, PullError, PullOutcome, Rank,
-    RecordKey,
+    ConsumerId, HeldRecord, JoinError, LeaseActionError, LeaseId, Payload, PocketKey, Publication,
+    PublishError, PublishOutcome, PublisherId, PullError, PullOutcome, Rank, RecordKey,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -35,6 +34,7 @@ use crate::ServeConfig;
 use crate::actor::{QueueHandle, Readiness, Stopped};
 
 mod batch;
+mod lease_read;
 mod leases;
 
 /// What every handler shares: the handle to the queue's owner, the readiness
@@ -100,7 +100,7 @@ fn api() -> Router<AppState> {
             post(batch::publish_batch),
         )
         .route("/consumers/{consumer_id}/pull", post(pull))
-        .route("/consumers/{consumer_id}/lease", get(lease))
+        .route("/consumers/{consumer_id}/lease", get(lease_read::lease))
         .route("/leases/{lease_id}/ack", post(leases::ack))
         .route("/leases/{lease_id}/nack", post(leases::nack))
         .route("/leases/{lease_id}/renew", post(leases::renew))
@@ -141,11 +141,11 @@ pub(crate) enum Refusal {
     /// A pull or lease read named a consumer that has not joined.
     #[error("consumer {0} has not joined")]
     UnknownConsumer(ConsumerId),
-    /// A publish carried the stored record's rank: the placeholder for the
-    /// specification's first open question, not a decision.
+    /// A publish carried the stored record's rank, which no publish rule covers:
+    /// the specification rejects it, and it changes nothing.
     #[error(
-        "rank {rank} equals the stored rank of {record_key} in pocket {pocket_key}; no rule \
-        covers an equal rank (open question 1), so this refusal is a placeholder"
+        "rank {rank} equals the stored rank of {record_key} in pocket {pocket_key}; a publish \
+        at the stored rank is rejected and changes nothing"
     )]
     EqualRank {
         /// The pocket published into.
@@ -164,6 +164,10 @@ pub(crate) enum Refusal {
     /// An ack or nack named a record the lease's pocket does not hold.
     #[error("record {0} is not held under this lease")]
     RecordNotHeld(RecordKey),
+    /// An ack named a record already nacked under the lease, or a nack one already
+    /// acked.
+    #[error("record {0} is already marked the other way under this lease")]
+    MarkConflict(RecordKey),
     /// The request could not be read: a malformed body, path or payload.
     #[error("{0}")]
     BadRequest(String),
@@ -216,7 +220,8 @@ impl Refusal {
             Self::PublisherExists(_)
             | Self::ConsumerExists(_)
             | Self::EqualRank { .. }
-            | Self::LeaseNotActive(_) => StatusCode::CONFLICT,
+            | Self::LeaseNotActive(_)
+            | Self::MarkConflict(_) => StatusCode::CONFLICT,
             Self::UnknownPublisher(_) | Self::UnknownConsumer(_) | Self::RecordNotHeld(_) => {
                 StatusCode::NOT_FOUND
             }
@@ -241,6 +246,7 @@ impl Refusal {
             Self::LeaseNotActive(_) => "lease_not_active",
             Self::LeaseNotYours(_) => "lease_not_yours",
             Self::RecordNotHeld(_) => "record_not_held",
+            Self::MarkConflict(_) => "mark_conflict",
             Self::BadRequest(_) => "bad_request",
             Self::NotReady(_) => "not_ready",
             Self::TooManyRows { .. } => "too_many_rows",
@@ -300,6 +306,7 @@ impl From<LeaseActionError> for Refusal {
             LeaseActionError::LeaseNotActive(id) => Self::LeaseNotActive(id),
             LeaseActionError::LeaseNotYours(id) => Self::LeaseNotYours(id),
             LeaseActionError::RecordNotHeld(key) => Self::RecordNotHeld(key),
+            LeaseActionError::MarkConflict(key) => Self::MarkConflict(key),
             other => unmapped(&other),
         }
     }
@@ -438,24 +445,6 @@ enum PullReply {
     NoPocket,
 }
 
-/// The lease read's reply: the lease's pocket, `expires_at` and held records.
-#[derive(Debug, Serialize)]
-struct LeaseReply {
-    pocket_key: String,
-    expires_at: u64,
-    records: Vec<RecordReply>,
-}
-
-impl From<LeaseView> for LeaseReply {
-    fn from(view: LeaseView) -> Self {
-        Self {
-            pocket_key: view.pocket_key.as_str().to_owned(),
-            expires_at: view.expires_at.as_millis(),
-            records: view.records.into_iter().map(RecordReply::from).collect(),
-        }
-    }
-}
-
 /// The publish outcome's name on the wire.
 fn publish_outcome(outcome: PublishOutcome) -> Result<&'static str, Refusal> {
     match outcome {
@@ -572,20 +561,6 @@ async fn pull(
     let Path(id) = path?;
     let outcome = state.queue.pull(ConsumerId::new(id), body.limit).await??;
     Ok(Json(pull_reply(outcome)?))
-}
-
-/// `GET /consumers/{consumer_id}/lease`: 200 with the lease, or 204 when the
-/// consumer holds none.
-async fn lease(
-    State(state): State<AppState>,
-    path: Result<Path<String>, PathRejection>,
-) -> Result<Response, Refusal> {
-    let Path(id) = path?;
-    let view = state.queue.lease_view(ConsumerId::new(id)).await??;
-    Ok(view.map_or_else(
-        || StatusCode::NO_CONTENT.into_response(),
-        |view| Json(LeaseReply::from(view)).into_response(),
-    ))
 }
 
 /// One `debug` line per request, after the reply: method, path, status and elapsed
@@ -846,14 +821,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn equal_rank_is_409_and_says_it_is_a_placeholder() {
+    async fn equal_rank_is_409_and_says_it_is_rejected() {
         let refusal = Refusal::EqualRank {
             pocket_key: PocketKey::new("pocket"),
             record_key: RecordKey::new("k"),
             rank: Rank::new(3),
         };
-        assert!(refusal.to_string().contains("placeholder"));
-        assert!(refusal.to_string().contains("pocket pocket"));
+        assert_eq!(
+            refusal.to_string(),
+            "rank 3 equals the stored rank of k in pocket pocket; a publish at the stored rank \
+            is rejected and changes nothing"
+        );
         assert_answered(refusal, StatusCode::CONFLICT, "equal_rank").await;
     }
 
@@ -873,6 +851,12 @@ mod tests {
     async fn record_not_held_is_404() {
         let refusal = Refusal::RecordNotHeld(RecordKey::new("k"));
         assert_answered(refusal, StatusCode::NOT_FOUND, "record_not_held").await;
+    }
+
+    #[tokio::test]
+    async fn mark_conflict_is_409() {
+        let refusal = Refusal::MarkConflict(RecordKey::new("k"));
+        assert_answered(refusal, StatusCode::CONFLICT, "mark_conflict").await;
     }
 
     #[tokio::test]
@@ -959,12 +943,24 @@ mod tests {
         assert_answered(refusal, StatusCode::SERVICE_UNAVAILABLE, "not_ready").await;
     }
 
+    /// Each library refusal converted equals its expected refusal, and none hits
+    /// the forced arm.
+    fn assert_mapped(cases: impl IntoIterator<Item = (Refusal, Refusal)>) {
+        for (converted, expected) in cases {
+            assert_eq!(converted, expected);
+            assert_ne!(
+                converted.code(),
+                "not_ready",
+                "{converted:?} hit the forced arm"
+            );
+        }
+    }
+
     #[test]
-    fn every_library_refusal_has_its_own_mapping() {
+    fn every_join_publish_and_pull_refusal_has_its_own_mapping() {
         let (p, c) = (PublisherId::new("p"), ConsumerId::new("c"));
         let (pocket, key, rank) = (PocketKey::new("q"), RecordKey::new("k"), Rank::new(1));
-        let lease = LeaseId::from_u128(7);
-        let cases = [
+        assert_mapped([
             (
                 Refusal::from(JoinError::PublisherExists(p.clone())),
                 Refusal::PublisherExists(p.clone()),
@@ -993,8 +989,16 @@ mod tests {
             ),
             (
                 Refusal::from(PullError::UnknownConsumer(c.clone())),
-                Refusal::UnknownConsumer(c.clone()),
+                Refusal::UnknownConsumer(c),
             ),
+        ]);
+    }
+
+    #[test]
+    fn every_lease_action_refusal_has_its_own_mapping() {
+        let c = ConsumerId::new("c");
+        let lease = LeaseId::from_u128(7);
+        assert_mapped([
             (
                 Refusal::from(LeaseActionError::UnknownConsumer(c.clone())),
                 Refusal::UnknownConsumer(c),
@@ -1011,15 +1015,11 @@ mod tests {
                 Refusal::from(LeaseActionError::RecordNotHeld(RecordKey::new("h"))),
                 Refusal::RecordNotHeld(RecordKey::new("h")),
             ),
-        ];
-        for (converted, expected) in cases {
-            assert_eq!(converted, expected);
-            assert_ne!(
-                converted.code(),
-                "not_ready",
-                "{converted:?} hit the forced arm"
-            );
-        }
+            (
+                Refusal::from(LeaseActionError::MarkConflict(RecordKey::new("m"))),
+                Refusal::MarkConflict(RecordKey::new("m")),
+            ),
+        ]);
     }
 
     /// Sends `request` to `address` and reads the reply until the server closes.

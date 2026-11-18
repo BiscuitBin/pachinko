@@ -6,12 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::types::{
-    PocketFate, PocketStatus, Publication, PublishOutcome, SettleOutcome, ShedReason,
-    SupersededRecord,
+    PocketFate, PocketStatus, Publication, PublishOutcome, ShedReason, SupersededRecord,
 };
 use crate::error::PublishError;
-use crate::ids::{HeldRecord, Payload, PocketKey, Rank, RecordKey};
-use crate::records::{PocketRecords, Position, RecordStatus};
+use crate::ids::{HeldRecord, Mark, MarkedRecord, Payload, PocketKey, Rank, RecordKey};
+use crate::records::{EndedVersion, PocketRecords, Position, RecordStatus};
 use crate::timestamp::Timestamp;
 
 /// One pocket.
@@ -56,11 +55,13 @@ const fn take_position(next_position: &mut Position) -> Position {
     position
 }
 
-/// The `PocketTouched` dispatch every publish into an existing pocket ends in. A
-/// queued or leased pocket is untouched. The idle arm is `ReviveIdlePocket`, which
-/// a release or a lapse that idles a pocket makes reachable, and the parked arm
-/// `ReviveParkedPocket`, which a lapse that parks one makes reachable: either way the pocket rejoins the order at
-/// the back with its expiry count reset.
+/// The `PocketTouched` dispatch a publish into an existing pocket that adds or
+/// raises a record ends in (`PublishNewKey`, `Supersede`,
+/// `DeferBehindHeldVersion`); a stale publish never reaches it. A queued or leased
+/// pocket is untouched. The idle arm is `ReviveIdlePocket`, which a release or a
+/// lapse that idles a pocket makes reachable, and the parked arm
+/// `ReviveParkedPocket`, which a lapse that parks one makes reachable: either way
+/// the pocket rejoins the order at the back with its expiry count reset.
 fn touch<R>(
     key: &PocketKey,
     pocket: &mut Pocket<R>,
@@ -79,9 +80,11 @@ fn touch<R>(
 }
 
 impl<R: PocketRecords> Pockets<R> {
-    /// Applies one publish: `PublishIntoNewPocket`, `PublishNewKey`, `Supersede` or
-    /// `DropStalePublish`, by their disjoint guards, each but the first ending in
-    /// the `PocketTouched` dispatch. Returns the rule taken and what it shed.
+    /// Applies one publish: `PublishIntoNewPocket`, `PublishNewKey`, `Supersede`,
+    /// `DeferBehindHeldVersion` or `DropStalePublish`, by their disjoint guards,
+    /// each of the three that add or raise a record in an existing pocket ending in
+    /// the `PocketTouched` dispatch; a stale publish leaves the pocket as it is.
+    /// Returns the rule taken and what it shed.
     ///
     /// # Errors
     ///
@@ -102,48 +105,22 @@ impl<R: PocketRecords> Pockets<R> {
             self.create(pocket_key, record_key, rank, payload);
             return Ok((PublishOutcome::Created, None));
         };
-        let (outcome, shed) = match pocket.records.lookup(&record_key) {
-            None => {
-                let position = take_position(&mut self.next_position);
-                pocket
-                    .records
-                    .insert_queued(record_key, rank, payload, position);
-                (PublishOutcome::NewKey, None)
-            }
-            Some(stored) if rank > stored.rank => {
-                let loser = pocket.records.supersede(&record_key, rank, payload);
-                let shed = loser.map(|(rank, payload)| {
-                    shed(
-                        &pocket_key,
-                        (record_key, rank, payload),
-                        ShedReason::Superseded,
-                        stamp,
-                    )
-                });
-                (PublishOutcome::Superseded, shed)
-            }
-            Some(stored) if rank < stored.rank => {
-                let shed = shed(
-                    &pocket_key,
-                    (record_key, rank, payload),
-                    ShedReason::Stale,
-                    stamp,
-                );
-                (PublishOutcome::Stale, Some(shed))
-            }
-            Some(_) => {
-                return Err(PublishError::EqualRank {
-                    key: record_key,
-                    rank,
-                });
-            }
+        let arrival = (record_key, rank, payload);
+        let (outcome, shed) = raise(pocket, &mut self.next_position, &pocket_key, arrival, stamp)?;
+        // Exhaustive, so a new outcome must say whether it touches its pocket: only
+        // a rule that adds or raises a record does (a stale publish does not).
+        let touches = match outcome {
+            PublishOutcome::Created | PublishOutcome::NewKey | PublishOutcome::Superseded => true,
+            PublishOutcome::Stale => false,
         };
-        touch(
-            &pocket_key,
-            pocket,
-            &mut self.order,
-            &mut self.next_position,
-        );
+        if touches {
+            touch(
+                &pocket_key,
+                pocket,
+                &mut self.order,
+                &mut self.next_position,
+            );
+        }
         Ok((outcome, shed))
     }
 
@@ -188,98 +165,83 @@ impl<R: PocketRecords> Pockets<R> {
             .unwrap_or_default()
     }
 
-    /// The pocket's held records, smallest position first.
-    pub(super) fn held(&self, key: &PocketKey) -> Vec<HeldRecord> {
+    /// The pocket's held records with their marks, smallest position first.
+    pub(super) fn held(&self, key: &PocketKey) -> Vec<MarkedRecord> {
         self.by_key
             .get(key)
             .map(|pocket| pocket.records.held())
             .unwrap_or_default()
     }
 
-    /// Whether the pocket holds the record `key`: the ack and nack rules' last two
-    /// guards, `exists record` and `record.status = held`.
-    pub(super) fn is_held(&self, pocket_key: &PocketKey, key: &RecordKey) -> bool {
-        self.by_key
-            .get(pocket_key)
-            .and_then(|pocket| pocket.records.lookup(key))
-            .is_some_and(|record| matches!(record.status, RecordStatus::Held { .. }))
+    /// The mark of the record `key` if the pocket holds it: the ack and nack
+    /// rules' guards `exists record` and `record.status = held`, and the mark their
+    /// last guard reads. `None` when the record is absent or queued.
+    pub(super) fn mark_of(&self, pocket_key: &PocketKey, key: &RecordKey) -> Option<Mark> {
+        let record = self.by_key.get(pocket_key)?.records.lookup(key)?;
+        match record.status {
+            RecordStatus::Held { mark, .. } => Some(mark),
+            RecordStatus::Queued => None,
+        }
     }
 
-    /// The ack and nack rules' split on a held record: with `held_rank = rank` the
-    /// record is removed (`AckSettlesRecord`, `NackSettlesRecord`); with
-    /// `held_rank < rank` it is deferred at a fresh position from `next_position`
-    /// (`AckDefersNewerVersion`, `NackDefersNewerVersion`). Returns the rule taken
-    /// and the held version, or `None`, changing nothing, when the record is not
-    /// held.
-    pub(super) fn settle(
+    /// The first mark of a held record (`AckMarksRecord`, `NackMarksRecord`): the
+    /// record is marked, with `at` as its `nacked_at` for a nack, and the pocket's
+    /// consecutive-expiry count resets to 0. A repeat never calls it, so the first
+    /// mark and its time stand.
+    pub(super) fn mark(
         &mut self,
         pocket_key: &PocketKey,
         key: &RecordKey,
-    ) -> Option<(SettleOutcome, HeldRecord)> {
-        let pocket = self.by_key.get_mut(pocket_key)?;
-        let record = pocket.records.lookup(key)?;
-        let RecordStatus::Held {
-            rank: held_rank, ..
-        } = record.status
-        else {
-            return None;
-        };
-        if held_rank == record.rank {
-            let held = pocket.records.settle(key)?;
-            return Some((SettleOutcome::Settled, held));
-        }
-        let position = take_position(&mut self.next_position);
-        let held = pocket.records.defer(key, position)?;
-        Some((SettleOutcome::Deferred, held))
-    }
-
-    /// An ack's `ensures: pocket.consecutive_expiries = 0` (`AckSettlesRecord`,
-    /// `AckDefersNewerVersion`), called once the ack has settled or deferred its
-    /// record; a nack, a renew and a pull never call it.
-    pub(super) fn reset_expiries(&mut self, pocket_key: &PocketKey) {
+        mark: Mark,
+        at: Timestamp,
+    ) {
         if let Some(pocket) = self.by_key.get_mut(pocket_key) {
+            pocket.records.mark(key, mark, at);
             pocket.consecutive_expiries = 0;
         }
     }
 
-    /// A release's pocket step: every held and deferred record back to queued at
-    /// its own position in one `free_held` (`RequeueHeldRecord`,
-    /// `RequeueDeferredRecord`); then, with records left, the pocket rejoins the
-    /// order at the back (`ReleaseRequeuesPocket`), and with none it goes idle
-    /// (`ReleaseIdlesEmptyPocket`). Either way its expiry count resets. `None`
-    /// when no such pocket exists.
-    pub(super) fn release(&mut self, pocket_key: &PocketKey) -> Option<PocketFate> {
+    /// A release's pocket step: the lease's end over every held record, by the six
+    /// `Freed` rules, in one `end_lease`; then, with records left, the pocket
+    /// rejoins the order at the back (`ReleaseRequeuesPocket`), and with none it
+    /// goes idle (`ReleaseIdlesEmptyPocket`). Either way its expiry count resets.
+    /// Returns the fate and the held versions the lease's end took out, for the
+    /// shed queues, or `None` when no such pocket exists.
+    pub(super) fn release(
+        &mut self,
+        pocket_key: &PocketKey,
+    ) -> Option<(PocketFate, Vec<EndedVersion>)> {
         let pocket = self.by_key.get_mut(pocket_key)?;
-        pocket.records.free_held();
+        let ended = pocket.records.end_lease();
         pocket.consecutive_expiries = 0;
         if pocket.records.record_count() == 0 {
             pocket.status = PocketStatus::Idle;
-            return Some(PocketFate::Idle);
+            return Some((PocketFate::Idle, ended));
         }
         pocket.status = PocketStatus::Queued;
         pocket.position = take_position(&mut self.next_position);
         self.order.insert((pocket.position, pocket_key.clone()));
-        Some(PocketFate::Queued)
+        Some((PocketFate::Queued, ended))
     }
 
     /// A lapse's pocket step, the three rules that process `LeaseLapsed` in their
-    /// order: the expiry count rises by one; every held and deferred record goes
-    /// back to queued at its own position in one `free_held` (`RequeueHeldRecord`,
-    /// `RequeueDeferredRecord`); then a pocket whose count has reached `limit`
-    /// parks (`LeaseExpiryParksPocket`), checked before its records are counted,
-    /// so an empty one parks too; else one with records rejoins the order at the
-    /// position it was claimed from, which keeps it at the front
-    /// (`LeaseExpiryKeepsPocketAtFront`); else it goes idle
-    /// (`LeaseExpiryIdlesEmptyPocket`). A pocket that is not leased is left alone.
-    pub(super) fn lapse(&mut self, pocket_key: &PocketKey, limit: u32) {
+    /// order: the expiry count rises by one; the lease's end runs over every held
+    /// record, by the six `Freed` rules, in one `end_lease`; then a pocket whose
+    /// count has reached `limit` parks (`LeaseExpiryParksPocket`), checked before
+    /// its records are counted, so an empty one parks too; else one with records
+    /// rejoins the order at the position it was claimed from, which keeps it at the
+    /// front (`LeaseExpiryKeepsPocketAtFront`); else it goes idle
+    /// (`LeaseExpiryIdlesEmptyPocket`). Returns the held versions the lease's end
+    /// took out, for the shed queues. A pocket that is not leased is left alone.
+    pub(super) fn lapse(&mut self, pocket_key: &PocketKey, limit: u32) -> Vec<EndedVersion> {
         let Some(pocket) = self.by_key.get_mut(pocket_key) else {
-            return;
+            return Vec::new();
         };
         if pocket.status != PocketStatus::Leased {
-            return;
+            return Vec::new();
         }
         pocket.consecutive_expiries = pocket.consecutive_expiries.saturating_add(1);
-        pocket.records.free_held();
+        let ended = pocket.records.end_lease();
         if pocket.consecutive_expiries >= limit {
             pocket.status = PocketStatus::Parked;
         } else if pocket.records.record_count() > 0 {
@@ -288,6 +250,7 @@ impl<R: PocketRecords> Pockets<R> {
         } else {
             pocket.status = PocketStatus::Idle;
         }
+        ended
     }
 
     /// The specification's `Queue.next_position`.
@@ -307,6 +270,66 @@ impl<R: PocketRecords> Pockets<R> {
     pub(super) fn order(&self) -> impl Iterator<Item = &(Position, PocketKey)> {
         self.order.iter()
     }
+}
+
+/// A publish into an existing pocket, by the four rules' disjoint guards on the
+/// stored rank and the record's state: a new key takes `next_position`
+/// (`PublishNewKey`); a higher rank supersedes a version nobody holds in place and
+/// sheds it (`Supersede`), or, over a held record with nothing deferred, is
+/// deferred behind the held version at a fresh position from `next_position`,
+/// shedding nothing (`DeferBehindHeldVersion`); a lower rank is shed as stale
+/// (`DropStalePublish`). The pocket's touch is the caller's.
+///
+/// # Errors
+///
+/// [`PublishError::EqualRank`] when the rank equals the stored one; nothing
+/// changes.
+fn raise<R: PocketRecords>(
+    pocket: &mut Pocket<R>,
+    next_position: &mut Position,
+    pocket_key: &PocketKey,
+    (record_key, rank, payload): (RecordKey, Rank, Payload),
+    stamp: Stamp,
+) -> Result<(PublishOutcome, Option<SupersededRecord>), PublishError> {
+    let Some(stored) = pocket.records.lookup(&record_key) else {
+        let position = take_position(next_position);
+        pocket
+            .records
+            .insert_queued(record_key, rank, payload, position);
+        return Ok((PublishOutcome::NewKey, None));
+    };
+    if rank == stored.rank {
+        return Err(PublishError::EqualRank {
+            key: record_key,
+            rank,
+        });
+    }
+    if rank < stored.rank {
+        let stale = (record_key, rank, payload);
+        let shed = shed(pocket_key, stale, ShedReason::Stale, stamp);
+        return Ok((PublishOutcome::Stale, Some(shed)));
+    }
+    if let RecordStatus::Held {
+        deferred_position: None,
+        ..
+    } = stored.status
+    {
+        let position = take_position(next_position);
+        pocket
+            .records
+            .defer_behind_held(&record_key, rank, payload, position);
+        return Ok((PublishOutcome::Superseded, None));
+    }
+    let loser = pocket.records.supersede(&record_key, rank, payload);
+    let shed = loser.map(|(rank, payload)| {
+        shed(
+            pocket_key,
+            (record_key, rank, payload),
+            ShedReason::Superseded,
+            stamp,
+        )
+    });
+    Ok((PublishOutcome::Superseded, shed))
 }
 
 /// The superseded record a `Supersede` or `DropStalePublish` sheds.

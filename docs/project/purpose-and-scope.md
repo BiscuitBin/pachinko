@@ -38,9 +38,9 @@ it looks; the module's open questions mark the decisions nobody has made.
 
 ## What it deliberately does not do
 
-- **No answer to an open question.** Equal-rank publishes, who reads the superseded and
-  dead-letter queues, capacity beyond shedding them and the other open questions in the
-  root module are the maintainer's to decide; the code answers none of them.
+- **No answer to an open question.** Who reads the superseded and dead-letter queues,
+  capacity beyond shedding them and the other open questions in the root module are the
+  maintainer's to decide; the code answers none of them.
   [Terminology](terminology.md) holds the domain's words.
 - **No persistence, authentication or TLS.** The queue lives in the service's memory and
   is lost when it stops; the HTTP surface is unauthenticated and binds loopback by

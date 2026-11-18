@@ -171,7 +171,7 @@ pub(crate) enum RowOutcome {
     /// The rule that took the row.
     Applied(PublishOutcome),
     /// The row carried the stored record's rank: the library's refusal, kept to its
-    /// row (open question 1).
+    /// row.
     EqualRank,
 }
 

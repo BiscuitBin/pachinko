@@ -6,16 +6,19 @@
 
 use libpachinko::clock::FakeClock;
 use libpachinko::lease_ids::CountingLeaseIds;
-use libpachinko::records::RecordStatus;
-use libpachinko::testing::PocketStatus;
+use libpachinko::records::{Position, RecordStatus};
+use libpachinko::testing::{PocketStatus, ShedReason};
 use libpachinko::{
-    ConsumerId, LeaseActionError, LeaseId, LeaseStatus, Payload, PocketFate, PocketKey,
+    ConsumerId, LeaseActionError, LeaseId, LeaseStatus, Mark, Payload, PocketFate, PocketKey,
     Publication, PublishError, PublishOutcome, PublisherId, PullOutcome, Queue, Rank, RecordKey,
     SettleOutcome, TickReport, Timestamp,
 };
 
 use crate::counting::{Counting, recording};
-use crate::fixture::{Fixture, T0, consumer, invariants, keys, short_lease};
+use crate::fixture::{
+    DEAD_LETTER_TTL, Fixture, SUPERSEDED_TTL, T0, consumer, held_as, invariants, keys, letter_rows,
+    shed_rows, short_lease,
+};
 
 /// The lease every test here uses, in milliseconds.
 const TTL: u64 = 10;
@@ -165,7 +168,7 @@ fn a_released_lease_never_lapses_afterwards() {
 // obligation: rule-success.LeaseExpiryKeepsPocketAtFront
 // obligation: rule-failure.LeaseExpiryParksPocket.4
 // obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.5
-// obligation: rule-success.RequeueHeldRecord
+// obligation: rule-success.RequeueUnsettledRecord
 // obligation: guarantee.ExpiryRecoversWithinTtl
 #[test]
 fn a_lapse_keeps_the_pocket_at_the_front_and_requeues_its_records() {
@@ -268,28 +271,68 @@ fn three_consecutive_lapses_park_the_pocket_and_a_publish_revives_it() {
     fixture.check();
 }
 
-// scenario: S024 (open question 11: the stale half, as the rules stand)
-// obligation: rule-failure.ReviveParkedPocket.1
+// scenario: S024
+// obligation: rule-success.ReviveParkedPocket
 #[test]
-fn a_supersede_or_a_stale_publish_revives_a_parked_pocket() {
+fn a_supersede_revives_a_parked_pocket() {
     let fixture = parked();
-    for (rank, outcome) in [(2, PublishOutcome::Superseded), (0, PublishOutcome::Stale)] {
-        let mut fork = fixture.fork();
-        let next = fork.snapshot().next_position;
-        assert_eq!(fork.publish("a", "a1", rank, "x"), Ok(outcome));
-        let pocket = fork.pocket("a");
-        assert_eq!(
-            (pocket.status, pocket.position, pocket.consecutive_expiries),
-            (PocketStatus::Queued, next, 0),
-            "{outcome:?} revives at the back"
-        );
-        assert_eq!(fork.order(), ["b", "a"]);
-        fork.check();
-    }
+    let mut fork = fixture.fork();
+    let next = fork.snapshot().next_position;
+    assert_eq!(
+        fork.publish("a", "a1", 2, "x"),
+        Ok(PublishOutcome::Superseded)
+    );
+    let pocket = fork.pocket("a");
+    assert_eq!(
+        (pocket.status, pocket.position, pocket.consecutive_expiries),
+        (PocketStatus::Queued, next, 0),
+        "a supersede revives at the back"
+    );
+    assert_eq!(fork.order(), ["b", "a"]);
+    fork.check();
     // A publish into a pocket that does not exist creates it; nothing is revived.
     let mut fork = fixture.fork();
     assert_eq!(fork.publish("z", "z1", 1, "z"), Ok(PublishOutcome::Created));
     assert_eq!(fork.pocket("a").status, PocketStatus::Parked);
+}
+
+// scenario: S092
+// obligation: rule-success.DropStalePublish
+// obligation: rule-entity-creation.DropStalePublish.1
+#[test]
+fn a_stale_publish_into_a_parked_pocket_leaves_it_parked_with_its_count() {
+    let mut fixture = parked();
+    let before = fixture.snapshot();
+    let position = fixture.pocket("a").position;
+    let now = at(3 * TTL);
+    assert_eq!(
+        fixture.publish("a", "a1", 0, "x"),
+        Ok(PublishOutcome::Stale)
+    );
+    let pocket = fixture.pocket("a");
+    assert_eq!(
+        (pocket.status, pocket.position, pocket.consecutive_expiries),
+        (PocketStatus::Parked, position, 3),
+        "a stale publish touches nothing"
+    );
+    assert_eq!(fixture.order(), ["b"]);
+    let snapshot = fixture.snapshot();
+    assert_eq!(snapshot.next_position, before.next_position);
+    let stale = (
+        "a",
+        "a1",
+        0,
+        "x",
+        ShedReason::Stale,
+        now,
+        now + SUPERSEDED_TTL,
+    );
+    assert_eq!(
+        shed_rows(&snapshot),
+        [stale],
+        "the arrival is recorded as stale"
+    );
+    fixture.check();
 }
 
 // scenario: S025
@@ -363,21 +406,38 @@ fn idle_parked_and_leased_pockets_are_never_claimed() {
 }
 
 // scenario: S048
-// obligation: rule-success.RequeueDeferredRecord
+// obligation: rule-success.DeadLetterNackedVersionQueueDeferred
+// obligation: rule-success.LeaseExpiryKeepsPocketAtFront
+// obligation: guarantee.MarksStandHoweverLeaseEnds
 #[test]
-fn a_supersede_while_held_is_deferred_on_nack_and_the_lapse_frees_it() {
+fn a_version_deferred_behind_a_nacked_one_is_queued_at_its_arrival_position_by_the_lapse() {
     let mut fixture = two_pockets();
     let lease = fixture.pull("c1", 10).lease;
     fixture.publish("a", "a1", 2, "newer").unwrap();
-    assert_eq!(fixture.nack("c1", lease, "a1"), Ok(SettleOutcome::Deferred));
-    let deferred = fixture.record("a", "a1");
-    assert_eq!(deferred.status, RecordStatus::Deferred);
+    let arrival = Position::new(5);
+    fixture.nack("c1", lease, "a1").unwrap();
+    let held = fixture.record("a", "a1");
+    assert_eq!(
+        (held.status, held.position),
+        (
+            held_as(1, "a1", Mark::Nacked, Some(T0), Some(5)),
+            Position::new(1)
+        ),
+        "still held at its own position, the arrival position beside it"
+    );
+    assert_eq!(fixture.snapshot().dead_letters.len(), 0);
     fixture.lapse();
     let record = fixture.record("a", "a1");
     assert_eq!(
         (record.status, record.position),
-        (RecordStatus::Queued, deferred.position),
-        "queued again at its deferred position"
+        (RecordStatus::Queued, arrival),
+        "queued at the arrival position the publish gave it"
+    );
+    let letter = ("a", "a1", 1, "a1", "c1", T0, at(TTL) + DEAD_LETTER_TTL);
+    assert_eq!(
+        letter_rows(&fixture.snapshot()),
+        [letter],
+        "dead-lettered at the lapse"
     );
     let batch = fixture.pull("c2", 10);
     assert_eq!(batch.pocket_key.as_str(), "a");
@@ -395,28 +455,29 @@ fn lapsed_once() -> Fixture {
 }
 
 // scenario: S064
+// obligation: rule-success.NackMarksRecord
 // obligation: invariant.Pocket.ExpiriesWithinLimit
+// obligation: invariant.MarkedPocketHasNoExpiries
 #[test]
-fn a_pull_a_nack_or_a_renew_under_a_lease_does_not_reset_the_expiry_count() {
+fn a_nack_resets_the_expiry_count_and_a_pull_or_a_renew_does_not() {
     let mut fixture = lapsed_once();
     let count = |fixture: &Fixture| fixture.pocket("a").consecutive_expiries;
     assert_eq!(count(&fixture), 1);
     let lease = fixture.pull("c1", 10).lease;
     assert_eq!(count(&fixture), 1, "after the pull");
-    assert_eq!(fixture.nack("c1", lease, "a1"), Ok(SettleOutcome::Settled));
-    assert_eq!(count(&fixture), 1, "after the nack");
     fixture.renew("c1", lease).unwrap();
     assert_eq!(count(&fixture), 1, "after the renew");
     let again = fixture.pull("c1", 10).lease;
     assert_eq!(again, lease, "a pull within the lease");
     assert_eq!(count(&fixture), 1, "after that pull");
+    fixture.nack("c1", lease, "a1").unwrap();
+    assert_eq!(count(&fixture), 0, "after the nack");
     fixture.lapse();
-    assert_eq!(count(&fixture), 2);
+    assert_eq!(count(&fixture), 1, "the lapse counts from the reset");
 }
 
 // scenario: S077
-// obligation: rule-success.AckSettlesRecord
-// obligation: rule-success.AckDefersNewerVersion
+// obligation: rule-success.AckMarksRecord
 // obligation: invariant.Pocket.ExpiriesWithinLimit
 #[test]
 fn an_ack_resets_the_consecutive_expiry_count() {
@@ -430,22 +491,23 @@ fn an_ack_resets_the_consecutive_expiry_count() {
     let not_held = LeaseActionError::RecordNotHeld(RecordKey::new("b1"));
     fixture.refused(&not_held, |f| f.ack("c1", lease, "b1"));
     assert_eq!(count(&fixture), (PocketStatus::Leased, 1), "a refused ack");
-    assert_eq!(fixture.ack("c1", lease, "a1"), Ok(SettleOutcome::Settled));
-    assert_eq!(count(&fixture), (PocketStatus::Leased, 0), "a settling ack");
+    assert_eq!(fixture.ack("c1", lease, "a1"), Ok(SettleOutcome::Acked));
+    assert_eq!(count(&fixture), (PocketStatus::Leased, 0), "an ack");
     fixture.lapse();
     assert_eq!(count(&fixture), (PocketStatus::Queued, 1));
     assert_eq!(fixture.order(), ["a", "b"], "kept at the front");
-    // The deferring ack resets the count too.
+    // An ack of a record with a newer version deferred behind it resets the
+    // count too.
     let lease = fixture.pull("c1", 10).lease;
     assert_eq!(
         fixture.publish("a", "a2", 2, "newer"),
         Ok(PublishOutcome::Superseded)
     );
-    assert_eq!(fixture.ack("c1", lease, "a2"), Ok(SettleOutcome::Deferred));
+    assert_eq!(fixture.ack("c1", lease, "a2"), Ok(SettleOutcome::Acked));
     assert_eq!(
         count(&fixture),
         (PocketStatus::Leased, 0),
-        "a deferring ack"
+        "an ack with a version deferred"
     );
     // From there it parks on the third lapse, not the second.
     fixture.lapse();
@@ -485,6 +547,7 @@ fn a_release_resets_the_consecutive_expiry_count() {
 
 // scenario: S063
 // obligation: rule-failure.LeaseExpiryIdlesEmptyPocket.4
+// obligation: rule-success.NackMarksRecord
 #[test]
 fn at_the_threshold_an_empty_pocket_parks_rather_than_idling() {
     let fate = |fixture: &Fixture| {
@@ -492,17 +555,18 @@ fn at_the_threshold_an_empty_pocket_parks_rather_than_idling() {
         let count = pocket.consecutive_expiries;
         (pocket.status, count, pocket.records.len())
     };
-    // At a limit of 1 every lapse is at the threshold, so even a pocket an ack
-    // emptied parks.
+    // At a limit of 1 every lapse is at the threshold, so even a pocket whose
+    // one record was acked parks.
     let mut config = short_lease(TTL);
     config.max_consecutive_expiries = 1;
     let mut once = Fixture::with_config(config);
     once.publish("a", "a1", 1, "a1").unwrap();
     let lease = once.pull("c1", 10).lease;
-    assert_eq!(once.ack("c1", lease, "a1"), Ok(SettleOutcome::Settled));
+    assert_eq!(once.ack("c1", lease, "a1"), Ok(SettleOutcome::Acked));
     once.lapse();
     assert_eq!(fate(&once), (PocketStatus::Parked, 1, 0), "limit 1, acked");
-    // At the default 3: two lapses, then a third lease emptied by nacks.
+    // At the default 3: two lapses, then a third lease whose records are all
+    // nacked or all acked. Either resets the count, so the lapse idles the pocket.
     let mut fixture = two_pockets();
     for _ in 0..2 {
         fixture.claim_and_lapse("a");
@@ -514,8 +578,8 @@ fn at_the_threshold_an_empty_pocket_parks_rather_than_idling() {
         acked.ack("c1", lease, key).unwrap();
     }
     fixture.lapse();
-    assert_eq!(fate(&fixture), (PocketStatus::Parked, 3, 0), "nacked");
-    // Emptied by acks instead, the count was reset, so the lapse idles it.
+    assert_eq!(fate(&fixture), (PocketStatus::Idle, 1, 0), "nacked");
+    assert_eq!(fixture.snapshot().dead_letters.len(), 2, "nacked");
     acked.lapse();
     assert_eq!(fate(&acked), (PocketStatus::Idle, 1, 0), "acked");
 }
@@ -588,12 +652,12 @@ fn a_release_after_expires_at_but_before_the_lapse_succeeds() {
 
 // scenario: S067
 // (the ack half; a_pull_after_expires_at_but_before_the_lapse_extends_the_lease is the pull half)
-// obligation: rule-success.AckSettlesRecord
+// obligation: rule-success.AckMarksRecord
 #[test]
 fn an_ack_after_expires_at_but_before_the_lapse_succeeds() {
     let (mut first, mut second, lease) = late();
     tick_then_refused(&mut first, lease, |f| f.ack("c1", lease, "k"));
-    assert_eq!(second.ack("c1", lease, "k"), Ok(SettleOutcome::Settled));
+    assert_eq!(second.ack("c1", lease, "k"), Ok(SettleOutcome::Acked));
     extended_and_survives(&mut second, lease);
 }
 
@@ -620,7 +684,7 @@ fn a_pull_after_expires_at_but_before_the_lapse_extends_the_lease() {
 }
 
 // scenario: S069
-// obligation: rule-failure.Renew.2
+// obligation: rule-failure.Renew.1
 #[test]
 fn after_a_lapse_the_old_lease_is_fenced_even_when_the_key_has_a_newer_rank() {
     let mut fixture = two_pockets();
@@ -640,12 +704,14 @@ fn after_a_lapse_the_old_lease_is_fenced_even_when_the_key_has_a_newer_rank() {
 fn a_backward_clock_step_never_lapses_a_lease_early_nor_stamps_backward() {
     let mut fixture = fixture();
     fixture.publish("a", "a1", 1, "a1").unwrap();
+    fixture.publish("a", "a2", 1, "a2").unwrap();
     fixture.at(100);
-    let lease = fixture.pull("c1", 10).lease;
+    let lease = fixture.pull("c1", 1).lease;
     fixture.at(0);
     assert_eq!(fixture.tick().lapsed.len(), 0);
     assert_eq!(fixture.renew("c1", lease), Ok(at(100 + TTL)));
-    fixture.publish("a", "a1", 2, "newer").unwrap();
+    // `a2` is still queued, so its supersede sheds its loser now.
+    fixture.publish("a", "a2", 2, "newer").unwrap();
     assert_eq!(fixture.snapshot().superseded[0].shed_at, at(100));
     fixture.at(109);
     assert_eq!(fixture.tick().lapsed.len(), 0);
@@ -704,11 +770,11 @@ fn a_tick_examines_only_what_is_due() {
         "the superseded backlog's one stopper; the dead letters are empty"
     );
     let due = ["r000", "r001", "r002"];
-    let freed = calls
+    let ended = calls
         .iter()
-        .filter(|(step, _)| *step == "free_held")
+        .filter(|(step, _)| *step == "end_lease")
         .count();
-    assert_eq!(freed, 3);
+    assert_eq!(ended, 3);
     for (step, keys) in &calls {
         assert!(
             keys.len() == 1 && due.contains(&keys[0].as_str()),
@@ -729,11 +795,18 @@ fn pockets_and_records_form_one_strict_deterministic_order() {
     let lease = fixture.pull("c1", 1).lease;
     step(&mut fixture);
     fixture.ack("c1", lease, "a1").unwrap();
-    fixture.publish("a", "a1", 1, "again").unwrap();
+    assert!(
+        matches!(
+            fixture.publish("a", "a1", 1, "again"),
+            Err(PublishError::EqualRank { .. })
+        ),
+        "the acked a1 is still held at rank 1"
+    );
+    fixture.publish("a", "a1", 2, "again").unwrap();
     let batch = fixture.pull("c1", 10);
     step(&mut fixture);
     fixture.publish("a", "a2", 2, "newer").unwrap();
-    assert_eq!(keys(&batch.records), ["a2", "a1"]);
+    assert_eq!(keys(&batch.records), ["a2"], "a1 waits for the lease's end");
     fixture.nack("c1", lease, "a2").unwrap();
     step(&mut fixture);
     fixture.release("c1", lease).unwrap();

@@ -67,7 +67,7 @@ proves and why.
 | Recipe | Purpose |
 | --- | --- |
 | `just format` | rustfmt and taplo, writing. |
-| `just fix` | The mutating hook set, twice, because one fixer's first pass may fail on what another then repairs, over every tracked file and then over every untracked file Git does not ignore; then `cargo clippy --fix`; then `just lint`. The trailing-whitespace fixer leaves the Markdown under `tickets/` alone, because a hand-back quotes command output verbatim; markdownlint still repairs a trailing space in ticket prose. The recipe that repairs what a check reports. Not the only one that writes: `just format`, `just initialize`, `just site`, `just snapshots-accept` and the lock recipes do too, and none of them is a check. |
+| `just fix` | The mutating hook set, twice, because one fixer's first pass may fail on what another then repairs, over every tracked file and then over every untracked file Git does not ignore; then `cargo clippy --fix`; then `just lint`. The trailing-whitespace fixer leaves the Markdown under `tickets/` alone, because a hand-back quotes command output verbatim; markdownlint still repairs a trailing space in ticket prose. The recipe that repairs what a check reports. Not the only one that writes: `just format`, `just initialize`, `just site`, `just snapshots-accept`, `just diagrams` and the lock recipes do too, and none of them is a check. |
 
 ## Check
 
@@ -97,6 +97,7 @@ proves and why.
 | `just check-specs` | `allium check` over `docs/specs/`. Asserts that every module reports an empty `diagnostics` array; anything reported is a regression. Waiver terms: [Work with the specifications](../how-to/work-with-the-specs.md). Gate 17. |
 | `just analyse-specs` | `allium analyse` over `docs/specs/`: the same structural diagnostics plus data flow, reachability, deadlocks and conflicts. Asserts that both arrays are empty; a finding cannot be waived, so any finding is a regression. Gate 18. |
 | `just plan-spec <module>` | Print the raw JSON test obligations for `docs/specs/<module>.allium`; give the module name without the extension. Plans that module alone, reading no imports, so plan imported modules separately. A suggestion list: asserts nothing, writes nothing and is outside `just check`. Runs `.tools/bin/allium` by path, so it needs the pinned binary from `just install-allium` and never falls through to another `allium` on `PATH`. |
+| `just diagrams` | Redraw the SVG diagrams under `docs/decisions/0020/` from `scripts/diagrams.py`, standard-library Python run by the pixi environment's interpreter. The script owns each diagram's layout and words, so edit it and rerun, never the SVG. Writes, so it is outside `just check`, and nothing checks that the files match the script. |
 | `just check-links-online` | Follow external links. Manual; needs the network. |
 
 The two spec gate recipes go through `bg-run-allium`, which reads the JSON rather than

@@ -84,8 +84,8 @@ pub use types::{
 ///
 /// ```compile_fail,E0277
 /// use std::rc::Rc;
-/// use libpachinko::records::{PocketRecords, Position, RecordView};
-/// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
+/// use libpachinko::records::{EndedVersion, PocketRecords, Position, RecordView};
+/// use libpachinko::{HeldRecord, Mark, MarkedRecord, Payload, Rank, RecordKey, Timestamp};
 ///
 /// #[derive(Clone, Debug, Default)]
 /// struct RcRecords(Rc<Vec<RecordView>>);
@@ -95,12 +95,12 @@ pub use types::{
 ///     fn lookup(&self, _: &RecordKey) -> Option<RecordView> { None }
 ///     fn insert_queued(&mut self, _: RecordKey, _: Rank, _: Payload, _: Position) {}
 ///     fn supersede(&mut self, _: &RecordKey, _: Rank, _: Payload) -> Option<(Rank, Payload)> { None }
+///     fn defer_behind_held(&mut self, _: &RecordKey, _: Rank, _: Payload, _: Position) {}
 ///     fn hold_oldest(&mut self, _: usize) -> Vec<HeldRecord> { Vec::new() }
-///     fn settle(&mut self, _: &RecordKey) -> Option<HeldRecord> { None }
-///     fn defer(&mut self, _: &RecordKey, _: Position) -> Option<HeldRecord> { None }
-///     fn free_held(&mut self) -> usize { 0 }
+///     fn mark(&mut self, _: &RecordKey, _: Mark, _: Timestamp) {}
+///     fn end_lease(&mut self) -> Vec<EndedVersion> { Vec::new() }
 ///     fn record_count(&self) -> usize { 0 }
-///     fn held(&self) -> Vec<HeldRecord> { Vec::new() }
+///     fn held(&self) -> Vec<MarkedRecord> { Vec::new() }
 /// }
 /// ```
 #[derive(Clone, Debug)]
@@ -223,15 +223,15 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     }
 
     /// The `Consuming` surface's `exposes` for `consumer_id`: its active lease's
-    /// pocket key, `expires_at` and held records, or `None` for a joined consumer
-    /// with no active lease.
+    /// pocket key, `expires_at` and held records, each with its mark, smallest
+    /// position first, or `None` for a joined consumer with no active lease.
     ///
     /// # Errors
     ///
     /// [`PullError::UnknownConsumer`] when no consumer with this id has joined.
     ///
     /// ```
-    /// use libpachinko::{ConsumerId, PocketKey};
+    /// use libpachinko::{ConsumerId, Mark, PocketKey};
     /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
     /// # use libpachinko::{Config, Payload, Publication, PublisherId, Queue, Rank, RecordKey};
     /// # let (clock, ids) = (FakeClock::default(), CountingLeaseIds::default());
@@ -248,6 +248,7 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// let view = queue.lease_view(&consumer).unwrap().unwrap();
     /// assert_eq!(view.pocket_key, PocketKey::new("pk"));
     /// assert_eq!(view.records[0].key.as_str(), "rk");
+    /// assert_eq!(view.records[0].mark, Mark::Unsettled);
     /// ```
     pub fn lease_view(&self, consumer_id: &ConsumerId) -> Result<Option<LeaseView>, PullError> {
         let active = self.active_lease(consumer_id)?;

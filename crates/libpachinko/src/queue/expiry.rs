@@ -81,8 +81,9 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     ///
     /// A lapsed lease ends as [`LeaseStatus::Expired`] with `ended_at = now` and
     /// leaves the registry, so a second tick finds nothing, and its consumer holds
-    /// no lease. Its pocket's expiry count rises by one and its held and deferred
-    /// records return to queued; then the pocket parks once the count reaches
+    /// no lease. Its pocket's expiry count rises by one and every held record is
+    /// freed by the six `Freed` rules, as a release frees it, the entries they make
+    /// stamped from this `now`; then the pocket parks once the count reaches
     /// `max_consecutive_expiries`, keeps its place at the front with records, or
     /// goes idle without. A lease expiring while a tick runs waits for the next.
     ///
@@ -150,8 +151,10 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         if let Some(active) = self.consumers.get_mut(&ended.consumer_id) {
             *active = None;
         }
-        self.pockets
+        let versions = self
+            .pockets
             .lapse(&ended.pocket_key, self.config.max_consecutive_expiries);
+        self.keep_ended(&ended, now, versions);
         Some(ended)
     }
 }

@@ -346,9 +346,11 @@ fn refusals(client: &Client) {
     assert_eq!(client.publish("pk", "k", 5, b"x").0, 200);
     let (status, body) = client.publish("pk", "k", 5, b"y");
     assert_eq!(refused((status, body.clone()), 409), "equal_rank");
-    assert!(
-        body["message"].as_str().unwrap().contains("placeholder"),
-        "{body}"
+    assert_eq!(
+        body["message"],
+        "rank 5 equals the stored rank of k in pocket pk; a publish at the stored rank is \
+        rejected and changes nothing",
+        "an equal rank is rejected by decision: {body}"
     );
 }
 
@@ -388,46 +390,141 @@ fn lease_of(batch: &Value) -> String {
 /// A well-formed lease id no pull has handed out.
 const UNKNOWN_LEASE: &str = "0123456789abcdef0123456789abcdef";
 
+/// The lease read's records: `(record_key, mark)` for each, in order.
+fn marks(client: &Client, consumer: &str) -> Vec<(String, String)> {
+    let (status, lease) = client.lease(consumer);
+    assert_eq!(status, 200, "{lease}");
+    lease["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| {
+            (
+                record["record_key"].as_str().unwrap().to_owned(),
+                record["mark"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn marked(key: &str, mark: &str) -> (String, String) {
+    (key.to_owned(), mark.to_owned())
+}
+
+// An ack marks the held record, which stays on the lease read, acked, until the
+// lease ends; a second ack repeats the first and answers as it did.
 // scenario: S040 (exercised over HTTP; the library test owns it)
-// obligation: rule-success.AckSettlesRecord
-fn ack_settles(client: &Client) {
+// obligation: rule-success.AckMarksRecord
+// obligation: rule-success.AckRepeats
+fn ack_marks(client: &Client) {
     joined(client, &["c1"]);
     assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
-    let lease = lease_of(&client.pull("c1", 10).1);
+    let (status, batch) = client.pull("c1", 10);
+    assert_eq!(status, 200);
+    assert_eq!(
+        batch["records"],
+        json!([{"record_key": "k", "rank": 1, "payload": "dg=="}]),
+        "a batch record carries no mark: the batch wire is unchanged"
+    );
+    let lease = lease_of(&batch);
+    assert_eq!(
+        client.lease("c1").1["records"],
+        json!([{"record_key": "k", "rank": 1, "payload": "dg==", "mark": "unsettled"}]),
+        "the lease read shows each held record's mark"
+    );
     assert_eq!(
         client.ack("c1", &lease, "k"),
-        (200, json!({"outcome": "settled"}))
+        (200, json!({"outcome": "acked"}))
     );
-    assert_eq!(client.lease("c1").1["records"], json!([]));
+    let acked = json!([{"record_key": "k", "rank": 1, "payload": "dg==", "mark": "acked"}]);
+    assert_eq!(client.lease("c1").1["records"], acked, "held until the end");
     assert_eq!(
-        refused(client.ack("c1", &lease, "k"), 404),
-        "record_not_held"
+        client.ack("c1", &lease, "k"),
+        (200, json!({"outcome": "acked"})),
+        "a repeat answers as the first ack did"
     );
+    assert_eq!(client.lease("c1").1["records"], acked);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_ack_settles_a_held_record_over_http() {
-    serve_while(ack_settles).await;
+async fn an_ack_marks_a_held_record_and_a_repeat_answers_the_same_over_http() {
+    serve_while(ack_marks).await;
 }
 
+// A nack marks the held record: it is not redelivered under the lease, and it
+// stays on the lease read, nacked; a second nack repeats the first.
 // scenario: S047 (exercised over HTTP; the library test owns it)
-// obligation: rule-success.NackSettlesRecord
-fn nack_dead_letters(client: &Client) {
+// obligation: rule-success.NackMarksRecord
+// obligation: rule-success.NackRepeats
+fn nack_marks(client: &Client) {
     joined(client, &["c1"]);
     assert_eq!(client.publish("pk", "k", 1, b"v").0, 200);
     let lease = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(marks(client, "c1"), [marked("k", "unsettled")]);
     assert_eq!(
         client.nack("c1", &lease, "k"),
-        (200, json!({"outcome": "settled"}))
+        (200, json!({"outcome": "nacked"}))
     );
     let (status, again) = client.pull("c1", 10);
-    assert_eq!((status, lease_of(&again)), (200, lease));
+    assert_eq!((status, lease_of(&again)), (200, lease.clone()));
     assert_eq!(again["records"], json!([]), "no redelivery");
+    assert_eq!(marks(client, "c1"), [marked("k", "nacked")]);
+    assert_eq!(
+        client.nack("c1", &lease, "k"),
+        (200, json!({"outcome": "nacked"})),
+        "a repeat answers as the first nack did"
+    );
+    assert_eq!(marks(client, "c1"), [marked("k", "nacked")]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_nack_does_not_redeliver_over_http() {
-    serve_while(nack_dead_letters).await;
+async fn a_nack_marks_a_held_record_without_redelivery_over_http() {
+    serve_while(nack_marks).await;
+}
+
+// A mark never changes under a lease: an ack of a nacked record and a nack of an
+// acked one are refused 409 `mark_conflict`, and the refusal changes nothing,
+// not even the lease's expiry. The first marks are checked by status only, so
+// that this test fails on the refusal and S040 and S047 own the outcome names.
+// obligation: rule-failure.AckMarksRecord.5
+// obligation: rule-failure.AckRepeats.5
+// obligation: rule-failure.NackMarksRecord.5
+// obligation: rule-failure.NackRepeats.5
+fn changed_mark_refused(client: &Client) {
+    joined(client, &["c1"]);
+    for key in ["k1", "k2"] {
+        assert_eq!(client.publish("pk", key, 1, key.as_bytes()).0, 200);
+    }
+    let lease = lease_of(&client.pull("c1", 10).1);
+    assert_eq!(client.nack("c1", &lease, "k1").0, 200);
+    assert_eq!(client.ack("c1", &lease, "k2").0, 200);
+    let (status, before) = client.lease("c1");
+    assert_eq!(status, 200, "{before}");
+    // The server reads a real millisecond clock: step past the marks' millisecond,
+    // so a refusal that extended the lease would show.
+    std::thread::sleep(Duration::from_millis(5));
+    assert_eq!(
+        refused(client.ack("c1", &lease, "k1"), 409),
+        "mark_conflict"
+    );
+    assert_eq!(
+        refused(client.nack("c1", &lease, "k2"), 409),
+        "mark_conflict"
+    );
+    assert_eq!(
+        client.lease("c1"),
+        (200, before),
+        "the refusals change nothing"
+    );
+    assert_eq!(
+        marks(client, "c1"),
+        [marked("k1", "nacked"), marked("k2", "acked")]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_changed_mark_is_refused_as_mark_conflict_and_changes_nothing_over_http() {
+    serve_while(changed_mark_refused).await;
 }
 
 // scenario: S050 (exercised over HTTP; the library test owns it)
@@ -506,7 +603,7 @@ fn old_lease_fenced(client: &Client) {
     assert_eq!(refused(client.ack("c2", &new, "k"), 403), "lease_not_yours");
     assert_eq!(
         client.ack("c1", &new, "k"),
-        (200, json!({"outcome": "settled"}))
+        (200, json!({"outcome": "acked"}))
     );
 }
 
@@ -661,7 +758,7 @@ async fn a_lease_nobody_renews_lapses_and_its_record_goes_to_another_consumer() 
 }
 
 /// The flags of the two expiry-count tests: a pocket parks at its second lapse
-/// with no ack, release or revive since its first. The one real-time race the
+/// with no ack, nack, release or revive since its first. The one real-time race the
 /// tests run is the lease's: the ack or nack must be applied before the sweep
 /// applies the lapse of the lease it names, which is no sooner than
 /// `--lease-ttl-ms` after the pull before it. One that loses is refused
@@ -702,13 +799,13 @@ fn claimed_after_one_lapse(client: &Client) -> String {
 // the second lapse leaves the pocket queued, where a count left at 1 would park
 // it, so the next pull claims it again and receives the record the ack left.
 // scenario: S077 (exercised over HTTP; the library test owns it)
-// obligation: rule-success.AckSettlesRecord
+// obligation: rule-success.AckMarksRecord
 // obligation: rule-success.LeaseExpiryKeepsPocketAtFront
 fn ack_resets_count(client: &Client) {
     let lease = claimed_after_one_lapse(client);
     assert_eq!(
         client.ack("c1", &lease, "k1"),
-        (200, json!({"outcome": "settled"}))
+        (200, json!({"outcome": "acked"}))
     );
     wait_for_lapse(client, "c1");
     let (status, batch) = client.pull("c1", 10);
@@ -726,39 +823,29 @@ async fn an_ack_resets_the_expiry_count_over_http() {
     serve_with_while(&PARK_AT_TWO, ack_resets_count).await;
 }
 
-// A nack between two lapses leaves the pocket's expiry count: at a limit of 2
-// the second lapse parks the pocket, so the next pull finds none. The publish
-// after it revives the pocket, and the pull that follows receives `k2` ahead of
-// the new record: the pocket parked with its record in it, it was not emptied.
+// A nack between two lapses resets the pocket's expiry count, as an ack does: at
+// a limit of 2 the second lapse leaves the pocket queued, where a count left at
+// 1 would park it, so the next pull claims it again and receives the record the
+// nack left. The nack is checked by status only, so that this test fails on the
+// reset and S047 owns the outcome name.
 // scenario: S064 (exercised over HTTP; the library test owns it)
-// obligation: rule-success.NackSettlesRecord
-// obligation: rule-success.LeaseExpiryParksPocket
-// obligation: rule-success.ReviveParkedPocket
-fn nack_keeps_count(client: &Client) {
+// obligation: rule-success.NackMarksRecord
+// obligation: rule-success.LeaseExpiryKeepsPocketAtFront
+fn nack_resets_count(client: &Client) {
     let lease = claimed_after_one_lapse(client);
-    assert_eq!(
-        client.nack("c1", &lease, "k1"),
-        (200, json!({"outcome": "settled"}))
-    );
+    assert_eq!(client.nack("c1", &lease, "k1").0, 200);
     wait_for_lapse(client, "c1");
-    assert_eq!(
-        client.pull("c1", 10),
-        (200, json!({"outcome": "no_pocket"})),
-        "the pocket parked at its second lapse"
-    );
-    assert_eq!(
-        client.publish("pk", "k3", 1, b"k3"),
-        (200, json!({"outcome": "new_key"}))
-    );
     let (status, batch) = client.pull("c1", 10);
-    assert_eq!((status, &batch["pocket_key"]), (200, &json!("pk")));
     assert_eq!(
-        records(&batch),
-        [record("k2", 1, b"k2"), record("k3", 1, b"k3")]
+        (status, &batch["pocket_key"]),
+        (200, &json!("pk")),
+        "the pocket is still queued after its second lapse: {batch}"
     );
+    assert_ne!(lease_of(&batch), lease, "a third lease");
+    assert_eq!(records(&batch), [record("k2", 1, b"k2")]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_nack_leaves_the_expiry_count_over_http() {
-    serve_with_while(&PARK_AT_TWO, nack_keeps_count).await;
+async fn a_nack_resets_the_expiry_count_over_http() {
+    serve_with_while(&PARK_AT_TWO, nack_resets_count).await;
 }
