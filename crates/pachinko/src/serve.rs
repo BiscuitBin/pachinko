@@ -429,13 +429,14 @@ mod tests {
     const PUBLISH: &[u8] = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
 
     /// A head promising [`PUBLISH`], asking to be told when the handler starts reading
-    /// it and to have the connection closed after the reply. The body is the
-    /// caller's to send, or to withhold.
+    /// it. The body is the caller's to send, or to withhold. It does not ask for the
+    /// connection to be closed, so a test that reads its reply to the end shows the
+    /// server closing it.
     fn publish_head() -> String {
         format!(
             "PUT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
 content-type: application/json\r\ncontent-length: {}\r\n\
-connection: close\r\nexpect: 100-continue\r\n\r\n",
+expect: 100-continue\r\n\r\n",
             PUBLISH.len()
         )
     }
@@ -633,6 +634,19 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
         let mut reply = String::new();
         finishing.read_to_string(&mut reply).unwrap();
         assert_owner_stopped(&reply);
+        // The stalled connection is still open while the runtime lives: a short read
+        // finds neither a reply nor the end.
+        stalled
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let open = stalled.read(&mut [0; 1]);
+        assert!(
+            matches!(&open, Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)),
+            "the stalled connection closed or was answered before the runtime was dropped: {open:?}"
+        );
+        stalled
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         // Dropping the runtime, as the binary does once `serve` returns, closes the
         // connection still stalled. It must be closed, not merely silent: a read that
         // times out fails the test.
@@ -651,11 +665,16 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
         );
     }
 
-    /// What one read of `stream` brings: a short reply, whole.
+    /// Reads `stream` until a refusal's JSON body has ended.
     fn read_reply(stream: &mut TcpStream) -> String {
-        let mut reply = [0; 512];
-        let read = stream.read(&mut reply).unwrap();
-        String::from_utf8_lossy(&reply[..read]).into_owned()
+        let mut reply = Vec::new();
+        let mut chunk = [0; 512];
+        while !reply.ends_with(b"}") {
+            let read = stream.read(&mut chunk).unwrap();
+            assert_ne!(read, 0, "the connection closed before the reply ended");
+            reply.extend_from_slice(&chunk[..read]);
+        }
+        String::from_utf8_lossy(&reply).into_owned()
     }
 
     /// Asserts `reply` is the 408 `request_timeout` of a handler that ran past a bound
@@ -761,14 +780,22 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
     fn a_body_that_never_arrives_is_answered_408_at_the_handlers_bound() {
         let runtime = runtime();
         let bound = ["--request-timeout-ms", "100"];
-        let (served, reply) = serve_beside(&runtime, &bound, |address, stop| {
+        let (served, (reply, waited)) = serve_beside(&runtime, &bound, |address, stop| {
+            let started = Instant::now();
             // The handler is reading a body that is never sent.
             let mut stream = start_a_request(address);
             let reply = read_reply(&mut stream);
+            let waited = started.elapsed();
             drop(stop);
-            reply
+            (reply, waited)
         });
         assert_timed_out(&reply);
+        // No sooner than the bound, which starts after the client does, and with a wide
+        // margin after it: a handler bounded at ten times the flag fails here.
+        assert!(
+            waited >= Duration::from_millis(100) && waited < Duration::from_millis(1000),
+            "answered after {waited:?}, not at the 100 ms bound"
+        );
         assert_eq!(served, Ok(()));
         drop(runtime);
     }

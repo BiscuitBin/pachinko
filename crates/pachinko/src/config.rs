@@ -33,7 +33,8 @@ const DEFAULT_LOG_LEVEL: Level = Level::INFO;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long shutdown waits before it stops waiting for open connections, and again
-/// before it aborts what is left, unless `--shutdown-grace-ms` says otherwise.
+/// before it aborts its own tasks still running, unless `--shutdown-grace-ms` says
+/// otherwise.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 /// How often the ticker sweeps for lapsed leases and decayed entries unless
@@ -227,7 +228,9 @@ impl ServeConfig {
     }
 
     /// How long shutdown lets in-flight requests finish before it stops waiting for
-    /// the open connections, and how long it then waits before it aborts what is left.
+    /// the open connections, and how long it then waits before it aborts the server's
+    /// own tasks still running. A connection still open is not one of them:
+    /// [`serve`](crate::serve()) says what becomes of it.
     ///
     /// ```
     /// use std::time::Duration;

@@ -140,7 +140,8 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   ignored), with the per-request line at `debug`; `--request-timeout-ms` (default
   30000), answering a handler that runs past it 408 `request_timeout`; and
   `--shutdown-grace-ms` (default 5000), after which the service stops waiting for
-  open connections and, one more grace period later, anything left is aborted.
+  open connections and, one more grace period later, aborts those of its own tasks
+  still running.
 - A closed-loop load generator and lapse probe, `just loadgen`, in the excluded
   `loadgen/` crate with its own lockfile: publish, batch, consume and mix workloads and
   the lapse lag against a running `pachinko serve`, failing closed on any error. It

@@ -3,7 +3,7 @@ id: T38
 title: "Slow-client spike: the unbounded connection, and existing ways to bound it"
 status: todo
 depends_on: [T33]
-parallel_with: [T35]
+parallel_with: []
 branch: ticket/t38-slow-client-spike
 estimated_size: S
 ---
@@ -17,9 +17,10 @@ T29 and T33 grew a hand-rolled connection wrapper in `crates/pachinko/src/serve.
 per-connection shutdown cut), because `axum::serve` gives no way to reach hyper's own
 header-read timeout. Its edge cases (pipelined requests, `100 Continue`, heads hyper had
 already buffered, 400 against 408) took four review rounds. On 2026-11-17 the maintainer
-reversed that day's "Keep `Idle` as it is" call (`tickets/T33-robustness.md`,
-"Maintainer calls (2026-11-17)"): the wrapper is removed, `listen` hands axum the plain
-`TcpListener`, and this ticket follows.
+reversed that day's "Keep `Idle` as it is" call: the wrapper is removed, `listen` hands
+axum the plain `TcpListener`, and this ticket follows. `tickets/T33-robustness.md`
+holds the call under "Maintainer calls (2026-11-17)" and the reversal in the amendment
+recorded after it.
 
 This ticket is a spike. It names what a slow or silent client can do to the service now
 that the wrapper is gone, looks for an existing way to bound each case, and ends with
@@ -56,7 +57,8 @@ After the wrapper's removal:
 ### What the pinned crates do
 
 Each statement was read in the pinned source. None was run for this ticket; a statement
-that describes behaviour on the wire is confirmed by a run in step 3 or step 4.
+that describes behaviour on the wire is confirmed by a run in step 3, step 4 or, for
+facts 7 to 9, step 5.
 
 1. **One task per connection, no limit.** axum's serve loop accepts, then calls
    `handle_connection`, which spawns the connection with `tokio::spawn` (axum
@@ -86,10 +88,10 @@ that describes behaviour on the wire is confirmed by a run in step 3 or step 4.
    that is not a connection error, `EMFILE` included, makes the accept loop sleep one
    second and try again, and the `error!("accept error: {e}")` beside it logs nothing
    (axum `src/serve/listener.rs` lines 140 to 158).
-6. **The header-read timeout is the only timeout hyper's HTTP/1 server has.** A search
+6. **The header-read timeout is the only timeout in hyper's HTTP/1 server.** A search
    for `timeout` over hyper `src/server/conn/http1.rs` and `src/proto/h1/` finds only
-   `header_read_timeout`. Nothing in hyper bounds the read of a body or the write of a
-   reply.
+   `header_read_timeout`, its documentation and its log line. Read that way, nothing
+   there bounds the read of a body or the write of a reply.
 7. **Where hyper's head timer runs.** It starts when `Conn::poll_read_head` first runs
    for a head and is cleared when the head has parsed (hyper `src/proto/h1/conn.rs`
    lines 216 to 240 and 279 to 283). When a connection goes idle after an exchange,
@@ -106,10 +108,15 @@ that describes behaviour on the wire is confirmed by a run in step 3 or step 4.
    `serve_connection_with_upgrades`" (lines 129 to 139). Read that way, a connection
    that has sent nothing is not yet under hyper's timer. hyper's own `http1::Builder`
    has no sniff (hyper `src/server/conn/http1.rs` line 470).
-9. **A timed-out head gets no reply.** The timeout returns
+9. **What a timed-out head is answered.** The timeout returns
    `Error::new_header_timeout` (hyper `src/proto/h1/conn.rs` lines 262 to 271).
-   `Server::on_error` writes an automatic reply only for a parse error, as 400, 431 or
-   414 (hyper `src/proto/h1/role.rs` lines 493 to 511). T33 answered a slow head 408.
+   `Server::on_error` builds an automatic reply only for a parse error, as 400, 431 or
+   414 (hyper `src/proto/h1/role.rs` lines 493 to 511). Read that way, the connection
+   is closed with no reply. T33's wrapper also closed a head that never completed with
+   no reply. Its 408 answered a request whose head had arrived and whose body read
+   failed at the deadline (`tickets/T33-robustness.md`, "Maintainer calls
+   (2026-11-17)"), which hyper's head timer, cleared once the head has parsed (fact 7),
+   never times.
 10. **tower's limits and timeouts act on requests.** axum enables only tower's `util`
     feature (axum `Cargo.toml` lines 268 to 271); `limit` and `timeout` are separate
     features (tower `src/lib.rs` lines 175 to 176 and 194 to 195), and `limit` needs
@@ -169,9 +176,9 @@ corrects it.
 - **C6, connection tasks that outlive an embedded `pachinko::serve`.** The tasks are
   axum's, spawned outside the service's `JoinSet`; the cut and the abort end neither.
   The binary drops its runtime when `serve` returns, which closes them. Under a
-  caller's runtime one can outlive `serve`, and a request that completes on it then is
-  answered 503 `not_ready`, because the owner has stopped (`serve`'s `# Errors` in
-  `crates/pachinko/src/serve.rs`).
+  caller's runtime one can outlive `serve`; a request that completes on it then is
+  still answered, and a command it sends is refused 503 `not_ready`, because the owner
+  has stopped (`serve`'s `# Errors` in `crates/pachinko/src/serve.rs`).
 - **C7, one flag or several.** `--request-timeout-ms` bounds a handler today. Whatever
   is adopted needs its bound configured: under the same flag, under one new flag, or
   under one per bound. The maintainer's "Keep one flag" call of 2026-11-17 was made for
@@ -202,7 +209,9 @@ corrects it.
     stalled*, as controls.
 - **Q2, whether hyper's dropped default `header_read_timeout` is reported at run
   time.** Read from the source, it is not (fact 4). The spike confirms it: the service
-  at `--log-level trace` logs no line naming `header_read_timeout`.
+  at `--log-level trace` logs its own per-request line for a request (the positive
+  control, `log_request` in `crates/pachinko/src/http.rs`) and no line naming
+  `header_read_timeout`.
 
 ### The candidates
 
@@ -211,10 +220,10 @@ No candidate is chosen. For each, the spike reads the pinned source, prototypes 
 
 | Candidate | What it is | What must be checked |
 | --- | --- | --- |
-| A, hyper's `header_read_timeout` with a `Timer` | A hand-driven accept loop over hyper-util's builder, or hyper's `http1::Builder`, in place of `axum::serve`. hyper and hyper-util become direct dependencies, each with a decision-0007 note (`docs/decisions/0007-dependency-policy.md`). | Which of C1 and C2 it bounds on the wire (facts 7 and 8), and whether a silent new connection escapes it; what the client sees at the timeout (fact 9), against T33's 408; Q1 under the timer; what the loop must take over from `axum::serve` (accept errors, graceful shutdown, the wait for open connections) and what hyper-util supplies (fact 13); whether a loop that owns its tasks settles C6 and can cap C5; the features and any new crate in `Cargo.lock`; the service code it adds, in lines. |
+| A, hyper's `header_read_timeout` with a `Timer` | A hand-driven accept loop over hyper-util's builder, or hyper's `http1::Builder`, in place of `axum::serve`. hyper and hyper-util become direct dependencies, each with a decision-0007 note (`docs/decisions/0007-dependency-policy.md`). | Which of C1 and C2 it bounds on the wire (facts 7 and 8), and whether a silent new connection escapes it; what the client sees at the timeout (fact 9), against T33's wrapper, which closed a head that never completed with no reply; Q1 under the timer; what the loop must take over from `axum::serve` (accept errors, graceful shutdown, the wait for open connections) and what hyper-util supplies (fact 13); whether a loop that owns its tasks settles C6 and can cap C5; the features and any new crate in `Cargo.lock`; the service code it adds, in lines. |
 | B, `axum-server` | A crate not in `Cargo.lock` or the registry cache. This ticket claims nothing about it. | Against one pinned version: what timeouts and limits it exposes and which concerns they bound; whether it works with axum 0.8.9 and hyper 1.12.0; its graceful shutdown and whether it bounds C6; its dependency tree, licence and advisories under `deny.toml`; its maintenance. |
 | C, axum's listener extensions | `Listener`, `ListenerExt::tap_io` and `TapIo` (fact 11). | Whether a `Listener` can cap connections (C5) without an `Io` wrapper, given that a permit must live as long as its connection; what `tap_io` can usefully set (candidate F); whether an axum release after 0.8.9 adds anything (network, step 6). |
-| D, `tower-http` timeout layers | A crate not in `Cargo.lock` or the registry cache; axum names it only as an optional dependency for its own docs (axum `Cargo.toml` lines 273 to 304). This ticket claims nothing about what it does. | Against one pinned version: which layers exist and what each bounds (the request, the request body, the reply body); whether any reaches C3 or C4 better than `bounded` does; that none can reach C1, C2 or C5, since a layer runs after a head has parsed (fact 10); whether one would replace `bounded`; the new crates. |
+| D, `tower-http` timeout layers | A crate not in `Cargo.lock` or the registry cache; axum names it only as an optional dependency behind its private docs feature and as a development dependency (axum `Cargo.toml` lines 75 to 80, 273 to 304 and 380). This ticket claims nothing about what it does. | Against one pinned version: which layers exist and what each bounds (the request, the request body, the reply body); whether any reaches C3 or C4 better than `bounded` does; that none can reach C1, C2 or C5, since a layer runs after a head has parsed (fact 10); whether one would replace `bounded`; the new crates. |
 | E, tower concurrency limits | `ConcurrencyLimit` and its relatives behind tower's `limit` feature (fact 10). | That it caps requests in flight, not connections; whether placing it on the make-service caps connections, given that axum awaits `make_service.ready()` and `call` for each accepted connection before it spawns (axum `src/serve/mod.rs` lines 371 to 382) and the permit's lifetime there; tower as a direct dependency and `tokio-util` as a new crate; whether a cap that refuses, rather than delays, fits decision 0019's "never a capacity refusal" and the specification's `NeverRefusedForCapacity`. |
 | F, socket options | TCP keepalive and `TCP_USER_TIMEOUT` on accepted sockets (fact 12). | What each option bounds, from the operating system's documentation, and which concerns that reaches (a dead peer is not a slow one); the platforms (the image is Linux, development is macOS); how to set them: `tap_io` with socket2's `SockRef`, or on the listening socket if accepted sockets inherit; socket2 as a direct dependency with its note; that no `unsafe` is needed (invariant 4). |
 | G, a fronting proxy as the documented answer | No change to the service; the handbook says what must stand in front of an exposed listener, as `docs/explanation/security-model.md` ("Request-shape limits") begins to. | For two or three named proxies, from their documentation: the default and configurable bound for each of C1 to C5; what the handbook would have to state, and on which owning page; what stays open for a client that reaches the service without the proxy; that it does nothing for C6. |
@@ -302,8 +311,10 @@ tickets that would land it are named. Nothing outside `tickets/` changes.
    does after it, and the accept loop under a lowered `ulimit -n` in the shell that
    starts the service. For C6, a scratch crate under `ai_tmp/t38/` that awaits
    `pachinko::serve` on its own runtime and shows a connection answered after `serve`
-   has returned. For Q2, the same service at `--log-level trace`. These runs are the
-   controls every later bound is compared with.
+   has returned. For Q2, the same service at `--log-level trace`, its standard error
+   captured: one request first, so that its per-request line shows the writer works at
+   that level, then the search for `header_read_timeout`. These runs are the controls
+   every later bound is compared with.
 4. **Q1.** With the scratch client, run each state Context lists against the service
    and send SIGTERM: record what the client reads, when its connection closes, whether
    `serve` returned at the first grace or the second, and its exit status. Where a run
@@ -358,8 +369,8 @@ tickets that would land it are named. Nothing outside `tickets/` changes.
    recommendation, the matrix and the review's open findings, and ask, for each of C1
    to C6, adopt, document or leave open; for C7, the flags; where the line on a
    hand-rolled wrapper falls for candidates A and C; whether hyper's timeout closing a
-   slow head with no reply is acceptable where T33 answered 408, if candidate A is in
-   the recommendation; and whether a decision record is wanted. Then stop and do
+   head that has not completed with no reply, as T33's wrapper did, is acceptable, if
+   candidate A is in the recommendation; and whether a decision record is wanted. Then stop and do
    nothing further until the maintainer answers. Quote the answers in the hand-back,
    dated. An answer that names something outside the candidates is a new design:
    record it and stop again. Write nothing that implements the answer; name the
@@ -369,8 +380,9 @@ tickets that would land it are named. Nothing outside `tickets/` changes.
    and merge `origin/main` (`CONVENTIONS.md` §11). Rerun the Verification block at the
    merge commit and requote it. Set `status: done` and T38's Status cell in
    `tickets/README.md` to `done`, and commit on the ticket branch with the hand-back
-   notes, each quoted output headed by the commit it ran at. **Authorisation required:
-   push and open a pull request.** Stop and ask.
+   notes, each quoted output headed by the commit it ran at. No review runs before
+   this commit: since T38-1 only the maintainer's quoted answers and the status have
+   changed. **Authorisation required: push and open a pull request.** Stop and ask.
 
 ## Acceptance criteria
 
@@ -455,9 +467,11 @@ git status --short; echo "exit $?"
 - Where "hand-rolled I/O wrapper" stops: whether a hand-driven accept loop over
   hyper-util (candidate A), or a `Listener` of the service's own (candidate C), is
   allowed. The spike evaluates both and asks at step 8. Owner: maintainer.
-- hyper's header timeout, read from the source, closes a slow head with no reply,
-  where T33 answered 408 on the maintainer's call. Step 5 checks it on the wire and
-  step 8 asks whether it is acceptable. Owner: maintainer.
+- hyper's header timeout, read from the source, closes a head that has not completed
+  with no reply, as T33's wrapper did. The 408 the maintainer called for in T33 was for
+  a body read that failed after a whole head, which hyper's head timer does not time.
+  Step 5 checks it on the wire and step 8 asks whether it is acceptable. Owner:
+  maintainer.
 - Whether the decision needs a record, and whether it revises decision 0019, is asked
   at step 8; the record is its own pull request to `main` (Non-goals).
 - `crates/pachinko/src/serve.rs` and `docs/explanation/security-model.md` name T38 as

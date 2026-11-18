@@ -135,14 +135,14 @@ Whether and how to bound it is the specification's third open question, and the
 resident memory of PR 38's prototype, 8,191 MiB after ten seconds of batch publishing
 (decision 0019's evidence), is the reason it needs an answer.
 
-Time is bounded less than shape. `--request-timeout-ms` (30 seconds) answers a handler
-that runs past it 408 `request_timeout`, which also bounds a request body that stalls
-once its head has arrived. Nothing else is bounded: a connection that sends nothing
-stays open, a client can trickle a request head a byte at a time or never finish it, and
-no limit caps how many connections are open at once, so a client that can reach the
-listener can hold descriptors and memory for as long as it likes. The listener binds
-loopback by default; a proxy or firewall in front of an exposed listener has to enforce
-these bounds. T38 looks for an existing way to close the gap in the service.
+Time is bounded less than shape. `--request-timeout-ms` bounds each handler and nothing
+else, so a connection that sends nothing, or a request head that trickles in or never
+completes, stays open; the [HTTP API](../reference/http-api.md#request-timeout) owns
+that contract. No limit caps how many connections are open at once either, so a client
+that can reach the listener can hold connections, descriptors and memory for as long as
+it likes. The listener binds loopback by default; a proxy or firewall in front of an
+exposed listener has to enforce these bounds. T38 looks for an existing way to close the
+gap in the service.
 
 ## What is out of scope
 

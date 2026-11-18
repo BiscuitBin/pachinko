@@ -209,8 +209,10 @@ in front of an exposed listener.
 On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener stops
 accepting, and requests in flight finish. After `--shutdown-grace-ms` (5000 by default)
 the service stops waiting for the connections still open, and the owner stops taking
-commands. Such a connection is not closed until the process exits, which closes it
-without a reply; a request that completes on it once the owner has stopped is answered
+commands. The service does not close such a connection: it lasts until its request has
+been answered, its client closes it, or the process exits, which closes it without a
+reply. Until then the request is handled as at any other time, the request timeout
+included, with one difference: a command it sends once the owner has stopped is refused
 503 `not_ready`. Any of the service's tasks still running one more grace period later
 is aborted, and `serve` exits non-zero. A grace of 0 stops waiting at once and gives the
 service's tasks up to 1 second to end before aborting what is left, so a clean stop still
