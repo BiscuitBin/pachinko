@@ -3,7 +3,7 @@ id: T37
 title: "Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos"
 status: todo
 depends_on: [T35]
-parallel_with: [T33, T34, T36]
+parallel_with: [T33, T36]
 branch: ticket/t37-review-and-ticket-shell
 estimated_size: S
 ---
@@ -35,7 +35,7 @@ block in `tickets/CONVENTIONS.md` §14 (lines 882 to 887) runs
 **2. §14's triage and apply phases were skipped at size S.** §14 Phase 2 (lines 911 to
 915) has separate subagents triage each finding into `ai_tmp/review/<id>-<n>/verdicts.md`.
 Phase 3 (lines 916 to 918) has them apply the valid fixes one writer at a time. T36's two
-review rounds, eleven and then three findings, all valid, were triaged and applied by the
+review rounds, eleven and then three findings, were triaged and applied by the
 executing agent itself, at commits `a9de4f2` and `a482609`, and no `verdicts.md` was
 written. That is a deviation from the convention as written. For a size-S ticket that
 changes only documents, the convention may also cost more than it protects. The
@@ -80,7 +80,7 @@ three-space indent removed, and running
 word so that T10's citation of `097ede1` passes. A seven-character prefix of
 `be7caf3e03bfd8a4dd360470af150a697663e094` fails typos 1.51.1 today (exit 2), so T36
 cites the full id, which passes. `rg -n '\b[0-9a-f]{7}\b' tickets/` matches 801 lines. In
-a scratch file under the same configuration with lines 24 to 25 replaced by
+a scratch configuration holding only
 `[default] extend-ignore-re = ["\\b[0-9a-f]{7,40}\\b"]`, both short ids pass and a real
 misspelling on the same line still fails. The pattern also exempts any all-hex word of
 seven letters or more, such as "defaced"; a misspelling made only of the letters a to f
@@ -132,7 +132,10 @@ recommendations and **stops** for the answers.
 Under (i) and (ii), a fence's tag picks the dialect: `sh` is checked with `-s sh` and
 `bash` with `-s bash`. A bash fence in a ticket still in scope is retagged `bash`. The
 template fences replace `<id>`-style placeholders with shell variables (`"$id"`,
-`"$branch"`, `"$lens"`), and the prose under each says what each variable holds.
+`"$branch"`, `"$lens"`). A variable that is never assigned fails SC2154, so each template
+fence opens with example assignments (`id=T05 n=1 lens=conformance …`), and the prose
+under it says what each variable holds. Probed on a scratch file: §14's rewritten command
+and the two README commands fail with SC2154 bare and pass with the assignments.
 
 **C. Where the hook gets shellcheck.**
 
