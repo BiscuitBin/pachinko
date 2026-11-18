@@ -583,6 +583,8 @@ T34); commit B carries this section and `status:`; `3acf093` merges
   and its lines in `tickets/README.md`. It retired the Non-goal on the idle bound and the
   cut, the trickle sentence of the Goal and its acceptance criterion. The retired
   statements stay where they were, each marked.
+- On 2026-11-18 the maintainer asked for `origin/wave-2-tickets` to be merged again and
+  authorised the push and the update of pull request 46's description.
 - The second record's stale-sentence search is the plan's, split in two: the plan's
   `\bIdle\b` under `rg -i` matches the pocket state `idle` across libpachinko, the
   specification and the handbook, so the phrases run with `-i` over `docs`, `crates`
@@ -806,94 +808,82 @@ state, the owner never answers a `LeaseId` refusal, and only `no_ticks` and
 - **After the T32 merge.** A read-only review of `65d834c` against T32's rules, comments
   and close-out decisions found no drift.
 
-The Verification block ran at `3acf093`, the T32 merge, with `origin/main` read as
-`origin/wave-2-tickets`. A scratch script ran it, printing each command, the tail of its
-log (`ai_tmp/t33/verify/`) and its exit status. The quote is verbatim, except that the
-worktree's absolute path reads `<worktree>`. Three points are commentary, not output:
+The Verification block ran again at `21389fd`, the merge of `origin/wave-2-tickets`
+(pull request 49's merge commit, T35), after the second record of 2026-11-17 changed it, and this quote
+replaces the one taken at `3acf093` (§11: a later change makes a quote stale).
+`origin/main` reads `origin/wave-2-tickets`. A scratch script ran it, printing each
+command, the tail of its log (`ai_tmp/t33-amend/verify/`) and its exit status. The quote
+is verbatim, except that the worktree's absolute path reads `<worktree>`. Three points
+are commentary, not output:
 
-- `rg -n -i 'lease.?id'` exits 0 on `ReleaseIdlesEmptyPocket`, which is the ticket
-  defect noted in step 2; the word-bounded search exits 1.
+- The specification search ran word-bounded, as Open points says the ticket means. The
+  unbounded `rg -n -i 'lease.?id'` still exits 0 on `ReleaseIdlesEmptyPocket`.
 - `just semver` exits 0, as Step 10 explains.
-- The coverage tail shows only stale-profile warnings. The report's `TOTAL` line from the
-  same log follows the block (regions, functions, lines; 98.96% of lines).
+- The coverage tail shows only the report's last line. The report's `TOTAL` line from the
+  same log follows the block (regions, functions, lines; 99.18% of lines).
 
 ```text
-HEAD 3acf093
+HEAD 21389fd
 
-$ just plan-spec pachinko   (output in ai_tmp/t33/verify/plan-spec.log; tail shown)
+$ just plan-spec pachinko   (output in ai_tmp/t33-amend/verify/plan-spec.log; tail shown)
 }
 exit 0
 
 $ rg -n 'LeaseLapses' docs/specs/pachinko.allium
-622:rule LeaseLapses {
-894:        LeaseLapses
-exit 0
-
-$ rg -n -i 'lease.?id' docs/specs/pachinko.allium
-592:rule ReleaseIdlesEmptyPocket {
+699:rule LeaseLapses {
+1200:        LeaseLapses
 exit 0
 
 $ rg -n -i '\blease.?id' docs/specs/pachinko.allium
 exit 1
 
-$ just fmt-check   (output in ai_tmp/t33/verify/fmt-check.log; tail shown)
+$ just fmt-check   (output in ai_tmp/t33-amend/verify/fmt-check.log; tail shown)
 cargo fmt --manifest-path fuzz/Cargo.toml --check
 cargo fmt --manifest-path loadgen/Cargo.toml --check
 exit 0
 
-$ just clippy   (output in ai_tmp/t33/verify/clippy.log; tail shown)
+$ just clippy   (output in ai_tmp/t33-amend/verify/clippy.log; tail shown)
 cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked -- -D warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
 exit 0
 
-$ just test   (output in ai_tmp/t33/verify/test.log; tail shown)
-test crates/pachinko/src/error.rs - error::ServeError::RandomSource (line 67) ... ok
-test crates/pachinko/src/lib.rs - run (line 47) ... ok
+$ just test   (output in ai_tmp/t33-amend/verify/test.log; tail shown)
+test crates/pachinko/src/lease_ids.rs - lease_ids::EpochSerialLeaseIds::new (line 52) ... ok
 
 test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-all doctests ran in 0.54s; merged doctests compilation took 0.31s
+all doctests ran in 0.65s; merged doctests compilation took 0.42s
 exit 0
 
-$ just doc   (output in ai_tmp/t33/verify/doc.log; tail shown)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+$ just doc   (output in ai_tmp/t33-amend/verify/doc.log; tail shown)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
    Generated <worktree>/target/doc/libpachinko/index.html and 1 other file
 exit 0
 
-$ just effects   (output in ai_tmp/t33/verify/effects.log; tail shown)
+$ just effects   (output in ai_tmp/t33-amend/verify/effects.log; tail shown)
 sh scripts/check-effects.sh
 effects: libpachinko names none of 8 banned crates and uses none of 121 banned std APIs;
 effects: the fixture trips every ban exactly once, and pachinko trips none.
 exit 0
 
-$ just coverage   (output in ai_tmp/t33/verify/coverage.log; tail shown)
-<worktree>/target/llvm-cov-target/t33-robustness.md-21192-15851350013603388649_6.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
-<worktree>/target/llvm-cov-target/t33-robustness.md-21193-15851350013603388649_7.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
-<worktree>/target/llvm-cov-target/t33-robustness.md-21194-15851350013603388649_8.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
-<worktree>/target/llvm-cov-target/t33-robustness.md-21198-1335675195453789462_12.profraw: _RNvXs2_NtCs7GIaRfTjMqo_8pachinko4httpNtB5_7RefusalINtNtCs3bJEMBXHbwl_4core7convert4FromNtNtCs6b0e9E3bLJh_11libpachinko5error9PullErrorE4from: function basic block count change detected (counter mismatch)
+$ just coverage   (output in ai_tmp/t33-amend/verify/coverage.log; tail shown)
 
     Finished report saved to target/llvm-cov/lcov.info
 exit 0
 
-$ just semver   (output in ai_tmp/t33/verify/semver.log; tail shown)
-     Checked [   0.007s] 202 checks: 202 pass, 58 skip
+$ just semver   (output in ai_tmp/t33-amend/verify/semver.log; tail shown)
+     Checked [   0.005s] 202 checks: 202 pass, 58 skip
      Summary no semver update required
-    Finished [   0.461s] libpachinko
-exit 0
-
-$ just semver origin/wave-2-tickets   (output in ai_tmp/t33/verify/semver-base.log; tail shown)
-     Checked [   0.007s] 202 checks: 202 pass, 58 skip
-     Summary no semver update required
-    Finished [   0.517s] libpachinko
+    Finished [   0.445s] libpachinko
 exit 0
 
 $ rg -n 'impl LeaseIds' crates
-crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
 crates/libpachinko/src/queue/pull.rs:158:    impl LeaseIds for Repeating {
 crates/libpachinko/src/queue/pull.rs:218:    impl LeaseIds for AlwaysOne {
+crates/libpachinko/src/lease_ids.rs:68:impl LeaseIds for CountingLeaseIds {
+crates/libpachinko/tests/queue/pull.rs:338:impl LeaseIds for OneId {
+crates/libpachinko/tests/queue/pull.rs:353:impl LeaseIds for RepeatsOne {
 crates/pachinko/src/lease_ids.rs:83:impl LeaseIds for EpochSerialLeaseIds {
-crates/libpachinko/tests/queue/pull.rs:330:impl LeaseIds for OneId {
-crates/libpachinko/tests/queue/pull.rs:345:impl LeaseIds for RepeatsOne {
 exit 0
 
 $ rg -n 'fn fresh_lease_id|while .*is_active' crates/libpachinko/src/queue/pull.rs
@@ -902,50 +892,81 @@ exit 1
 $ rg -n 'ticks: Option|ticks\.take\(\)' crates/pachinko/src/serve.rs
 exit 1
 
-$ rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs
-924:    fn a_trickling_head_is_cut_at_the_header_read_deadline() {
+$ git grep -n -E 'struct (Connections|Connection|Idle) \{|ReadTimedOut|fn timed_out_read' 8b7e01e -- crates/pachinko/src
+8b7e01e:crates/pachinko/src/http.rs:217:    ReadTimedOut(String),
+8b7e01e:crates/pachinko/src/http.rs:237:            Self::RequestTimeout(_) | Self::ReadTimedOut(_) => StatusCode::REQUEST_TIMEOUT,
+8b7e01e:crates/pachinko/src/http.rs:257:            Self::RequestTimeout(_) | Self::ReadTimedOut(_) => "request_timeout",
+8b7e01e:crates/pachinko/src/http.rs:337:                |timed_out| Self::ReadTimedOut(timed_out.to_string()),
+8b7e01e:crates/pachinko/src/http.rs:347:fn timed_out_read<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a io::Error> {
+8b7e01e:crates/pachinko/src/http.rs:907:        let refusal = Refusal::ReadTimedOut(String::from(
+8b7e01e:crates/pachinko/src/serve.rs:346:struct Connections {
+8b7e01e:crates/pachinko/src/serve.rs:382:struct Connection {
+8b7e01e:crates/pachinko/src/serve.rs:393:struct Idle {
 exit 0
 
-$ rg -n 'tick_lane\(\)\.1' crates
-crates/pachinko/src/http.rs:705:        let ticks = actor::tick_lane().1;
-crates/pachinko/src/actor.rs:593:        tick_lane().1
+$ rg -n 'struct (Connections|Connection|Idle) \{|ReadTimedOut|fn timed_out_read' crates/pachinko/src
+exit 1
+
+$ rg -n 'fn a_connection_open_past_the_grace_period_gets_no_command_applied_after_serve_returns' crates/pachinko/src/serve.rs
+614:    fn a_connection_open_past_the_grace_period_gets_no_command_applied_after_serve_returns() {
 exit 0
 
 $ rg -n -i 'no trickle|slowloris bound exists|after its last byte|of the last byte|second start gets|always comes first|always gets its 408' docs crates
 exit 1
 
+$ git grep -c -i -E 'two timeouts|two bounds|first byte|head deadline|closes an idle|closing idle|not read in time|ReadTimedOut' 8b7e01e -- docs crates CHANGELOG.md
+8b7e01e:CHANGELOG.md:3
+8b7e01e:crates/pachinko/src/http.rs:14
+8b7e01e:crates/pachinko/src/serve.rs:23
+8b7e01e:docs/explanation/architecture.md:1
+8b7e01e:docs/explanation/security-model.md:1
+8b7e01e:docs/reference/configuration.md:1
+8b7e01e:docs/reference/http-api.md:7
+exit 0
+
+$ rg -n -i 'two timeouts|two bounds|first byte|head deadline|closes an idle|closing idle|not read in time|ReadTimedOut' docs crates CHANGELOG.md
+exit 1
+
+$ rg -n '\bIdle\b' crates/pachinko/src/serve.rs
+exit 1
+
 $ git diff --stat origin/wave-2-tickets...HEAD
- CHANGELOG.md                            |  45 +++-
+ CHANGELOG.md                            |  20 +-
  crates/libpachinko/README.md            |   2 +-
- crates/libpachinko/src/error.rs         |  57 ++++-
- crates/libpachinko/src/lease_ids.rs     |  54 ++++-
+ crates/libpachinko/src/error.rs         |  57 ++-
+ crates/libpachinko/src/lease_ids.rs     |  54 ++-
  crates/libpachinko/src/lib.rs           |  12 +-
  crates/libpachinko/src/queue/pockets.rs |   7 +
- crates/libpachinko/src/queue/pull.rs    | 142 +++++++++---
- crates/libpachinko/tests/queue/pull.rs  | 147 +++++++++++-
- crates/pachinko/src/actor.rs            | 144 ++++++------
+ crates/libpachinko/src/queue/pull.rs    | 142 ++++--
+ crates/libpachinko/tests/queue/pull.rs  | 149 +++++-
+ crates/pachinko/src/actor.rs            | 144 +++---
+ crates/pachinko/src/config.rs           |  17 +-
  crates/pachinko/src/error.rs            |   7 +-
  crates/pachinko/src/http.rs             |   9 +-
- crates/pachinko/src/lease_ids.rs        |  66 +++---
- crates/pachinko/src/serve.rs            | 263 ++++++++++++++++------
- docs/explanation/architecture.md        |  19 +-
- docs/explanation/security-model.md      |   6 +-
- docs/reference/api.md                   |   4 +-
- docs/reference/configuration.md         |   2 +-
- docs/reference/http-api.md              |  21 +-
- tickets/T33-robustness.md               | 383 +++++++++++++++++++++++++++++++-
- 19 files changed, 1131 insertions(+), 259 deletions(-)
+ crates/pachinko/src/lease_ids.rs        |  66 ++-
+ crates/pachinko/src/lib.rs              |   8 +-
+ crates/pachinko/src/serve.rs            | 673 +++++++++----------------
+ docs/explanation/architecture.md        |  33 +-
+ docs/explanation/security-model.md      |  13 +-
+ docs/operations/troubleshooting.md      |   7 +-
+ docs/reference/api.md                   |   6 +-
+ docs/reference/configuration.md         |   4 +-
+ docs/reference/http-api.md              |  30 +-
+ tickets/README.md                       |  12 +-
+ tickets/T33-robustness.md               | 836 +++++++++++++++++++++++++++++++-
+ tickets/T38-slow-client-spike.md        | 479 ++++++++++++++++++
+ 24 files changed, 2121 insertions(+), 666 deletions(-)
 exit 0
 
 $ git diff --stat origin/wave-2-tickets...HEAD -- Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml Cargo.lock docs/decisions docs/specs
 exit 0
 
-$ just check-docs   (output in ai_tmp/t33/verify/check-docs.log; tail shown)
+$ just check-docs   (output in ai_tmp/t33-amend/verify/check-docs.log; tail shown)
 bg-validate-docs
-Validated 47 pages and 48 canonical topics.
+Validated 48 pages and 49 canonical topics.
 exit 0
 
-$ just check   (output in ai_tmp/t33/verify/check.log; tail shown)
+$ just check   (output in ai_tmp/t33-amend/verify/check.log; tail shown)
 
 All checks passed and the worktree is unchanged.
 exit 0
@@ -955,8 +976,10 @@ exit 0
 ```
 
 ```text
-TOTAL                                      7554               144    98.09%         625                 4    99.36%        4537                47    98.96%           0                 0         -
+TOTAL                                      7604               128    98.32%         627                 2    99.68%        4640                38    99.18%           0                 0         -
 ```
+
+`cargo nextest` ran 273 tests, 273 passed; the branch ran 249 before the merge.
 
 ### T33-3: the whole branch, after the hand-back
 
@@ -1332,6 +1355,29 @@ timeout and the shutdown; the other pages point at it. One low finding, not chan
   follow-up wave's sentence still say "a header-read deadline". The titles are the
   ticket's name, and the wave's prose now says in its T38 sentences that the deadline
   was removed again.
+
+### The third merge
+
+On 2026-11-18 the maintainer asked for the latest `origin/wave-2-tickets` to be merged
+and the branch pushed. `git fetch origin` moved it to pull request 49's merge commit
+(T35, with T36 and T37 written); its short sha is left out because `typos` reads two of
+its letters as a misspelling, which T37 owns. The merge is `21389fd`. Five files conflicted, and each keeps
+both tickets' lines:
+
+- `CHANGELOG.md`: libpachinko's `### Changed` takes T35's rewritten bullets, with T33's
+  breaking `LeaseIds::next` bullet after the ack and nack one. The base now puts
+  pachinko's `### Changed` after `### Added`; this branch follows it, with T33's
+  lease-id exhaustion bullet first, so each crate still has one such heading.
+- `crates/libpachinko/README.md`: T35's `pull`, `lease_view` and `ack` rows, with T33's
+  `LeaseId` refusals on `pull`.
+- `crates/libpachinko/tests/queue/pull.rs`: the union of both import lists.
+- `docs/explanation/architecture.md`: T35's `Mark` and `MarkedRecord`, and "the six
+  enums": T35 added none to `error`, and T33's `LeaseIdError` is the sixth.
+- `tickets/README.md`: T35's `done` row, the T36 and T37 rows, then T38's; T35's prose,
+  then T38's.
+
+`serve.rs`, `http.rs`, `http-api.md` and `configuration.md` merged without a conflict.
+The Verification block's quote, under Step 10, is the run at `21389fd`.
 
 ## Open points
 
