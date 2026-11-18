@@ -110,15 +110,15 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   byte of the request, however it trickles, instead of two after its latest byte. A head
   that arrives within one timeout still gets its reply or its 408 first. A slower one
   gets its reply if the handler writes it within two timeouts of the first byte;
-  otherwise a handler still reading the body answers 400 `bad_request`, and a head that
-  never completes is closed without a reply. A whole request followed by bytes the
-  client sent after it is not read past, so it gets its reply or its 408 within one
-  timeout of its head instead. Any write restarts the deadline, a
+  otherwise a handler still reading the body answers 408 `request_timeout` for the
+  failed read, with no command sent, and a head that never completes is closed without
+  a reply. A whole request followed by bytes the client sent after it is not read past,
+  so it gets its reply or its 408 within one timeout of its head instead. Any write restarts the deadline, a
   `100 Continue` included, so a request that asked for one can still be answered 408. A
   pipelined request whose first bytes arrived before the previous reply was written is
   timed from that write, and closed within three timeouts of it, or answered within four
-  if its whole head arrives with bytes after it; one whose whole head had arrived can be
-  answered 400 rather than 408.
+  if its whole head arrives with bytes after it; one whose whole head had arrived can get
+  the failed read's 408 rather than its handler's.
 - `just check` runs a twentieth gate, `just test-doc-default`, every doctest with
   default features, and CI's `rust` job runs it too.
 - `just lint` reads untracked files Git does not ignore as well as tracked ones, and

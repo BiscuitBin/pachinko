@@ -9,6 +9,8 @@
 //! Every route but `/healthz` and `/readyz` runs under [`bounded`], which answers
 //! 408 `request_timeout` once its handler has run for `--request-timeout-ms`.
 
+use std::io;
+use std::iter::successors;
 use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
@@ -126,7 +128,8 @@ async fn run_bounded(bound: Duration, request: Request, next: Next) -> Response 
         .unwrap_or_else(|_| Refusal::RequestTimeout(bound).into_response())
 }
 
-/// Why a request was refused: one variant per code on the wire.
+/// Why a request was refused: one variant per cause, each answered with one code on
+/// the wire.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum Refusal {
     /// `PublisherJoins` named a publisher that has already joined.
@@ -207,6 +210,11 @@ pub(crate) enum Refusal {
         .0.as_millis()
     )]
     RequestTimeout(Duration),
+    /// A read of the request body timed out before the handler sent a command, at the
+    /// connection's head deadline or in the socket: the read error's message, the idle
+    /// bound's or the operating system's, is the detail.
+    #[error("the request was not read in time: {0}")]
+    ReadTimedOut(String),
 }
 
 impl Refusal {
@@ -226,7 +234,7 @@ impl Refusal {
             Self::TooManyRows { .. } | Self::PayloadTooLarge { .. } | Self::BodyTooLarge { .. } => {
                 StatusCode::PAYLOAD_TOO_LARGE
             }
-            Self::RequestTimeout(_) => StatusCode::REQUEST_TIMEOUT,
+            Self::RequestTimeout(_) | Self::ReadTimedOut(_) => StatusCode::REQUEST_TIMEOUT,
         }
     }
 
@@ -246,7 +254,7 @@ impl Refusal {
             Self::TooManyRows { .. } => "too_many_rows",
             Self::PayloadTooLarge { .. } => "payload_too_large",
             Self::BodyTooLarge { .. } => "body_too_large",
-            Self::RequestTimeout(_) => "request_timeout",
+            Self::RequestTimeout(_) | Self::ReadTimedOut(_) => "request_timeout",
         }
     }
 }
@@ -313,16 +321,33 @@ impl From<Stopped> for Refusal {
 
 impl Refusal {
     /// The refusal for a body the `Json` extractor rejected: over `max` bytes as
-    /// read, told apart by the rejection's type, is 413 `body_too_large`; any other
-    /// rejection is 400 `bad_request`.
+    /// read, told apart by the rejection's type, is 413 `body_too_large`; a read that
+    /// failed with [`io::ErrorKind::TimedOut`], the head deadline's error or the
+    /// socket's, found down the rejection's sources, is 408 `request_timeout`; any other
+    /// rejection, a read the shutdown cut included, is 400 `bad_request`.
     fn from_json(rejection: JsonRejection, max: usize) -> Self {
         match rejection {
             JsonRejection::BytesRejection(BytesRejection::FailedToBufferBody(
                 FailedToBufferBody::LengthLimitError(_),
             )) => Self::BodyTooLarge { max },
+            JsonRejection::BytesRejection(BytesRejection::FailedToBufferBody(
+                FailedToBufferBody::UnknownBodyError(unknown),
+            )) => timed_out_read(&unknown).map_or_else(
+                || Self::BadRequest(unknown.body_text()),
+                |timed_out| Self::ReadTimedOut(timed_out.to_string()),
+            ),
             other => Self::BadRequest(other.body_text()),
         }
     }
+}
+
+/// The first [`io::Error`] of kind [`io::ErrorKind::TimedOut`] down `error`'s sources,
+/// `error` itself included: the head deadline's failed read under the layers hyper and
+/// axum wrap it in.
+fn timed_out_read<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a io::Error> {
+    successors(Some(error), |error| error.source())
+        .filter_map(|error| error.downcast_ref::<io::Error>())
+        .find(|error| error.kind() == io::ErrorKind::TimedOut)
 }
 
 impl From<PathRejection> for Refusal {
@@ -608,6 +633,7 @@ async fn log_request(request: Request, next: Next) -> Response {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::time::Duration;
 
     use axum::Router;
@@ -629,7 +655,7 @@ mod tests {
     use axum::extract::{FromRequest, Request};
     use axum::http::header::CONTENT_TYPE;
 
-    use super::{Limits, Refusal, bounded, router};
+    use super::{Limits, Refusal, bounded, router, timed_out_read};
     use crate::actor::{self, Readiness, Stopped};
     use crate::{EpochSerialLeaseIds, ServeConfig, SystemClock};
 
@@ -874,6 +900,42 @@ mod tests {
     async fn bad_request_is_400() {
         let refusal = Refusal::BadRequest(String::from("not JSON"));
         assert_answered(refusal, StatusCode::BAD_REQUEST, "bad_request").await;
+    }
+
+    #[tokio::test]
+    async fn a_read_the_head_deadline_failed_is_408_request_timeout() {
+        let refusal = Refusal::ReadTimedOut(String::from(
+            "no reply was written within 1000ms of the first byte",
+        ));
+        assert_eq!(
+            refusal.to_string(),
+            "the request was not read in time: no reply was written within 1000ms of the \
+            first byte"
+        );
+        assert_answered(refusal, StatusCode::REQUEST_TIMEOUT, "request_timeout").await;
+    }
+
+    #[test]
+    fn only_a_timed_out_read_down_the_sources_is_the_head_deadline() {
+        // The head deadline's error two sources down, as a body rejection holds it.
+        let timed_out = axum::Error::new(axum::Error::new(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "no reply was written within 1000ms of the first byte",
+        )));
+        assert_eq!(
+            timed_out_read(&timed_out).map(ToString::to_string),
+            Some(String::from(
+                "no reply was written within 1000ms of the first byte"
+            ))
+        );
+        // The shutdown cut is another io::Error, and stays a 400.
+        let cut = axum::Error::new(io::Error::new(
+            io::ErrorKind::ConnectionAborted,
+            "the shutdown grace period is over",
+        ));
+        assert!(timed_out_read(&cut).is_none());
+        let opaque = axum::Error::new("error reading a body from connection");
+        assert!(timed_out_read(&opaque).is_none());
     }
 
     #[tokio::test]

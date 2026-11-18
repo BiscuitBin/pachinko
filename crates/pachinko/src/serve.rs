@@ -402,9 +402,9 @@ struct Idle {
     /// after that, so a head that arrives within one bound always gets its reply
     /// or its 408 before the deadline. A slower head still gets its reply if the
     /// handler writes it within two bounds of the first byte; otherwise the read
-    /// fails at the deadline, before the 408 is due. What it gets instead is the
-    /// handler's: one still reading the body answers 400 for the failed read. A
-    /// partial head is closed unanswered. The deadline is checked only on a
+    /// fails at the deadline, before the handler's 408 is due. What it gets instead
+    /// is the failed read's: a handler still reading the body answers it 408, with
+    /// no command sent. A partial head is closed unanswered. The deadline is checked only on a
     /// pending read, and hyper stops reading once a whole request is buffered
     /// with bytes after it, until it writes: such a request is bounded by its
     /// handler instead, and gets its reply or its 408 within one bound of its
@@ -415,10 +415,10 @@ struct Idle {
     /// previous reply was written is timed from that write, and is closed within
     /// three bounds of it, one with nothing owed and two from its next byte, or
     /// answered within four if its whole head arrives with bytes after it; one
-    /// whose whole head was buffered by then can get the 400 instead of its 408. A
-    /// client trickling a head holds the connection at most two bounds per
-    /// request, three after a pipelined reply; no deadline at all would let it
-    /// hold the connection with a partial head.
+    /// whose whole head was buffered by then can get the failed read's 408 instead
+    /// of the handler's. A client trickling a head holds the connection at most two
+    /// bounds per request, three after a pipelined reply; no deadline at all would
+    /// let it hold the connection with a partial head.
     owed_since: Option<Instant>,
 }
 
@@ -1105,19 +1105,27 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
     }
 
     #[test]
-    fn a_head_slower_than_the_bound_is_answered_400_when_its_body_read_fails_at_the_deadline() {
+    fn a_head_slower_than_the_bound_is_answered_408_when_its_body_read_fails_at_the_deadline() {
         // The head ends after the bound (about 750 ms), and the body never comes: the
         // idle bound fails the handler's body read two bounds after the first byte
-        // (1000 ms), before its 408 would come one bound after the head (1250 ms).
+        // (1000 ms), before the handler's own 408 would come one bound after the head
+        // (1250 ms). The failed read is answered 408 too, and its message tells the
+        // two apart.
         let (served, reply, waited) = publish_with_a_slow_head(Duration::from_millis(750));
         assert!(
-            reply.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+            reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
             "{reply:?}"
         );
-        assert!(reply.contains(r#""error":"bad_request""#), "{reply:?}");
+        assert!(reply.contains(r#""error":"request_timeout""#), "{reply:?}");
+        assert!(
+            reply.contains("the request was not read in time: no reply was written within 1000ms of the first byte"),
+            "{reply:?}"
+        );
+        assert!(!reply.contains("took longer than"), "{reply:?}");
         // A deadline from the head's last byte could fail the body read no sooner
         // than two bounds after the client wrote it (1750 ms), however the threads
-        // were scheduled, so a 400 before then shows the deadline from the first.
+        // were scheduled, so a 408 for the read before then shows the deadline from
+        // the first.
         assert!(
             waited >= Duration::from_millis(990) && waited < Duration::from_millis(1700),
             "answered after {waited:?}, not at two bounds from the first byte"

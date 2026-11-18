@@ -205,8 +205,10 @@ head that never completes is closed at it with no reply. A head that arrives wit
 timeout always gets its reply or its 408 first, because the 408 comes one timeout after
 the head, unless it was pipelined behind an earlier request (below). A head slower than
 one timeout gets its reply if the handler writes it within two timeouts of the first
-byte. Otherwise the connection's read fails at that deadline, before the 408 is due, so
-a handler still reading the request body answers 400 `bad_request` for the failed read.
+byte. Otherwise the connection's read fails at that deadline, before the handler's 408
+is due, so a handler still reading the request body answers 408 `request_timeout` for the
+failed read, with a message that says the request was not read in time; no command was
+sent.
 There is one exception. Once a whole request has arrived together with bytes the client
 sent after it, the server stops reading until it has replied, so the deadline is not
 checked. That request is bounded by its handler instead, and gets its reply or its 408
@@ -219,9 +221,10 @@ each request. A pipelined request whose first bytes arrived before the previous 
 was written is timed from that write: the connection is closed if nothing more arrives
 within one timeout of it, or two timeouts after the next byte that does, so within three
 timeouts of the previous reply, or four if its whole head arrives with bytes after it
-(above). Such a request can also lose its 408: one whose head had
-arrived in full before the previous reply was written, and whose body has not arrived a
-timeout after that write, can be answered 400 `bad_request` for the failed read instead.
+(above). Such a request can also get the failed read's 408 rather than its handler's: one
+whose head had arrived in full before the previous reply was written, and whose body has
+not arrived a timeout after that write, can be answered 408 `request_timeout` for the
+failed read.
 
 ## Shutdown
 
@@ -254,7 +257,7 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 | `payload_too_large` | 413 | A payload decodes to more bytes than `--max-payload-bytes`; the message names the row. |
 | `body_too_large` | 413 | The request body is longer than `--max-body-bytes`. |
 | `not_ready` | 503 | `GET /readyz` while the service is starting or stopping; any other route once the queue's owner has stopped; or the library refused with a variant the map does not know, which is also logged as an error. No route answers 500. |
-| `request_timeout` | 408 | The handler ran past `--request-timeout-ms`. A command it sent may still be applied; see [Request timeout](#request-timeout). |
+| `request_timeout` | 408 | The handler ran past `--request-timeout-ms`, and a command it sent may still be applied; or a read of the request body timed out, at its head deadline or in the operating system, and no command was sent. See [Request timeout](#request-timeout). |
 
 ## Not exposed
 
