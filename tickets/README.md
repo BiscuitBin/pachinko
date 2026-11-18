@@ -58,6 +58,7 @@ snapshot.
 | T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | done |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
 | T35 | Decide and land the held-version shed (Q1) and stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
+| T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | T35 | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -79,7 +80,7 @@ The MVP wave, after T19:
 
 ```text
 T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35
-                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33
+                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33 ── T38
                  └─ T29 ───────────────┘       └─ T34
 ```
 
@@ -177,7 +178,12 @@ the MVP wave.
   default-features doctests, untracked files, quoted evidence and loadgen in CI. T32,
   T33 and T34 are parallel lanes on the wave-2 rule, each editing only its own lines in
   the shared files (CONVENTIONS.md §11). T35 decides Q1 and Q2 and lands the decision;
-  it waits for T32 because both edit `docs/specs/pachinko.allium`.
+  it waits for T32 because both edit `docs/specs/pachinko.allium`. T38 is a spike that
+  came out of T33: on 2026-11-17 the maintainer had T33 remove the service's hand-rolled
+  connection wrapper, and with it the header-read deadline, and T38 names what a slow or
+  silent client can then do and looks for an existing way to bound it. It writes no
+  production code, waits for T33, and ends with a recommendation the maintainer decides
+  on.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex
