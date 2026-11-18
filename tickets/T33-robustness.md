@@ -1243,7 +1243,8 @@ All checks passed and the worktree is unchanged.
 
 Shown to bite, on `8b7e01e` with the change in the worktree, each with
 `cargo test --locked --offline -p pachinko --lib a_connection_open_past_the_grace_period`
-(exit 101):
+(the mutation's run exited 101; the first run's exit was not captured, its output having
+been piped through `tail`):
 
 ```text
 # test first, against the wrapper: the cut closed the connection, so no 503 came
@@ -1285,7 +1286,8 @@ printed 50 lines for the phrases and 5 for the type name
 them the pocket state. Both searches are in the Verification block. A looser search,
 `rg -n -i 'idle connection|trickl|slowloris' docs crates CHANGELOG.md README.md`, leaves
 three lines, each a sentence that states the gap: `http-api.md`, `security-model.md` and
-`serve.rs`'s module doc. Step 8's own search still prints nothing, so it is not retired.
+`serve.rs`'s module doc, one more than the plan expected. The same three are all it
+prints at `21389fd`, after the merge. Step 8's own search still prints nothing, so it is not retired.
 
 **T38 (`6fd7b2d`).** A subagent drafted `tickets/T38-slow-client-spike.md` on T35's
 model, with every statement about axum, hyper, hyper-util, tower, tokio or socket2 read
