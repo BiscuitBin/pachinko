@@ -342,8 +342,8 @@ impl Refusal {
 }
 
 /// The first [`io::Error`] of kind [`io::ErrorKind::TimedOut`] down `error`'s sources,
-/// `error` itself included: the head deadline's failed read under the layers hyper and
-/// axum wrap it in.
+/// `error` itself included: a read the head deadline or the socket timed out, under the
+/// layers hyper and axum wrap it in.
 fn timed_out_read<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a io::Error> {
     successors(Some(error), |error| error.source())
         .filter_map(|error| error.downcast_ref::<io::Error>())
@@ -916,8 +916,8 @@ mod tests {
     }
 
     #[test]
-    fn only_a_timed_out_read_down_the_sources_is_the_head_deadline() {
-        // The head deadline's error two sources down, as a body rejection holds it.
+    fn only_a_timed_out_read_down_the_sources_is_found() {
+        // A timed-out read two sources down, as a body rejection holds it.
         let timed_out = axum::Error::new(axum::Error::new(io::Error::new(
             io::ErrorKind::TimedOut,
             "no reply was written within 1000ms of the first byte",
