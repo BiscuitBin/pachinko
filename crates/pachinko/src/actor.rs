@@ -366,18 +366,20 @@ impl QueueHandle {
 }
 
 /// The handle to `queue`'s owner and the owner itself, a future the caller spawns
-/// into the task scope it owns. The owner holds `lease_ids`, a clone of the queue's
-/// source, to see exhaustion before a pull, and takes the sweep's ticks from
-/// `ticks`, the receiving end of a [`tick_lane`].
+/// into the task scope it owns. The owner takes the sweep's ticks from `ticks`, the
+/// receiving end of a [`tick_lane`]; it holds no lease-id source of its own, only
+/// the queue, which draws from its source.
 ///
 /// The owner sets `readiness` from [`Readiness::Starting`] to
 /// [`Readiness::Serving`] as its first act, and ends with `Ok` once every handle is
 /// dropped or `stop` turns true (or its sender is dropped), and with
-/// [`ServeError::LeaseIdsExhausted`] at the first `Pull` after the lease-id source
-/// is exhausted, rather than reissue an id.
+/// [`ServeError::LeaseIdsExhausted`] at the first `Pull` that needs a lease id and
+/// gets none the queue can grant, rather than reissue an id: the source is
+/// exhausted, or it broke its contract and returned an id still active. A pull
+/// within a lease, or one that finds no pocket, needs no new id, so an exhausted
+/// source still answers it.
 pub(crate) fn start(
     queue: ServiceQueue,
-    lease_ids: EpochSerialLeaseIds,
     readiness: watch::Sender<Readiness>,
     stop: watch::Receiver<bool>,
     ticks: mpsc::Receiver<Tick>,
@@ -394,7 +396,7 @@ pub(crate) fn start(
             }
             starting
         });
-        own(queue, lease_ids, inbox, ticks, stop).await
+        own(queue, inbox, ticks, stop).await
     };
     (QueueHandle { commands }, owner)
 }
@@ -414,7 +416,6 @@ pub(crate) fn start(
 /// the owner ends.
 async fn own(
     mut queue: ServiceQueue,
-    lease_ids: EpochSerialLeaseIds,
     mut inbox: mpsc::Receiver<Command>,
     mut ticks: mpsc::Receiver<Tick>,
     mut stop: watch::Receiver<bool>,
@@ -429,7 +430,7 @@ async fn own(
                 None => ticks_open = false,
             },
             command = inbox.recv() => match command {
-                Some(command) => apply(&mut queue, &lease_ids, command)?,
+                Some(command) => apply(&mut queue, command)?,
                 None => return Ok(()),
             },
         }
@@ -453,11 +454,7 @@ fn sweep(queue: &mut ServiceQueue, Tick { done }: Tick) {
 }
 
 /// Runs one command against the queue and sends its answer.
-fn apply(
-    queue: &mut ServiceQueue,
-    lease_ids: &EpochSerialLeaseIds,
-    command: Command,
-) -> Result<(), ServeError> {
+fn apply(queue: &mut ServiceQueue, command: Command) -> Result<(), ServeError> {
     match command {
         Command::PublisherJoins {
             publisher_id,
@@ -480,7 +477,7 @@ fn apply(
             consumer_id,
             limit,
             reply,
-        } => return pull(queue, lease_ids, &consumer_id, limit, reply),
+        } => return pull(queue, &consumer_id, limit, reply),
         Command::LeaseView { consumer_id, reply } => {
             answer(reply, queue.lease_view(&consumer_id));
         }
@@ -511,28 +508,32 @@ fn apply(
 }
 
 /// Applies a `Pull`, unless its requester has gone, in which case no lease is
-/// granted to nobody.
+/// granted to nobody, and answers it.
 ///
 /// # Errors
 ///
-/// [`ServeError::LeaseIdsExhausted`] when the lease-id source is exhausted: the
-/// owner stops rather than grant a lease under an id it already issued.
+/// [`ServeError::LeaseIdsExhausted`] when the pull needed a new lease id and the
+/// source could not give a fresh one ([`PullError::LeaseId`]): the queue refused
+/// the claim and changed nothing, and the owner stops rather than grant a lease
+/// under an id it already issued. That pull is never answered, so its requester
+/// sees the owner stop.
 fn pull(
     queue: &mut ServiceQueue,
-    lease_ids: &EpochSerialLeaseIds,
     consumer_id: &ConsumerId,
     limit: i64,
     reply: Reply<Result<PullOutcome, PullError>>,
 ) -> Result<(), ServeError> {
-    if lease_ids.exhausted() {
-        return Err(ServeError::LeaseIdsExhausted);
-    }
     if reply.is_closed() {
         tracing::debug!(consumer = %consumer_id, "skipping a pull whose requester has gone");
         return Ok(());
     }
-    answer(reply, queue.pull(consumer_id, limit));
-    Ok(())
+    match queue.pull(consumer_id, limit) {
+        Err(PullError::LeaseId(_)) => Err(ServeError::LeaseIdsExhausted),
+        pulled => {
+            answer(reply, pulled);
+            Ok(())
+        }
+    }
 }
 
 /// Publishes each of `rows` in order. An equal rank refuses its row alone; any other
@@ -583,13 +584,8 @@ mod tests {
     /// How long a test waits for the owner before it fails.
     const BOUND: Duration = Duration::from_secs(5);
 
-    fn queue(lease_ids: &EpochSerialLeaseIds) -> ServiceQueue {
-        Queue::new(
-            Config::default(),
-            SystemClock::new().unwrap(),
-            lease_ids.clone(),
-        )
-        .unwrap()
+    fn queue(lease_ids: EpochSerialLeaseIds) -> ServiceQueue {
+        Queue::new(Config::default(), SystemClock::new().unwrap(), lease_ids).unwrap()
     }
 
     /// A tick lane whose ticker has already gone.
@@ -618,7 +614,7 @@ mod tests {
         }
         drop(sender);
         let (_stop, never) = watch::channel(false);
-        let owner = own(queue(&lease_ids), lease_ids, inbox, no_ticks(), never);
+        let owner = own(queue(lease_ids), inbox, no_ticks(), never);
         tokio::time::timeout(BOUND, owner).await.unwrap()
     }
 
@@ -729,6 +725,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_exhausted_source_still_answers_a_pull_within_a_lease() {
+        let mut commands = setup(&["a"]);
+        let (first, first_answer) = pull("c1");
+        let (again, again_answer) = pull("c1");
+        commands.extend([first, again]);
+        let ended = run_owner(EpochSerialLeaseIds::starting_at(u64::MAX), commands).await;
+        let first = first_answer.await.unwrap();
+        let again = again_answer
+            .await
+            .expect("the pull within the lease is answered");
+        match (first, again) {
+            (
+                Ok(PullOutcome::Batch { lease: claimed, .. }),
+                Ok(PullOutcome::Batch { lease: within, .. }),
+            ) => assert_eq!(claimed, within, "the second batch is under the same lease"),
+            other => panic!("expected two batches, got {other:?}"),
+        }
+        assert_eq!(ended, Ok(()));
+    }
+
+    #[tokio::test]
+    async fn an_exhausted_source_still_answers_a_pull_that_finds_no_pocket() {
+        let mut commands = setup(&["a"]);
+        let (first, first_answer) = pull("c1");
+        let (second, second_answer) = pull("c2");
+        commands.extend([first, second]);
+        let ended = run_owner(EpochSerialLeaseIds::starting_at(u64::MAX), commands).await;
+        assert_eq!(pocket_of(first_answer.await.unwrap()), "a");
+        assert_eq!(
+            second_answer
+                .await
+                .expect("the pull that finds no pocket is answered"),
+            Ok(PullOutcome::NoPocketAvailable)
+        );
+        assert_eq!(ended, Ok(()));
+    }
+
+    #[tokio::test]
     async fn a_command_to_a_stopped_owner_is_stopped() {
         let (commands, inbox) = mpsc::channel(1);
         drop(inbox);
@@ -751,7 +785,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_full_channel_makes_the_sender_wait_not_fail() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (commands, inbox) = mpsc::channel(1);
         let handle = QueueHandle { commands };
         let (first, second) = (handle.clone(), handle.clone());
@@ -769,7 +802,8 @@ mod tests {
             assert!(waiting.await, "a sender finished with no owner running");
         }
         let (_stop, never) = watch::channel(false);
-        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox, no_ticks(), never));
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let owner = tokio::spawn(own(queue, inbox, no_ticks(), never));
         let answers = tokio::time::timeout(BOUND, both).await.unwrap();
         assert_eq!(answers, (Ok(Ok(())), Ok(Ok(()))));
         let ended = tokio::time::timeout(BOUND, owner).await.unwrap();
@@ -787,8 +821,7 @@ mod tests {
 
     #[test]
     fn each_row_applies_in_order_and_an_equal_rank_refuses_its_row_alone() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
-        let mut queue = queue(&lease_ids);
+        let mut queue = queue(EpochSerialLeaseIds::starting_at(1));
         queue.publisher_joins(PublisherId::new("p")).unwrap();
         let rows = vec![
             row("a", "k1", 1),
@@ -814,8 +847,7 @@ mod tests {
 
     #[test]
     fn an_unjoined_publisher_is_refused_at_the_first_row_with_nothing_landed() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
-        let mut queue = queue(&lease_ids);
+        let mut queue = queue(EpochSerialLeaseIds::starting_at(1));
         let rows = vec![row("a", "k1", 1), row("b", "k1", 1)];
         assert_eq!(
             publish_each(&mut queue, &PublisherId::new("p"), rows),
@@ -865,9 +897,9 @@ mod tests {
             std::pin::pin!(async move { handle.publish_batch(PublisherId::new("p0"), rows).await });
         let waited = tokio::time::timeout(Duration::from_millis(50), batch.as_mut()).await;
         assert!(waited.is_err(), "the batch finished with no owner running");
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (_stop, never) = watch::channel(false);
-        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox, no_ticks(), never));
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let owner = tokio::spawn(own(queue, inbox, no_ticks(), never));
         let outcomes = tokio::time::timeout(BOUND, batch).await.unwrap();
         assert_eq!(
             outcomes,
@@ -895,10 +927,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_owner_ends_once_every_handle_is_dropped() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (readiness, _) = watch::channel(Readiness::Starting);
         let (_stop, never) = watch::channel(false);
-        let (handle, owner) = start(queue(&lease_ids), lease_ids, readiness, never, no_ticks());
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let (handle, owner) = start(queue, readiness, never, no_ticks());
         let owner = tokio::spawn(owner);
         let copy = handle.clone();
         assert_eq!(
@@ -920,16 +952,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_owner_reports_serving_then_stops_when_told_and_drops_its_inbox() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (readiness, mut watching) = watch::channel(Readiness::Starting);
         let (stop, stopping) = watch::channel(false);
-        let (handle, owner) = start(
-            queue(&lease_ids),
-            lease_ids,
-            readiness,
-            stopping,
-            no_ticks(),
-        );
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let (handle, owner) = start(queue, readiness, stopping, no_ticks());
         assert_eq!(*watching.borrow_and_update(), Readiness::Starting);
         let owner = tokio::spawn(owner);
         tokio::time::timeout(
@@ -958,16 +984,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_owner_never_turns_stopping_back_to_serving() {
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (readiness, watching) = watch::channel(Readiness::Stopping);
         let (stop, stopping) = watch::channel(true);
-        let (_handle, owner) = start(
-            queue(&lease_ids),
-            lease_ids,
-            readiness,
-            stopping,
-            no_ticks(),
-        );
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let (_handle, owner) = start(queue, readiness, stopping, no_ticks());
         assert_eq!(tokio::time::timeout(BOUND, owner).await.unwrap(), Ok(()));
         assert_eq!(*watching.borrow(), Readiness::Stopping);
         drop(stop);
@@ -1005,11 +1025,11 @@ mod tests {
     async fn neither_lane_starves_the_other_when_both_stay_ready() {
         const CAPACITY: usize = 2;
         const SENDERS: usize = 8;
-        let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let (handle, inbox) = QueueHandle::unowned(CAPACITY);
         let (lane, ticks) = tick_lane();
         let (_stop, never) = watch::channel(false);
-        let owner = tokio::spawn(own(queue(&lease_ids), lease_ids, inbox, ticks, never));
+        let queue = queue(EpochSerialLeaseIds::starting_at(1));
+        let owner = tokio::spawn(own(queue, inbox, ticks, never));
         let answered = Arc::new(AtomicUsize::new(0));
         let ticker = tokio::spawn(counting_ticker(lane, Arc::clone(&answered)));
         let (done, running) = watch::channel(false);
@@ -1145,11 +1165,11 @@ mod tests {
         let lease_ids = EpochSerialLeaseIds::starting_at(1);
         let mut config = Config::default();
         config.lease_ttl = Duration::ZERO;
-        let queue = Queue::new(config, SystemClock::new().unwrap(), lease_ids.clone()).unwrap();
+        let queue = Queue::new(config, SystemClock::new().unwrap(), lease_ids).unwrap();
         let (readiness, _) = watch::channel(Readiness::Starting);
         let (shutdown, stopping) = watch::channel(false);
         let (lane, ticks) = tick_lane();
-        let (handle, owner) = start(queue, lease_ids, readiness, stopping.clone(), ticks);
+        let (handle, owner) = start(queue, readiness, stopping.clone(), ticks);
         let owner = tokio::spawn(owner);
         let ticker = tokio::spawn(ticker(lane, SMALLEST_SLEEP, stopping));
         handle

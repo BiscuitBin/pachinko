@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use libpachinko::LeaseId;
 use libpachinko::lease_ids::LeaseIds;
+use libpachinko::{LeaseId, LeaseIdError};
 
 use crate::ServeError;
 
@@ -19,18 +19,19 @@ const EXHAUSTED: u64 = 0;
 /// serial never repeats.
 ///
 /// Clones share the serial through an [`Arc`], so no clone reissues an id. Once the
-/// serial cannot advance the source is exhausted: [`EpochSerialLeaseIds::exhausted`]
-/// says so, and the queue's owner stops rather than grant another lease.
+/// serial cannot advance the source is exhausted: every later draw is
+/// [`LeaseIdError::Exhausted`], and the queue's owner stops at the first pull that
+/// needs a new id rather than grant a lease under one already issued.
 ///
 /// ```
 /// use libpachinko::lease_ids::LeaseIds;
 ///
 /// let ids = pachinko::EpochSerialLeaseIds::new()?;
-/// let (first, second) = (ids.next(), ids.next());
+/// let (first, second) = (ids.next()?, ids.next()?);
 /// assert_ne!(first, second);
 /// assert_eq!(first.as_u128() >> 64, second.as_u128() >> 64);
 /// assert_eq!(first.to_string().len(), 32);
-/// # Ok::<(), pachinko::ServeError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -49,25 +50,14 @@ impl EpochSerialLeaseIds {
     /// refuses to start rather than fall back to a guessable epoch.
     ///
     /// ```
+    /// use libpachinko::lease_ids::LeaseIds;
+    ///
     /// let ids = pachinko::EpochSerialLeaseIds::new()?;
-    /// assert!(!ids.exhausted());
-    /// # Ok::<(), pachinko::ServeError>(())
+    /// assert_eq!(ids.next()?.as_u128() & u128::from(u64::MAX), 1);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new() -> Result<Self, ServeError> {
         Self::drawn(getrandom::u64(), 1)
-    }
-
-    /// Whether the serial can no longer advance. Once it is, the next id would
-    /// repeat one already issued.
-    ///
-    /// ```
-    /// let ids = pachinko::EpochSerialLeaseIds::new()?;
-    /// assert!(!ids.exhausted());
-    /// # Ok::<(), pachinko::ServeError>(())
-    /// ```
-    #[must_use]
-    pub fn exhausted(&self) -> bool {
-        self.serial.load(Ordering::Acquire) == EXHAUSTED
     }
 
     /// The source over the epoch `draw` gave, with the serial starting at `first`.
@@ -92,14 +82,19 @@ impl EpochSerialLeaseIds {
 
 impl LeaseIds for EpochSerialLeaseIds {
     /// The id for the current serial, advancing the serial with `checked_add`; a
-    /// serial that cannot advance leaves the source exhausted. Called once
-    /// exhausted, it returns the serial-0 id, which no issued id carries, and the
-    /// owner never calls it then.
-    fn next(&self) -> LeaseId {
+    /// serial that cannot advance leaves the source exhausted, so the last serial,
+    /// `u64::MAX`, is issued once. Called once exhausted, it returns
+    /// [`LeaseIdError::Exhausted`], on every call.
+    fn next(&self) -> Result<LeaseId, LeaseIdError> {
         let serial = self
             .serial
             .update(Ordering::AcqRel, Ordering::Acquire, advance);
-        LeaseId::from_u128((u128::from(self.epoch) << 64) | u128::from(serial))
+        if serial == EXHAUSTED {
+            return Err(LeaseIdError::Exhausted);
+        }
+        Ok(LeaseId::from_u128(
+            (u128::from(self.epoch) << 64) | u128::from(serial),
+        ))
     }
 }
 
@@ -114,8 +109,8 @@ const fn advance(serial: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use libpachinko::LeaseId;
     use libpachinko::lease_ids::LeaseIds;
+    use libpachinko::{LeaseId, LeaseIdError};
 
     use super::EpochSerialLeaseIds;
     use crate::ServeError;
@@ -124,7 +119,7 @@ mod tests {
     fn two_ids_differ_and_share_the_epoch() {
         let ids = EpochSerialLeaseIds::new().unwrap();
         let shared = ids.clone();
-        let (first, second) = (ids.next(), shared.next());
+        let (first, second) = (ids.next().unwrap(), shared.next().unwrap());
         assert_ne!(first, second);
         assert_eq!(first.as_u128() >> 64, second.as_u128() >> 64);
         assert_eq!(first.as_u128() & u128::from(u64::MAX), 1);
@@ -133,7 +128,7 @@ mod tests {
 
     #[test]
     fn the_wire_form_is_32_hex_digits() {
-        let id = EpochSerialLeaseIds::starting_at(7).next();
+        let id = EpochSerialLeaseIds::starting_at(7).next().unwrap();
         let text = id.to_string();
         assert_eq!(text, "0000000000c0ffee0000000000000007");
         assert_eq!(text.parse::<LeaseId>(), Ok(id));
@@ -143,18 +138,19 @@ mod tests {
     fn the_last_serial_is_issued_once_and_leaves_the_source_exhausted() {
         let ids = EpochSerialLeaseIds::starting_at(u64::MAX - 1);
         assert_eq!(
-            ids.next().as_u128() & u128::from(u64::MAX),
+            ids.next().unwrap().as_u128() & u128::from(u64::MAX),
             u128::from(u64::MAX - 1)
         );
-        assert!(!ids.exhausted());
         assert_eq!(
-            ids.next().as_u128() & u128::from(u64::MAX),
+            ids.next().unwrap().as_u128() & u128::from(u64::MAX),
             u128::from(u64::MAX)
         );
-        assert!(ids.exhausted());
-        let after = ids.next();
-        assert_eq!(after.as_u128() & u128::from(u64::MAX), 0);
-        assert!(ids.exhausted(), "an exhausted source stays exhausted");
+        assert_eq!(ids.next(), Err(LeaseIdError::Exhausted));
+        assert_eq!(
+            ids.next(),
+            Err(LeaseIdError::Exhausted),
+            "an exhausted source stays exhausted"
+        );
     }
 
     #[test]

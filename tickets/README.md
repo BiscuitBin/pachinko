@@ -55,11 +55,12 @@ snapshot.
 | T30 | Performance evidence, never gated | `T30-performance-evidence.md` | T26, T27 | T28 | done |
 | T31 | Integration and hand-back | `T31-mvp-integration.md` | T28, T29, T30 | none | done |
 | T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | done |
-| T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | todo |
+| T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | done |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
 | T35 | Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided | `T35-decide-q1-q2.md` | T32 | none | done |
 | T36 | Diagram drift: a check that the committed SVGs match the script that draws them, and where that script lives | `T36-diagram-drift-check.md` | T35 | T33 | todo |
 | T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | todo |
+| T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -81,7 +82,7 @@ The MVP wave, after T19:
 
 ```text
 T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35
-                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33
+                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33 ── T38
                  └─ T29 ───────────────┘       └─ T34
 ```
 
@@ -186,7 +187,12 @@ the MVP wave.
   its §14 review (T35-1); the rewritten ticket text has had none. On 2026-11-16 the
   maintainer decided Q2, no touch on stale, and had T35 land the nack reset T32's
   close-out decided; both are in the specification at `983b785`, which had its own §14
-  review (T35-2). The ticket's rewrite around them has had no §14 review.
+  review (T35-2). The ticket's rewrite around them has had no §14 review. T38 is a spike
+  that came out of T33: on 2026-11-17 the maintainer had T33 remove the service's
+  hand-rolled connection wrapper, and with it the header-read deadline, and T38 names
+  what a slow or silent client can then do and looks for an existing way to bound it. It
+  writes no production code, waits for T33, and ends with a recommendation the
+  maintainer decides on.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

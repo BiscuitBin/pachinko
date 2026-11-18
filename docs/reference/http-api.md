@@ -225,22 +225,28 @@ first attempt or another publish stored it. It does not prove the first attempt 
 a 408 can come before the command reaches the owner, for example while the body is still
 being read. The usual cause is an owner far behind on its commands.
 
-The same flag bounds idle connections. A connection that sends nothing for one timeout
-is closed. One that has sent bytes and is still owed a reply is closed two timeouts
-after its last byte if no reply has been written. A request whose head arrived in full
-always gets its 408 first. A head that never completes gets no reply; the connection is
-just closed.
+The flag bounds a handler and nothing else. Nothing bounds a connection that sends
+nothing, or a request head that trickles in or never completes: the service keeps such a
+connection open until the client closes it or the service stops. A request body that
+stalls is bounded only by its handler's timeout.
+[Security model](../explanation/security-model.md#request-shape-limits) says what to put
+in front of an exposed listener.
 
 ## Shutdown
 
 On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener stops
-accepting, and requests in flight finish. Connections still open after
-`--shutdown-grace-ms` (5000 by default) are cut without a reply, and the owner stops
-taking commands. Anything still running one more grace period later is aborted, and
-`serve` exits non-zero. A grace of 0 cuts at once and waits up to 1 second for the server's
-tasks to end on the cut before aborting what is left, so a clean stop still exits 0. A client that sees a 503, a refused connection or a cut
-connection during the window retries once the service is back. The queue is in memory,
-so a restarted service starts empty.
+accepting, and requests in flight finish. After `--shutdown-grace-ms` (5000 by default)
+the service stops waiting for the connections still open, and the owner stops taking
+commands. The service does not close such a connection: it lasts until its request has
+been answered, its client closes it, or the process exits, which closes it without a
+reply. Until then the request is handled as at any other time, the request timeout
+included, with one difference: a command it sends once the owner has stopped is refused
+503 `not_ready`. Any of the service's tasks still running one more grace period later
+is aborted, and `serve` exits non-zero. A grace of 0 stops waiting at once and gives the
+service's tasks up to 1 second to end before aborting what is left, so a clean stop still
+exits 0. A client that sees a 503, a refused connection or a closed connection during
+the window retries once the service is back. The queue is in memory, so a restarted
+service starts empty.
 
 ## Errors
 

@@ -39,6 +39,14 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   a pocket; lapses before an ack or a nack no longer count toward it. A renew or pull
   leaves the count, and a repeated ack or nack finds it at zero already. The
   specification says that a pull within a lease extends it on an empty batch.
+- BREAKING: `LeaseIds::next` returns `Result<LeaseId, LeaseIdError>`, and a source
+  that has no id it has not given before answers `LeaseIdError::Exhausted` on every
+  later call. `LeaseIdError` is new, at the crate root beside the other refusal enums,
+  with `Exhausted` and `StillActive`, and `PullError` gains `LeaseId`. A pull that
+  claims a pocket draws once, before it claims, and refuses an id that is still active
+  with `StillActive` rather than draw again, so a refused claim changes nothing; a pull
+  within a lease and a pull that finds no pocket never draw. `CountingLeaseIds` issues
+  `u64::MAX` once and then answers `Exhausted` instead of wrapping.
 - An ack or a nack marks its held record and removes nothing. `SettleOutcome` is `Acked`
   or `Nacked`, replacing `Settled` and `Deferred`; a repeat of the first mark answers as
   the first did and extends the lease, and the other mark is refused with the new
@@ -142,9 +150,10 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 - Operability for `pachinko serve`: `GET /readyz`, 204 while serving and 503
   `not_ready` while starting or stopping; `--log-level` (default `info`, `RUST_LOG`
   ignored), with the per-request line at `debug`; `--request-timeout-ms` (default
-  30000), answering 408 `request_timeout` and closing idle connections; and
-  `--shutdown-grace-ms` (default 5000), after which open connections are cut and,
-  one more grace period later, anything left is aborted.
+  30000), answering a handler that runs past it 408 `request_timeout`; and
+  `--shutdown-grace-ms` (default 5000), after which the service stops waiting for
+  open connections and, one more grace period later, aborts those of its own tasks
+  still running.
 - A closed-loop load generator and lapse probe, `just loadgen`, in the excluded
   `loadgen/` crate with its own lockfile: publish, batch, consume and mix workloads and
   the lapse lag against a running `pachinko serve`, failing closed on any error. It
@@ -155,6 +164,11 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Changed
 
+- Once the lease-id serial is exhausted, the owner stops with `LeaseIdsExhausted` only
+  at a pull that needs a new lease id, leaving that pull unanswered; a pull within a
+  lease and a pull that finds no pocket are still answered.
+  `EpochSerialLeaseIds::exhausted` is removed: an exhausted source answers
+  `LeaseIdError::Exhausted` from `next`.
 - `just check` runs a twentieth gate, `just test-doc-default`, every doctest with
   default features, and CI's `rust` job runs it too.
 - `just lint` reads untracked files Git does not ignore as well as tracked ones, and
