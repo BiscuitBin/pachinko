@@ -138,6 +138,10 @@ always gets its 408 first", no longer holds as written. The hyper-util route is 
 alternative. If the lead or the T33-1 reviewers prefer it, the ticket stops and asks,
 because it adds two dependencies.
 
+**Retired.** The maintainer's [second record of 2026-11-17](#maintainer-calls-2026-11-17-second-record) removed `Idle` and the whole connection wrapper.
+This choice, its trade-off and the head deadline no longer describe the code:
+`--request-timeout-ms` bounds a handler and nothing else, and T38 owns the trickle.
+
 The skills: `rust-change` for each change, `review-change` to review the result,
 `review-docs` for the handbook lines, and `project-check` and `fix-quality` for the gate.
 
@@ -152,12 +156,15 @@ lane; reusing a receiver for a second start does not compile. A connection that 
 a head one byte at a time is cut two `--request-timeout-ms` after its first byte. Each
 fix was shown to bite before it landed.
 
+The trickle sentence is retired by the [second record of 2026-11-17](#maintainer-calls-2026-11-17-second-record): nothing bounds a trickled head, and T38
+owns it.
+
 This ticket owns:
 
 | Kind | Names |
 | --- | --- |
 | Library API | `lease_ids::LeaseIdError` (new); `LeaseIds::next` returning `Result`; `PullError::LeaseId` |
-| Service behaviour | the owner stops only at a pull that needs an id; `Lifecycle::new` returning the receiver; the first-byte head deadline |
+| Service behaviour | the owner stops only at a pull that needs an id; `Lifecycle::new` returning the receiver; the first-byte head deadline (retired by the second record of 2026-11-17) |
 | Specification obligations exercised, never owned | `rule-success.PullWithinLease`, `rule-success.PullFindsNoPocket`, `rule-success.PullClaimsFrontPocket`, `rule-entity-creation.PullClaimsFrontPocket.1` |
 
 The obligation ids are the grammar the tests already carry (`// obligation:` in
@@ -183,7 +190,8 @@ obligation count.
   (Step 5), and `http.rs`'s forced arm (`unmapped`, lines 254 to 259) still covers any
   path that reaches it.
 - No change to the idle-connection bound for a connection that sends nothing (one
-  timeout, `Idle::pending` line 421), nor to the shutdown's cut.
+  timeout, `Idle::pending` line 421), nor to the shutdown's cut. Retired by the
+  [second record of 2026-11-17](#maintainer-calls-2026-11-17-second-record), which removes the idle bound and the cut's hold on a connection.
 - None of T31's other Open points: run 2's findings 4, 5, 7 and 8 stay where T31 put
   them.
 
@@ -201,14 +209,19 @@ obligation count.
 | `crates/pachinko/src/lease_ids.rs` | shared, own lines | `EpochSerialLeaseIds::next` returns `Err(LeaseIdError::Exhausted)` after the last serial; `exhausted()` (lines 59 to 70) and the sentinel's doc (lines 93 to 96) removed; doctests at 24 to 33 and 50 to 54 and the test at 140 to 156 updated |
 | `crates/pachinko/src/error.rs` | shared, own lines | `LeaseIdsExhausted`'s doc (lines 73 to 81): the owner stops at a pull that needs an id the source cannot give |
 | `crates/pachinko/src/actor.rs` | shared, own lines | The owner's `lease_ids` parameter and pre-check removed from `start`, `own`, `apply` and `pull`; `pull` stops the owner on `PullError::LeaseId(_)` without answering; the docs at lines 370 to 379 and 515 to 521; tests: `run_owner`, `queue` and the two new exhaustion tests |
-| `crates/pachinko/src/serve.rs` | shared, own lines | `service_queue` returns the queue alone; `Lifecycle` without `ticks`, `new` returning the receiver, `start(&self, queue, ticks)`; every caller (lines 131, 143 to 144, 180 to 183, and the tests at 619 to 620, 647 to 648, 744 to 745, 821 to 823, 869 to 877, 918 to 922, 979 to 980); `scope`'s destructuring (line 226); `Idle` and its doc (lines 395 to 454); the trickle test |
-| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source. Widened after the hand-back, by the maintainer's call of 2026-11-17: `Refusal::ReadTimedOut` and the enum's doc, `Refusal::from_json` and its doc, its helper `timed_out_read`, and the unit tests `a_read_the_head_deadline_failed_is_408_request_timeout` and `only_a_timed_out_read_down_the_sources_is_found` (T33-4, B2) |
-| `docs/explanation/architecture.md` | shared, own lines | Lines 150 to 157 (the `LeaseIds` paragraph: fallible); lines 243 to 248 (the owner stops at a pull that needs an id) |
+| `crates/pachinko/src/serve.rs` | shared, own lines | `service_queue` returns the queue alone; `Lifecycle` without `ticks`, `new` returning the receiver, `start(&self, queue, ticks)`; every caller (lines 131, 143 to 144, 180 to 183, and the tests at 619 to 620, 647 to 648, 744 to 745, 821 to 823, 869 to 877, 918 to 922, 979 to 980); `scope`'s destructuring (line 226); `Idle` and its doc (lines 395 to 454); the trickle test. Widened by the second record of 2026-11-17: `Connections`, `Connection` and `Idle` removed; `listen` selecting on the cut; the module's, `Lifecycle`'s, `Bounds`'s, `serve`'s, `drain`'s and `listen`'s docs; the socket tests and their helpers |
+| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source. Widened after the hand-back, by the maintainer's call of 2026-11-17: `Refusal::ReadTimedOut` and the enum's doc, `Refusal::from_json` and its doc, its helper `timed_out_read`, and the unit tests `a_read_the_head_deadline_failed_is_408_request_timeout` and `only_a_timed_out_read_down_the_sources_is_found` (T33-4, B2). Widened by the second record of 2026-11-17: all of that widening removed again |
+| `docs/explanation/architecture.md` | shared, own lines | Lines 150 to 157 (the `LeaseIds` paragraph: fallible); lines 243 to 248 (the owner stops at a pull that needs an id). Widened by the second record of 2026-11-17: "The task scope" and "The wire", the shutdown and request-timeout sentences |
 | `docs/reference/api.md` | shared, own lines | Lines 70 to 77: `LeaseIdError` among the refusal enums |
-| `docs/reference/http-api.md` | shared, own lines | "Request timeout", lines 183 to 187: the head deadline from the first byte and the one-timeout guarantee. Widened after the hand-back, by the maintainer's call of 2026-11-17: the `request_timeout` row of "Errors" |
-| `docs/explanation/security-model.md` | shared, own lines | Lines 138 to 142: the trickle is bounded, and the gap sentence is retired |
-| `docs/reference/configuration.md` | shared, own lines | Line 46, the `--request-timeout-ms` row: it also bounds a request head, two timeouts from its first byte |
-| `CHANGELOG.md` | shared, own lines | libpachinko Unreleased, "Changed": the breaking `LeaseIds::next` change; pachinko Unreleased: the exhaustion stop and the head deadline |
+| `docs/reference/http-api.md` | shared, own lines | "Request timeout", lines 183 to 187: the head deadline from the first byte and the one-timeout guarantee. Widened after the hand-back, by the maintainer's call of 2026-11-17: the `request_timeout` row of "Errors". Widened by the second record of 2026-11-17: "Request timeout" states the gap, and "Shutdown" what becomes of a connection open past the grace |
+| `docs/explanation/security-model.md` | shared, own lines | Lines 138 to 142: the trickle is bounded, and the gap sentence is retired. Widened by the second record of 2026-11-17: the gap is stated again, wider |
+| `docs/reference/configuration.md` | shared, own lines | Line 46, the `--request-timeout-ms` row: it also bounds a request head, two timeouts from its first byte. Widened by the second record of 2026-11-17: that row is the handler only, and the `--shutdown-grace-ms` row below it is reworded to match "Shutdown" |
+| `CHANGELOG.md` | shared, own lines | libpachinko Unreleased, "Changed": the breaking `LeaseIds::next` change; pachinko Unreleased: the exhaustion stop and the head deadline. Widened by the second record of 2026-11-17: the head-deadline entry deleted, never released, and the operability entry's timeout and grace clauses reworded |
+| `crates/pachinko/src/config.rs` | shared, own lines | Widened by the second record of 2026-11-17: the docs of the two defaults and of `request_timeout` and `shutdown_grace` |
+| `crates/pachinko/src/lib.rs` | shared, own lines | Widened by the second record of 2026-11-17: lines 9 to 13 of the crate doc |
+| `docs/operations/troubleshooting.md` | shared, own lines | Widened by the second record of 2026-11-17: "`shutdown took longer than <n>ms`": the connection is closed by the exit, not cut |
+| `tickets/T38-slow-client-spike.md` | ticket | Widened by the second record of 2026-11-17: the spike ticket, new |
+| `tickets/README.md` | shared, own lines | Widened by the second record of 2026-11-17: T38's index row, its place in the drawing and in the follow-up wave's prose |
 | `tickets/T33-robustness.md` | ticket | `status:` and hand-back notes |
 
 T32 and T34 run in parallel. T32 may edit `crates/libpachinko/src/queue/pockets.rs`,
@@ -476,7 +489,8 @@ hand-back records the new lines.
 - A connection trickling a head one byte per half-timeout is closed between two timeouts
   and its upper margin after its first byte, and the existing idle and stalled-head
   tests stay green. The hand-back quotes the trickle test,
-  `a_trickling_head_is_cut_at_the_header_read_deadline`, failing at the base.
+  `a_trickling_head_is_cut_at_the_header_read_deadline`, failing at the base. Retired
+  by the [second record of 2026-11-17](#maintainer-calls-2026-11-17-second-record): the idle, stalled-head and trickle tests left with the wrapper.
 - No dependency was added:
   `git diff origin/main...HEAD -- Cargo.toml crates/*/Cargo.toml Cargo.lock` prints
   nothing, with its positive control being the same command, from the same
@@ -516,7 +530,16 @@ just semver; echo "exit $?"
 rg -n 'impl LeaseIds' crates; echo "exit $? (positive control, at least three impls)"
 rg -n 'fn fresh_lease_id|while .*is_active' crates/libpachinko/src/queue/pull.rs; echo "exit $? (must be 1)"
 rg -n 'ticks: Option|ticks\.take\(\)' crates/pachinko/src/serve.rs; echo "exit $? (must be 1)"
-rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs; echo "exit $? (must be 0)"
+# retired by the second record of 2026-11-17, with the wrapper:
+#   rg -n 'fn a_trickling_head_is_cut_at_the_header_read_deadline' crates/pachinko/src/serve.rs
+# in its place, the wrapper is gone; its positive control is the same search at 8b7e01e
+git grep -n -E 'struct (Connections|Connection|Idle) \{|ReadTimedOut|fn timed_out_read' 8b7e01e -- crates/pachinko/src; echo "exit $? (positive control, must match)"
+rg -n 'struct (Connections|Connection|Idle) \{|ReadTimedOut|fn timed_out_read' crates/pachinko/src; echo "exit $? (must be 1)"
+rg -n 'fn a_connection_open_past_the_grace_period_gets_no_command_applied_after_serve_returns' crates/pachinko/src/serve.rs; echo "exit $? (must be 0)"
+# the second record's stale-sentence search; its positive control is the same search at 8b7e01e
+git grep -c -i -E 'two timeouts|two bounds|first byte|head deadline|closes an idle|closing idle|not read in time|ReadTimedOut' 8b7e01e -- docs crates CHANGELOG.md; echo "exit $? (positive control, must match)"
+rg -n -i 'two timeouts|two bounds|first byte|head deadline|closes an idle|closing idle|not read in time|ReadTimedOut' docs crates CHANGELOG.md; echo "exit $? (must be 1)"
+rg -n '\bIdle\b' crates/pachinko/src/serve.rs; echo "exit $? (must be 1)"
 # positive control: the same diff over the whole branch prints the files T33 changed
 git diff --stat origin/main...HEAD; echo "exit $? (must list crates/ paths)"
 git diff --stat origin/main...HEAD -- Cargo.toml crates/libpachinko/Cargo.toml crates/pachinko/Cargo.toml Cargo.lock docs/decisions docs/specs; echo "exit $? (must print nothing)"
@@ -553,6 +576,17 @@ T34); commit B carries this section and `status:`; `3acf093` merges
   `ai_tmp/t33/` and `ai_tmp/review/T33-{1,2}/` (gitignored).
 - The maintainer authorised the T33 row's Status cell in `tickets/README.md`, outside
   Files touched, after the T32 merge.
+- The maintainer's second call of 2026-11-17 reversed the first record's "Keep `Idle` as
+  it is" and widened Files touched in place: `config.rs`, `lib.rs`, the task-scope and
+  wire paragraphs of `architecture.md`, the `--shutdown-grace-ms` row of
+  `configuration.md`, `troubleshooting.md`, the new `tickets/T38-slow-client-spike.md`
+  and its lines in `tickets/README.md`. It retired the Non-goal on the idle bound and the
+  cut, the trickle sentence of the Goal and its acceptance criterion. The retired
+  statements stay where they were, each marked.
+- The second record's stale-sentence search is the plan's, split in two: the plan's
+  `\bIdle\b` under `rg -i` matches the pocket state `idle` across libpachinko, the
+  specification and the handbook, so the phrases run with `-i` over `docs`, `crates`
+  and `CHANGELOG.md`, and the type name runs case-sensitively over `serve.rs` alone.
 
 ### The plan (step 2)
 
@@ -983,8 +1017,8 @@ The maintainer answered the open points T33-2, T33-3 and `review-change` left:
 
 | Call | Decision | Effect |
 | --- | --- | --- |
-| How the head deadline is enforced: the in-crate `Idle` or hyper's `header_read_timeout` through a hand-driven hyper-util loop | Keep `Idle` as it is | No code. The pipelined bound (about three timeouts) and the buffered bound (under three) are accepted as documented. |
-| A slow head whose handler is reading the body | 408, not 400 | The one code change, below. |
+| How the head deadline is enforced: the in-crate `Idle` or hyper's `header_read_timeout` through a hand-driven hyper-util loop | Keep `Idle` as it is. **Superseded** by the [second record](#maintainer-calls-2026-11-17-second-record) | No code. The pipelined bound (about three timeouts) and the buffered bound (under three) are accepted as documented. |
+| A slow head whose handler is reading the body | 408, not 400. **Superseded** by the [second record](#maintainer-calls-2026-11-17-second-record): no head deadline is left to fail the read | The one code change, below. |
 | A separate head-read flag beside `--request-timeout-ms` | Keep one flag | No code. |
 | The libpachinko version bump for `LeaseIds::next` | At release | The release process's job (`docs/operations/maintenance.md`), as before. |
 
@@ -1128,6 +1162,177 @@ exit 0
 
 `cargo nextest` ran 255 tests, 255 passed, and line coverage is 98.97%.
 
+### Maintainer calls (2026-11-17), second record
+
+The same day, the maintainer reversed the first record's "Keep `Idle` as it is". The
+wrapper's edge cases (pipelining, `100 Continue`, buffered heads, 400 against 408) had
+taken four review rounds.
+
+| Call | Decision | Effect |
+| --- | --- | --- |
+| The connection wrapper | Remove `Idle` and the whole wrapper; hand axum the plain `TcpListener`, changing only what the MVP needs | The code below. Supersedes the first record's first two rows. |
+| The slow-client gap | A follow-up spike that names the concerns and looks for existing solutions instead of writing our own | `tickets/T38-slow-client-spike.md`. |
+| The result | A simplification pass over it | `/simplify`, below. |
+
+The first record's "Keep one flag" has nothing left to decide here: one flag bounds one
+thing, and T38 asks the question again for whatever it recommends (its C7). The version
+bump still waits for the release. No specification, decision record, dependency or
+`Cargo.lock` line changed. T29's and T31's texts are history and were not edited.
+
+The baseline, at `8b7e01e`, `just check` on the untouched worktree (exit 0):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+**The code (`d612748`).**
+
+- `crates/pachinko/src/serve.rs`: `Connections`, `Connection` and `Idle` are gone with
+  their `Listener`, `AsyncRead` and `AsyncWrite` impls. `scope` passes the listener to
+  `listen`, and `listen` selects between
+  `axum::serve(listener, routes).with_graceful_shutdown(..)` and the cut, the one tweak:
+  axum waits for every open connection, so without it a stalled connection would hold the
+  listener task until the abort. `drain`, `abort`, `Lifecycle`'s `cut` and the owner's
+  stop on the cut are as they were, and so are the strings `open connections were cut`
+  and `cutting open connections`, which `troubleshooting.md` and `tests/binary.rs` key
+  on. The cut no longer closes a connection. Its task is axum's and lasts until the
+  connection ends or the runtime is dropped, which for the binary is its exit; the
+  module doc and `serve`'s `# Errors` say so, and say that an embedder's runtime can see
+  one outlive `serve`.
+- `crates/pachinko/src/http.rs`: restored to its text before `4579b19`
+  (`git diff 4579b19^ 8b7e01e -- crates/pachinko/src/http.rs | git apply -R`).
+  `Refusal::ReadTimedOut`, `timed_out_read` and their two tests are gone, and a failed
+  body read is 400 `bad_request` again.
+- `crates/pachinko/src/config.rs` and `lib.rs`: the docs say the flag bounds a handler,
+  and that the grace ends the wait for open connections.
+- Tests in `serve.rs`. Deleted with the code they tested: the idle, stalled-head,
+  trickle and two slow-head tests and their helpers. Rewritten:
+  `a_connection_open_past_the_grace_period_gets_no_command_applied_after_serve_returns`
+  pins the cut's error, a 503 `not_ready` for a body finished after `serve` returned
+  with the runtime alive, the other stalled connection still open then, and its close
+  when the runtime is dropped. Renamed:
+  `a_handler_slower_than_the_bound_is_answered_408_on_its_connection`. New, beyond the
+  plan, because the handbook now states it:
+  `a_body_that_never_arrives_is_answered_408_at_the_handlers_bound`.
+  `tests/binary.rs`'s `sigterm_under_a_stalled_request_exits_non_zero_naming_the_cut`
+  passes unchanged; it matches the retained text with `contains`, so it is no evidence
+  for the tweak, which the rewritten unit test's `ends_with` is.
+
+Shown to bite, on `8b7e01e` with the change in the worktree, each with
+`cargo test --locked --offline -p pachinko --lib a_connection_open_past_the_grace_period`
+(exit 101):
+
+```text
+# test first, against the wrapper: the cut closed the connection, so no 503 came
+panicked at crates/pachinko/src/serve.rs:623:9:
+""
+
+# mutation: listen's cut arm never completes (restored from a saved copy, cmp clean)
+panicked at crates/pachinko/src/serve.rs:625:9:
+Err(Task("shutdown took longer than 100ms; open connections were cut, and 1 tasks still running 100ms later were aborted"))
+```
+
+**`/simplify` (in `d612748`).** Four read-only reviewers over the code diff: reuse,
+simplification, efficiency and altitude. Applied: one request head for the socket tests
+(`publish_head`, in place of `HEAD` and a second copy); `serve_beside`, one setup for
+the two tests over the real owner, which also cleared clippy's `excessive_nesting`;
+`read_reply`, `assert_timed_out` and `assert_owner_stopped`; `drain`'s doc pointing at
+the module's for what becomes of a connection; `Lifecycle`'s doc rewrapped; the log line
+`a task failed after its connections were cut` reworded to `after the cut`. Not applied:
+rewording the two protected strings; one blocking style for all four socket tests and a
+shared setup for the two with a stand-in owner, which pre-date the diff;
+`drain_a_late_task`'s constant parameter, the same. Efficiency found nothing, and
+altitude found the `select!` the right depth: the cut cannot be folded into axum's
+graceful signal, which fires once and then waits on every connection.
+
+**The handbook (`d612748`).** Each statement on its owning page:
+
+- `http-api.md`: "Request timeout" says the flag bounds a handler and nothing else;
+  "Shutdown" says what becomes of a connection open past the grace; the
+  `request_timeout` row of "Errors" is the handler only.
+- `configuration.md`: both rows, pointing at those sections.
+- `security-model.md`: the gap, the loopback default and the proxy or firewall, and T38.
+- `architecture.md` and `troubleshooting.md`: the shutdown sentences.
+- `CHANGELOG.md`: the head-deadline entry deleted, never released; the operability
+  entry's two clauses reworded.
+
+The stale-sentence search, split as Overrides says. Its positive control at `8b7e01e`
+printed 50 lines for the phrases and 5 for the type name
+(`ai_tmp/t33-amend/sweep-control.txt`); the plan's own command printed 137, most of
+them the pocket state. Both searches are in the Verification block. A looser search,
+`rg -n -i 'idle connection|trickl|slowloris' docs crates CHANGELOG.md README.md`, leaves
+three lines, each a sentence that states the gap: `http-api.md`, `security-model.md` and
+`serve.rs`'s module doc. Step 8's own search still prints nothing, so it is not retired.
+
+**T38 (`6fd7b2d`).** A subagent drafted `tickets/T38-slow-client-spike.md` on T35's
+model, with every statement about axum, hyper, hyper-util, tower, tokio or socket2 read
+in the pinned source and listed by path and lines in `ai_tmp/t33-amend/T38-source-notes.md`.
+It makes no claim about `tower-http` or `axum-server`, which `Cargo.lock` does not hold.
+`tickets/README.md` gains its row, its place in the drawing and three sentences in the
+follow-up wave's prose.
+
+### T33-5: the wrapper's removal and T38
+
+`codex exec -m gpt-6-astra -s read-only`, two lenses in parallel, over
+`git diff 8b7e01e..6fd7b2d`, with `< /dev/null` and `-o last-<lens>.md` (the reviewer's
+last message, copied to `findings-<lens>.md`; exit codes not captured, the runs were
+backgrounded). The brief gave the maintainer's call as the requirement, not this
+record. A fresh Claude subagent triaged all ten findings, read-only, against the code
+and the pinned axum 0.8.9, hyper 1.12.0 and hyper-util 0.1.21 sources; the lead applied
+the fixes, alone. Verdicts are in `ai_tmp/review/T33-5/verdicts.md`. All ten were valid,
+seven distinct, none high, so there was no second round. The fixes are `27dd73f`.
+
+- **CONFORMANCE-1, B4, B5** (medium, valid, applied): "Shutdown" said a connection open
+  past the grace "is not closed until the process exits" and that a request completing
+  on it "is answered 503". hyper closes a connection once the exchange in progress
+  completes with keep-alive disabled, which graceful shutdown does, and a request can
+  still be answered 400, 413 or 408 without reaching the owner. The page now says the
+  connection lasts until its request has been answered, its client closes it or the
+  process exits, and that a command sent to the stopped owner is refused 503. T38's C6
+  says the same.
+- **CONFORMANCE-4, B6** (medium, valid, applied): T38 compared hyper's unanswered head
+  timeout with "T33's 408" at four places. The wrapper closed a head that never
+  completed with no reply too; its 408 was for a body read that failed after a whole
+  head, which hyper's head timer never times. All four are corrected.
+- **CONFORMANCE-2** (low, valid, applied): `security-model.md` restated the stalled-body
+  bound and the trickle, which `http-api.md` owns. It now names the gap in one clause
+  and links there. The 408 sentence in `architecture.md` pre-dates the diff and stays.
+- **CONFORMANCE-3** (reported medium, valid, low, applied): `shutdown_grace`'s doc said
+  shutdown "aborts what is left", which can now be read to include the connections. It,
+  the default's doc, the `configuration.md` row and the CHANGELOG say the server's own
+  tasks, and the accessor links to `serve`.
+- **B1** (low, valid, applied): the cut test read the stalled connection only after the
+  runtime was dropped. A 50 ms read before the drop must now time out.
+- **B2** (reported medium, valid, low, applied): `read_reply` took one read as the whole
+  reply. It reads until the JSON body ends.
+- **B3** (low, valid, applied): the stalled-body test measured no time, so a handler
+  bounded at ten times the flag passed it. It asserts the 408 between 100 ms and 1 s
+  after the client starts: a lower bound that cannot flake, and 900 ms of margin above.
+
+Beyond the findings, `publish_head` no longer sends `connection: close`. The two tests
+that read a 503 to the end of the stream now pass only because the server closes after
+its reply, which is the run behind "until its request has been answered"; the triage had
+read it in hyper and not run it. T38 also took its drafter's last pass: three source
+readings worded "read that way", a positive control for Q2, and `parallel_with` emptied.
+
+On `27dd73f`, `just fmt-check`, `just clippy`, `just test`, `just coverage`, `just doc`
+and `just effects` each exit 0; `cargo nextest` ran 249 tests, 249 passed (255 less the
+seven deleted, plus one), and line coverage is 99.15%.
+
+### `review-change`, after T33-5
+
+The lead ran `review-change` over `git diff 8b7e01e..27dd73f`. The ten invariants hold:
+libpachinko is untouched, no public item changed its signature, nothing is `unsafe`, no
+dependency or `Cargo.lock` line moved, `Refusal` is still a `thiserror` enum, and clippy,
+coverage and `effects` pass. `docs/specs/pachinko.allium` has no rule on connections,
+timeouts or shutdown, so the specification does not move. `http-api.md` owns the request
+timeout and the shutdown; the other pages point at it. One low finding, not changed:
+
+- **R1:** the T33 row's title in `tickets/README.md`, the ticket's own title and the
+  follow-up wave's sentence still say "a header-read deadline". The titles are the
+  ticket's name, and the wave's prose now says in its T38 sentences that the deadline
+  was removed again.
+
 ## Open points
 
 - `just semver` cannot report a changed trait-method return type: cargo-semver-checks
@@ -1136,5 +1341,15 @@ exit 0
 - The ticket's Verification line `rg -n -i 'lease.?id' docs/specs/pachinko.allium`
   ("must be 1") matches `ReleaseIdlesEmptyPocket`. `'\blease.?id'` is the search it means.
 
+- T31's D-T29-6, the trickling client, is open again and wider: nothing bounds a
+  request head or a silent connection, and the cut no longer closes a connection. T38
+  owns it, with the other slow-client concerns. Owner: T38, then the maintainer.
+- A connection's task can outlive an embedded `pachinko::serve` until its connection
+  ends or the caller's runtime is dropped. `serve`'s `# Errors` states it, and T38 lists
+  it (C6).
+- What hyper's graceful shutdown does to a connection holding a partial head is read
+  from the source in T38 and not run; T38's Q1 runs it.
+
 The other open points are closed by the maintainer's calls of 2026-11-17; see
-[Maintainer calls (2026-11-17)](#maintainer-calls-2026-11-17).
+[Maintainer calls (2026-11-17)](#maintainer-calls-2026-11-17) and its
+[second record](#maintainer-calls-2026-11-17-second-record).
