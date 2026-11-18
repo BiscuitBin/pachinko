@@ -202,10 +202,10 @@ obligation count.
 | `crates/pachinko/src/error.rs` | shared, own lines | `LeaseIdsExhausted`'s doc (lines 73 to 81): the owner stops at a pull that needs an id the source cannot give |
 | `crates/pachinko/src/actor.rs` | shared, own lines | The owner's `lease_ids` parameter and pre-check removed from `start`, `own`, `apply` and `pull`; `pull` stops the owner on `PullError::LeaseId(_)` without answering; the docs at lines 370 to 379 and 515 to 521; tests: `run_owner`, `queue` and the two new exhaustion tests |
 | `crates/pachinko/src/serve.rs` | shared, own lines | `service_queue` returns the queue alone; `Lifecycle` without `ticks`, `new` returning the receiver, `start(&self, queue, ticks)`; every caller (lines 131, 143 to 144, 180 to 183, and the tests at 619 to 620, 647 to 648, 744 to 745, 821 to 823, 869 to 877, 918 to 922, 979 to 980); `scope`'s destructuring (line 226); `Idle` and its doc (lines 395 to 454); the trickle test |
-| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source |
+| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source. Widened after the hand-back, by the maintainer's call of 2026-11-17: `Refusal::ReadTimedOut` and the enum's doc, `Refusal::from_json` and its doc, its helper `timed_out_read`, and the unit tests `a_read_the_head_deadline_failed_is_408_request_timeout` and `only_a_timed_out_read_down_the_sources_is_the_head_deadline` (T33-4, B2) |
 | `docs/explanation/architecture.md` | shared, own lines | Lines 150 to 157 (the `LeaseIds` paragraph: fallible); lines 243 to 248 (the owner stops at a pull that needs an id) |
 | `docs/reference/api.md` | shared, own lines | Lines 70 to 77: `LeaseIdError` among the refusal enums |
-| `docs/reference/http-api.md` | shared, own lines | "Request timeout", lines 183 to 187: the head deadline from the first byte and the one-timeout guarantee |
+| `docs/reference/http-api.md` | shared, own lines | "Request timeout", lines 183 to 187: the head deadline from the first byte and the one-timeout guarantee. Widened after the hand-back, by the maintainer's call of 2026-11-17: the `request_timeout` row of "Errors" |
 | `docs/explanation/security-model.md` | shared, own lines | Lines 138 to 142: the trickle is bounded, and the gap sentence is retired |
 | `docs/reference/configuration.md` | shared, own lines | Line 46, the `--request-timeout-ms` row: it also bounds a request head, two timeouts from its first byte |
 | `CHANGELOG.md` | shared, own lines | libpachinko Unreleased, "Changed": the breaking `LeaseIds::next` change; pachinko Unreleased: the exhaustion stop and the head deadline |
@@ -977,36 +977,134 @@ exit 0
 
 `cargo nextest` ran 253 tests, 253 passed, and line coverage is 98.96%.
 
+### Maintainer calls (2026-11-17)
+
+The maintainer answered the open points T33-2, T33-3 and `review-change` left:
+
+| Call | Decision | Effect |
+| --- | --- | --- |
+| How the head deadline is enforced: the in-crate `Idle` or hyper's `header_read_timeout` through a hand-driven hyper-util loop | Keep `Idle` as it is | No code. The pipelined bound (about three timeouts) and the buffered bound (under three) are accepted as documented. |
+| A slow head whose handler is reading the body | 408, not 400 | The one code change, below. |
+| A separate head-read flag beside `--request-timeout-ms` | Keep one flag | No code. |
+| The libpachinko version bump for `LeaseIds::next` | At release | The release process's job (`docs/operations/maintenance.md`), as before. |
+
+The 408 widened Files touched after the hand-back: the `http.rs` row (`Refusal::ReadTimedOut`,
+`from_json` and its helper, two unit tests) and the `http-api.md` row (the `request_timeout` row of
+"Errors"). No dependency, `Cargo.lock`, specification or decision record changed.
+
+- `crates/pachinko/src/http.rs`: `Refusal::ReadTimedOut(String)` is answered 408
+  `request_timeout` with `the request was not read in time: <the idle bound's message>`.
+  `Refusal::from_json` walks the sources of a `FailedToBufferBody::UnknownBodyError`
+  (`timed_out_read`) and maps an `io::Error` of kind `TimedOut` to it: `Idle::pending` raises one, and so would a
+  socket the kernel timed out (`ETIMEDOUT`), which is also a read not done in time. hyper
+  1.12.0 keeps that error as the cause of its `Kind::Body` error, and axum-core 0.5.6
+  keeps that as the rejection's source. Any other body error stays 400 `bad_request`,
+  the shutdown cut (`ConnectionAborted`) included. `RequestTimeout` is not reused: its
+  message says a command may still be applied, and here none was sent. The enum's doc now
+  reads "one variant per cause, each answered with one code on the wire".
+- `crates/pachinko/src/serve.rs`: the slow-head test is renamed
+  `a_head_slower_than_the_bound_is_answered_408_when_its_body_read_fails_at_the_deadline`.
+  It asserts the 408, `request_timeout`, the read-timeout message, and that the message
+  is not the handler's "took longer than", inside the same 990 to 1700 ms window. The
+  `Idle` doc comments say 408.
+- `docs/reference/http-api.md` and `CHANGELOG.md`: both "400 `bad_request` for the failed
+  read" statements are now 408, and the `request_timeout` row says it also answers a
+  request not read by its head deadline, with no command sent. The pipelined case says
+  "can be", because the read's deadline and the handler's bound fall at about the same
+  instant there; either way the reply is a 408.
+
+No unit test feeds `from_json` a failing body: axum re-exports `HttpBody` but not
+`Frame`, no stream crate is in the tree, and `UnknownBodyError`'s constructor is
+crate-private, so it would need a dev-dependency (invariant 9). The socket test drives
+the real chain end to end, and `only_a_timed_out_read_down_the_sources_is_the_head_deadline`
+tests the walk itself (T33-4, B2). The fallback that answers `BadRequest` is untested.
+
+Shown to bite, on `0273ea0` with the change in the worktree, each with
+`cargo nextest run --workspace --all-features --locked -E 'test(a_head_slower_than_the_bound)'`
+(exit 100), then reverted by restoring the saved files (`cmp` clean):
+
+```text
+# test first, before http.rs changed
+panicked at crates/pachinko/src/serve.rs:1115:9:
+"HTTP/1.1 400 Bad Request\r\n...{\"error\":\"bad_request\",\"message\":\"Failed to buffer the request body: error reading a body from connection\"}"
+
+# mutation A: the new from_json arm removed
+FAIL [   1.011s] ... a_head_slower_than_the_bound_is_answered_408_when_its_body_read_fails_at_the_deadline
+panicked at crates/pachinko/src/serve.rs:1115:9:
+"HTTP/1.1 400 Bad Request\r\n...{\"error\":\"bad_request\",\"message\":\"Failed to buffer the request body: error reading a body from connection\"}"
+
+# mutation B: the base Idle::read (owed_since = Some(Instant::now()) on every read)
+FAIL [   1.265s] ... a_head_slower_than_the_bound_is_answered_408_when_its_body_read_fails_at_the_deadline
+panicked at crates/pachinko/src/serve.rs:1120:9:
+"HTTP/1.1 408 Request Timeout\r\n...{\"error\":\"request_timeout\",\"message\":\"the request took longer than 500ms; a command it sent may still be applied\"}"
+```
+
+With both restored, `just test` ran 254 tests, 254 passed.
+
+### T33-4: the 408 change, before its commit
+
+`codex exec -m gpt-6-astra -s read-only`, two lenses, over `git diff 0273ea0` (the
+uncommitted change), each exit 0. Two fresh Claude subagents triaged the findings,
+read-only, against the code and the pinned hyper 1.12.0, axum 0.8.9 and axum-core 0.5.6
+sources; one more subagent applied the valid fixes, alone. Verdicts are in
+`ai_tmp/review/T33-4/verdicts.md`.
+
+- **C1** (low, valid, applied): the `ReadTimedOut` and `from_json` docs and the
+  `request_timeout` row of "Errors" named the head deadline as the only cause, but any
+  `TimedOut` read maps, a kernel `ETIMEDOUT` on the socket included. All three now say
+  "at the head deadline or in the socket" (the operating system, in the handbook).
+- **B1** (reported medium, valid, low, not changed): the slow-head socket test times
+  the deadline from the server's first read, so a server read that lags about 250 ms
+  lets the handler's 408 win and fails the message assertion. It was weighed in T33-3
+  (C2 and B3); it can fail on a slow host but cannot pass a broken fix, and hardening it
+  means reworking `publish_with_a_slow_head`.
+- **B2** (low, valid, applied): no test failed if the predicate accepted any
+  `io::Error`, which would answer the shutdown cut 408. The walk moved into
+  `timed_out_read`, and `only_a_timed_out_read_down_the_sources_is_the_head_deadline`
+  checks a `TimedOut` two `axum::Error`s down, a `ConnectionAborted`, and a cause that is
+  not an `io::Error`. The verdict's signature needed explicit lifetimes (E0106), the one
+  change from its text.
+
+No finding was high, so there was no second round. The B2 test bites, on the fix in the
+worktree before `4579b19`, with
+`cargo nextest run --workspace --all-features --locked -E 'test(only_a_timed_out_read)'`
+(exit 100 each), restored from a saved copy (`cmp` clean):
+
+```text
+# M1: the predicate accepts any io::Error
+panicked at crates/pachinko/src/http.rs:936:9:
+assertion failed: timed_out_read(&cut).is_none()
+
+# M2: only the first error, not its sources
+panicked at crates/pachinko/src/http.rs:925:9:
+assertion `left == right` failed
+  left: None
+ right: Some("no reply was written within 1000ms of the first byte")
+```
+
+The reviewers otherwise found the change sound: the error chain survives hyper's
+`Kind::Body`, `axum_core::Error`, `Limited` and `DefaultBodyLimit`; all seven routes
+that reach `from_json` refuse before sending a command; no other body read answers 400;
+the pipelined and `100 Continue` wording ("can") matches the race; and nothing outside
+Files touched changed.
+
+```text
+HEAD 4579b19
+
+$ just check   (output in ai_tmp/t33/t33-4/check-A.log; tail shown)
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+`cargo nextest` ran 255 tests, 255 passed, and line coverage is 98.97%.
+
 ## Open points
 
-- Whether the head deadline should also be enforced on a request buffered with bytes
-  after it (T33-3, B1). The deadline could be checked from `Connection::poll_flush`, the
-  one hook hyper still polls there, but that rests on an undocumented hyper detail, and
-  it would turn a late but correct reply into a silent cut. It is not done here; the
-  docs state the exception. The maintainer decides.
-
-- Whether the lead prefers hyper's own `header_read_timeout`, through a hand-driven
-  hyper-util accept loop with `hyper` and `hyper-util` as direct dependencies, to the
-  in-crate deadline. That route needs two decision-0007 notes and is not taken here.
-- A head slower than one `--request-timeout-ms` is no longer guaranteed a reply: unless
-  the handler replies within two timeouts of the first byte, it gets a 400 (a body read
-  that failed) or no reply (a partial head), never the 408, unless a `100 Continue`
-  restarted the deadline. Whether a separate head-read flag is wanted, beside T31's D-T29-2 (the idle and handler
-  timeouts share one flag), is the maintainer's.
-- The libpachinko version bump for the breaking `LeaseIds::next` change belongs to the
-  release process (`docs/operations/maintenance.md`), not this ticket.
-- The head deadline is the connection's, not the request's (T33-2, B2 = C1): a write
-  clears it, so a pipelined request whose first bytes arrived before the previous reply
-  was written is timed from that write. It can hold the connection up to three
-  `--request-timeout-ms` after it (measured about 285 ms at 100 ms), and one whose head
-  had fully arrived is answered 400 rather than 408. Closing this needs to know where each
-  request starts, for example hyper's `header_read_timeout` through the hyper-util route
-  above. The maintainer decides.
-- A head slower than one timeout whose handler is reading a body is answered
-  400 `bad_request` at the deadline, not cut silently (`review-change` M2). A test pins
-  it, and the handbook says so. Whether that should be a 408 is the maintainer's call.
 - `just semver` cannot report a changed trait-method return type: cargo-semver-checks
   0.51.0 has no lint for it. Its discovered baseline, the merge base with `origin/main`,
   also predates `lease_ids` while the wave runs off `main`.
 - The ticket's Verification line `rg -n -i 'lease.?id' docs/specs/pachinko.allium`
   ("must be 1") matches `ReleaseIdlesEmptyPocket`. `'\blease.?id'` is the search it means.
+
+The other open points are closed by the maintainer's calls of 2026-11-17; see
+[Maintainer calls (2026-11-17)](#maintainer-calls-2026-11-17).
