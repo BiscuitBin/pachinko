@@ -88,11 +88,14 @@ effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes
 `pachinko`'s public API is `run`.
 
 The lease actions each name the consumer and the `LeaseId` its pull returned, and each
-refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey` and return a
-`SettleOutcome`, `Settled` or `Deferred`. `renew` returns the lease's new `expires_at`,
-a `Timestamp`. `release` returns a `PocketFate`, `Queued` or `Idle`, with the ended
-`Lease`. `tick` takes nothing, refuses nothing and returns a `TickReport`: the leases
-that lapsed and how many superseded records and dead letters decayed.
+refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey`, mark the held
+record and return a `SettleOutcome`, `Acked` or `Nacked`, a repeat answering as the first
+mark did; the other mark is refused with `MarkConflict`. The record stays held, and
+`lease_view` shows each held record's `Mark` in a `MarkedRecord`, until the lease ends.
+`renew` returns the lease's new `expires_at`, a `Timestamp`. `release` returns a
+`PocketFate`, `Queued` or `Idle`, with the ended `Lease`. `tick` takes nothing, refuses
+nothing and returns a `TickReport`: the leases that lapsed and how many superseded
+records and dead letters decayed.
 
 `libpachinko` has one feature, `testing`, which no normal build turns on. It adds the
 `testing` module and two `Queue` methods, `snapshot` and `tick_with_cost`, for tests, and

@@ -3,7 +3,9 @@
 //! [`DeadLetter`] are the second kind: the queue keeps them in every build, and the
 //! `testing` module alone exports them.
 
-use crate::ids::{ConsumerId, HeldRecord, LeaseId, Payload, PocketKey, Rank, RecordKey};
+use crate::ids::{
+    ConsumerId, HeldRecord, LeaseId, MarkedRecord, Payload, PocketKey, Rank, RecordKey,
+};
 use crate::timestamp::Timestamp;
 
 /// One publish: the pocket, the record key, its rank and its payload.
@@ -65,8 +67,11 @@ pub enum PublishOutcome {
     Created,
     /// `PublishNewKey`: a new record in an existing pocket.
     NewKey,
-    /// `Supersede`: the record took the higher rank and its payload in place; the
-    /// loser is a superseded record.
+    /// A higher rank than stored. `Supersede`: the record took the higher rank and
+    /// its payload in place, and the loser, a version nobody holds, is a superseded
+    /// record. Or `DeferBehindHeldVersion`: the key is held with nothing deferred,
+    /// so the newer version waits behind the held one at its arrival position and
+    /// nothing is shed; the lease's end decides the held version's fate.
     Superseded,
     /// `DropStalePublish`: the rank was lower than stored; the arrival is a
     /// superseded record marked stale, and the record is unchanged.
@@ -100,7 +105,8 @@ pub enum PullOutcome {
 }
 
 /// The `Consuming` surface's `exposes` for one consumer's active lease: the pocket
-/// key, `expires_at` and the held records at their held rank and payload.
+/// key, `expires_at` and the held records at their held rank and payload, each
+/// with its mark.
 ///
 /// ```
 /// use libpachinko::{LeaseView, PocketKey, Timestamp};
@@ -115,8 +121,8 @@ pub struct LeaseView {
     pub pocket_key: PocketKey,
     /// When the lease lapses.
     pub expires_at: Timestamp,
-    /// The held records, smallest position first.
-    pub records: Vec<HeldRecord>,
+    /// The held records with their marks, smallest position first.
+    pub records: Vec<MarkedRecord>,
 }
 
 impl LeaseView {
@@ -131,7 +137,7 @@ impl LeaseView {
     pub const fn new(
         pocket_key: PocketKey,
         expires_at: Timestamp,
-        records: Vec<HeldRecord>,
+        records: Vec<MarkedRecord>,
     ) -> Self {
         Self {
             pocket_key,
@@ -165,8 +171,9 @@ pub enum PocketStatus {
     Leased,
     /// No records.
     Idle,
-    /// Set aside after `max_consecutive_expiries` lease expiries with no ack, release
-    /// or revive between them, until a publish revives it.
+    /// Set aside after `max_consecutive_expiries` lease expiries with no ack, nack,
+    /// release or revive between them, until a publish that adds or raises a record
+    /// revives it.
     Parked,
 }
 
@@ -253,14 +260,16 @@ pub struct Lease {
     )
 )]
 pub enum ShedReason {
-    /// It lost a supersede.
+    /// It lost a supersede: a version nobody held, when a higher rank arrived, or
+    /// an unsettled held version a newer, deferred one replaced when the lease
+    /// ended (`SupersedeUnsettledHeldVersion`).
     Superseded,
     /// It arrived with a lower rank than stored.
     Stale,
 }
 
-/// A payload kept visible until it decays: the loser of a supersede, or a stale
-/// arrival (`EveryDropIsVisible`).
+/// A payload kept visible until it decays: the loser of a supersede, at the publish
+/// or at the lease's end, or a stale arrival (`EveryDropIsVisible`).
 ///
 /// ```
 /// # #[cfg(feature = "testing")] {
@@ -303,28 +312,28 @@ pub struct SupersededRecord {
     pub payload: Payload,
     /// Superseded or stale.
     pub reason: ShedReason,
-    /// When it was shed.
+    /// When it was shed: the publish, or the lease's end for a held version.
     pub shed_at: Timestamp,
     /// When it decays: `shed_at` plus `superseded_ttl`.
     pub expires_at: Timestamp,
 }
 
-/// Which rule took an ack or nack.
+/// The mark an ack or a nack leaves on its held record, for the first mark and a
+/// repeat alike.
 ///
 /// ```
 /// use libpachinko::SettleOutcome;
-/// assert_ne!(SettleOutcome::Settled, SettleOutcome::Deferred);
+/// assert_ne!(SettleOutcome::Acked, SettleOutcome::Nacked);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum SettleOutcome {
-    /// `AckSettlesRecord` or `NackSettlesRecord`: the held version was the latest,
-    /// and the record is gone.
-    Settled,
-    /// `AckDefersNewerVersion` or `NackDefersNewerVersion`: a newer version arrived
-    /// while the key was held, so the record is deferred at a fresh position until
-    /// the lease ends.
-    Deferred,
+    /// `AckMarksRecord` or `AckRepeats`: the held record is marked acked, and the
+    /// lease's end acts on the mark.
+    Acked,
+    /// `NackMarksRecord` or `NackRepeats`: the held record is marked nacked, and
+    /// the lease's end acts on the mark.
+    Nacked,
 }
 
 /// Where a release left the pocket.
@@ -336,19 +345,22 @@ pub enum SettleOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PocketFate {
-    /// `ReleaseRequeuesPocket`: it had records, held, deferred or queued, and is
-    /// back in the pocket order at the back.
+    /// `ReleaseRequeuesPocket`: a record outlasted the lease's end, queued or
+    /// kept by the six `Freed` rules, and the pocket is back in the pocket order at
+    /// the back.
     Queued,
-    /// `ReleaseIdlesEmptyPocket`: it had no records and is idle until a publish
-    /// revives it.
+    /// `ReleaseIdlesEmptyPocket`: the lease's end removed every record it had, each
+    /// acked or nacked with nothing deferred behind it, and it is idle until a
+    /// publish revives it.
     Idle,
 }
 
-/// A nacked payload, kept visible until it decays.
+/// A nacked payload, created when the lease it was nacked under ends, by release or
+/// lapse, and kept visible until it decays.
 ///
 /// ```
 /// # #[cfg(feature = "testing")] {
-/// use libpachinko::{PullOutcome, SettleOutcome};
+/// use libpachinko::{LeaseStatus, PullOutcome, SettleOutcome};
 /// # use libpachinko::{clock::FakeClock, lease_ids::CountingLeaseIds, records::MemoryRecords};
 /// # use libpachinko::{
 /// #     Config, ConsumerId, Payload, PocketKey, Publication, PublisherId, Queue, Rank, RecordKey,
@@ -362,10 +374,14 @@ pub enum PocketFate {
 /// # let publication = Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(1), Payload::default());
 /// queue.publish(&publisher, publication).unwrap();
 /// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&consumer, 1) else { panic!() };
-/// assert_eq!(queue.nack(&consumer, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Settled));
+/// assert_eq!(queue.nack(&consumer, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Nacked));
+/// assert!(queue.snapshot().dead_letters.is_empty());
+/// let (_, ended) = queue.release(&consumer, lease).unwrap();
 /// let letter = &queue.snapshot().dead_letters[0];
 /// assert_eq!(letter.nacked_by, consumer);
 /// assert!(letter.nacked_at <= letter.expires_at);
+/// let LeaseStatus::Released { ended_at } = ended.status else { panic!() };
+/// assert_eq!(letter.expires_at, ended_at + queue.config().dead_letter_ttl);
 /// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -388,8 +404,8 @@ pub struct DeadLetter {
     pub payload: Payload,
     /// The consumer that nacked it.
     pub nacked_by: ConsumerId,
-    /// When it was nacked.
+    /// When the nack that marked it was processed; a repeat nack keeps the first.
     pub nacked_at: Timestamp,
-    /// When it decays: `nacked_at` plus `dead_letter_ttl`.
+    /// When it decays: its lease's end plus `dead_letter_ttl`.
     pub expires_at: Timestamp,
 }

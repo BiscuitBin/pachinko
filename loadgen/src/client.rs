@@ -201,7 +201,7 @@ impl Client {
             .ok_or_else(|| format!("GET {path}: 200 {reply} carries no expires_at"))
     }
 
-    /// `POST /leases/{lease}/ack`: 200 carrying `settled` or `deferred`.
+    /// `POST /leases/{lease}/ack`: 200 carrying `acked`.
     pub(crate) fn ack(
         &self,
         lease_id: &str,
@@ -212,10 +212,8 @@ impl Client {
         let body = json!({"consumer_id": consumer_id, "record_key": record_key});
         let reply = self.expect("POST", &path, Some(&body), 200)?;
         match reply.get("outcome").and_then(Value::as_str) {
-            Some("settled" | "deferred") => Ok(()),
-            _ => Err(format!(
-                "POST {path}: 200 {reply} is neither settled nor deferred"
-            )),
+            Some("acked") => Ok(()),
+            _ => Err(format!("POST {path}: 200 {reply} is not acked")),
         }
     }
 

@@ -36,19 +36,22 @@ pub enum PublishError {
     /// The publish names a publisher that has not joined.
     #[error("publisher {0} has not joined")]
     UnknownPublisher(PublisherId),
-    /// The rank equals the stored record's. No rule covers it, so the publish is
-    /// refused: a placeholder for the specification's first open question, not a
-    /// decision.
+    /// The rank equals the stored record's, whatever its payload. No publish rule
+    /// covers it, so the publish is rejected and changes nothing: the maintainer's
+    /// decision, which closed the specification's question on an equal rank.
     ///
     /// ```
     /// use libpachinko::{PublishError, Rank, RecordKey};
     ///
     /// let error = PublishError::EqualRank { key: RecordKey::new("k"), rank: Rank::new(2) };
-    /// assert!(error.to_string().contains("placeholder"));
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "rank 2 equals the stored rank of k; a publish at the stored rank is rejected and changes nothing"
+    /// );
     /// ```
     #[error(
-        "rank {rank} equals the stored rank of {key}; no rule covers an equal rank \
-        (open question 1), so this refusal is a placeholder"
+        "rank {rank} equals the stored rank of {key}; a publish at the stored rank is \
+        rejected and changes nothing"
     )]
     EqualRank {
         /// The record key published.
@@ -146,6 +149,17 @@ pub enum LeaseActionError {
     /// An ack or nack named a record key the lease's pocket does not hold.
     #[error("record {0} is not held under this lease")]
     RecordNotHeld(RecordKey),
+    /// An ack named a record already nacked under the lease, or a nack one already
+    /// acked: the first mark stands. Checked after `RecordNotHeld`.
+    ///
+    /// ```
+    /// use libpachinko::{LeaseActionError, RecordKey};
+    ///
+    /// let error = LeaseActionError::MarkConflict(RecordKey::new("k"));
+    /// assert_eq!(error.to_string(), "record k is already marked the other way under this lease");
+    /// ```
+    #[error("record {0} is already marked the other way under this lease")]
+    MarkConflict(RecordKey),
 }
 
 /// A configuration the config invariants exclude.
@@ -210,6 +224,10 @@ mod tests {
             (
                 LeaseActionError::RecordNotHeld(RecordKey::new("k")).to_string(),
                 "record k is not held under this lease",
+            ),
+            (
+                LeaseActionError::MarkConflict(RecordKey::new("k")).to_string(),
+                "record k is already marked the other way under this lease",
             ),
             (
                 ConfigError::MaxConsecutiveExpiriesZero.to_string(),

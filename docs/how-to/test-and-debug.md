@@ -95,7 +95,7 @@ $ curl -s -X POST "http://$ADDR/consumers/c1/pull" \
     -H 'content-type: application/json' -d '{"limit": 10}'
 {"outcome":"batch","lease_id":"…","pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
 $ curl -s "http://$ADDR/consumers/c1/lease"
-{"pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8="}]}
+{"pocket_key":"tenant-a","expires_at":…,"records":[{"record_key":"k1","rank":1,"payload":"aGVsbG8=","mark":"unsettled"}]}
 $ curl -s "http://$ADDR/healthz"
 ok
 ```

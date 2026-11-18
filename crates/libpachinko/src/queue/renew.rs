@@ -1,18 +1,20 @@
 //! Renew and release: `Renew`, `ReleaseRequeuesPocket` and
-//! `ReleaseIdlesEmptyPocket`, with the `Freed` rules `RequeueHeldRecord` and
-//! `RequeueDeferredRecord`; and the guard chain every lease action shares.
+//! `ReleaseIdlesEmptyPocket`; the guard chain every lease action shares; and what
+//! a release and a lapse share once the store has applied the six `Freed` rules:
+//! the held versions the lease's end took out kept in the shed queues, stamped
+//! from the one `ended_at`.
 //!
 //! No action compares `expires_at` with `now`: a lease the registry still holds is
 //! active whatever the clock says, so a late action processed before the lapse
 //! succeeds (decision 0019, the specification's Lease expiry comment).
 
 use super::Queue;
-use super::types::{Lease, LeaseStatus, PocketFate};
+use super::types::{DeadLetter, Lease, LeaseStatus, PocketFate, ShedReason, SupersededRecord};
 use crate::clock::Clock;
 use crate::error::LeaseActionError;
 use crate::ids::{ConsumerId, LeaseId, PocketKey};
 use crate::lease_ids::LeaseIds;
-use crate::records::PocketRecords;
+use crate::records::{EndedVersion, PocketRecords};
 use crate::timestamp::Timestamp;
 
 impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
@@ -60,8 +62,11 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     }
 
     /// `Release`: the lease ends as released with `ended_at = now`, leaving the
-    /// registry. The pocket's held and deferred records return to queued at their
-    /// own positions; then a pocket with records rejoins the order at the back
+    /// registry, and every held record is freed by the six `Freed` rules, which
+    /// read its mark: an unsettled record is queued again at its position, an
+    /// acked one consumed and a nacked one dead-lettered, and a version deferred
+    /// behind a held one is queued (the unsettled held version then superseded at
+    /// the lease's end). Then a pocket with records rejoins the order at the back
     /// ([`PocketFate::Queued`], `ReleaseRequeuesPocket`) and one without goes idle
     /// ([`PocketFate::Idle`], `ReleaseIdlesEmptyPocket`), its expiry count reset
     /// either way. Returns the fate and the lease as it ended.
@@ -104,11 +109,50 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
             .ok_or(LeaseActionError::LeaseNotActive(lease))?;
         self.consumers.insert(consumer_id.clone(), None);
         // A lease's pocket always exists: no rule removes a pocket.
-        let fate = self
+        let (fate, versions) = self
             .pockets
             .release(&pocket_key)
-            .unwrap_or(PocketFate::Idle);
+            .unwrap_or((PocketFate::Idle, Vec::new()));
+        self.keep_ended(&ended, now, versions);
         Ok((fate, ended))
+    }
+
+    /// Keeps the held versions one lease's end took out, in the order the store
+    /// returned them: a superseded held version (`SupersedeUnsettledHeldVersion`)
+    /// with `shed_at = ended_at` and `expires_at = ended_at + superseded_ttl`, and
+    /// a nacked one (`DeadLetterNackedRecord`, `DeadLetterNackedVersionQueueDeferred`)
+    /// with `nacked_by` the lease's consumer, the `nacked_at` its nack stored and
+    /// `expires_at = ended_at + dead_letter_ttl`.
+    pub(super) fn keep_ended(
+        &mut self,
+        lease: &Lease,
+        ended_at: Timestamp,
+        versions: Vec<EndedVersion>,
+    ) {
+        for version in versions {
+            match version {
+                EndedVersion::Superseded(held) => self.shed.keep(SupersededRecord {
+                    pocket_key: lease.pocket_key.clone(),
+                    key: held.key,
+                    rank: held.rank,
+                    payload: held.payload,
+                    reason: ShedReason::Superseded,
+                    shed_at: ended_at,
+                    expires_at: ended_at + self.config.superseded_ttl,
+                }),
+                EndedVersion::DeadLettered { held, nacked_at } => {
+                    self.shed.keep_dead_letter(DeadLetter {
+                        pocket_key: lease.pocket_key.clone(),
+                        key: held.key,
+                        rank: held.rank,
+                        payload: held.payload,
+                        nacked_by: lease.consumer_id.clone(),
+                        nacked_at,
+                        expires_at: ended_at + self.config.dead_letter_ttl,
+                    });
+                }
+            }
+        }
     }
 
     /// The guards every lease action shares, in the order of the rules'

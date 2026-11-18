@@ -9,11 +9,12 @@ use std::time::Duration;
 use libpachinko::clock::FakeClock;
 use libpachinko::lease_ids::CountingLeaseIds;
 use libpachinko::records::{MemoryRecords, Position, RecordStatus, RecordView};
-use libpachinko::testing::{PocketStatus, PocketView, Snapshot};
+use libpachinko::testing::{PocketStatus, PocketView, ShedReason, Snapshot};
 use libpachinko::{
-    Config, ConsumerId, HeldRecord, Lease, LeaseActionError, LeaseId, LeaseStatus, LeaseView,
-    Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome, PublisherId,
-    PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, TickReport, Timestamp,
+    Config, ConsumerId, HeldRecord, Lease, LeaseActionError, LeaseId, LeaseStatus, LeaseView, Mark,
+    MarkedRecord, Payload, PocketFate, PocketKey, Publication, PublishError, PublishOutcome,
+    PublisherId, PullError, PullOutcome, Queue, Rank, RecordKey, SettleOutcome, TickReport,
+    Timestamp,
 };
 
 /// The instant every fixture starts at.
@@ -238,8 +239,116 @@ impl Fixture {
     }
 }
 
+impl Fixture {
+    /// Marks `record_key` under `lease` as `mark` says: an ack, a nack, or nothing
+    /// for [`Mark::Unsettled`]. A setup step: the outcome's name is not checked.
+    pub(crate) fn mark_as(
+        &mut self,
+        consumer_id: &str,
+        lease: LeaseId,
+        record_key: &str,
+        mark: Mark,
+    ) {
+        match mark {
+            Mark::Acked => {
+                self.ack(consumer_id, lease, record_key).unwrap();
+            }
+            Mark::Nacked => {
+                self.nack(consumer_id, lease, record_key).unwrap();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The status of a record held at `rank` and `payload`, with its mark, the time of
+/// its nack and the arrival position of a version deferred behind it.
+pub(crate) fn held_as(
+    rank: i64,
+    payload: &str,
+    mark: Mark,
+    nacked_at: Option<Timestamp>,
+    arrival: Option<u64>,
+) -> RecordStatus {
+    RecordStatus::Held {
+        rank: Rank::new(rank),
+        payload: Payload::from(payload.as_bytes()),
+        mark,
+        nacked_at,
+        deferred_position: arrival.map(Position::new),
+    }
+}
+
+/// A payload the tests wrote as text, read back as text.
+pub(crate) fn text(payload: &Payload) -> &str {
+    std::str::from_utf8(payload.as_ref()).unwrap()
+}
+
+/// A superseded record as one row: pocket, key, rank, payload, reason, `shed_at`
+/// and `expires_at`.
+pub(crate) type ShedRow<'s> = (
+    &'s str,
+    &'s str,
+    i64,
+    &'s str,
+    ShedReason,
+    Timestamp,
+    Timestamp,
+);
+
+/// A dead letter as one row: pocket, key, rank, payload, `nacked_by`, `nacked_at`
+/// and `expires_at`.
+pub(crate) type LetterRow<'s> = (
+    &'s str,
+    &'s str,
+    i64,
+    &'s str,
+    &'s str,
+    Timestamp,
+    Timestamp,
+);
+
+/// The superseded queue, entry by entry, in the snapshot's order.
+pub(crate) fn shed_rows(s: &Snapshot) -> Vec<ShedRow<'_>> {
+    (s.superseded.iter())
+        .map(|shed| {
+            (
+                shed.pocket_key.as_str(),
+                shed.key.as_str(),
+                shed.rank.get(),
+                text(&shed.payload),
+                shed.reason,
+                shed.shed_at,
+                shed.expires_at,
+            )
+        })
+        .collect()
+}
+
+/// The dead letters, entry by entry, in the snapshot's order.
+pub(crate) fn letter_rows(s: &Snapshot) -> Vec<LetterRow<'_>> {
+    (s.dead_letters.iter())
+        .map(|letter| {
+            (
+                letter.pocket_key.as_str(),
+                letter.key.as_str(),
+                letter.rank.get(),
+                text(&letter.payload),
+                letter.nacked_by.as_str(),
+                letter.nacked_at,
+                letter.expires_at,
+            )
+        })
+        .collect()
+}
+
 /// The records' keys, in order.
 pub(crate) fn keys(records: &[HeldRecord]) -> Vec<&str> {
+    records.iter().map(|record| record.key.as_str()).collect()
+}
+
+/// The lease read's records' keys, in order.
+pub(crate) fn marked_keys(records: &[MarkedRecord]) -> Vec<&str> {
     records.iter().map(|record| record.key.as_str()).collect()
 }
 
@@ -254,8 +363,18 @@ fn distinct<T: Ord>(items: impl IntoIterator<Item = T>) -> bool {
 /// Every state invariant this ticket owns, each by its specification name.
 pub(crate) mod invariants {
     use super::{
-        BTreeSet, Lease, LeaseStatus, PocketStatus, Position, RecordStatus, Snapshot, distinct,
+        BTreeSet, Lease, LeaseStatus, Mark, Payload, PocketStatus, PocketView, Position, Rank,
+        RecordKey, RecordStatus, RecordView, Snapshot, Timestamp, distinct,
     };
+
+    /// A held record's held version and what sits beside it.
+    struct HeldFields<'s> {
+        rank: Rank,
+        payload: &'s Payload,
+        mark: Mark,
+        nacked_at: Option<Timestamp>,
+        deferred_position: Option<Position>,
+    }
 
     pub(crate) fn unique_publisher_id(s: &Snapshot) {
         assert!(distinct(s.publishers.iter()), "UniquePublisherId");
@@ -405,6 +524,152 @@ pub(crate) mod invariants {
         }
     }
 
+    /// Each held record, with its pocket and the fields only a held record has.
+    fn held(s: &Snapshot) -> impl Iterator<Item = (&PocketView, &RecordView, HeldFields<'_>)> {
+        s.pockets.iter().flat_map(|pocket| {
+            (pocket.records.iter())
+                .filter_map(move |record| held_fields(record).map(|held| (pocket, record, held)))
+        })
+    }
+
+    /// The fields only a held record has; `None` for any other.
+    fn held_fields(record: &RecordView) -> Option<HeldFields<'_>> {
+        let RecordStatus::Held {
+            rank,
+            payload,
+            mark,
+            nacked_at,
+            deferred_position,
+        } = &record.status
+        else {
+            return None;
+        };
+        Some(HeldFields {
+            rank: *rank,
+            payload,
+            mark: *mark,
+            nacked_at: *nacked_at,
+            deferred_position: *deferred_position,
+        })
+    }
+
+    pub(crate) fn nacked_has_its_time(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if held.mark == Mark::Nacked {
+                assert!(held.nacked_at.is_some(), "NackedHasItsTime: {}", record.key);
+            }
+        }
+    }
+
+    pub(crate) fn only_nacked_has_nack_time(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if held.mark != Mark::Nacked {
+                assert_eq!(
+                    held.nacked_at, None,
+                    "OnlyNackedHasNackTime: {}",
+                    record.key
+                );
+            }
+        }
+    }
+
+    pub(crate) fn deferred_has_arrival_position(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if held.rank < record.rank {
+                assert!(
+                    held.deferred_position.is_some(),
+                    "DeferredHasArrivalPosition: {}",
+                    record.key
+                );
+            }
+        }
+    }
+
+    pub(crate) fn only_deferred_has_arrival_position(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if held.rank == record.rank {
+                assert_eq!(
+                    held.deferred_position, None,
+                    "OnlyDeferredHasArrivalPosition: {}",
+                    record.key
+                );
+            }
+        }
+    }
+
+    pub(crate) fn deferred_arrived_after_held(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if let Some(arrival) = held.deferred_position {
+                assert!(
+                    arrival > record.position,
+                    "DeferredArrivedAfterHeld: {}",
+                    record.key
+                );
+            }
+        }
+    }
+
+    pub(crate) fn held_copies_agree(s: &Snapshot) {
+        for (_, record, held) in held(s) {
+            if held.deferred_position.is_none() {
+                assert_eq!(
+                    held.payload, &record.payload,
+                    "HeldCopiesAgree: {}",
+                    record.key
+                );
+            }
+        }
+    }
+
+    pub(crate) fn marked_pocket_has_no_expiries(s: &Snapshot) {
+        for (pocket, record, held) in held(s) {
+            if held.mark != Mark::Unsettled {
+                assert_eq!(
+                    pocket.consecutive_expiries, 0,
+                    "MarkedPocketHasNoExpiries: {} in {}",
+                    record.key, pocket.key
+                );
+            }
+        }
+    }
+
+    /// The arrival positions of the held records with a deferred version.
+    fn arrivals(s: &Snapshot) -> Vec<(Position, &RecordKey)> {
+        held(s)
+            .filter_map(|(_, record, held)| held.deferred_position.map(|p| (p, &record.key)))
+            .collect()
+    }
+
+    pub(crate) fn arrival_position_unoccupied(s: &Snapshot) {
+        let occupied: BTreeSet<Position> = s
+            .pockets
+            .iter()
+            .flat_map(|p| p.records.iter().map(|r| r.position))
+            .collect();
+        for (arrival, key) in arrivals(s) {
+            assert!(
+                !occupied.contains(&arrival),
+                "ArrivalPositionUnoccupied: {key}"
+            );
+        }
+    }
+
+    pub(crate) fn unique_arrival_position(s: &Snapshot) {
+        assert!(
+            distinct(arrivals(s).into_iter().map(|(arrival, _)| arrival)),
+            "UniqueArrivalPosition"
+        );
+    }
+
+    pub(crate) fn arrival_positions_below_next(s: &Snapshot) {
+        for (arrival, key) in arrivals(s) {
+            assert!(
+                arrival < s.next_position,
+                "ArrivalPositionsBelowNext: {key}"
+            );
+        }
+    }
+
     pub(crate) fn outstanding_only_while_leased(s: &Snapshot) {
         let outstanding = s.pockets.iter().flat_map(|pocket| {
             pocket
@@ -534,5 +799,21 @@ pub(crate) mod invariants {
         order_is_the_queued_pockets(s);
         idle_has_no_records(s);
         nacked_before_expiry(s);
+        held_records(s);
+    }
+
+    /// The eight invariants over a held record's mark, nack time and arrival
+    /// position, and `MarkedPocketHasNoExpiries` and `HeldCopiesAgree` beside them.
+    pub(crate) fn held_records(s: &Snapshot) {
+        nacked_has_its_time(s);
+        only_nacked_has_nack_time(s);
+        deferred_has_arrival_position(s);
+        only_deferred_has_arrival_position(s);
+        deferred_arrived_after_held(s);
+        held_copies_agree(s);
+        marked_pocket_has_no_expiries(s);
+        arrival_position_unoccupied(s);
+        unique_arrival_position(s);
+        arrival_positions_below_next(s);
     }
 }

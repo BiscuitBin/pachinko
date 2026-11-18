@@ -1,6 +1,6 @@
 //! The pachinko library: the domain `docs/specs/pachinko.allium` defines, one queue
-//! of pockets that publishers publish records into and consumers lease, pull and
-//! settle.
+//! of pockets that publishers publish records into and consumers lease, pull, ack
+//! and nack.
 //!
 //! The crate has three readers, and each has its own surface:
 //!
@@ -24,21 +24,24 @@
 //! | `Publishing` | [`Queue::publish`] | the publisher and a [`Publication`] | [`PublishOutcome`]: `Created`, `NewKey`, `Superseded`, `Stale` | [`PublishError`]: `UnknownPublisher`, `EqualRank` |
 //! | `Consuming` | [`Queue::pull`] | the consumer and a limit | [`PullOutcome`]: `Batch { lease, pocket_key, expires_at, records }`, `NoPocketAvailable` | [`PullError`]: `UnknownConsumer`, `LeaseId` ([`LeaseIdError`]: `Exhausted`, `StillActive`) |
 //! | `Consuming` | [`Queue::lease_view`] | the consumer | `Some` [`LeaseView`] or `None` | [`PullError`]: `UnknownConsumer` |
-//! | `Consuming` | [`Queue::ack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Settled`, `Deferred` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
-//! | `Consuming` | [`Queue::nack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Settled`, `Deferred` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld` |
+//! | `Consuming` | [`Queue::ack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Acked` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld`, `MarkConflict` |
+//! | `Consuming` | [`Queue::nack`] | the consumer, its [`LeaseId`] and a [`RecordKey`] | [`SettleOutcome`]: `Nacked` | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours`, `RecordNotHeld`, `MarkConflict` |
 //! | `Consuming` | [`Queue::renew`] | the consumer and its [`LeaseId`] | the new `expires_at`, a [`Timestamp`] | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours` |
 //! | `Consuming` | [`Queue::release`] | the consumer and its [`LeaseId`] | a [`PocketFate`], `Queued` or `Idle`, and the ended [`Lease`] | [`LeaseActionError`]: `UnknownConsumer`, `LeaseNotActive`, `LeaseNotYours` |
 //! | timeout | [`Queue::tick`] | nothing | a [`TickReport`]: `lapsed`, `decayed_superseded`, `decayed_dead_letters` | none |
 //!
 //! A refusal changes nothing, and each is one variant of a `thiserror` enum, one
 //! enum per operation (invariant 10). `NoPocketAvailable` is an outcome, not an
-//! error. `EqualRank` is a placeholder for the specification's open question 1, not
-//! a decision.
+//! error. `EqualRank` answers a publish at the stored rank, which no rule covers:
+//! the specification rejects it. An ack or a nack marks a held record and removes
+//! nothing; the lease's end, by release or lapse, acts on the mark. A repeat of the
+//! first mark answers as the first did, and the other mark is `MarkConflict`.
 //!
 //! The names and values are the specification's: who publishes and consumes
 //! ([`PublisherId`], [`ConsumerId`]), which pocket and key a record has
-//! ([`PocketKey`], [`RecordKey`]), its [`Rank`] and [`Payload`], and a held record
-//! as a batch carries it ([`HeldRecord`]). [`Config`] is the specification's
+//! ([`PocketKey`], [`RecordKey`]), its [`Rank`] and [`Payload`], a held record as
+//! a batch carries it ([`HeldRecord`]), and as the lease read shows it, with its
+//! [`Mark`] ([`MarkedRecord`]). [`Config`] is the specification's
 //! `config` block: five values a deployment sets, with the specification's
 //! defaults, checked once at load against the config invariants.
 //!
@@ -56,8 +59,8 @@
 //! use libpachinko::lease_ids::CountingLeaseIds;
 //! use libpachinko::records::MemoryRecords;
 //! use libpachinko::{
-//!     Config, ConsumerId, Payload, PocketKey, Publication, PublishOutcome, PublisherId,
-//!     PullOutcome, Queue, Rank, RecordKey, SettleOutcome,
+//!     Config, ConsumerId, Payload, PocketFate, PocketKey, Publication, PublishOutcome,
+//!     PublisherId, PullOutcome, Queue, Rank, RecordKey, SettleOutcome,
 //! };
 //!
 //! let mut queue: Queue<MemoryRecords, _, _> =
@@ -69,7 +72,9 @@
 //!     Publication::new(PocketKey::new("orders"), RecordKey::new("o-1"), Rank::new(1), Payload::default());
 //! assert_eq!(queue.publish(&publisher, publication), Ok(PublishOutcome::Created));
 //! let Ok(PullOutcome::Batch { lease, records, .. }) = queue.pull(&consumer, 10) else { panic!() };
-//! assert_eq!(queue.ack(&consumer, lease, &records[0].key), Ok(SettleOutcome::Settled));
+//! assert_eq!(queue.ack(&consumer, lease, &records[0].key), Ok(SettleOutcome::Acked));
+//! assert_eq!(queue.lease_view(&consumer).unwrap().unwrap().records.len(), 1);
+//! assert_eq!(queue.release(&consumer, lease).map(|(fate, _)| fate), Ok(PocketFate::Idle));
 //! assert!(queue.tick().is_empty());
 //! ```
 //!
@@ -119,8 +124,8 @@ pub use crate::error::{
     ConfigError, JoinError, LeaseActionError, LeaseIdError, PublishError, PullError,
 };
 pub use crate::ids::{
-    ConsumerId, HeldRecord, LeaseId, ParseLeaseIdError, Payload, PocketKey, PublisherId, Rank,
-    RecordKey,
+    ConsumerId, HeldRecord, LeaseId, Mark, MarkedRecord, ParseLeaseIdError, Payload, PocketKey,
+    PublisherId, Rank, RecordKey,
 };
 pub use crate::queue::{
     Lease, LeaseStatus, LeaseView, PocketFate, Publication, PublishOutcome, PullOutcome, Queue,

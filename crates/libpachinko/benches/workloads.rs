@@ -19,9 +19,9 @@
 //! - **W2 supersede**: one key per pocket pre-published at rank 1; each op publishes
 //!   the next pocket's key at its rank plus one. `OPS` ops per sample.
 //! - **W3 pull 16, ack, release**: every pocket pre-filled with 16 keys; one cycle
-//!   is a pull with limit 16, 16 acks and a release, 18 ops. The release finds the
-//!   pocket empty and idles it, so a sample runs `min(CYCLES, P)` cycles, one per
-//!   pocket.
+//!   is a pull with limit 16, 16 acks and a release, 18 ops. The acks mark the 16
+//!   held records and the release consumes them all and idles the emptied pocket,
+//!   so a sample runs `min(CYCLES, P)` cycles, one per pocket.
 //! - **W4 publish with every fifth op a consume step**: pockets pre-filled as W3;
 //!   one round is four publishes of fresh keys round-robin, then one W3 cycle on the
 //!   front pocket, 22 ops. `min(CYCLES, P)` rounds, so every pull finds the 16

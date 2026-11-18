@@ -27,8 +27,8 @@ exposes. The flags `serve` takes are in [Configuration](configuration.md#service
 | `POST /publishers/{publisher_id}/publish` | `{"records": [{"pocket_key": "tenant-a", "record_key": "k1", "rank": 1, "payload": "aGVsbG8="}]}` | `Publish`, once per row | 200 `{"outcomes": [...]}`, one per row; 404 `unknown_publisher`; 400 `bad_request`; 413 `too_many_rows`, `payload_too_large`, `body_too_large` ([Batch publish](#batch-publish)) |
 | `POST /consumers/{consumer_id}/pull` | `{"limit": 10}` | `Pull` | 200 with a batch, or 200 `{"outcome": "no_pocket"}`; 404 `unknown_consumer`; 400 `bad_request` |
 | `GET /consumers/{consumer_id}/lease` | none | the `Consuming` surface's `exposes` | 200 with the lease, or 204 with no body when the consumer holds none; 404 `unknown_consumer` |
-| `POST /leases/{lease_id}/ack` | `{"consumer_id": "c1", "record_key": "k1"}` | `Ack` | 200 `{"outcome": "settled"}` or `{"outcome": "deferred"}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 404 `record_not_held`; 400 `bad_request` |
-| `POST /leases/{lease_id}/nack` | `{"consumer_id": "c1", "record_key": "k1"}` | `Nack` | as ack |
+| `POST /leases/{lease_id}/ack` | `{"consumer_id": "c1", "record_key": "k1"}` | `Ack` | 200 `{"outcome": "acked"}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 404 `record_not_held`; 409 `mark_conflict`; 400 `bad_request` |
+| `POST /leases/{lease_id}/nack` | `{"consumer_id": "c1", "record_key": "k1"}` | `Nack` | 200 `{"outcome": "nacked"}`; the refusals as ack |
 | `POST /leases/{lease_id}/renew` | `{"consumer_id": "c1"}` | `Renew` | 200 `{"expires_at": 1762500300000}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 400 `bad_request` |
 | `POST /leases/{lease_id}/release` | `{"consumer_id": "c1"}` | `Release` | 200 `{"pocket": "queued"}` or `{"pocket": "idle"}`; 404 `unknown_consumer`; 409 `lease_not_active`; 403 `lease_not_yours`; 400 `bad_request` |
 | `GET /healthz` | none | none | 200 `ok` as text |
@@ -39,6 +39,12 @@ exposes. The flags `serve` takes are in [Configuration](configuration.md#service
 less claims a pocket and returns an empty batch; a `limit` above `--max-pull-batch`
 returns at most that many. Finding no pocket is data, not an error.
 
+A publish above the stored rank answers `superseded` whether or not a consumer holds the
+key. When the record is waiting, the version it replaces is shed at once. When the
+record is held under a lease, the held version is never shed: the new version waits
+behind it until the lease ends, and a later, higher one replaces and sheds only that
+waiting version. The publisher need not know which.
+
 A batch is:
 
 ```json
@@ -46,31 +52,50 @@ A batch is:
  "expires_at": 1762500000000, "records": [{"record_key": "k1", "rank": 1, "payload": "aGVsbG8="}]}
 ```
 
-Its records are the ones this pull handed out, oldest first. A lease is
-`{"pocket_key", "expires_at", "records"}` in the same shapes, its records the ones it
-holds, at the rank and payload they were handed out with. `expires_at` is milliseconds
-since the Unix epoch. `lease_id` is 32 lower-case hexadecimal digits, and the four lease
-routes name it in their path. The lease read carries no `lease_id`, because the
-specification's `exposes` does not; a consumer keeps the one its batch carried.
+Its records are the ones this pull handed out, oldest first. A lease is:
+
+```json
+{"pocket_key": "tenant-a", "expires_at": 1762500000000,
+ "records": [{"record_key": "k1", "rank": 1, "payload": "aGVsbG8=", "mark": "acked"}]}
+```
+
+Its records are every record the lease holds, smallest position first, at the rank and
+payload each was handed out with, and each carries its `mark`: `unsettled`, `acked` or
+`nacked`. Only the lease read shows the mark; a batch's records have none. `expires_at`
+is milliseconds since the Unix epoch. `lease_id` is 32 lower-case hexadecimal digits,
+and the four lease routes name it in their path. The lease read carries no `lease_id`,
+because the specification's `exposes` does not; a consumer keeps the one its batch
+carried.
 
 The lease id fences each action to the lease it was pulled under. An ack, nack, renew or
 release succeeds only while that lease is active and the consumer's: once a lease has
 ended it leaves the service's registry, so an action naming it is `lease_not_active`
-even when the same consumer has claimed the same pocket again under a new lease. An ack
-removes a held record whose held version is still the latest (`settled`), or, when a
-newer version arrived while it was held, defers that newer version to the back of the
-pocket until the lease ends (`deferred`). A nack does the same and keeps the held
-version as a dead letter. An ack also resets its pocket's count of consecutive lapses
-(below) to zero, and a nack leaves it. Ack, nack and renew each move `expires_at` to now
-plus `--lease-ttl-ms`; a refused action moves and resets nothing. A release ends the
-lease, returns its held and deferred records to queued in place, and requeues the pocket
-at the back (`queued`) or, with no records left, leaves it idle until a publish revives
-it (`idle`). No action checks `expires_at` against the clock: a late action the owner
+even when the same consumer has claimed the same pocket again under a new lease.
+
+An ack or a nack marks a held record and removes nothing, answering `acked` or
+`nacked`. The record stays in the lease's held set, on the lease read at the rank and
+payload it was handed out with, until the lease ends, and it is not handed out again
+under that lease. The first mark stands: a repeat answers as the first did and changes
+nothing but `expires_at`, and the other mark, an ack of a nacked record or a nack of an
+acked one, is refused with 409 `mark_conflict`. The first ack or nack of a record also
+resets its pocket's count of consecutive lapses (below) to zero. Ack, nack and renew
+each move `expires_at` to now plus `--lease-ttl-ms`; a refused action moves and resets
+nothing.
+
+A lease's end, by release or by lapse alike, reconciles every held record by its mark,
+so a lapse keeps every ack and nack. An unsettled record is queued again at its
+position; when a newer version waits behind it, the held version becomes a superseded
+record and the newer version takes its position. An acked version is consumed, and a
+nacked one becomes a dead letter, so a dead letter appears when the lease ends, never
+at the nack; a newer version waiting behind either is queued at the position it
+arrived at. A release ends the lease that way and requeues the pocket at the back
+(`queued`) or, with no records left, leaves it idle until a publish revives it
+(`idle`). No action checks `expires_at` against the clock: a late action the owner
 applies before the lapse succeeds (decision 0019).
 
 A pull under a lease extends it whatever the batch holds, an empty batch included. A
 pull that returns no records, because `limit` is zero or less or the pocket has no
-queued record left (each is held or deferred, or none remains), still moves `expires_at`
+queued record left (each is held, or none remains), still moves `expires_at`
 to now plus `--lease-ttl-ms` and keeps the pocket, so a consumer that pulls in a loop
 holds its pocket, emptied or not, until it releases the lease, as long as the owner
 applies each pull before the lease lapses: once `expires_at` has passed, a lapse applied
@@ -80,25 +105,26 @@ pull claims an empty pocket: a pull without a lease claims only a queued pocket,
 always has a record, and answers `no_pocket` when there is none.
 
 A lease nobody pulls under, acks, nacks or renews lapses: the service sweeps every
-`--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, returns its
-held and deferred records to queued in place and keeps the pocket at the front of the
-queue, so the next pull claims it. After `--max-consecutive-expiries` lapses with no
-ack, release or publish revival between them the pocket parks instead and no pull
-claims it until a publish into it; a pocket whose records were all acked or nacked goes
-idle below that count. The sweep is not instant:
+`--sweep-ms`, and the sweep ends every lease whose `expires_at` has passed, reconciles
+its held records as a release does and keeps the pocket at the front of the queue, so
+the next pull claims it. After `--max-consecutive-expiries` lapses with no ack, nack,
+release or publish revival between them the pocket parks instead, and no pull claims it
+until a publish adds a record to it or raises one; a stale publish leaves it parked. A
+pocket whose records were all acked or nacked, with no newer version waiting behind
+any, has none left and goes idle below that count. The sweep is not instant:
 a lease can stay active past `expires_at` for up to one sweep, plus the application of
 the sweep in progress and of the command the owner is applying, and a sweep reads the
 time once, so a lease expiring while one runs waits for the next. A pull, ack, nack or
 renew the owner applies in that window, before the lapse, succeeds and extends the lease,
-and a release applied in it succeeds by ending the lease and freeing its records; neither
+and a release applied in it succeeds by ending the lease and reconciling its records; neither
 is refused for being late (decision 0019). Arrival does not decide: a sweep the owner
 takes up first ends the lease, and an ack, nack, renew or release already waiting then
 gets `lease_not_active`. Recovery after a consumer dies therefore takes `--lease-ttl-ms`
 plus that window. Once the lapse is applied, the old lease is `lease_not_active` to
 every lease route, and `GET /consumers/{consumer_id}/lease` answers 204. A pull names no
 lease, so one applied after the lapse, already waiting or not, is not refused: it claims
-a pocket under a new lease, and is handed the lapsed pocket's records again, up to its
-`limit` and none at zero or less, when that is the pocket it claims, or answers
+a pocket under a new lease, and is handed the records the lapse queued, up to its
+`limit` and none at zero or less, when the lapsed pocket is the one it claims, or answers
 `no_pocket`.
 
 A lease route checks, in this order, the order of the rules' `requires`: the path's
@@ -106,7 +132,8 @@ A lease route checks, in this order, the order of the rules' `requires`: the pat
 anything reaches the owner), the consumer has joined (404 `unknown_consumer`), the lease
 is active (409 `lease_not_active`, for a lease that has ended and one that never existed
 alike), the lease is the consumer's (403 `lease_not_yours`), and, for ack and nack, the
-lease's pocket holds the record (404 `record_not_held`).
+lease's pocket holds the record (404 `record_not_held`) and the record is not already
+marked the other way (409 `mark_conflict`).
 
 Every command reaches the queue through one owner task, in arrival order. A pull whose
 client has disconnected before the owner reaches it is skipped, so no lease is granted
@@ -143,7 +170,8 @@ It answers 200 with one outcome per row, in row order, each `created`, `new_key`
 ```
 
 An equal rank is answered for its row alone, where the single `PUT` answers 409
-`equal_rank`; it is still the placeholder for the specification's first open question.
+`equal_rank`; the specification rejects a publish at the stored rank, whatever its
+payload.
 Rows apply in order and independently, as one command to the owner, so no other request
 runs between two rows: a row's outcome never undoes an earlier row, and a batch is never
 undone as a set.
@@ -231,10 +259,11 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 | `consumer_exists` | 409 | The consumer id has already joined. |
 | `unknown_publisher` | 404 | A publish names a publisher that has not joined. |
 | `unknown_consumer` | 404 | A pull, lease read or lease action names a consumer that has not joined. |
-| `equal_rank` | 409 | The rank equals the stored record's. No rule covers it; the message says the refusal is a placeholder for the specification's first open question. |
+| `equal_rank` | 409 | The rank equals the stored record's. The specification rejects it, whatever the payload, and nothing changes. |
 | `lease_not_active` | 409 | A lease action names a lease that has ended or never existed. |
 | `lease_not_yours` | 403 | A lease action names another consumer's active lease. |
 | `record_not_held` | 404 | An ack or nack names a record the lease's pocket does not hold. |
+| `mark_conflict` | 409 | An ack names a record already nacked under the lease, or a nack one already acked; the first mark stands. |
 | `bad_request` | 400 | The body is not the JSON the route takes, a field is missing, a batch's `records` is empty, a payload is not base64, or a lease id is not 32 lower-case hexadecimal digits. |
 | `too_many_rows` | 413 | A batch carries more rows than `--max-batch-rows`. |
 | `payload_too_large` | 413 | A payload decodes to more bytes than `--max-payload-bytes`; the message names the row. |
@@ -244,9 +273,9 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 
 ## Not exposed
 
-The superseded records and the dead letters nacks create are kept until they decay, at
-`--superseded-ttl-ms` and `--dead-letter-ttl-ms` after they were shed or nacked, on the
-first sweep after that. No route reads them: who reads them is the specification's second open question. A publish is never refused
+The superseded records and the dead letters are kept until they decay,
+`--superseded-ttl-ms` after a record was shed and `--dead-letter-ttl-ms` after the lease
+that nacked it ended, on the first sweep after that. No route reads them: who reads them is the specification's second open question. A publish is never refused
 for want of room (the specification's `NeverRefusedForCapacity`): a service under load
 makes the request wait for the owner, and the 413s above refuse a request's shape only.
 A pull is never refused for want of a pocket.

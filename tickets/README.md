@@ -57,7 +57,9 @@ snapshot.
 | T32 | Specification follow-up: expiry count on ack, empty pulls, and two new open questions | `T32-spec-follow-up.md` | T31 | T33, T34 | done |
 | T33 | Robustness: fallible lease ids, the tick receiver by value, a header-read deadline | `T33-robustness.md` | T31 | T32, T34 | done |
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
-| T35 | Decide and land the held-version shed (Q1) and stale revival (Q2) | `T35-decide-q1-q2.md` | T32 | none | todo |
+| T35 | Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided | `T35-decide-q1-q2.md` | T32 | none | done |
+| T36 | Diagram drift: a check that the committed SVGs match the script that draws them, and where that script lives | `T36-diagram-drift-check.md` | T35 | T33 | todo |
+| T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | todo |
 | T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
@@ -178,12 +180,19 @@ the MVP wave.
   default-features doctests, untracked files, quoted evidence and loadgen in CI. T32,
   T33 and T34 are parallel lanes on the wave-2 rule, each editing only its own lines in
   the shared files (CONVENTIONS.md §11). T35 decides Q1 and Q2 and lands the decision;
-  it waits for T32 because both edit `docs/specs/pachinko.allium`. T38 is a spike that
-  came out of T33: on 2026-11-17 the maintainer had T33 remove the service's hand-rolled
-  connection wrapper, and with it the header-read deadline, and T38 names what a slow or
-  silent client can then do and looks for an existing way to bound it. It writes no
-  production code, waits for T33, and ends with a recommendation the maintainer decides
-  on.
+  it waits for T32 because both edit `docs/specs/pachinko.allium`. The maintainer
+  decided Q1 on 2026-11-13 with a design outside the ticket's options, which also closes
+  open question 9: a record stays held until its lease ends. T35 was rewritten around
+  that decision, and its specification is on the ticket's branch. The specification had
+  its §14 review (T35-1); the rewritten ticket text has had none. On 2026-11-16 the
+  maintainer decided Q2, no touch on stale, and had T35 land the nack reset T32's
+  close-out decided; both are in the specification at `983b785`, which had its own §14
+  review (T35-2). The ticket's rewrite around them has had no §14 review. T38 is a spike
+  that came out of T33: on 2026-11-17 the maintainer had T33 remove the service's
+  hand-rolled connection wrapper, and with it the header-read deadline, and T38 names
+  what a slow or silent client can then do and looks for an existing way to bound it. It
+  writes no production code, waits for T33, and ends with a recommendation the
+  maintainer decides on.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex
