@@ -155,18 +155,25 @@ next step and never committed.
    and confirm the facts at the new base; record any that moved. Present "The choice for
    step 2" to the maintainer with the recommendations, (b) and (1), and **stop** for the
    answer. Record it, quoted and dated, in the hand-back.
-3. **Red first.** On a scratch break, change one word in a label the script draws to
+3. **The move,** under (b) or (c) only, before any probe, because the probes run the
+   chosen discovery. Move the script with `git mv`, so history follows it, derive
+   `ROOT` and `OUT` for its new place, and point the `diagrams` recipe at the new path;
+   step 5 replaces that path with the discovery. Run `just diagrams`: `git status
+   --short` shows the move and the recipe edit and no change to an SVG, no new folder
+   appears, and `git diff --stat -M HEAD` shows the script as a rename. Point the
+   script's docstring, the recipe comment and the pages at the new path.
+4. **Red first.** On a scratch break, change one word in a label the script draws to
    another correctly spelled word, so that typos cannot fail first, without rerunning the
    script. `just check` still ends green, which is the gap. Quote its last line. Keep the
    break.
-4. **The check.** Use the `fix-quality` skill. Add the shared discovery, rendering and
+5. **The check.** Use the `fix-quality` skill. Add the shared discovery, rendering and
    `--check` mode, then wire the check in as step 2 chose. Each probe below runs the
    diagram check on its own, by the recipe or the script's `--check`, not only the
    aggregate, because a missing embedded SVG also fails lychee and the documentation
    contract, and that failure would not prove the new check fired. Each failing probe
    quotes the check's output and exit status, and then shows the break still in place,
    unrewritten, by `git diff --stat` or `git status --short`.
-   - Under the break from step 3, the check exits 1 and names the SVG that holds the
+   - Under the break from step 4, the check exits 1 and names the SVG that holds the
      label. Revert the break.
    - A hand edit: change one colour value in one SVG. The check names that file.
      Revert it.
@@ -185,13 +192,9 @@ next step and never committed.
      fails and says it compared nothing. Restore.
    - The clean tree: make the SVGs and their folder read-only (`chmod a-w`), run the
      check, and quote exit 0 with "compared 4" (or the count the discovery finds). Then
-     restore the modes, and `git status --short` prints nothing. A check that writes
+     restore the modes, and `git status --short` prints what it printed before the
+     probe. A check that writes
      fails here. Also quote the check mode's lines, which open no file for writing.
-5. **The move,** under (b) or (c) only. Move the script with `git mv`, so history
-   follows it, and derive `ROOT` and `OUT` for its new place. Run `just diagrams`:
-   `git status --short` shows the move and the recipe edit and no change to an SVG, no
-   new folder appears, and `git diff --stat -M HEAD` shows the script as a rename. Point
-   the script's docstring, the recipe comment and the pages at the new path.
 6. **The handbook.** Use the `review-docs` skill. Edit the rows in Files touched. Run
    `just check-docs`.
 7. **Adversarial review** (`tickets/CONVENTIONS.md` §14), conformance and breakage, a
@@ -208,7 +211,7 @@ next step and never committed.
 
 ## Acceptance criteria
 
-- Each probe in step 4 is quoted with the check's output and exit status: exit 1 naming
+- Each probe in step 5 is quoted with the check's output and exit status: exit 1 naming
   the file for the stale, hand-edited, extra, missing and orphan SVGs and the second
   decision's stale SVG; exit 1 for no script and for nothing drawn; exit 0 with the
   count on the clean, read-only tree. Each failing probe shows its break unrewritten.
@@ -228,10 +231,12 @@ at `just check-clean` only if every line held.
 ```sh
 set -eu
 just diagrams
-test -z "$(git status --short)"                       # regeneration changed nothing
+status=$(git status --short)                          # fails the script if git fails
+test -z "$status"                                     # regeneration changed nothing
 git diff --exit-code be7caf3e03bfd8a4dd360470af150a697663e094 -- 'docs/decisions/0020/*.svg'   # T35's bytes
 just check-docs                                       # or the chosen recipe; prints the count
-git show be7caf3e03bfd8a4dd360470af150a697663e094:docs/reference/commands.md | rg -q 'nothing checks'   # positive control
+before=$(git show be7caf3e03bfd8a4dd360470af150a697663e094:docs/reference/commands.md)
+printf '%s\n' "$before" | rg -q 'nothing checks'      # positive control
 if rg -q 'nothing checks' docs/reference/commands.md; then exit 1; else test "$?" -eq 1; fi
 just check
 just check-clean
