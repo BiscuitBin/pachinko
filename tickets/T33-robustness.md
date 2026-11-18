@@ -202,7 +202,7 @@ obligation count.
 | `crates/pachinko/src/error.rs` | shared, own lines | `LeaseIdsExhausted`'s doc (lines 73 to 81): the owner stops at a pull that needs an id the source cannot give |
 | `crates/pachinko/src/actor.rs` | shared, own lines | The owner's `lease_ids` parameter and pre-check removed from `start`, `own`, `apply` and `pull`; `pull` stops the owner on `PullError::LeaseId(_)` without answering; the docs at lines 370 to 379 and 515 to 521; tests: `run_owner`, `queue` and the two new exhaustion tests |
 | `crates/pachinko/src/serve.rs` | shared, own lines | `service_queue` returns the queue alone; `Lifecycle` without `ticks`, `new` returning the receiver, `start(&self, queue, ticks)`; every caller (lines 131, 143 to 144, 180 to 183, and the tests at 619 to 620, 647 to 648, 744 to 745, 821 to 823, 869 to 877, 918 to 922, 979 to 980); `scope`'s destructuring (line 226); `Idle` and its doc (lines 395 to 454); the trickle test |
-| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source. Widened after the hand-back, by the maintainer's call of 2026-11-17: `Refusal::ReadTimedOut` and the enum's doc, `Refusal::from_json` and its doc, its helper `timed_out_read`, and the unit tests `a_read_the_head_deadline_failed_is_408_request_timeout` and `only_a_timed_out_read_down_the_sources_is_the_head_deadline` (T33-4, B2) |
+| `crates/pachinko/src/http.rs` | shared, own lines | The test helper `unanswered_router` (lines 699 to 715) calls `actor::start` without the source. Widened after the hand-back, by the maintainer's call of 2026-11-17: `Refusal::ReadTimedOut` and the enum's doc, `Refusal::from_json` and its doc, its helper `timed_out_read`, and the unit tests `a_read_the_head_deadline_failed_is_408_request_timeout` and `only_a_timed_out_read_down_the_sources_is_found` (T33-4, B2) |
 | `docs/explanation/architecture.md` | shared, own lines | Lines 150 to 157 (the `LeaseIds` paragraph: fallible); lines 243 to 248 (the owner stops at a pull that needs an id) |
 | `docs/reference/api.md` | shared, own lines | Lines 70 to 77: `LeaseIdError` among the refusal enums |
 | `docs/reference/http-api.md` | shared, own lines | "Request timeout", lines 183 to 187: the head deadline from the first byte and the one-timeout guarantee. Widened after the hand-back, by the maintainer's call of 2026-11-17: the `request_timeout` row of "Errors" |
@@ -1016,7 +1016,7 @@ The 408 widened Files touched after the hand-back: the `http.rs` row (`Refusal::
 No unit test feeds `from_json` a failing body: axum re-exports `HttpBody` but not
 `Frame`, no stream crate is in the tree, and `UnknownBodyError`'s constructor is
 crate-private, so it would need a dev-dependency (invariant 9). The socket test drives
-the real chain end to end, and `only_a_timed_out_read_down_the_sources_is_the_head_deadline`
+the real chain end to end, and `only_a_timed_out_read_down_the_sources_is_found`
 tests the walk itself (T33-4, B2). The fallback that answers `BadRequest` is untested.
 
 Shown to bite, on `0273ea0` with the change in the worktree, each with
@@ -1044,7 +1044,8 @@ With both restored, `just test` ran 254 tests, 254 passed.
 ### T33-4: the 408 change, before its commit
 
 `codex exec -m gpt-6-astra -s read-only`, two lenses, over `git diff 0273ea0` (the
-uncommitted change), each exit 0. Two fresh Claude subagents triaged the findings,
+uncommitted change), each ending with its findings (exit codes not captured; the runs
+were backgrounded). Two fresh Claude subagents triaged the findings,
 read-only, against the code and the pinned hyper 1.12.0, axum 0.8.9 and axum-core 0.5.6
 sources; one more subagent applied the valid fixes, alone. Verdicts are in
 `ai_tmp/review/T33-4/verdicts.md`.
@@ -1060,7 +1061,7 @@ sources; one more subagent applied the valid fixes, alone. Verdicts are in
   means reworking `publish_with_a_slow_head`.
 - **B2** (low, valid, applied): no test failed if the predicate accepted any
   `io::Error`, which would answer the shutdown cut 408. The walk moved into
-  `timed_out_read`, and `only_a_timed_out_read_down_the_sources_is_the_head_deadline`
+  `timed_out_read`, and `only_a_timed_out_read_down_the_sources_is_found`
   checks a `TimedOut` two `axum::Error`s down, a `ConnectionAborted`, and a cause that is
   not an `io::Error`. The verdict's signature needed explicit lifetimes (E0106), the one
   change from its text.
@@ -1092,6 +1093,35 @@ Files touched changed.
 HEAD 4579b19
 
 $ just check   (output in ai_tmp/t33/t33-4/check-A.log; tail shown)
+All checks passed and the worktree is unchanged.
+exit 0
+```
+
+`cargo nextest` ran 255 tests, 255 passed, and line coverage is 98.97%.
+
+### `review-change`, after T33-4
+
+The lead ran `review-change` over `git diff 0273ea0..HEAD` at `037e2cf`, after the
+T33-4 fixes, which no reviewer had read. The ten invariants hold: no public item
+changed, nothing `unsafe`, no dependency, `Refusal` is still a `thiserror` enum, and
+clippy, coverage and `effects` pass inside `just check`. `docs/specs/pachinko.allium`
+has no rule on HTTP status codes, so the specification does not move. `http-api.md`
+owns the error table and the request timeout. Two low findings, both fixed:
+
+- **R1:** `timed_out_read`'s doc and its test's name, then
+  `only_a_timed_out_read_down_the_sources_is_the_head_deadline`, still named the head
+  deadline as the only cause, which C1 had corrected elsewhere. The doc now says "a
+  read the head deadline or the socket timed out", and the test is
+  `only_a_timed_out_read_down_the_sources_is_found`.
+- **R2:** the T33-4 record said each Codex run exited 0, but the runs were backgrounded
+  and their exit codes were not captured. It now says so.
+
+R1's fix is `75998fc`; R2's and this section are the commit after it.
+
+```text
+HEAD 75998fc
+
+$ just check   (output in ai_tmp/t33/t33-4/check-C.log; tail shown)
 All checks passed and the worktree is unchanged.
 exit 0
 ```
