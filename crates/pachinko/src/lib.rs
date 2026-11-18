@@ -7,10 +7,10 @@
 //! SIGINT.
 //!
 //! `GET /readyz` reports whether the owner is serving. `--log-level` sets the log
-//! level, `--request-timeout-ms` bounds each request and each idle connection, and
-//! `--shutdown-grace-ms` bounds the shutdown: open connections are cut after one
-//! grace period and the server's own tasks still running are aborted after a second
-//! (see [`serve`]).
+//! level, `--request-timeout-ms` bounds each handler, and `--shutdown-grace-ms`
+//! bounds the shutdown: after one grace period the server stops waiting for the
+//! connections still open, and after a second its own tasks still running are
+//! aborted (see [`serve`]).
 //!
 //! The service supplies the real implementations of the library's effect traits,
 //! [`SystemClock`] and [`EpochSerialLeaseIds`], and owns the runtime, the wire format

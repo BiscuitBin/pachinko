@@ -29,12 +29,11 @@ const BATCH_ENVELOPE_BYTES: usize = 88;
 /// The most detailed log level written unless `--log-level` says otherwise.
 const DEFAULT_LOG_LEVEL: Level = Level::INFO;
 
-/// How long a request or an idle connection may take unless `--request-timeout-ms`
-/// says otherwise.
+/// How long a handler may run unless `--request-timeout-ms` says otherwise.
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// How long shutdown waits before it cuts open connections, and again before it
-/// aborts what is left, unless `--shutdown-grace-ms` says otherwise.
+/// How long shutdown waits before it stops waiting for open connections, and again
+/// before it aborts what is left, unless `--shutdown-grace-ms` says otherwise.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 /// How often the ticker sweeps for lapsed leases and decayed entries unless
@@ -213,8 +212,7 @@ impl ServeConfig {
         self.log_level
     }
 
-    /// How long a request's handler may run, and how long a connection may wait
-    /// for its next bytes, before either is given up.
+    /// How long a request's handler may run before it is given up.
     ///
     /// ```
     /// use std::time::Duration;
@@ -228,8 +226,8 @@ impl ServeConfig {
         self.request_timeout
     }
 
-    /// How long shutdown lets in-flight requests finish before it cuts the open
-    /// connections, and how long it then waits before it aborts what is left.
+    /// How long shutdown lets in-flight requests finish before it stops waiting for
+    /// the open connections, and how long it then waits before it aborts what is left.
     ///
     /// ```
     /// use std::time::Duration;

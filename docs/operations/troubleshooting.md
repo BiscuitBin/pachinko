@@ -244,9 +244,10 @@ running. Stop it, or choose another port with `--listen`. Tests pass port 0 and 
 
 `pachinko: server task: shutdown took longer than <n>ms; open connections were cut`
 means a request was still in flight when `--shutdown-grace-ms` ran out, usually a client
-that stalled mid-request, so its connection was cut without a reply and the process
-exited 1. The longer form ending `tasks still running <n>ms later were aborted` means
-something ignored the cut for a second grace period too. Raise the grace if clients
+that stalled mid-request, so the service stopped waiting for its connection, which the
+exit closed without a reply, and the process exited 1. The longer form ending
+`tasks still running <n>ms later were aborted` means something ignored the cut for a
+second grace period too. Raise the grace if clients
 are slow but honest; a container's stop timeout must then exceed twice the grace, as
 [Build the container image](../how-to/build-the-container-image.md) explains.
 

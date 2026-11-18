@@ -197,45 +197,26 @@ first attempt or another publish stored it. It does not prove the first attempt 
 a 408 can come before the command reaches the owner, for example while the body is still
 being read. The usual cause is an owner far behind on its commands.
 
-The same flag bounds idle connections. A connection that sends nothing for one timeout
-is closed. One that has sent bytes and is still owed a reply has a deadline two
-timeouts after the first byte of the request, however slowly the rest of the request
-trickles in. The deadline is checked while the server is reading the connection, and a
-head that never completes is closed at it with no reply. A head that arrives within one
-timeout always gets its reply or its 408 first, because the 408 comes one timeout after
-the head, unless it was pipelined behind an earlier request (below). A head slower than
-one timeout gets its reply if the handler writes it within two timeouts of the first
-byte. Otherwise the connection's read fails at that deadline, before the handler's 408
-is due, so a handler still reading the request body answers 408 `request_timeout` for the
-failed read, with a message that says the request was not read in time; no command was
-sent.
-There is one exception. Once a whole request has arrived together with bytes the client
-sent after it, the server stops reading until it has replied, so the deadline is not
-checked. That request is bounded by its handler instead, and gets its reply or its 408
-within one timeout of its head, under three timeouts after its first byte.
-
-Any write restarts the deadline, a `100 Continue` included: a request that sent
-`Expect: 100-continue` is timed afresh from that interim reply, so its handler can still
-answer 408 while it waits for the body. The deadline belongs to the connection, not to
-each request. A pipelined request whose first bytes arrived before the previous reply
-was written is timed from that write: the connection is closed if nothing more arrives
-within one timeout of it, or two timeouts after the next byte that does, so within three
-timeouts of the previous reply, or four if its whole head arrives with bytes after it
-(above). Such a request can also get the failed read's 408 rather than its handler's: one
-whose head had arrived in full before the previous reply was written, and whose body has
-not arrived a timeout after that write, can be answered 408 `request_timeout` for the
-failed read.
+The flag bounds a handler and nothing else. Nothing bounds a connection that sends
+nothing, or a request head that trickles in or never completes: the service keeps such a
+connection open until the client closes it or the service stops. A request body that
+stalls is bounded only by its handler's timeout.
+[Security model](../explanation/security-model.md#request-shape-limits) says what to put
+in front of an exposed listener.
 
 ## Shutdown
 
 On SIGTERM or SIGINT, `GET /readyz` answers 503 `stopping` at once, the listener stops
-accepting, and requests in flight finish. Connections still open after
-`--shutdown-grace-ms` (5000 by default) are cut without a reply, and the owner stops
-taking commands. Anything still running one more grace period later is aborted, and
-`serve` exits non-zero. A grace of 0 cuts at once and waits up to 1 second for the server's
-tasks to end on the cut before aborting what is left, so a clean stop still exits 0. A client that sees a 503, a refused connection or a cut
-connection during the window retries once the service is back. The queue is in memory,
-so a restarted service starts empty.
+accepting, and requests in flight finish. After `--shutdown-grace-ms` (5000 by default)
+the service stops waiting for the connections still open, and the owner stops taking
+commands. Such a connection is not closed until the process exits, which closes it
+without a reply; a request that completes on it once the owner has stopped is answered
+503 `not_ready`. Any of the service's tasks still running one more grace period later
+is aborted, and `serve` exits non-zero. A grace of 0 stops waiting at once and gives the
+service's tasks up to 1 second to end before aborting what is left, so a clean stop still
+exits 0. A client that sees a 503, a refused connection or a closed connection during
+the window retries once the service is back. The queue is in memory, so a restarted
+service starts empty.
 
 ## Errors
 
@@ -257,7 +238,7 @@ exhaustive map in `crates/pachinko/src/http.rs` gives each code its status:
 | `payload_too_large` | 413 | A payload decodes to more bytes than `--max-payload-bytes`; the message names the row. |
 | `body_too_large` | 413 | The request body is longer than `--max-body-bytes`. |
 | `not_ready` | 503 | `GET /readyz` while the service is starting or stopping; any other route once the queue's owner has stopped; or the library refused with a variant the map does not know, which is also logged as an error. No route answers 500. |
-| `request_timeout` | 408 | The handler ran past `--request-timeout-ms`, and a command it sent may still be applied; or a read of the request body timed out, at its head deadline or in the operating system, and no command was sent. See [Request timeout](#request-timeout). |
+| `request_timeout` | 408 | The handler ran past `--request-timeout-ms`. A command it sent may still be applied; see [Request timeout](#request-timeout). |
 
 ## Not exposed
 

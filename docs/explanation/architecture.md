@@ -285,16 +285,16 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
   that finds no pocket need no new id, so they are still answered.
 - **The task scope.** `serve` holds the owner, the ticker, the listener and the signal task in one
   `JoinSet`. The first to end starts the shutdown: `GET /readyz` answers 503 at once, the
-  listener stops accepting, lets in-flight requests finish, cuts connections still open
-  after `--shutdown-grace-ms`, and drops the router, whose handle was the owner's last
-  sender, so the owner ends too. A task that panicked comes back as an error, and the
-  binary exits 1. [HTTP API](../reference/http-api.md#shutdown)
-  owns the shutdown's contract.
+  listener stops accepting, lets in-flight requests finish and drops the router, whose
+  handle was the owner's last sender, so the owner ends too. After `--shutdown-grace-ms`
+  the listener stops waiting for connections still open, and the owner is told to stop.
+  A task that panicked comes back as an error, and the binary exits 1.
+  [HTTP API](../reference/http-api.md#shutdown) owns the shutdown's contract.
 - **The wire.** axum routes each request to one command and maps every refusal through
   one exhaustive table of codes; [HTTP API](../reference/http-api.md) owns the routes,
   bodies and codes. `--request-timeout-ms` answers a request still running at
-  the bound with 408 `request_timeout` and closes an idle connection, and `GET /readyz` reports whether the owner is
-  serving. Each request is logged at `debug`, below the default `info`, which
+  the bound with 408 `request_timeout`, and `GET /readyz` reports whether the owner
+  is serving. Each request is logged at `debug`, below the default `info`, which
   `--log-level` sets.
 
 The tests sit in three places. Unit tests live in the modules: the flag parser, the

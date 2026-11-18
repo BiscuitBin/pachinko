@@ -106,19 +106,6 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   lease and a pull that finds no pocket are still answered.
   `EpochSerialLeaseIds::exhausted` is removed: an exhausted source answers
   `LeaseIdError::Exhausted` from `next`.
-- A connection still owed a reply is closed two `--request-timeout-ms` after the first
-  byte of the request, however it trickles, instead of two after its latest byte. A head
-  that arrives within one timeout still gets its reply or its 408 first. A slower one
-  gets its reply if the handler writes it within two timeouts of the first byte;
-  otherwise a handler still reading the body answers 408 `request_timeout` for the
-  failed read, with no command sent, and a head that never completes is closed without
-  a reply. A whole request followed by bytes the client sent after it is not read past,
-  so it gets its reply or its 408 within one timeout of its head instead. Any write restarts the deadline, a
-  `100 Continue` included, so a request that asked for one can still be answered 408. A
-  pipelined request whose first bytes arrived before the previous reply was written is
-  timed from that write, and closed within three timeouts of it, or answered within four
-  if its whole head arrives with bytes after it; one whose whole head had arrived can get
-  the failed read's 408 rather than its handler's.
 - `just check` runs a twentieth gate, `just test-doc-default`, every doctest with
   default features, and CI's `rust` job runs it too.
 - `just lint` reads untracked files Git does not ignore as well as tracked ones, and
@@ -151,9 +138,9 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 - Operability for `pachinko serve`: `GET /readyz`, 204 while serving and 503
   `not_ready` while starting or stopping; `--log-level` (default `info`, `RUST_LOG`
   ignored), with the per-request line at `debug`; `--request-timeout-ms` (default
-  30000), answering 408 `request_timeout` and closing idle connections; and
-  `--shutdown-grace-ms` (default 5000), after which open connections are cut and,
-  one more grace period later, anything left is aborted.
+  30000), answering a handler that runs past it 408 `request_timeout`; and
+  `--shutdown-grace-ms` (default 5000), after which the service stops waiting for
+  open connections and, one more grace period later, anything left is aborted.
 - A closed-loop load generator and lapse probe, `just loadgen`, in the excluded
   `loadgen/` crate with its own lockfile: publish, batch, consume and mix workloads and
   the lapse lag against a running `pachinko serve`, failing closed on any error. It
