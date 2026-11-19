@@ -332,7 +332,7 @@ fails, so it could not show the gap.
   - The step 3 id now passes typos: `Passed`, exit 0.
   - A line holding the id and a real misspelling of "receive" fails on the misspelling
     only, with `exit code: 2`. It was reverted.
-  - Deleting the `ede` word failed typos on five pages that name the word as a code span
+  - Deleting the `ede` word failed typos in four files that name the word as a code span
     (T10, T11, `CONVENTIONS.md` twice, `docs/reference/configuration.md`), but not on
     `097ede1` itself. That word is now a second `extend-ignore-re` pattern, the code span
     alone, and a bare one fails again (probe at `b2151ed`'s content: `exit code: 2` on
@@ -365,14 +365,20 @@ fails, so it could not show the gap.
   - Each log printed `Reading additional input from stdin...` and then went on, growing
     past its header. §14 now says so.
   - Each reviewer wrote `findings-$lens.md` itself (7.1 KB and 6.5 KB), and `-o` put only
-    the closing message in `last-$lens.md`. The open point "can a read-only reviewer write
-    the findings file" is settled: it can.
+    the closing message in `last-$lens.md`.
+  - **Can a read-only reviewer write the findings file?** Observed with `codex-cli 0.169.1`
+    on this machine and its Codex configuration: yes. Each log shows a plain `cat >` from
+    the reviewer's shell under `sandbox: read-only`, with no escalation. Elsewhere it may
+    not, and then the log is the fallback §14 already names.
   - The `code-review` skill also ran over the diff, at medium effort.
 - **Findings.** Conformance had 3 (1 medium, 2 low), breakage had 3 (3 medium), and
   code-review had 10. None was high, so no second round ran.
 - **Triage** followed decision A, recorded in `ai_tmp/review/T37-1/verdicts.md`. The
-  executing agent accepted 12. It would have rejected 3, which went to a fresh Claude
-  subagent (`verdicts-subagent.md`), whose verdict stands:
+  executing agent accepted 13. It would have rejected 3, which went to a fresh Claude
+  subagent (`verdicts-subagent.md`), whose verdict stands. That subagent's brief was not
+  wholly free of the agent's reasoning, as §14 now asks: it pointed at step 4 for CR3 and
+  asked whether CR9 was a correctness problem at all. It still upheld CR3 against the
+  agent. Its verdicts:
   - **CR1**, "a read-only Codex cannot write the findings": invalid. The real run wrote
     both files.
   - **CR3**, "the `claude -p` line has no stdin or stderr redirection and uses `>`":
@@ -407,6 +413,28 @@ fails, so it could not show the gap.
   stayed at `b2151ed`.
 - With this ticket `done`, the hook skips it, so the clean-tree count drops by one fence
   and one file. The Verification quote below is taken at the commit that sets `done`.
+- **Verification, at `3e0758b`.** The fence ran as one `sh -x` script with
+  `.pixi/envs/default/bin` on `PATH`. This excerpt leaves out the trace of `before=`, which
+  holds the whole of the old `CONVENTIONS.md`, and the body of `just check`:
+
+  ```text
+  + rg -q -- '-o ai_tmp/review/[^ ]*findings'
+  + rg -q -- '-o ai_tmp/review/[^ ]*findings' tickets/CONVENTIONS.md
+  + test 1 -eq 1
+  + rg -n dev/null tickets/CONVENTIONS.md
+  889:    < /dev/null >| ai_tmp/review/"$id"-"$n"/log-"$lens".txt 2>&1
+  900:  - **Codex.** `< /dev/null` closes stdin: without it a backgrounded `codex exec` prints
+  + prek run --all-files shell-fences
+  shell fences in tickets..................................................Passed
+    checked 5 fences in 4 files; skipped 31 with status done
+  + prek run --all-files typos
+  typos....................................................................Passed
+  + just check
+  All checks passed and the worktree is unchanged.
+  + status=
+  + test -z ''
+  verification exit 0
+  ```
 
 ## Open points
 
@@ -417,7 +445,10 @@ fails, so it could not show the gap.
   and a plain `>`, which fails with "file exists" under `noclobber` when a failed round is
   rerun at the same path. Step 4 ordered that line left as it is. A follow-up could use
   `< /dev/null >| …/findings-"$lens".md 2>| …/log-claude-"$lens".txt`, after confirming
-  with `claude --help` whether a backgrounded `claude -p` waits on stdin.
+  with `claude --help` whether a backgrounded `claude -p` waits on stdin. The same
+  follow-up should finish CR2. §14's prose says the Claude brief asks for the findings as
+  the reply, but the fence passes one `$brief`, which names the findings path, to both
+  commands.
 - **Handed back (CR6).** `docs/reference/configuration.md:114`, which owns `_typos.toml`,
   still describes it as excluded paths and the words `mis`, `als` and `ede`. It names
   neither `extend-ignore-re` pattern, nor that the commit-id pattern exempts every all-hex
