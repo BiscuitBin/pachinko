@@ -376,7 +376,35 @@ The probes added for the review's fixes (§14, below) held in the same run:
 | 17 | `docs/decisions/9999/` unreadable | exit 1, `find: docs/decisions/9999: Permission denied` |
 | 18 | no-write evidence | the recipe at `21bd3e6` matches `mktemp` (positive control); the recipe now matches none of `mktemp`, `>` into a file, `tee` or `touch`, and grep must exit exactly 1 |
 
-The script ended `ALL PROBES HELD`, exit 0. `check()`, quoted by the probe, reads with `read_bytes`, `is_file` and `iterdir` and opens nothing for writing.
+The script ended `ALL PROBES HELD`, exit 0. The check mode, as committed, reads with `read_bytes`, `is_file` and `iterdir` and opens nothing for writing:
+
+```python
+def check():
+    """Compare every SVG in this folder with what the script draws; open nothing for writing."""
+    script = Path(__file__).resolve().relative_to(ROOT)
+    rerun = "run `just diagrams`"
+    problems = []
+    if not DIAGRAMS:
+        problems.append(f"{script}: draws nothing; add a diagram to DIAGRAMS and {rerun}")
+    for name in DIAGRAMS:
+        path = OUT / name
+        if not path.is_file():
+            problems.append(f"{path.relative_to(ROOT)}: missing; {rerun}")
+        elif path.read_bytes() != render(name):
+            problems.append(f"{path.relative_to(ROOT)}: differs from what {script} draws; {rerun}")
+    for path in sorted(OUT.iterdir()):
+        if path.suffix.lower() == ".svg" and path.name not in DIAGRAMS:
+            problems.append(
+                f"{path.relative_to(ROOT)}: drawn by no diagram in {script}; "
+                f"remove it, or add a diagram that draws it and {rerun}"
+            )
+    for problem in problems:
+        print(problem, file=sys.stderr)
+    if problems:
+        return 1
+    print(f"{script}: compared {len(DIAGRAMS)} SVGs, all match")
+    return 0
+```
 
 The evidence for "writes nothing" has two limits:
 
@@ -385,7 +413,13 @@ The evidence for "writes nothing" has two limits:
 
 ### Adversarial review (step 7, §14): T36-1
 
-Codex `codex-cli 0.169.1`, `-m gpt-6-astra -s read-only`, on 2026-11-18, run with the corrected command form (`< /dev/null`, `-o` at `last-<lens>.md`). Round 1 covered `8f27860..21bd3e6`. A `/code-review` pass over the same diff ran beside it, and its findings were triaged in the same way. Triage and fixes were done by one fresh-context Claude subagent, the only writer, applying fixes one at a time. The raw files are under `ai_tmp/review/T36-1/` and are not committed.
+Codex `codex-cli 0.169.1`, `-m gpt-6-astra -s read-only`, on 2026-11-18, run with the corrected command form (`< /dev/null`, `-o` at `last-<lens>.md`). Round 1 covered `8f27860..21bd3e6`. A `/code-review` pass over the same diff ran beside it, and its findings were triaged in the same way. Triage and fixes were done by one fresh-context Claude subagent, the only writer, applying fixes one at a time. The executing agent's briefs set some dispositions in advance:
+
+- R5 deferred to step 7, R6 recorded here, and C2-1 an Open point.
+- R1 and R8 handed back under the scope guard.
+- The shape of the C2-2 fix proposed: narrow the rejection to links that could hide a diagram.
+
+The subagent checked each of the others itself. Its ShellCheck and `/bin/dash` results (R1, and after each round) rest on `verdicts.md` and `verdicts-2.md`. The raw files are under `ai_tmp/review/T36-1/` and are not committed.
 
 | Finding | Severity | Verdict | Fix |
 | --- | --- | --- | --- |
@@ -413,7 +447,7 @@ B2 was a valid high finding, so round 2 ran over `21bd3e6..22b463f`:
 | B2-1: a name holding a newline was split into fragments | low | valid | Refused first, by name, in both modes (probe 15c) |
 | B2-2: the harness's negative greps treated an error as no match | medium | valid | They require exit 1 exactly |
 
-There were no valid high findings in round 2, and two rounds are the limit. The re-run after both rounds is the probe run above and the Verification below.
+There were no valid high findings in round 2, and two rounds are the limit. The round-2 fixes, at `754bffd` (the narrowed symlink filter and the newline refusal), were therefore not reviewed again. The probes (15b, 15c, and 18's exact-status greps) and the Verification below are their only evidence.
 
 ### Verification, at `754bffd`
 
