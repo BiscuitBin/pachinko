@@ -55,7 +55,8 @@ The specification facts it rests on, all from `docs/specs/pachinko.allium`:
   rest. The checker needs every field, so the whole entity model lands here, before any
   rule that sets the held fields or creates a lease.
 - **Positions.** Every rule that allots a position takes `queue.next_position` and
-  advances it. `PublishIntoNewPocket` takes two: the pocket's, then the record's.
+  advances it. `PublishIntoNewPocket` takes two: the pocket's, then the record's. In the
+  double only `Queue` allots positions, from its apply step (shared rule 4).
 - **Publish.** Five rules share the `Publish` trigger, with disjoint guards. No rule
   covers a rank equal to the stored rank, so that publish is rejected and changes nothing,
   whatever its payload. The stored rank is `record.rank` whatever the record's state. A
@@ -76,9 +77,10 @@ plus S005's doctest in `crates/libpachinko/src/config.rs`.
 
 `just python-double` runs the double's tests on pixi's Python 3.14 and exits 0. The
 package holds the whole entity model, `Config`, the joins and the publish rules below. The
-checker holds all 35 invariants, runs after every operation and has a positive control for
-each. The coverage test parses the catalog, the rules and the invariants and leaves
-pending exactly what PD02 to PD05 own. Every scenario below is pinned by a tagged test.
+checker holds all 35 invariants, runs once per outcome from `Queue`'s apply step and has a
+positive control for each. The coverage test parses the catalog, the rules and the
+invariants and leaves pending exactly what PD02 to PD05 own. Every scenario below is
+pinned by a tagged test.
 
 This ticket owns:
 
@@ -131,8 +133,13 @@ written here; nothing outside it amends them.
    and fails unless each entry is covered or pending.
    - The catalog's rows, `^\| (S[0-9]{3}) \|` in `docs/reference/testing.md`, are each
      covered by a `# scenario:` tag under `double/tests/`.
-   - The specification's rules, `^rule (\w+) \{`, are each covered by a `# rule: <Name>`
-     comment at the code that applies the rule, under `double/pachinko_double/`.
+   - The specification's rules, `^rule (\w+) \{`, are each covered when two things hold:
+     the rule has a row in its trigger's table, and those tables are the registry; and
+     the dispatcher recorded that row as fired during the run. The rule half fails on a
+     registry name the specification does not hold, on a specification rule that has no
+     row and is not pending, and on a row, not pending, that never fired. The fired-rule
+     check reads the record only after every other test module has run, since `discover`
+     would otherwise run `test_coverage.py` first; PD01 settles how.
    - The specification's invariants, `^\s*invariant (\w+) \{`, are each covered by an
      entry in the checker's registry and by a positive control tagged
      `# invariant-control: <Name>`. Fifteen of the thirty-five sit indented inside an
@@ -141,23 +148,50 @@ written here; nothing outside it amends them.
      matches less fails. A specification change that moves a count updates the constant
      and adds a spec note. A tag that names an id or a name the sources do not hold fails.
    - `PENDING_SCENARIOS` and `PENDING_RULES` hold what is not covered yet. An entry that is
-     both pending and covered fails, so each ticket shrinks the lists by exactly what it
-     lands. PD06 deletes both lists.
+     both pending and covered fails, where a rule counts as covered once it is registered,
+     so each ticket shrinks the lists by exactly what it lands. PD06 deletes both lists.
 4. **Design constraints.** PD01 proposes the class layout and reviews it. These are fixed:
    - The clock and lease ids are injected: a `Clock` protocol with a fake whose time a test
      sets and whose reads it counts, and a lease-id source with a deterministic fake. This
      follows the house rule that effects sit behind seams (decisions 0003 and 0008). The
      double reads no wall clock and draws no randomness.
    - A refusal changes nothing, and a test proves it for each refusal by comparing the
-     inspection seam's snapshot before and after.
-   - The invariant checker runs after every public operation, after the whole chained
-     outcome (`Handed`, `Freed`, `PocketTouched`), because the specification says the
-     invariants hold after the whole of it. It raises naming each invariant that fails.
-     Each of the 35 invariants has a positive control: a test that corrupts the state
-     directly and shows that the checker names that invariant.
-   - Tests read state through an inspection seam: each pocket's status, position and
-     consecutive expiries; each record's state, positions and held fields; the leases; and
-     the superseded and dead-letter queues.
+     inspection seam's complete snapshot before and after.
+   - **Tables per trigger.** The rules that share a trigger are the rows of one table for
+     that trigger, each row `(name, guard, effect)`.
+     - Guards are pure: a guard allots nothing and changes nothing.
+     - Dispatch evaluates every guard of the table. If two hold, it raises
+       `GuardOverlap` naming both. That is a specification finding, since the
+       specification claims disjoint guards for Publish, the lapse and `Freed`: record
+       it in `double/SPEC-NOTES.md` and **stop**.
+     - Each table states what happens when no guard holds:
+
+       | Trigger | When no guard holds |
+       | --- | --- |
+       | Publish, Pull, Ack, Nack, Renew, Release and the two joins | A refusal |
+       | `PocketTouched` | Nothing happens |
+       | `LeaseLapsed` | Nothing happens, under branch A (decision 0019) |
+       | `Freed` and `Handed` | A defect |
+       | The lapse's clock trigger and the two decays | Nothing happens: `tick()` offers only what is due |
+
+     - An input whose only matching rule is still pending is itself pending. No test pins
+       it as a refusal.
+   - **One apply step.** `Queue` has one internal apply step. It runs a trigger's table,
+     then the events that outcome emits (`Handed`, `Freed`, `PocketTouched`,
+     `LeaseLapsed`) through their own tables, then the checker, once per outcome. It is
+     the only place that allots from `next_position`, so `Queue` is the only module that
+     allots positions; a row's effect asks it for one.
+   - **The checker.** Its whole interface is `check(snapshot) -> violations`. The apply
+     step calls it after the whole chained outcome, never part-way through, because the
+     specification says the invariants hold after the whole of it, and raises naming each
+     invariant that fails. Each of the 35 invariants has a positive control: a test that
+     builds a snapshot by hand and shows that `check` names that invariant.
+   - **The inspection seam.** Tests and the checker read state through one complete,
+     immutable snapshot: the queue's `next_position`, the publishers, the consumers, the
+     pockets with their status, position and consecutive expiries, the records in the
+     specification's flat field names, the leases, and the superseded and dead-letter
+     queues. Derived sets, such as a pocket's held records, are computed once, in the
+     snapshot.
    - Standard library only: `unittest`, `dataclasses`, `enum`, `typing` and the like. No
      third-party package, so no decision-0007 note is needed. Python 3.14 from the pixi
      environment.
@@ -244,14 +278,22 @@ in the hand-back.
 | Path | Holds |
 | --- | --- |
 | `double/pachinko_double/__init__.py` | The public names a test or a reader imports |
+| `double/pachinko_double/queue.py` | `Queue`, the facade: one method per trigger a surface provides, plus `tick()` from PD05. Its one apply step runs a trigger's table, the events it chains and then the checker, once per outcome, and it is the only position allotter |
+| `double/pachinko_double/rules.py` | The rule-table machinery: `Rule`, a row `(name, guard, effect)`; the table for one trigger with its "no guard holds" answer; dispatch, which evaluates every guard; `GuardOverlap`; and the record of which rules fired |
+| `double/pachinko_double/identity.py` | The two joins' tables, the specification's Identity section |
+| `double/pachinko_double/publish.py` | The Publish table and the `PocketTouched` table, the specification's Publish section. Landed here with four Publish rows; PD03 adds `ReviveIdlePocket`, PD04 `DeferBehindHeldVersion` and PD05 `ReviveParkedPocket` |
+| `double/pachinko_double/pull.py` | The Pull and `Handed` tables, the specification's Pull section. Created in PD02 |
+| `double/pachinko_double/settle.py` | The Ack, Nack, Renew and Release tables, the specification's Ack and nack, and Renew and release, sections. Created in PD02 with the Renew table; PD03 adds the rest |
+| `double/pachinko_double/lease_end.py` | The lease-end module: the shared end-of-lease steps, `ending_records` and the `Freed` table, the specification's Lease end section. Created in PD03 |
+| `double/pachinko_double/expiry.py` | The lapse's clock trigger and the `LeaseLapsed` table, the specification's Lease expiry section. Created in PD05 |
+| `double/pachinko_double/decay.py` | The two decays, the specification's Decay section. Created in PD05 |
+| `double/pachinko_double/model.py` | The entities and their enums, every field the specification declares |
 | `double/pachinko_double/config.py` | `Config`, a frozen dataclass with the five defaults, refusing a value that breaks a config invariant |
 | `double/pachinko_double/effects.py` | The `Clock` protocol and `FakeClock`, which counts its reads; the lease-id source protocol and its sequential fake. The double ships no real clock: a reader or a test drives time by setting the fake, and PD05's Verification checks that nothing reads the wall clock |
-| `double/pachinko_double/model.py` | The entities and their enums, every field the specification declares |
-| `double/pachinko_double/queue.py` | `Queue`, the facade: one method per trigger a surface provides, each running its chained outcome and then the checker |
 | `double/pachinko_double/refusals.py` | The refusals, one exception class per kind, under one base class |
-| `double/pachinko_double/invariants.py` | The registry from invariant name to check, and `check`, which returns every violation, and the exception the queue raises |
-| `double/pachinko_double/inspection.py` | The immutable snapshot the tests read |
-| `double/tests/` | `__init__.py`, a fixture helper, and one test module per area: config, identity, publish, invariants, coverage |
+| `double/pachinko_double/inspection.py` | The complete immutable snapshot that the tests and the checker read, with its derived sets computed once |
+| `double/pachinko_double/invariants.py` | The registry from invariant name to check; `check(snapshot) -> violations`, which returns every violation; and the exception the apply step raises |
+| `double/tests/` | `__init__.py`, a fixture helper, and one test module per area: config, identity, publish, rules, invariants, coverage |
 
 Decide and record in the spec notes:
 
@@ -291,22 +333,32 @@ Decide and record in the spec notes:
    **stop** and put it to the maintainer.
 3. **The recipe and the coverage test, red first.** Add the recipe. It refuses a Python
    older than 3.14, printing the version it found, then runs
-   `python -B -m unittest discover` over `double/tests`. Write `test_coverage.py` with
-   every scenario and rule pending. Its invariant half has no pending list, so it lands in
-   step 4 with the checker's registry; until then the test asserts only the count of 35.
-   Quote each probe below with its output and exit status, then revert it:
+   `python -B -m unittest discover` over `double/tests`. Land `rules.py`'s machinery
+   first, with no specification row yet, because the rule half reads the tables and the
+   fired-rule record: `Rule`, the per-trigger table, dispatch, `GuardOverlap` and the
+   record. Write `test_coverage.py` with every scenario and rule pending. Its invariant
+   half has no pending list, so it lands in step 4 with the checker's registry; until
+   then the test asserts only the count of 35. Quote each probe below with its output and
+   exit status, then revert it:
    - A `# scenario: S999` tag fails the test, naming the tag.
    - An id removed from `PENDING_SCENARIOS` with no test tagged for it fails.
    - A tag added for an id still pending fails.
-   - A `# rule: NoSuchRule` comment fails.
+   - A table row named `NoSuchRule`, which the specification does not hold, fails,
+     naming it.
+   - A rule removed from `PENDING_RULES` and registered as a row that never fires fails,
+     naming it.
 4. **The design and the checker.** Write the model, the effects, `Config`, the refusals,
-   the inspection seam and `Queue` with its joins. Write the checker with all 35
-   invariants, each a direct reading of the specification's quantifiers, `implies` and
-   null cases. Give each its positive control: build or corrupt the state directly,
-   since most of these states are not reachable yet, and assert that `check` names that
-   invariant. A control that would pass because a different invariant fired proves
-   nothing, so assert on the name. Quote one scratch break: weaken one check so that it
-   never fires, show its control failing, and revert it.
+   the inspection seam and `Queue` with its apply step and its joins. Write the checker
+   with all 35 invariants, each a direct reading of the specification's quantifiers,
+   `implies` and null cases. Give each its positive control: build a snapshot by hand,
+   since most of these states are not reachable yet, and assert that `check(snapshot)`
+   names that invariant. A control that would pass because a different invariant fired
+   proves nothing, so assert on the name. Quote one scratch break: weaken one check so
+   that it never fires, show its control failing, and revert it. Give dispatch its own
+   tests, each on a scratch table:
+   - a positive control: two guards that both hold raise `GuardOverlap` naming both;
+   - one test per answer in shared rule 4's "no guard holds" table: a refusal, nothing
+     happens, and a defect.
 
    **Adversarial review** (checkpoint 1: conformance, breakage and design, before any
    scenario is ported). Questions for this checkpoint:
@@ -316,17 +368,23 @@ Decide and record in the spec notes:
      `implies` with a false premise, and null on either side of a comparison.
    - Can a positive control pass while its check is wrong?
    - Does the checker run after the whole chained outcome and not part-way through it?
+   - Are the guards pure, and does dispatch evaluate every guard rather than stop at the
+     first that holds?
+   - Does each table state its "no guard holds" answer?
+   - Is the snapshot complete: does `check` need anything the snapshot does not hold?
    - Are the clock and the lease ids injected, and does anything read the wall clock or
      draw randomness?
    - Does the coverage test fail closed? Look at a count that drifts, a regex that matches
      nothing, and a tag with a typo.
 5. **Port the scenarios, red first.** For each scenario this ticket owns, write its tagged
    test against the Rust test's setup, steps and assertions. See it fail, or say in the
-   hand-back why it cannot be red. Then land the rule that makes it pass, with a
-   `# rule: <Name>` comment at the code that applies it. Each refusal test compares the
-   snapshot before and after. Those refusals are a second join, the three config refusals,
-   the equal-rank publish and a publish by an unknown publisher. S005's runtime refusal of
-   a negative TTL and the unknown-publisher refusal are `impl-choice` (shared rule 1).
+   hand-back why it cannot be red. Then add the rule that makes it pass as a row of its
+   trigger's table: the Publish table for the publish rules, and the joins' tables for
+   the joins. PD04 adds `DeferBehindHeldVersion`'s row to the Publish table. Each refusal
+   test compares the complete snapshot before and after. Those refusals are a second
+   join, the three config refusals, the equal-rank publish and a publish by an unknown
+   publisher. S005's runtime refusal of a negative TTL and the unknown-publisher refusal
+   are `impl-choice` (shared rule 1).
    Shrink `PENDING_SCENARIOS` and `PENDING_RULES` by exactly what landed.
 6. **Spec notes.** Write `double/SPEC-NOTES.md`: a header, then this ticket's notes. The
    notes cover the three representation choices in "The design to propose", every
@@ -354,7 +412,14 @@ Decide and record in the spec notes:
 - All 35 invariants are in the checker's registry, and each has a passing positive control
   tagged `# invariant-control: <Name>`.
 - The step 3 and step 4 probes are quoted with their output and exit status.
-- Every refusal this ticket lands has a test showing that the snapshot is unchanged.
+- The dispatch control shows a scratch table with two overlapping guards raising
+  `GuardOverlap` naming both, and each "no guard holds" answer has its test.
+- The snapshot holds `next_position`, the publishers and the consumers as well as the
+  pockets, records, leases and both shed queues.
+- Every rule this ticket owns fired at least once, as the coverage test's fired-rule
+  check shows.
+- Every refusal this ticket lands has a test showing that the complete snapshot is
+  unchanged.
 - `FakeClock` counts its reads, and the lease-id source has a deterministic fake, though
   no rule here draws a lease id yet.
 - `double/SPEC-NOTES.md` holds a note for each `impl-choice` row and each representation

@@ -24,6 +24,25 @@ recipe, `just python-double`, on pixi's Python 3.14, outside `just check`.
   at `double/pachinko_double/`, and the spec notes at `double/SPEC-NOTES.md`. A rename
   applies to all six tickets.
 
+## Design fixed before PD01
+
+An architecture pass over these tickets fixed four points of the design before any code
+exists. Shared rules 3 and 4 carry them, and PD01's design table lays them out.
+
+- **One lease-end module.** `lease_end.py`, created whole in PD03, owns the lease's end:
+  the shared end-of-lease steps, `ending_records` and the `Freed` table. PD04 adds rows
+  inside it and PD05 only adds callers, so neither reopens PD03's release code.
+- **A rule table per trigger.** Each trigger's rules are rows `(name, guard, effect)`.
+  Dispatch evaluates every guard and raises `GuardOverlap` if two hold, which checks the
+  specification's disjoint-guards claims, and each table states what happens when no
+  guard holds. A rule is covered when it has a row and the row fired during the run.
+- **A checker over a complete snapshot.** The checker is `check(snapshot) -> violations`.
+  The snapshot holds the whole state, `next_position`, the publishers and the consumers
+  included, and positive controls build snapshots by hand.
+- **One apply step.** `Queue` runs a trigger's table, then its chained events, then the
+  checker, once per outcome. It is the only place that allots positions, and the rule
+  modules follow the specification's sections.
+
 ## Index
 
 The `status:` field in each ticket's frontmatter is authoritative; this table is a

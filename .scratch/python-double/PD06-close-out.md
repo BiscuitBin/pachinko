@@ -13,8 +13,9 @@ estimated_size: M
 ## Context
 
 PD01 to PD05 landed the whole Python double under `double/`. Every rule of
-`docs/specs/pachinko.allium` has a `# rule:` site, every invariant a checker entry and a
-positive control, and every one of the 93 catalog scenarios a tagged test. The coverage
+`docs/specs/pachinko.allium` is a row of its trigger's table and has fired, every invariant
+has a checker entry and a positive control, and every one of the 93 catalog scenarios has
+a tagged test. The coverage
 test's pending lists are empty but still present. `double/SPEC-NOTES.md` holds the notes
 each ticket appended, in the order they were written. `.scratch/python-double/README.md`
 is the series' index.
@@ -30,8 +31,9 @@ whether the specification is right. This ticket turns the work into what they re
 ## Goal
 
 The coverage test is strict, with no pending mechanism left. `double/README.md` lets a
-Python reader find, for any rule, invariant or entity in the specification, the class and
-method that implements it, and walk Scenarios A to D through the double's API.
+Python reader find, for any rule, invariant or entity in the specification, the table,
+checker entry or class that implements it, and walk Scenarios A to D through the double's
+API.
 `double/SPEC-NOTES.md` opens with a findings section the maintainer can act on. The whole
 double has passed the review below.
 
@@ -83,8 +85,13 @@ written here; nothing outside it amends them.
    and fails unless each entry is covered or pending.
    - The catalog's rows, `^\| (S[0-9]{3}) \|` in `docs/reference/testing.md`, are each
      covered by a `# scenario:` tag under `double/tests/`.
-   - The specification's rules, `^rule (\w+) \{`, are each covered by a `# rule: <Name>`
-     comment at the code that applies the rule, under `double/pachinko_double/`.
+   - The specification's rules, `^rule (\w+) \{`, are each covered when two things hold:
+     the rule has a row in its trigger's table, and those tables are the registry; and
+     the dispatcher recorded that row as fired during the run. The rule half fails on a
+     registry name the specification does not hold, on a specification rule that has no
+     row and is not pending, and on a row, not pending, that never fired. The fired-rule
+     check reads the record only after every other test module has run, since `discover`
+     would otherwise run `test_coverage.py` first; PD01 settles how.
    - The specification's invariants, `^\s*invariant (\w+) \{`, are each covered by an
      entry in the checker's registry and by a positive control tagged
      `# invariant-control: <Name>`. Fifteen of the thirty-five sit indented inside an
@@ -93,23 +100,50 @@ written here; nothing outside it amends them.
      matches less fails. A specification change that moves a count updates the constant
      and adds a spec note. A tag that names an id or a name the sources do not hold fails.
    - `PENDING_SCENARIOS` and `PENDING_RULES` hold what is not covered yet. An entry that is
-     both pending and covered fails, so each ticket shrinks the lists by exactly what it
-     lands. PD06 deletes both lists.
+     both pending and covered fails, where a rule counts as covered once it is registered,
+     so each ticket shrinks the lists by exactly what it lands. PD06 deletes both lists.
 4. **Design constraints.** PD01 proposes the class layout and reviews it. These are fixed:
    - The clock and lease ids are injected: a `Clock` protocol with a fake whose time a test
      sets and whose reads it counts, and a lease-id source with a deterministic fake. This
      follows the house rule that effects sit behind seams (decisions 0003 and 0008). The
      double reads no wall clock and draws no randomness.
    - A refusal changes nothing, and a test proves it for each refusal by comparing the
-     inspection seam's snapshot before and after.
-   - The invariant checker runs after every public operation, after the whole chained
-     outcome (`Handed`, `Freed`, `PocketTouched`), because the specification says the
-     invariants hold after the whole of it. It raises naming each invariant that fails.
-     Each of the 35 invariants has a positive control: a test that corrupts the state
-     directly and shows that the checker names that invariant.
-   - Tests read state through an inspection seam: each pocket's status, position and
-     consecutive expiries; each record's state, positions and held fields; the leases; and
-     the superseded and dead-letter queues.
+     inspection seam's complete snapshot before and after.
+   - **Tables per trigger.** The rules that share a trigger are the rows of one table for
+     that trigger, each row `(name, guard, effect)`.
+     - Guards are pure: a guard allots nothing and changes nothing.
+     - Dispatch evaluates every guard of the table. If two hold, it raises
+       `GuardOverlap` naming both. That is a specification finding, since the
+       specification claims disjoint guards for Publish, the lapse and `Freed`: record
+       it in `double/SPEC-NOTES.md` and **stop**.
+     - Each table states what happens when no guard holds:
+
+       | Trigger | When no guard holds |
+       | --- | --- |
+       | Publish, Pull, Ack, Nack, Renew, Release and the two joins | A refusal |
+       | `PocketTouched` | Nothing happens |
+       | `LeaseLapsed` | Nothing happens, under branch A (decision 0019) |
+       | `Freed` and `Handed` | A defect |
+       | The lapse's clock trigger and the two decays | Nothing happens: `tick()` offers only what is due |
+
+     - An input whose only matching rule is still pending is itself pending. No test pins
+       it as a refusal.
+   - **One apply step.** `Queue` has one internal apply step. It runs a trigger's table,
+     then the events that outcome emits (`Handed`, `Freed`, `PocketTouched`,
+     `LeaseLapsed`) through their own tables, then the checker, once per outcome. It is
+     the only place that allots from `next_position`, so `Queue` is the only module that
+     allots positions; a row's effect asks it for one.
+   - **The checker.** Its whole interface is `check(snapshot) -> violations`. The apply
+     step calls it after the whole chained outcome, never part-way through, because the
+     specification says the invariants hold after the whole of it, and raises naming each
+     invariant that fails. Each of the 35 invariants has a positive control: a test that
+     builds a snapshot by hand and shows that `check` names that invariant.
+   - **The inspection seam.** Tests and the checker read state through one complete,
+     immutable snapshot: the queue's `next_position`, the publishers, the consumers, the
+     pockets with their status, position and consecutive expiries, the records in the
+     specification's flat field names, the leases, and the superseded and dead-letter
+     queues. Derived sets, such as a pocket's held records, are computed once, in the
+     snapshot.
    - Standard library only: `unittest`, `dataclasses`, `enum`, `typing` and the like. No
      third-party package, so no decision-0007 note is needed. Python 3.14 from the pixi
      environment.
@@ -211,13 +245,14 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
    last line, headed by its commit, as the baseline.
 2. **Strict coverage.** Delete `PENDING_SCENARIOS` and `PENDING_RULES` and the code that
    reads them. Quote two probes with their output and exit status, then revert each: a
-   test's `# scenario:` tag removed fails the coverage test, and a `# rule:` comment
-   removed fails it.
+   test's `# scenario:` tag removed fails the coverage test, and a table row removed
+   fails it. Strict coverage also means that every registered rule fired.
 3. **The reader's guide.** Write `double/README.md` for a reader who knows Python and has
    the specification open beside it. It holds:
    - how to run the double (`just python-double`);
-   - a table from each entity, rule and invariant of the specification to its class,
-     method or checker entry and its file;
+   - a table from each entity, rule and invariant of the specification to what holds it
+     and its file: for an entity its class, for a rule its trigger's table and module, and
+     for an invariant its checker entry;
    - how the clock, the lease ids, `tick()` and the inspection seam stand in for what the
      specification leaves to time and to the implementation;
    - a walkthrough of Scenarios A to D, each as a short session against the double's
@@ -248,7 +283,7 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
    - Was any scenario ported more weakly than its Rust test asserts?
    - Did any note silently resolve an open question?
    - Does any finding overstate what the evidence shows?
-   - Does the guide's table name a class or method that does not exist?
+   - Does the guide's table name a class, table or module that does not exist?
 7. **Commit and hand back.** Commit on `branch:`. Rerun Verification and quote it, headed
    by the full commit id. Set `status: done` here and in `.scratch/python-double/README.md`,
    and write the hand-back notes. These say what the maintainer should read first in the
@@ -259,8 +294,10 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
 
 - `just python-double` exits 0, and its output shows the number of tests run.
 - `test_coverage.py` has no pending lists. It fails when any catalog id, rule or invariant
-  is uncovered, and step 2's two probes are quoted with their output and exit status.
-- `double/README.md` maps every entity, rule and invariant to code that exists, and its
+  is uncovered or any registered rule never fired, and step 2's two probes are quoted
+  with their output and exit status.
+- `double/README.md` maps every entity to its class, every rule to its table and module,
+  and every invariant to its checker entry, all of which exist, and its
   walkthrough of Scenarios A to D runs as tests under `just python-double`.
 - `double/SPEC-NOTES.md` opens with the findings section. Every note sits under one of its
   headings, and every open question is listed as untouched.

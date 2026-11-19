@@ -13,8 +13,8 @@ estimated_size: M
 ## Context
 
 PD01 to PD03 landed the Python double under `double/`: publish, pull, renew, marks,
-fencing, release, the three lease-end rows with nothing deferred, dead letters and the
-idle revival. Read their hand-backs and `double/SPEC-NOTES.md` first.
+fencing, release, the lease-end module with its three rows that have nothing deferred,
+dead letters and the idle revival. Read their hand-backs and `double/SPEC-NOTES.md` first.
 `.scratch/python-double/README.md` is the series' index.
 
 This ticket lands what happens when a newer version of a held key arrives. It covers
@@ -45,6 +45,10 @@ on, all from `docs/specs/pachinko.allium`:
     the newer version is queued at its arrival position.
   - A record with a deferred version is not an ending record, so a release with one
     requeues the pocket rather than idling it (S054).
+- **Where the rows go.** The three deferred rows are rows of the lease-end module's
+  `Freed` table, which PD03 created with `ending_records` already written in full, and
+  `DeferBehindHeldVersion` is a row of the Publish table. This ticket changes neither the
+  lease-end module's interface nor its release callers.
 - **The arrival-position invariants.** `DeferredHasArrivalPosition`,
   `OnlyDeferredHasArrivalPosition`, `DeferredArrivedAfterHeld`, `HeldCopiesAgree`,
   `ArrivalPositionUnoccupied`, `UniqueArrivalPosition` and `ArrivalPositionsBelowNext`
@@ -111,8 +115,13 @@ written here; nothing outside it amends them.
    and fails unless each entry is covered or pending.
    - The catalog's rows, `^\| (S[0-9]{3}) \|` in `docs/reference/testing.md`, are each
      covered by a `# scenario:` tag under `double/tests/`.
-   - The specification's rules, `^rule (\w+) \{`, are each covered by a `# rule: <Name>`
-     comment at the code that applies the rule, under `double/pachinko_double/`.
+   - The specification's rules, `^rule (\w+) \{`, are each covered when two things hold:
+     the rule has a row in its trigger's table, and those tables are the registry; and
+     the dispatcher recorded that row as fired during the run. The rule half fails on a
+     registry name the specification does not hold, on a specification rule that has no
+     row and is not pending, and on a row, not pending, that never fired. The fired-rule
+     check reads the record only after every other test module has run, since `discover`
+     would otherwise run `test_coverage.py` first; PD01 settles how.
    - The specification's invariants, `^\s*invariant (\w+) \{`, are each covered by an
      entry in the checker's registry and by a positive control tagged
      `# invariant-control: <Name>`. Fifteen of the thirty-five sit indented inside an
@@ -121,23 +130,50 @@ written here; nothing outside it amends them.
      matches less fails. A specification change that moves a count updates the constant
      and adds a spec note. A tag that names an id or a name the sources do not hold fails.
    - `PENDING_SCENARIOS` and `PENDING_RULES` hold what is not covered yet. An entry that is
-     both pending and covered fails, so each ticket shrinks the lists by exactly what it
-     lands. PD06 deletes both lists.
+     both pending and covered fails, where a rule counts as covered once it is registered,
+     so each ticket shrinks the lists by exactly what it lands. PD06 deletes both lists.
 4. **Design constraints.** PD01 proposes the class layout and reviews it. These are fixed:
    - The clock and lease ids are injected: a `Clock` protocol with a fake whose time a test
      sets and whose reads it counts, and a lease-id source with a deterministic fake. This
      follows the house rule that effects sit behind seams (decisions 0003 and 0008). The
      double reads no wall clock and draws no randomness.
    - A refusal changes nothing, and a test proves it for each refusal by comparing the
-     inspection seam's snapshot before and after.
-   - The invariant checker runs after every public operation, after the whole chained
-     outcome (`Handed`, `Freed`, `PocketTouched`), because the specification says the
-     invariants hold after the whole of it. It raises naming each invariant that fails.
-     Each of the 35 invariants has a positive control: a test that corrupts the state
-     directly and shows that the checker names that invariant.
-   - Tests read state through an inspection seam: each pocket's status, position and
-     consecutive expiries; each record's state, positions and held fields; the leases; and
-     the superseded and dead-letter queues.
+     inspection seam's complete snapshot before and after.
+   - **Tables per trigger.** The rules that share a trigger are the rows of one table for
+     that trigger, each row `(name, guard, effect)`.
+     - Guards are pure: a guard allots nothing and changes nothing.
+     - Dispatch evaluates every guard of the table. If two hold, it raises
+       `GuardOverlap` naming both. That is a specification finding, since the
+       specification claims disjoint guards for Publish, the lapse and `Freed`: record
+       it in `double/SPEC-NOTES.md` and **stop**.
+     - Each table states what happens when no guard holds:
+
+       | Trigger | When no guard holds |
+       | --- | --- |
+       | Publish, Pull, Ack, Nack, Renew, Release and the two joins | A refusal |
+       | `PocketTouched` | Nothing happens |
+       | `LeaseLapsed` | Nothing happens, under branch A (decision 0019) |
+       | `Freed` and `Handed` | A defect |
+       | The lapse's clock trigger and the two decays | Nothing happens: `tick()` offers only what is due |
+
+     - An input whose only matching rule is still pending is itself pending. No test pins
+       it as a refusal.
+   - **One apply step.** `Queue` has one internal apply step. It runs a trigger's table,
+     then the events that outcome emits (`Handed`, `Freed`, `PocketTouched`,
+     `LeaseLapsed`) through their own tables, then the checker, once per outcome. It is
+     the only place that allots from `next_position`, so `Queue` is the only module that
+     allots positions; a row's effect asks it for one.
+   - **The checker.** Its whole interface is `check(snapshot) -> violations`. The apply
+     step calls it after the whole chained outcome, never part-way through, because the
+     specification says the invariants hold after the whole of it, and raises naming each
+     invariant that fails. Each of the 35 invariants has a positive control: a test that
+     builds a snapshot by hand and shows that `check` names that invariant.
+   - **The inspection seam.** Tests and the checker read state through one complete,
+     immutable snapshot: the queue's `next_position`, the publishers, the consumers, the
+     pockets with their status, position and consecutive expiries, the records in the
+     specification's flat field names, the leases, and the superseded and dead-letter
+     queues. Derived sets, such as a pocket's held records, are computed once, in the
+     snapshot.
    - Standard library only: `unittest`, `dataclasses`, `enum`, `typing` and the like. No
      third-party package, so no decision-0007 note is needed. Python 3.14 from the pixi
      environment.
@@ -220,7 +256,7 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
 
 | Path | Class | Content |
 | --- | --- | --- |
-| `double/pachinko_double/` | shared, own lines | Deferral, the deferred supersede and the three deferred lease-end rows |
+| `double/pachinko_double/` | shared, own lines | Deferral in the Publish table, the deferred supersede, and the three deferred rows in the lease-end module's `Freed` table |
 | `double/tests/` | shared, own lines | The deferral tests; the pending lists in `test_coverage.py` |
 | `double/SPEC-NOTES.md` | shared, own lines | This ticket's notes |
 | `.scratch/python-double/PD04-deferral.md` | ticket | `status:` and the hand-back notes |
@@ -240,7 +276,11 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
    owns. Confirm that no owned scenario needs a lapse. Move any that does, under shared
    rule 2.
 3. **Port the scenarios, red first.** For each owned scenario, write its tagged test, see
-   it fail, then land the rule with its `# rule: <Name>` comment. Points to watch:
+   it fail, then add the rule as its row in its trigger's table, fired in at least one
+   test. Points to watch:
+   - The three deferred rows go inside the lease-end module, beside PD03's three. If one
+     seems to need a change to the module's interface or to a release caller, **stop**
+     and say so in the hand-back rather than make it.
    - The arrival position is allotted when the first newer version arrives, not when the
      lease ends, and the counter is not advanced again at the end.
    - A superseded record made at the lease's end takes `shed_at` and `expires_at` from
@@ -266,8 +306,10 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
 - `just python-double` exits 0, and its output shows the number of tests run.
 - On exit, `PENDING_SCENARIOS` holds exactly the 34 ids PD05 owns, and `PENDING_RULES`
   the 7 rules it owns.
-- Every owned scenario has a tagged test, and each of the four rules has its `# rule:`
-  comment.
+- Every owned scenario has a tagged test, and each of the four rules has its row in its
+  trigger's table, fired in at least one test.
+- This ticket's diff leaves the lease-end module's interface and its release callers
+  unchanged.
 - The arrival-position invariants' positive controls still pass. A test or a quoted probe
   shows that the premise of each of those seven invariants is true in at least one state
   the checker sees during this ticket's scenarios, so none of them holds only vacuously.

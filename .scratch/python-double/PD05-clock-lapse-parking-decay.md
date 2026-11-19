@@ -34,7 +34,8 @@ expiry, Lease end and Decay sections, and the `ExpiryRecoversWithinTtl` guarante
   `expires_at <= now`. `SupersededRecordDecays` and `DeadLetterDecays` fire for an entry
   whose `expires_at <= now`. The double has no background time. It processes these only
   when `tick()` is called, which reads `now` once from the injected clock and applies
-  everything due.
+  everything due. `tick()` runs `Queue`'s apply step once for each due lapse and once for
+  each due decay, so the checker runs after each outcome.
 - **Branch A** (decision 0019). The lapse and the actions are one serialized stream. A
   pull, ack, nack, renew or release processed after `expires_at` but before the lapse
   succeeds, as long as its other guards hold. A pull, ack, nack or renew moves
@@ -43,7 +44,9 @@ expiry, Lease end and Decay sections, and the `ExpiryRecoversWithinTtl` guarante
   S066, S067). So an action never lapses a lease itself, and only `tick()` does.
 - **The three expiry rules.** Each needs the lease active, `expires_at <= now` and the
   pocket leased. Each ends the lease `expired` at `now`, sends every held record `Freed`
-  and raises `consecutive_expiries` by one.
+  and raises `consecutive_expiries` by one. They are the rows of the `LeaseLapsed` table,
+  and each one's effect ends the lease through PD03's lease-end module, which already
+  answers every `Freed`.
   - `LeaseExpiryParksPocket`: at `count + 1 >= max_consecutive_expiries`, the pocket
     parks, whether or not records remain.
   - `LeaseExpiryKeepsPocketAtFront`: below the threshold, with a record that outlasts the
@@ -125,8 +128,13 @@ written here; nothing outside it amends them.
    and fails unless each entry is covered or pending.
    - The catalog's rows, `^\| (S[0-9]{3}) \|` in `docs/reference/testing.md`, are each
      covered by a `# scenario:` tag under `double/tests/`.
-   - The specification's rules, `^rule (\w+) \{`, are each covered by a `# rule: <Name>`
-     comment at the code that applies the rule, under `double/pachinko_double/`.
+   - The specification's rules, `^rule (\w+) \{`, are each covered when two things hold:
+     the rule has a row in its trigger's table, and those tables are the registry; and
+     the dispatcher recorded that row as fired during the run. The rule half fails on a
+     registry name the specification does not hold, on a specification rule that has no
+     row and is not pending, and on a row, not pending, that never fired. The fired-rule
+     check reads the record only after every other test module has run, since `discover`
+     would otherwise run `test_coverage.py` first; PD01 settles how.
    - The specification's invariants, `^\s*invariant (\w+) \{`, are each covered by an
      entry in the checker's registry and by a positive control tagged
      `# invariant-control: <Name>`. Fifteen of the thirty-five sit indented inside an
@@ -135,23 +143,50 @@ written here; nothing outside it amends them.
      matches less fails. A specification change that moves a count updates the constant
      and adds a spec note. A tag that names an id or a name the sources do not hold fails.
    - `PENDING_SCENARIOS` and `PENDING_RULES` hold what is not covered yet. An entry that is
-     both pending and covered fails, so each ticket shrinks the lists by exactly what it
-     lands. PD06 deletes both lists.
+     both pending and covered fails, where a rule counts as covered once it is registered,
+     so each ticket shrinks the lists by exactly what it lands. PD06 deletes both lists.
 4. **Design constraints.** PD01 proposes the class layout and reviews it. These are fixed:
    - The clock and lease ids are injected: a `Clock` protocol with a fake whose time a test
      sets and whose reads it counts, and a lease-id source with a deterministic fake. This
      follows the house rule that effects sit behind seams (decisions 0003 and 0008). The
      double reads no wall clock and draws no randomness.
    - A refusal changes nothing, and a test proves it for each refusal by comparing the
-     inspection seam's snapshot before and after.
-   - The invariant checker runs after every public operation, after the whole chained
-     outcome (`Handed`, `Freed`, `PocketTouched`), because the specification says the
-     invariants hold after the whole of it. It raises naming each invariant that fails.
-     Each of the 35 invariants has a positive control: a test that corrupts the state
-     directly and shows that the checker names that invariant.
-   - Tests read state through an inspection seam: each pocket's status, position and
-     consecutive expiries; each record's state, positions and held fields; the leases; and
-     the superseded and dead-letter queues.
+     inspection seam's complete snapshot before and after.
+   - **Tables per trigger.** The rules that share a trigger are the rows of one table for
+     that trigger, each row `(name, guard, effect)`.
+     - Guards are pure: a guard allots nothing and changes nothing.
+     - Dispatch evaluates every guard of the table. If two hold, it raises
+       `GuardOverlap` naming both. That is a specification finding, since the
+       specification claims disjoint guards for Publish, the lapse and `Freed`: record
+       it in `double/SPEC-NOTES.md` and **stop**.
+     - Each table states what happens when no guard holds:
+
+       | Trigger | When no guard holds |
+       | --- | --- |
+       | Publish, Pull, Ack, Nack, Renew, Release and the two joins | A refusal |
+       | `PocketTouched` | Nothing happens |
+       | `LeaseLapsed` | Nothing happens, under branch A (decision 0019) |
+       | `Freed` and `Handed` | A defect |
+       | The lapse's clock trigger and the two decays | Nothing happens: `tick()` offers only what is due |
+
+     - An input whose only matching rule is still pending is itself pending. No test pins
+       it as a refusal.
+   - **One apply step.** `Queue` has one internal apply step. It runs a trigger's table,
+     then the events that outcome emits (`Handed`, `Freed`, `PocketTouched`,
+     `LeaseLapsed`) through their own tables, then the checker, once per outcome. It is
+     the only place that allots from `next_position`, so `Queue` is the only module that
+     allots positions; a row's effect asks it for one.
+   - **The checker.** Its whole interface is `check(snapshot) -> violations`. The apply
+     step calls it after the whole chained outcome, never part-way through, because the
+     specification says the invariants hold after the whole of it, and raises naming each
+     invariant that fails. Each of the 35 invariants has a positive control: a test that
+     builds a snapshot by hand and shows that `check` names that invariant.
+   - **The inspection seam.** Tests and the checker read state through one complete,
+     immutable snapshot: the queue's `next_position`, the publishers, the consumers, the
+     pockets with their status, position and consecutive expiries, the records in the
+     specification's flat field names, the leases, and the superseded and dead-letter
+     queues. Derived sets, such as a pocket's held records, are computed once, in the
+     snapshot.
    - Standard library only: `unittest`, `dataclasses`, `enum`, `typing` and the like. No
      third-party package, so no decision-0007 note is needed. Python 3.14 from the pixi
      environment.
@@ -234,7 +269,7 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
 
 | Path | Class | Content |
 | --- | --- | --- |
-| `double/pachinko_double/` | shared, own lines | `tick()`, the lapse, the three expiry rules, the parked revival and the two decays |
+| `double/pachinko_double/` | shared, own lines | `tick()`, `expiry.py` with the lapse and the three expiry rules, the parked revival, and `decay.py` with the two decays |
 | `double/tests/` | shared, own lines | The expiry, decay and both-endings tests; the pending lists in `test_coverage.py` |
 | `double/SPEC-NOTES.md` | shared, own lines | This ticket's notes |
 | `.scratch/python-double/PD05-clock-lapse-parking-decay.md` | ticket | `status:` and the hand-back notes |
@@ -252,14 +287,18 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
    the catalog rows this ticket owns.
 3. **`tick()` and the lapse, red first.** Write S059, S065 and S006 first. A lease lapses
    exactly at `expires_at`, once per lease, and at the instant of grant when `lease_ttl`
-   is 0. Then land `LeaseLapses` and the three expiry rules, each with its `# rule:`
-   comment. The checker runs after each lapse's whole outcome, and again after the tick.
+   is 0. Then add `LeaseLapses` and the three expiry rules as rows of their tables, each
+   fired in at least one test. Each expiry row's effect calls the lease-end module; this
+   ticket adds no `Freed` row and no second copy of the end-of-lease steps. `tick()` runs
+   the apply step once per due lapse and once per due decay, so the checker runs after
+   each lapse's whole outcome and after each decay.
 4. **Branch A, both orders.** Port S066 and S067. Show that an action processed after
    `expires_at` and before `tick()` succeeds and extends the lease, and that a `tick()`
    processed first lapses it so that the same action is then refused. Quote a scratch
    break: make an action lapse its own lease, show S066 failing, and revert it.
 5. **Port the rest, red first.** Port parking, revival, decay and the "by release or
-   lapse" scenarios, with both halves where the Rust loops over `ENDINGS`. Shrink
+   lapse" scenarios, with both halves where the Rust loops over `ENDINGS`. Each new rule
+   is a row of its trigger's table, fired in at least one test. Shrink
    `PENDING_SCENARIOS` and `PENDING_RULES` to empty. Leave the lists in place; PD06
    deletes them.
 6. **Spec notes.** Answer the three questions in Context in the double, and record each.
@@ -281,8 +320,10 @@ at most, its scope guard and its record. The deltas below are shared by PD01 to 
 - `just python-double` exits 0, and its output shows the number of tests run.
 - On exit, `PENDING_SCENARIOS` and `PENDING_RULES` are both empty.
 - Every owned scenario has a tagged test. Each scenario whose Rust test loops over
-  `ENDINGS` is tested by release and by lapse. Each of the seven rules has its `# rule:`
-  comment.
+  `ENDINGS` is tested by release and by lapse. Each of the seven rules has its row in its
+  trigger's table, fired in at least one test.
+- This ticket adds no `Freed` row and no second copy of the end-of-lease steps: each
+  expiry row ends the lease through the lease-end module.
 - The step 4 break is quoted with its output and exit status.
 - No code under `double/pachinko_double/` reads the time except through the injected
   clock, and only `tick()` applies a temporal trigger.
