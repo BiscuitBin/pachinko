@@ -2,7 +2,8 @@
 refusal, and the refusal of a publisher that never joined.
 
 Each test drives `Queue.publish` and reads the outcome through the snapshot,
-except PublishGuardsTest, which asks the registered Publish table's guards
+and where the Rust asserts a `PublishOutcome` it asserts that the publish
+answers nothing (spec note N32), except PublishGuardsTest, which asks the registered Publish table's guards
 directly whether the specification's disjoint-guards claim holds.
 """
 
@@ -14,7 +15,16 @@ from pachinko_double.publish import PUBLISH, Publish
 from pachinko_double.queue import Queue
 from pachinko_double.refusals import EqualRankRefused, UnknownPublisher
 
-from .fixtures import PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, scenario_queue, two_pockets
+from .fixtures import (
+    PUBLISHER,
+    SUPERSEDED_TTL,
+    T0,
+    batch,
+    keys,
+    publish_answers_nothing,
+    scenario_queue,
+    two_pockets,
+)
 
 
 def publish(queue: Queue, pocket_key: str, record_key: str, rank: int, payload: bytes) -> None:
@@ -54,7 +64,7 @@ class NewPocketTest(unittest.TestCase):
     def test_a_publish_into_a_new_pocket_creates_a_queued_pocket_and_record(self) -> None:
         queue, _ = scenario_queue()
         self.assertEqual(queue.snapshot().next_position, 0)
-        publish(queue, "pk", "a", 3, b"x")
+        publish_answers_nothing(self, queue, "pk", "a", 3, b"x")
         state = queue.snapshot()
         (pocket,) = state.pockets_keyed("pk")
         self.assertEqual((pocket.status, pocket.position, pocket.consecutive_expiries), (PocketStatus.QUEUED, 0, 0))
@@ -67,8 +77,8 @@ class NewPocketTest(unittest.TestCase):
     # scenario: S013
     def test_the_same_record_key_in_two_pockets_is_two_records(self) -> None:
         queue, _ = scenario_queue()
-        publish(queue, "one", "k", 1, b"x")
-        publish(queue, "two", "k", 1, b"y")
+        publish_answers_nothing(self, queue, "one", "k", 1, b"x")
+        publish_answers_nothing(self, queue, "two", "k", 1, b"y")
         state = queue.snapshot()
         one, two = record(state, "one", "k"), record(state, "two", "k")
         self.assertEqual((one.rank, one.payload), (1, b"x"))
@@ -87,7 +97,7 @@ class ExistingKeyTest(unittest.TestCase):
         publish(queue, "pk", "a", 1, b"old")
         publish(queue, "pk", "b", 1, b"b")
         clock.advance(7)
-        publish(queue, "pk", "a", 2, b"new")
+        publish_answers_nothing(self, queue, "pk", "a", 2, b"new")
         state = queue.snapshot()
         kept = record(state, "pk", "a")
         self.assertEqual((kept.position, kept.status), (1, RecordStatus.QUEUED))
@@ -107,7 +117,7 @@ class ExistingKeyTest(unittest.TestCase):
         publish(queue, "pk", "a", 5, b"kept")
         clock.advance(3)
         pocket_before = queue.snapshot().pockets
-        publish(queue, "pk", "a", 4, b"late")
+        publish_answers_nothing(self, queue, "pk", "a", 4, b"late")
         state = queue.snapshot()
         kept = record(state, "pk", "a")
         self.assertEqual((kept.rank, kept.payload), (5, b"kept"))
@@ -134,9 +144,9 @@ class ExistingKeyTest(unittest.TestCase):
     def test_negative_and_zero_ranks_order_like_integers(self) -> None:
         queue, _ = scenario_queue()
         publish(queue, "pk", "a", -5, b"m5")
-        publish(queue, "pk", "a", -1, b"m1")
-        publish(queue, "pk", "a", 0, b"z")
-        publish(queue, "pk", "a", -2, b"m2")
+        publish_answers_nothing(self, queue, "pk", "a", -1, b"m1")
+        publish_answers_nothing(self, queue, "pk", "a", 0, b"z")
+        publish_answers_nothing(self, queue, "pk", "a", -2, b"m2")
         state = queue.snapshot()
         kept = record(state, "pk", "a")
         self.assertEqual((kept.rank, kept.payload), (0, b"z"))
@@ -157,7 +167,7 @@ class PublishThenPullTest(unittest.TestCase):
     def test_a_publish_of_a_new_key_appends_to_an_existing_pocket(self) -> None:
         queue, _ = scenario_queue()
         publish(queue, "pk", "a", 1, b"x")
-        publish(queue, "pk", "b", 7, b"y")
+        publish_answers_nothing(self, queue, "pk", "b", 7, b"y")
         state = queue.snapshot()
         self.assertEqual(len(state.pockets), 1)
         self.assertEqual(state.pockets_keyed("pk")[0].position, 0)
@@ -174,7 +184,7 @@ class PublishThenPullTest(unittest.TestCase):
         publish(queue, "pk", "a", 1, b"v1")
         publish(queue, "pk", "b", 1, b"b")
         for rank, payload in ((2, b"v2"), (3, b"v3"), (4, b"v4")):
-            publish(queue, "pk", "a", rank, payload)
+            publish_answers_nothing(self, queue, "pk", "a", rank, payload)
         state = queue.snapshot()
         kept = record(state, "pk", "a")
         self.assertEqual((kept.position, kept.rank, kept.payload), (1, 4, b"v4"))
@@ -194,8 +204,8 @@ class PublishThenPullTest(unittest.TestCase):
         queue, _ = scenario_queue()
         publish(queue, "pk", "a", low, b"min")
         for rank, payload in ((low + 1, b"min+1"), (high - 1, b"max-1"), (high, b"max")):
-            publish(queue, "pk", "a", rank, payload)
-        publish(queue, "pk", "a", high - 1, b"late")
+            publish_answers_nothing(self, queue, "pk", "a", rank, payload)
+        publish_answers_nothing(self, queue, "pk", "a", high - 1, b"late")
         state = queue.snapshot()
         kept = record(state, "pk", "a")
         self.assertEqual((kept.rank, kept.payload), (high, b"max"))
@@ -256,7 +266,7 @@ class RevivalTest(unittest.TestCase):
         self.assertEqual(a.status, PocketStatus.IDLE)
         publish(queue, "c", "c1", 1, b"c")
         next_position = queue.snapshot().next_position
-        publish(queue, "a", "a3", 1, b"a3")
+        publish_answers_nothing(self, queue, "a", "a3", 1, b"a3")
         state = queue.snapshot()
         (a,) = state.pockets_keyed("a")
         self.assertEqual(a.status, PocketStatus.QUEUED)

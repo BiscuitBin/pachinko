@@ -44,7 +44,17 @@ from pachinko_double.refusals import EqualRankRefused, LeaseFenced, RecordNotHel
 from pachinko_double.rules import Registry, Table, dispatch
 
 from . import fixtures
-from .fixtures import DEAD_LETTER_TTL, PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, refused, scenario_queue
+from .fixtures import (
+    DEAD_LETTER_TTL,
+    PUBLISHER,
+    SUPERSEDED_TTL,
+    T0,
+    batch,
+    keys,
+    publish_answers_nothing,
+    refused,
+    scenario_queue,
+)
 from .test_publish import pocket_order
 from .test_pull import RecordingOutcome
 
@@ -330,7 +340,7 @@ class ExpiryRulesTest(unittest.TestCase):
         self.assertEqual(record(queue, "a", "a1").status, RecordStatus.QUEUED)
         self.assertEqual(batch(queue, "c2", 10).pocket, "b")
         fresh = queue.snapshot().next_position
-        publish(queue, "a", "a3", 1, b"a3")
+        publish_answers_nothing(self, queue, "a", "a3", 1, b"a3")
         self.assertEqual(record(queue, "a", "a3").position, fresh)
         found = pocket(queue, "a")
         self.assertEqual(
@@ -464,9 +474,9 @@ class ExpiryCountTest(unittest.TestCase):
         self.assertEqual(pocket_order(queue.snapshot()), ["a", "b"], "kept at the front")
         # An ack of a record with a newer version deferred behind it resets the
         # count too. The Rust's publish answers Superseded; the double's
-        # answers nothing and defers (spec note N32).
+        # answers nothing, which the test asserts, and defers (spec note N32).
         lease_id = batch(queue, "c1", 10).lease
-        publish(queue, "a", "a2", 2, b"newer")
+        publish_answers_nothing(self, queue, "a", "a2", 2, b"newer")
         self.assertIsNotNone(record(queue, "a", "a2").deferred_position)
         queue.ack("c1", lease_id, "a2")
         self.assertEqual(count(), (PocketStatus.LEASED, 0), "an ack with a version deferred")
@@ -508,7 +518,7 @@ class ParkedTest(unittest.TestCase):
     def test_a_supersede_revives_a_parked_pocket(self) -> None:
         queue, _ = parked(self)
         fresh = queue.snapshot().next_position
-        publish(queue, "a", "a1", 2, b"x")
+        publish_answers_nothing(self, queue, "a", "a1", 2, b"x")
         self.assertEqual(record(queue, "a", "a1").rank, 2)
         found = pocket(queue, "a")
         self.assertEqual(
@@ -520,7 +530,7 @@ class ParkedTest(unittest.TestCase):
         self.assertEqual(check(queue.snapshot()), ())
         # A publish into a pocket that does not exist creates it; nothing is revived.
         other, _ = parked(self)
-        publish(other, "z", "z1", 1, b"z")
+        publish_answers_nothing(self, other, "z", "z1", 1, b"z")
         self.assertEqual(pocket(other, "a").status, PocketStatus.PARKED)
 
     # scenario: S092
@@ -530,7 +540,7 @@ class ParkedTest(unittest.TestCase):
         position = pocket(queue, "a").position
         now = at(3 * TTL)
         self.assertEqual(clock.now(), now)
-        publish(queue, "a", "a1", 0, b"x")
+        publish_answers_nothing(self, queue, "a", "a1", 0, b"x")
         found = pocket(queue, "a")
         self.assertEqual(
             (found.status, found.position, found.consecutive_expiries),
@@ -561,7 +571,7 @@ class ParkedTest(unittest.TestCase):
         lease_id = batch(queue, "c2", 10).lease
         self.assertEqual(pocket(queue, "b").status, PocketStatus.LEASED)
         # A publish into a pocket that is not parked leaves it where it is.
-        publish(queue, "b", "b2", 1, b"b2")
+        publish_answers_nothing(self, queue, "b", "b2", 1, b"b2")
         self.assertEqual(pocket(queue, "b").status, PocketStatus.LEASED)
         queue.release("c2", lease_id)
         for later in (1_000, 1_000_000):

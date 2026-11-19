@@ -10,8 +10,9 @@ A still higher rank is `Supersede`'s held branch: the deferred version is
 shed at once and the newer one inherits the arrival position.
 
 Each test drives `Queue` and reads the outcome through the snapshot or the
-lease view. Publish answers nothing in the double, so the Rust's
-`PublishOutcome` is asserted as the state it leaves (spec note N32).
+lease view. No Publish rule answers the publisher, so where the Rust asserts
+a `PublishOutcome` the test asserts that the publish answers nothing, and the
+state it leaves (spec note N32).
 Positions are asserted relative to the state before the step, never as the
 absolute values that rest on the double's first position (spec note N04).
 Every refusal compares the complete snapshot before and after.
@@ -40,7 +41,17 @@ from pachinko_double.queue import Queue
 from pachinko_double.refusals import EqualRankRefused
 from pachinko_double.rules import Registry, dispatch
 
-from .fixtures import DEAD_LETTER_TTL, PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, refused, scenario_queue
+from .fixtures import (
+    DEAD_LETTER_TTL,
+    PUBLISHER,
+    SUPERSEDED_TTL,
+    T0,
+    batch,
+    keys,
+    publish_answers_nothing,
+    refused,
+    scenario_queue,
+)
 from .test_pull import RecordingOutcome
 
 
@@ -89,7 +100,7 @@ class DeferralTest(unittest.TestCase):
     def test_a_supersede_while_the_key_is_held_is_deferred_behind_the_held_version(self) -> None:
         queue, _, lease_id = held_k()
         position, arrival = record(queue, "pk", "k").position, queue.snapshot().next_position
-        publish(queue, "pk", "k", 3, b"v3")
+        publish_answers_nothing(self, queue, "pk", "k", 3, b"v3")
         deferred = record(queue, "pk", "k")
         self.assertEqual(
             held_as(deferred),
@@ -114,9 +125,9 @@ class DeferralTest(unittest.TestCase):
         lease_id = batch(queue, "c1", 10).lease
         (pocket_before,) = queue.snapshot().pockets_keyed("pk")
         leases_before = queue.snapshot().leases
-        publish(queue, "pk", "b", 1, b"b")
-        publish(queue, "pk", "a", 2, b"a2")
-        publish(queue, "pk", "a", 0, b"a0")
+        publish_answers_nothing(self, queue, "pk", "b", 1, b"b")
+        publish_answers_nothing(self, queue, "pk", "a", 2, b"a2")
+        publish_answers_nothing(self, queue, "pk", "a", 0, b"a0")
         state = queue.snapshot()
         self.assertEqual(
             state.superseded,
@@ -157,7 +168,7 @@ class JudgedAgainstTheStoredRankTest(unittest.TestCase):
         queue, _, _ = held_k()
         arrival = queue.snapshot().next_position
         publish(queue, "pk", "k", 3, b"v3")
-        publish(queue, "pk", "k", 2, b"v2")
+        publish_answers_nothing(self, queue, "pk", "k", 2, b"v2")
         self.assertEqual(queue.snapshot().superseded, (shed_at(T0, 2, b"v2", ShedReason.STALE),))
         refusal = refused(self, queue, EqualRankRefused, lambda: publish(queue, "pk", "k", 3, b"again"))
         named = (refusal.pocket_key, refusal.record_key, refusal.rank)
@@ -175,7 +186,7 @@ class JudgedAgainstTheStoredRankTest(unittest.TestCase):
         publish(queue, "pk", "k", 3, b"v3")
         deferred = (RecordStatus.HELD, 1, b"v1", Mark.UNSETTLED, None, arrival)
         self.assertEqual(held_as(record(queue, "pk", "k")), deferred)
-        publish(queue, "pk", "k", 1, b"again")
+        publish_answers_nothing(self, queue, "pk", "k", 1, b"again")
         self.assertEqual(
             queue.snapshot().superseded,
             (shed_at(T0 + 10, 1, b"again", ShedReason.STALE),),
@@ -194,17 +205,17 @@ class JudgedAgainstTheStoredRankTest(unittest.TestCase):
         position, arrival = record(queue, "pk", "k").position, queue.snapshot().next_position
         deferred = (RecordStatus.HELD, 1, b"v1", mark, nacked_at, arrival)
         clock.set(T0 + 20)
-        publish(queue, "pk", "k", 3, b"v3")
+        publish_answers_nothing(self, queue, "pk", "k", 3, b"v3")
         self.assertEqual((held_as(record(queue, "pk", "k")), record(queue, "pk", "k").rank), (deferred, 3), "higher")
         self.assertEqual(queue.snapshot().superseded, (), "nothing is shed")
         self.assertEqual(queue.snapshot().next_position, arrival + 1)
         clock.set(T0 + 30)
-        publish(queue, "pk", "k", 5, b"v5")
+        publish_answers_nothing(self, queue, "pk", "k", 5, b"v5")
         v3 = shed_at(T0 + 30, 3, b"v3", ShedReason.SUPERSEDED)
         self.assertEqual(queue.snapshot().superseded, (v3,), "a second higher sheds v3 at once")
         refusal = refused(self, queue, EqualRankRefused, lambda: publish(queue, "pk", "k", 5, b"again"))
         self.assertEqual(refusal.rank, 5, "equal")
-        publish(queue, "pk", "k", 4, b"v4")
+        publish_answers_nothing(self, queue, "pk", "k", 4, b"v4")
         state = queue.snapshot()
         self.assertEqual(state.superseded, (v3, shed_at(T0 + 30, 4, b"v4", ShedReason.STALE)), "lower")
         self.assertEqual(state.dead_letters, (), "no dead letter while held")
@@ -231,7 +242,7 @@ class ReleaseWithADeferredVersionTest(unittest.TestCase):
         publish(queue, "pk", "k", 3, b"v3")
         self.assertEqual(queue.snapshot().superseded, (), "v1 is held")
         clock.set(T0 + 20)
-        publish(queue, "pk", "k", 5, b"v5")
+        publish_answers_nothing(self, queue, "pk", "k", 5, b"v5")
         v3 = shed_at(T0 + 20, 3, b"v3", ShedReason.SUPERSEDED)
         self.assertEqual(queue.snapshot().superseded, (v3,), "v3 is shed at once")
         kept = record(queue, "pk", "k")
@@ -301,7 +312,7 @@ class ReleaseWithADeferredVersionTest(unittest.TestCase):
         queue, _, lease_id = held_k()
         queue.ack("c1", lease_id, "k")
         arrival = queue.snapshot().next_position
-        publish(queue, "pk", "k", 2, b"v2")
+        publish_answers_nothing(self, queue, "pk", "k", 2, b"v2")
         kept = record(queue, "pk", "k")
         self.assertEqual(
             (held_as(kept), kept.rank),
@@ -324,7 +335,7 @@ class ReleaseWithADeferredVersionTest(unittest.TestCase):
         queue, clock, lease_id = held_k()
         queue.nack("c1", lease_id, "k")
         arrival = queue.snapshot().next_position
-        publish(queue, "pk", "k", 2, b"v2")
+        publish_answers_nothing(self, queue, "pk", "k", 2, b"v2")
         kept = record(queue, "pk", "k")
         self.assertEqual((held_as(kept), kept.rank), ((RecordStatus.HELD, 1, b"v1", Mark.NACKED, T0, arrival), 2))
         self.assertEqual(batch(queue, "c1", 10).records, (), "not pullable again in this lease")

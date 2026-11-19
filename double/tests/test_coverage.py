@@ -1,4 +1,4 @@
-"""The coverage tests: every scenario, rule and invariant is covered or pending.
+"""The coverage tests: every scenario, rule and invariant is covered.
 
 Three lists are parsed from their sources, and each count is asserted, so a
 pattern that silently matches less fails:
@@ -25,8 +25,8 @@ tests are still running when the check runs, so for them collection is all it
 can see. A class that stops being a TestCase, or a test moved out of a
 `test*.py` file, therefore fails the run instead of silently dropping out.
 
-PENDING_SCENARIOS and PENDING_RULES hold what later tickets land. An entry both
-pending and covered fails, so each ticket shrinks them by what it lands.
+Nothing is pending: a scenario with no tag, a specification rule with no row,
+and a registered row that never fired each fail the run.
 
 The fired-rule, tag-run and test-def checks read the record the other
 modules' tests leave, so they run only after them: tests/__init__.py loads this
@@ -67,12 +67,6 @@ LOOSE_TAG = re.compile(r"^\s*#\s*(scenario|invariant\W*control)", re.IGNORECASE)
 STRICT_TAG = re.compile(r"^(?P<indent>\s*)# (?P<kind>scenario|invariant-control): (?P<name>\S+)$")
 
 ENV_SUITE = "PACHINKO_DOUBLE_SUITE"
-
-# Empty since PD05: every scenario and every rule is covered. PD06 deletes
-# both lists.
-PENDING_SCENARIOS: frozenset[str] = frozenset()
-
-PENDING_RULES: frozenset[str] = frozenset()
 
 
 def parse(pattern: re.Pattern[str], path: Path) -> list[str]:
@@ -204,14 +198,8 @@ class ScenarioCoverageTest(unittest.TestCase):
     def test_every_scenario_tag_names_a_catalog_row(self) -> None:
         self.assertEqual(sorted(self.tagged - self.catalog), [])
 
-    def test_every_pending_scenario_is_a_catalog_row(self) -> None:
-        self.assertEqual(sorted(PENDING_SCENARIOS - self.catalog), [])
-
-    def test_every_scenario_is_tagged_or_pending(self) -> None:
-        self.assertEqual(sorted(self.catalog - self.tagged - PENDING_SCENARIOS), [])
-
-    def test_no_scenario_is_both_tagged_and_pending(self) -> None:
-        self.assertEqual(sorted(self.tagged & PENDING_SCENARIOS), [])
+    def test_every_scenario_is_tagged(self) -> None:
+        self.assertEqual(sorted(self.catalog - self.tagged), [])
 
 
 class RuleCoverageTest(unittest.TestCase):
@@ -236,23 +224,17 @@ class RuleCoverageTest(unittest.TestCase):
     def test_every_registered_row_is_a_specification_rule(self) -> None:
         self.assertEqual(sorted(self.registered - self.specified), [])
 
-    def test_every_pending_rule_is_a_specification_rule(self) -> None:
-        self.assertEqual(sorted(PENDING_RULES - self.specified), [])
-
-    def test_every_rule_is_registered_or_pending(self) -> None:
-        self.assertEqual(sorted(self.specified - self.registered - PENDING_RULES), [])
-
-    def test_no_rule_is_both_registered_and_pending(self) -> None:
-        self.assertEqual(sorted(self.registered & PENDING_RULES), [])
+    def test_every_rule_is_registered(self) -> None:
+        self.assertEqual(sorted(self.specified - self.registered), [])
 
     def test_every_registered_row_fired_during_the_run(self) -> None:
         require_full_suite(self)
-        never_fired = self.registered - PENDING_RULES - rules.SPECIFICATION.fired()
+        never_fired = self.registered - rules.SPECIFICATION.fired()
         self.assertEqual(sorted(never_fired), [], "registered rows that never fired")
 
 
 class InvariantCoverageTest(unittest.TestCase):
-    """No invariant is pending: the checker landed whole in PD01."""
+    """Every invariant has a registered check and a positive control."""
 
     def setUp(self) -> None:
         self.specified = frozenset(parse(SPEC_INVARIANT, SPECIFICATION))

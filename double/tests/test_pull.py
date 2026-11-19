@@ -134,18 +134,27 @@ class WithinLeaseTest(unittest.TestCase):
     def test_a_pull_under_a_lease_extends_the_lease(self) -> None:
         queue, clock, lease_ids = pocket_of(3)
         self.assertIsNone(active_lease(queue.snapshot(), "c1"))
+        self.assertIsNone(queue.lease_view("c1"))
         first = batch(queue, "c1", 1)
         state = queue.snapshot()
         before = active_lease(state, "c1")
         assert before is not None
         self.assertEqual((before.pocket, before.expires_at), ("pk", T0 + LEASE_TTL))
         self.assertEqual(held_keys(state, "pk"), ["r0"])
+        view = queue.lease_view("c1")
+        assert view is not None
+        self.assertEqual((view.pocket, view.expires_at), ("pk", T0 + LEASE_TTL))
+        self.assertEqual([held.key for held in view.records], ["r0"])
         clock.advance(400)
         second = batch(queue, "c1", 1)
         extended = T0 + 400 + LEASE_TTL
         state = queue.snapshot()
         after = active_lease(state, "c1")
         assert after is not None
+        view = queue.lease_view("c1")
+        assert view is not None
+        self.assertEqual((view.pocket, view.expires_at), ("pk", extended), "the consumer reads the extended expiry")
+        self.assertEqual([held.key for held in view.records], ["r0", "r1"])
         self.assertEqual(second.lease, first.lease)
         self.assertEqual(after.id, first.lease)
         self.assertEqual((after.granted_at, after.expires_at), (T0, extended))

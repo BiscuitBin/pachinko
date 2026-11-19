@@ -202,6 +202,19 @@ def keys(answer: Batch) -> list[str]:
     return [record.key for record in answer.records]
 
 
+def publish_answers_nothing(
+    test: TestCase, queue: Queue, pocket_key: str, record_key: str, rank: int, payload: bytes
+) -> None:
+    """A publish where the Rust test asserts a `PublishOutcome`.
+
+    No Publish rule answers the publisher, so the double's publish answers
+    None, and the test asserts it beside the state the publish leaves. The
+    Rust's outcomes are not ported (spec note N32).
+    """
+    answer = queue.publish(PUBLISHER, pocket_key, record_key, rank, payload)
+    test.assertIsNone(answer, "a publish answers nothing (N32)")
+
+
 def refused[R: Exception](test: TestCase, queue: Queue, refusal: type[R], action: Callable[[], object]) -> R:
     """Run `action`, which must raise `refusal`; the complete snapshot is unchanged.
 

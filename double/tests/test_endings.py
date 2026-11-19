@@ -13,8 +13,8 @@ ending, ran one twice or ran none would fail.
 
 Positions are asserted relative to the state before the step, never as the
 absolute values that rest on the double's first position (spec note N04).
-Publish answers nothing in the double, so a deferral is asserted as the state
-it leaves (spec note N32).
+Publish answers nothing in the double, so a deferral is asserted as that
+answer and the state it leaves (spec note N32).
 """
 
 import unittest
@@ -44,6 +44,7 @@ from .fixtures import (
     T0,
     batch,
     keys,
+    publish_answers_nothing,
     scenario_queue,
     two_pockets,
 )
@@ -115,7 +116,7 @@ def v3_deferred_behind_v1(test: unittest.TestCase) -> tuple[Queue, FakeClock, st
     lease_id = batch(queue, "c1", 1).lease
     position, arrival = record(queue, "pk", "k").position, queue.snapshot().next_position
     clock.set(at(10))
-    publish(queue, "pk", "k", 3, b"v3")
+    publish_answers_nothing(test, queue, "pk", "k", 3, b"v3")
     deferred = record(queue, "pk", "k")
     test.assertEqual(
         (held_as(deferred), deferred.rank),
