@@ -1,7 +1,7 @@
 ---
 id: PD06
 title: "Python double: close-out and the specification reader's guide"
-status: todo
+status: done
 depends_on: [PD05]
 parallel_with: []
 branch: ticket/pd06-close-out
@@ -331,12 +331,283 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end. They record the base and its full commit id, the baseline, the step 2
-and step 3 probes, the checkpoint's record, where to start reading the findings, and
-Verification quoted under its commit.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `7905ad61ac98e61eab2c0bb61cd3450785f6f239`, PD07's scope commit. It was made
+  after PD05's record commit `fb23225cfe82f09b92b477a6bfdac100c411989d`.
+- Work commit: `690a27bbfdcad551b6f676698ebbf1296b63e645`.
+- At the maintainer's direction the whole PD01 to PD06 series lands on this one branch in
+  this one worktree, as PD01's hand-back section 1 records. That departs from AGENTS.md's
+  one-ticket-per-worktree rule and from step 1's "create the worktree on `branch:`".
+  `ticket/pd06-close-out` was not created.
+- `just initialize` was not run. The series runs in one worktree, whose PD01 baseline was
+  green without it, and PD06's baseline is quoted from PD05.
+
+### 2. Baseline
+
+Quoted from PD05, not rerun (`ai_tmp/pd/PD06/baseline.txt`).
+
+- `just python-double` at `15fffd6fc14816413fdf15c432c0be5a3ab52204` printed
+  `Ran 274 tests` and `OK` (PD05's Verification).
+- `just check` on the tree committed as `7905ad61ac98e61eab2c0bb61cd3450785f6f239` ended
+  `All checks passed and the worktree is unchanged.` (exit 0). It ran just before that
+  commit, which changed only `.scratch/python-double/PD07-inspection-contract.md`, after
+  PD05's record commit.
+
+### 3. What landed
+
+This ticket owns no rule and no scenario, adds no table row and moves no scenario under
+shared rule 2. Nothing under `double/pachinko_double/` changed: every probe edit there was
+reverted and its SHA-256 matched. The suite runs 271 tests: 274 at PD05, less four that
+existed only for the pending lists, plus one guide test.
+
+Strict coverage, in `double/tests/test_coverage.py`:
+
+- `PENDING_SCENARIOS`, `PENDING_RULES` and every read of them are deleted.
+  `rg -n 'PENDING_(SCENARIOS|RULES)' double` finds nothing.
+- Four tests that existed only for the lists are gone:
+  `test_every_pending_scenario_is_a_catalog_row`,
+  `test_no_scenario_is_both_tagged_and_pending`,
+  `test_every_pending_rule_is_a_specification_rule` and
+  `test_no_rule_is_both_registered_and_pending`.
+- Two are renamed: `test_every_scenario_is_tagged` and `test_every_rule_is_registered`.
+  The fired check is now `registered - fired`, so every registered rule must have fired.
+
+The guide, in `double/README.md` (new) and `double/tests/test_guide.py` (new):
+
+- The guide says how to run the double, maps the specification to the package, and lists
+  the 8 entities, the 32 rules (trigger, table constant, module) and the 35 invariants
+  (where each is declared, and its checker function). It also covers the clock, the lease
+  ids, `tick()` and the inspection seam, and flags positions and lease ids as the double's
+  own (N04, N05). It reads records by key, never by snapshot order (N31).
+- Its walkthrough of Scenarios A to D is one doctest session. A and C end by release, B
+  and D by lapse. It builds its own setting, with the clock at 0 and TTLs 1000, 5000 and
+  7000, so a reader sees the whole setting. It cites the catalog rows S078 to S081 under
+  decision 0020.
+- `GuideTest.test_the_guides_walkthrough_runs_as_written` runs the page through
+  `doctest.DocFileSuite` with a recording runner. It fails unless every collected example
+  ran, every `pycon` block holds an example that ran, and each of Scenarios A to D holds a
+  block. The review tightened it to that form (section 5).
+- `ai_tmp/pd/PD06/guide-names-check.py` resolves every name the guide's tables use by
+  import. It found 8 entities, 32 rules and 35 invariants, each equal to the specification's
+  count, and problems: 0, exit 0. Its positive control, two wrong rows, was caught.
+
+The findings, in `double/SPEC-NOTES.md`:
+
+- The file opens with a findings section: a rulings table, 15 numbered questions, the six
+  open questions quoted verbatim and left untouched, the one `oq:N` row (S026, `oq:7`),
+  and the notes that leave no question.
+- The 38 notes follow under the ticket's four headings, demoted one level, ids kept. A
+  note-body diff against `7905ad61ac98e61eab2c0bb61cd3450785f6f239` shows only the added
+  Ruling lines on N24 and N38 (N31 already had one), plus N32's, which the lead added
+  after the review (section 7).
+- Placement (`ai_tmp/pd/PD06/notes-regroup-check.txt`):
+  - disagreed: N13, N24, N31, N32 and N38;
+  - ambiguous: N02, N06, N07, N08, N12, N14, N21, N26, N28, N35 and N37;
+  - silent: N01, N03, N05, N11, N15, N17, N19, N20, N25, N27, N30, N33, N34 and N36;
+  - `impl-choice`: N04, N09, N10, N16, N18, N22, N23 and N29.
+- The builder chose the heading for some notes where more than one fits. N13 and N32 sit
+  under "disagreed" because the Rust's literal assertion (the batch's `expires_at`, the
+  publish's `Superseded`) fails against the double. N14 and N26 sit under "ambiguous"
+  though one test each is `impl-choice`. N04 sits under `impl-choice` though it is also
+  silent. The group introductions cross-reference these.
+
+The handbook:
+
+- `docs/project/repository-map.md`: the tree lists `double/README.md` and redescribes
+  `SPEC-NOTES.md`, and the `double/` row names the guide.
+- `docs/reference/commands.md` is unchanged: its `just python-double` wording still matches.
+- `AGENTS.md` is untouched, as instructed.
+
+Also changed in the review's apply step (section 5): `double/tests/fixtures.py`,
+`test_deferral.py`, `test_endings.py`, `test_expiry.py`, `test_publish.py` and
+`test_pull.py`.
+
+### 4. Probes
+
+Each probe went through `just python-double`, was saved with its exit status, and was
+reverted. The tree for each is `7905ad61ac98e61eab2c0bb61cd3450785f6f239` plus PD06's
+uncommitted work. Files are in `ai_tmp/pd/PD06/`. In probes 2 and 4 the coverage module's
+tag-run and test-def checks also fail, on the tests the probe broke.
+
+| File | Probe | Key line | Exit |
+| --- | --- | --- | --- |
+| `probe-01-scenario-tag-removed.txt` | step 2: `# scenario: S078` removed from `test_endings.py` | `AssertionError: Lists differ: ['S078'] != []` in `test_every_scenario_is_tagged`; `FAILED (failures=1)` | 1 |
+| `probe-02-table-row-removed.txt` | step 2: the `ReviveParkedPocket` row removed from `POCKET_TOUCHED` | `AssertionError: Lists differ: ['ReviveParkedPocket'] != []` in `test_every_rule_is_registered`; `FAILED (failures=5)` | 1 |
+| `probe-03-row-never-fired.txt` | `Registry.record_fired` skips `DeadLetterDecays` | `AssertionError: Lists differ: ['DeadLetterDecays'] != [] : registered rows that never fired`; `FAILED (failures=1)` | 1 |
+| `probe-04-guide-example-broken.txt` | step 3: Scenario A's expected pull order changed to `['k', 'early']` | `Expected:` `['k', 'early']` `Got:` `['early', 'k']`, at README.md line 364; `FAILED (failures=2)` | 1 |
+
+Probe 3 shows that the fired-rule check holds with no pending list. Probe 4's second
+failure is the coverage module's test-def check on `test_the_guides_walkthrough_runs_as_written`.
+Probes 1 to 4 ran before the review tightened the guide test, so the guide test's own
+mutants are in section 5. Each revert matched its SHA-256 (the files record it).
+
+### 5. Checkpoint 1 record: conformance, breakage and design (before the final commit)
+
+- Ran at: `7905ad61ac98e61eab2c0bb61cd3450785f6f239` plus uncommitted work (steps 2 to 5).
+  The brief named every file under `double/` to read in full, with
+  `docs/specs/pachinko.allium`.
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command.
+  One Claude (sonnet) runner subagent per lens. Each findings file is Codex's last message
+  (`Source: last-message`), since Codex cannot write under read-only. Codex could not run
+  `just check` in its sandbox, and the tree was confirmed unchanged afterwards.
+- Lenses: conformance, breakage and design, over the whole double and `SPEC-NOTES.md`.
+- Triage and apply: two fresh opus subagents, one for the tests and one for the notes.
+  They wrote verdicts in parallel, read-only, then applied one writer at a time: the
+  notes first, then the tests in two parts.
+- Findings: 0 high, 6 medium, 3 low.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| B1 | medium | valid | S036 never read `lease_view()`, so a view that caches its first answer passed | S036 reads the consumer's lease view before the first pull and after each pull; the cached-view mutant fails |
+| B2 | medium | valid | the guide test required only one example in the whole README | the recording runner of section 3; five mutants fail |
+| C3 | medium | valid (duplicate of B2) | the same | the same fix |
+| D2 | low | valid (duplicate of B2) | the same | the same fix |
+| C1 | medium | valid in part | nothing pinned N32's "a publish answers nothing"; porting the Rust's `PublishOutcome` would change the package and answer N32 | the maintainer's ruling (section 7); `fixtures.publish_answers_nothing` at all 37 Rust outcome asserts (32 call sites); four mutants fail |
+| D1 | medium | valid | finding 6 suggested dropping expiry guards that the specification needs for a renewal processed before a pending lapse | finding 6 split: Pull's and Release's guards keep "say so or drop them"; the expiry guards are unreachable only under the double's scheduling (N37) |
+| C2 | medium | valid (duplicate of D1) | the same | the same fix |
+| C4 | low | valid | finding 7 attributed lapse ordering to S091, which never ticks | finding 7's evidence split: one lease end's order (S091, decision 0020, N25, N29) and the order within one tick (the untagged decay test, N34) |
+| C5 | low | invalid | the single branch is the maintainer's direction, recorded in every hand-back | nothing |
+
+- Triage also checked S033 for B1's gap and disproved it. S033 reads the snapshot's active
+  lease where the Rust reads `lease_view("c2")`, but the view is a pure function of the
+  snapshot and S033 already asserts the refused pull leaves it unchanged. Mutant
+  `m10-view-leaks-other-lease` already fails two tests. S033's port is left as it is.
+- Mutants run in the tree through `just python-double`, all exit 1. Each touched file was
+  hashed before and after, and every revert matched.
+
+  | n | Mutant | File | First failure |
+  | --- | --- | --- | --- |
+  | 1 | `m1-cached-view` | `queue.py` | S036: `Tuples differ: ('pk', 1001000) != ('pk', 1001400)` |
+  | 2 | `m2-scenario-c-prose` | `README.md` | `a pycon block holds no example that ran` (two blocks) |
+  | 3 | `m3-scenario-d-prose` | `README.md` | `a pycon block holds no example that ran` |
+  | 4 | `m4-scenario-a-skipped` | `README.md` | `48 != 50 : every collected example runs` |
+  | 5 | `m6-scenario-b-text` | `README.md` | `Scenario B holds no pycon block` |
+  | 6 | `m10-view-leaks-other-lease` | `consuming.py` | the S033 disproof: two tests fail |
+  | 7 | `m8-publish-answers` | `queue.py` | every covered publish row, 39 failures |
+  | 8 | `m9-stale-publish-answers` | `queue.py` | 12 failures (it passed the whole suite before the ruling's fix) |
+  | 9 | `m11-new-pocket-answers` | `queue.py` | S011, S013, S024 and the guide |
+  | 10 | `m12-new-key-answers` | `queue.py` | S012, S021, S023, S026, S062 and the guide |
+
+- Evidence: `ai_tmp/review/PD06-1/verdicts-tests.md`, `verdicts-notes.md`,
+  `findings-conformance.md`, `findings-breakage.md`, `findings-design.md`,
+  `apply-tests-final.txt` and `apply-notes-final.txt`.
+- Re-run after apply: `just python-double` ran 271 tests, OK, exit 0; `just lint` exit 0;
+  `just check-docs` exit 0 (`Validated 48 pages and 49 canonical topics.`); no
+  `__pycache__`.
+- Second round: none, because no high-severity finding was valid.
+- Handed back: nothing outside Files touched. The lead added N32's Ruling line and its row
+  in the findings section's rulings table.
+
+### 6. What the maintainer should read first in the findings
+
+Start with the "Questions for the maintainer" list in `double/SPEC-NOTES.md`. Five
+findings carry the most weight, because each decides what an implementation must show or
+accept.
+
+1. **Finding 1, the inspection shape (N24, N31, N38).** Five Rust tests assert facts about
+   the Rust's snapshot that the specification does not state: S053 and S066 (the empty
+   lease registry), S091 and S093 (the record order), and S075 (a stored pocket order).
+   Ported literally they fail against a double that follows the specification. The
+   maintainer has accepted the ports for now and PD07 follows up. Read it first because it
+   is the one disagreement that already changed what the double asserts.
+2. **Finding 2, what each trigger answers (N13, N24, N32, N33).** The specification
+   answers only a pull. A batch carries no `expires_at`, so a consumer cannot know when to
+   renew (N13). A publish answers nothing, where decision 0020 gives a deferral the answer
+   `superseded` (N32). A release and a mark answer nothing (N24), and what a tick reports
+   is the implementation's choice (N33). It decides what a caller sees.
+3. **Finding 3, lease identity (N05, N15, N23).** Fencing has to tell an ended lease from
+   its successor over the same pocket and consumer, so the double adds `Lease.id`. The
+   `Consuming` surface's lease view exposes no id. Read it because the double had to
+   invent a field to make fencing work.
+4. **Finding 4, joined publishers and consumers (N10, N18, N22).** Every trigger takes a
+   `Publisher` or a `Consumer` that only a join creates, and nothing says what an id that
+   never joined does. The double refuses it before any rule runs. Every test of that
+   refusal is `impl-choice`, so the specification cannot confirm it.
+5. **Finding 6, guards that restate (N14, N26, N37).** Pull's and Release's `requires`
+   cannot fail while `UnleasedHasNoActiveLease` holds, so the refusals past fencing are
+   reached only by hand-built dispatch. The review narrowed this finding: the expiry guards
+   restate `LeaseLapses`, not an invariant, and the specification gives them a job when a
+   lapse is processed after a release or a renewal. Read it with N37's scoping in view.
+
+Findings 7 to 15 are narrower. The six open questions are listed under "Open questions
+left untouched", and no note answers one.
+
+### 7. Departures and rulings
+
+#### Maintainer's ruling on N32
+
+Recorded in `ai_tmp/pd/PD06/ruling-N32.txt`. On 2026-11-19, through AskUserQuestion, the
+maintainer chose "Pin None, follow up (Recommended)" for review finding C1.
+
+- The double keeps the specification's behaviour: a publish hands nothing back.
+- The ported rows (S021, S043, S045 and the other publish rows the Rust checks for an
+  outcome) assert that each publish answers `None`. They do not port the Rust's
+  `PublishOutcome`.
+- N32 records the ruling, and the findings section's rulings table has its row. Whether
+  the specification should name a publish answer stays a finding (finding 2).
+
+#### Other departures
+
+- The series lands on one branch in one worktree (section 1).
+- Step 1 asks for `just initialize` and for `just check` and `just python-double` on the
+  untouched worktree. Neither was rerun. The baseline is quoted from PD05 (section 2).
+- The final `just check` was not part of the builder's runs. The lead's Verification in
+  section 8 carries it.
+- Placement of notes under the four headings is the builder's judgement (section 3).
+- The builder added Ruling lines to N24 and N38, worded from PD05's hand-back and pointing
+  to PD07. No ruling is stated as a resolved question about the specification.
+- The review changed six test files beyond the ones the builder wrote: it ported more of
+  what the Rust asserts (S036's view, the publish answers). It added no scenario and no
+  rule.
+- The walkthrough's doctests also feed the fired-rule record. The 270-test green run after
+  step 2 and before the guide existed shows all 32 rows fired without them.
+- Finding 9 cites PD05's hand-back for tick atomicity, which no note holds.
+- The Codex lenses were run through the corrected command from the ticket, not §14's
+  printed one (section 5).
+- `AGENTS.md`'s project map still omits `double/`. That point stays the maintainer's, as
+  PD01's Open points say.
+- The final `/code-review` runs after this ticket's record commit, and any fixes it brings
+  get their own commit.
+
+### 8. Verification
+
+The Verification block ran at `690a27bbfdcad551b6f676698ebbf1296b63e645`, the work commit, as one `sh` script under
+`set -eu`. It exited 0 (`exit=0`). The opening and closing lines of its output:
+
+```text
+690a27bbfdcad551b6f676698ebbf1296b63e645
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+...............................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 271 tests in 0.138s
+
+OK
+…  (just check-docs and just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
 - Whether the double later becomes an oracle for the Rust tests, or joins `just check`, is
   the maintainer's decision. This series does neither.
 - `AGENTS.md`'s project map, if PD01 left it for here.
+- Should the specification name what a publish answers? The maintainer pinned `None` for
+  now; whether a deferral answers `superseded`, as decision 0020 gives it, stays open
+  (N32, finding 2).
+- The four headings are the builder's placement for N13, N32, N14, N26 and N04. The
+  maintainer may want a different one for any of them (section 3).
+- S033 still reads the snapshot's active lease where the Rust reads `lease_view("c2")`.
+  Triage disproved a coverage gap there. Porting the line would be a one-line fidelity
+  change that catches nothing alone, so the lead may choose to leave it.
+- Finding 9 cites PD05's hand-back for tick atomicity, because no note holds it. A note
+  for it would make the finding self-contained.
+- The final `/code-review` follows this ticket's record commit. Any fix it brings gets its
+  own commit and is not part of the work commit above.
+- Pushing the branch and opening a pull request both need the maintainer's authorisation
+  (§11, "Separately authorised actions").

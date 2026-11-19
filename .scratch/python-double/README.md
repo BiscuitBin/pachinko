@@ -55,7 +55,7 @@ snapshot.
 | PD03 | Ack, nack, release and the lease's end | `PD03-ack-nack-release.md` | PD02 | done |
 | PD04 | Deferral behind the held version | `PD04-deferral.md` | PD03 | done |
 | PD05 | The clock, with lapse, parking and decay | `PD05-clock-lapse-parking-decay.md` | PD04 | done |
-| PD06 | Close-out and the specification reader's guide | `PD06-close-out.md` | PD05 | todo |
+| PD06 | Close-out and the specification reader's guide | `PD06-close-out.md` | PD05 | done |
 | PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | todo |
 
 ## Dependencies
