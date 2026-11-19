@@ -60,10 +60,11 @@ snapshot.
 
 ## Dependencies
 
-The series is a chain, so no two tickets run in parallel.
+The series is a chain, so no two tickets run in parallel. PD07, added during the series
+at the maintainer's direction, follows up the inspection-shape rulings once PD06 is done.
 
 ```text
-PD01 ──> PD02 ──> PD03 ──> PD04 ──> PD05 ──> PD06
+PD01 ──> PD02 ──> PD03 ──> PD04 ──> PD05 ──> PD06 ──> PD07
 ```
 
 ## What each ticket owns

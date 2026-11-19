@@ -385,8 +385,9 @@ The guide, in `double/README.md` (new) and `double/tests/test_guide.py` (new):
   and D by lapse. It builds its own setting, with the clock at 0 and TTLs 1000, 5000 and
   7000, so a reader sees the whole setting. It cites the catalog rows S078 to S081 under
   decision 0020.
-- `GuideTest.test_the_guides_walkthrough_runs_as_written` runs the page through
-  `doctest.DocFileSuite` with a recording runner. It fails unless every collected example
+- `GuideTest.test_the_guides_walkthrough_runs_as_written` parses the page with
+  `doctest.DocTestParser` and runs it with a recording `doctest.DocTestRunner`, in place
+  of the `DocFileSuite` step 3 suggests. It fails unless every collected example
   ran, every `pycon` block holds an example that ran, and each of Scenarios A to D holds a
   block. The review tightened it to that form (section 5).
 - `ai_tmp/pd/PD06/guide-names-check.py` resolves every name the guide's tables use by
