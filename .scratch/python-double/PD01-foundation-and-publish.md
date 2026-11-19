@@ -1,7 +1,7 @@
 ---
 id: PD01
 title: "Python double: the foundation, the invariant checker and publish"
-status: todo
+status: done
 depends_on: []
 parallel_with: []
 branch: ticket/pd01-foundation-and-publish
@@ -450,9 +450,225 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end. They record the base and its full commit id, the baseline, the design
-as settled at checkpoint 1, each checkpoint's record, the probes, the spec notes added,
-and Verification quoted under its commit.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `6ebb76b393687e88656ba6594cf1c53584fc5d70`.
+- Work commit: `bb9319d59d16d8bcfdc3d126c4690f314a4ae682`.
+- At the maintainer's direction the whole PD01 to PD06 series lands on this one branch
+  in this one worktree, two commits per ticket. That departs from AGENTS.md's
+  one-ticket-per-worktree rule and from step 1's "create the worktree on `branch:`".
+  `ticket/pd01-foundation-and-publish` was not created.
+- `just initialize` was not run, because the baseline was green without it.
+
+### 2. Baseline
+
+`just check` at `6ebb76b393687e88656ba6594cf1c53584fc5d70` ended
+`All checks passed and the worktree is unchanged.` (exit 0).
+`.pixi/envs/default/bin/python --version` printed `Python 3.14.10`. The counts were 93
+scenarios, 32 rules and 35 invariants.
+
+### 3. Design as settled at checkpoint 1
+
+All modules live under `double/pachinko_double/` and all tests under `double/tests/`.
+
+| Module | Holds |
+| --- | --- |
+| `queue.py` | `Queue`, `Queue.publish`, `Outcome` and the one apply step `_apply` |
+| `rules.py` | `Rule`, `Registry`, dispatch, `GuardOverlap`, the fired record |
+| `identity.py` | The `PublisherJoins` and `ConsumerJoins` tables |
+| `publish.py` | The `Publish` table (four rows) and the `PocketTouched` table (no rows) |
+| `model.py` | The entities and enums; entities are frozen dataclasses |
+| `config.py` | `Config`, five defaults, validated in `__post_init__` |
+| `effects.py` | `Clock`, `FakeClock` (counts reads), the lease-id source and its fake |
+| `refusals.py` | One exception class per refusal, under one base class |
+| `inspection.py` | The immutable `Snapshot`, `View` and `ConfigValues` |
+| `invariants.py` | `REGISTRY` of 35 checks, `check`, `Violation`, `InvariantsBroken` |
+| `__init__.py` | The public names |
+
+Departures from the ticket's design table:
+
+- `publish.py` landed in step 5, not step 4. `identity.py` was first registered with zero
+  rows, then took its two rows in step 5.
+- `Rule` guards and effects take two seams, `View` (the snapshot plus `now`, read only)
+  and `Outcome` (the writes: `allot_position`, `create`, `replace`, `remove`, `emit`,
+  `draw_lease_id`, `now`, `config`).
+- `Outcome.answer(value)` was added at checkpoint 1 (finding D1). It is a single slot that
+  `_apply` returns after the check and the commit. Pull's `Batch` and `NoPocketAvailable`
+  use it in PD02.
+- `rules.Registry` holds the per-trigger tables; `rules.SPECIFICATION` holds the registry
+  and the fired record. Dispatch records only for its own registry's tables, so dispatch
+  tests use a private `Registry`.
+- `inspection.ConfigValues` is an unvalidated copy of the config in the snapshot, for the
+  config-invariant controls.
+- `Lease` has an `id` (N05). References between entities are keys (N06).
+- Clock-trigger tables are keyed by the trigger parsed from the rule's `when:`
+  (`Lease.expires_at`, `SupersededRecord.expires_at`, `DeadLetter.expires_at`). PD05
+  registers them under those names.
+- Extra test modules beyond the ticket's list: `test_queue`, `test_effects`,
+  `test_inspection`, `test_publish`, plus the helper `fixtures.py`.
+- The recipe runs `unittest discover -s double/tests -t double`. Without `-t double`
+  the start directory is the top level and `load_tests` is ignored (probes 06 and 07).
+
+### 4. Probes
+
+Each probe ran through `just python-double` on the tree at
+`6ebb76b393687e88656ba6594cf1c53584fc5d70` plus the uncommitted phase-A files, and was
+reverted afterwards. Files are in `ai_tmp/pd/PD01/`. Every exit status is 1.
+
+| File | Breaks | Key output line | Exit |
+| --- | --- | --- | --- |
+| `probe-01-unknown-scenario-tag.txt` | A `# scenario: S999` tag above a test | `AssertionError: Lists differ: ['S999'] != []` | 1 |
+| `probe-02-unpended-untagged.txt` | S011 removed from `PENDING_SCENARIOS`, no test tagged | `AssertionError: Lists differ: ['S011'] != []` | 1 |
+| `probe-03-tagged-while-pending.txt` | A `# scenario: S011` tag while S011 is pending | `AssertionError: Lists differ: ['S011'] != []` | 1 |
+| `probe-04-unknown-rule-row.txt` | A row named `NoSuchRule` in the registered `PublisherJoins` table | `AssertionError: Lists differ: ['NoSuchRule'] != []` | 1 |
+| `probe-05-registered-never-fired.txt` | `PublisherJoins` registered and unpended, no test fires it | `AssertionError: Lists differ: ['PublisherJoins'] != [] : registered rows that never fired` | 1 |
+| `probe-06-load-tests-skipped.txt` | Recipe drops `-t double`, sets `PYTHONPATH=double` | `AssertionError: just python-double ran the coverage test without tests.load_tests, so the fired-rule record cannot be trusted; run discovery with -t double` | 1 |
+| `probe-07-top-level-dropped.txt` | Recipe drops `-t double` | `ModuleNotFoundError: No module named 'pachinko_double'` | 1 |
+| `probe-08-old-python-refused.txt` | Version floor raised to (3, 99) | `python-double: needs Python 3.14 or newer, found 3.14.10` | 1 |
+| `probe-09-scratch-break-idle-has-no-records.txt` | `IdleHasNoRecords` weakened so it never fires | `FAILED (failures=2)` (the `IdleHasNoRecords` control and the apply-step test) | 1 |
+| `probe-10-checker-names-nothing.txt` | `check()` returns no violation | `FAILED (failures=38)` | 1 |
+| `probe-11-typo-tags.txt` | A `#scenario: S011` tag and a control tag `IdleHasNoRecord` | `AssertionError: Lists differ: ['IdleHasNoRecord'] != []` | 1 |
+| `probe-12-check-part-way.txt` | The apply step also checks before the trigger's events | `pachinko_double.invariants.InvariantsBroken: invariants broken: IdleHasNoRecords; idle pocket 'p' has 1 records` | 1 |
+
+Probes 09, 10 and 12 are after-the-fact evidence for the checker and the apply step (see
+section 8).
+
+### 5. Red runs
+
+Each red run went through `just python-double`, was saved with its exit status, and was
+followed by the change that turned it green. In every red run the tag-run check also
+fails on the new tags.
+
+| File | Red before | Key output line | Exit |
+| --- | --- | --- | --- |
+| `red-S003-S004-S005.txt` | `Config` validates | `AssertionError: ConfigRefused not raised`; `FAILED (failures=7)` | 1 |
+| `red-S009-S010.txt` | The join rows land, so the row-less tables refuse | `pachinko_double.refusals.PublisherAlreadyJoined: a publisher with id 'p' has joined`; `FAILED (failures=1, errors=3)` | 1 |
+| `red-S011-S013.txt` | `PublishIntoNewPocket` lands | `pachinko_double.refusals.EqualRankRefused: 'one'/'k' already stores rank 1`; `FAILED (failures=1, errors=2)` | 1 |
+| `red-unknown-publisher.txt` | `Queue.publish` checks the publisher | `AssertionError: UnknownPublisher not raised`; `FAILED (failures=1)` | 1 |
+| `red-S014-S016-S017-S018.txt` | Only `PublishIntoNewPocket` exists; S017 already passes | `pachinko_double.refusals.EqualRankRefused: 'pk'/'a' already stores rank 4`; `FAILED (failures=1, errors=3)` | 1 |
+| `red-S016-S018.txt` | `PublishNewKey` and `Supersede` landed, `DropStalePublish` not | `pachinko_double.refusals.EqualRankRefused: 'pk'/'a' already stores rank 4`; `FAILED (failures=1, errors=2)` | 1 |
+
+S017 cannot be red for its own reason (see section 8).
+
+### 6. Checkpoint records
+
+#### Checkpoint 1: conformance, breakage and design (before any scenario was ported)
+
+- Ran at: `6ebb76b393687e88656ba6594cf1c53584fc5d70` plus uncommitted work.
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command
+  (`< /dev/null`, `-o last-<lens>.md`, `>|` log). One Claude (sonnet) runner subagent per
+  lens. Codex cannot write under read-only (`ai_tmp/pd/codex-smoke.txt`), so each
+  findings file is Codex's last message, and its first line says `Source: last-message`.
+- Triage: two fresh opus subagents (coverage findings; D1), then applied one writer at a
+  time, coverage first, then D1.
+- Findings: 0 high, 5 medium (breakage B1; conformance C1 and C2; design D1 and D2).
+
+| Id | Verdict | Reason | Applied |
+| --- | --- | --- | --- |
+| C1 | valid | a tag counted on any `def test` text, collected or not | Fix 1: `load_tests` records passing tests' def sites; a tag counts only if its test ran and passed |
+| B1 | valid (duplicate of C1) | same | Fix 1 |
+| D2 | valid (duplicate of C1) | a plain-class control drops four controls without failing coverage | Fix 1 |
+| C2 | valid | rule coverage by name only; no check that a row sits in its `when:` trigger's table | Fix 2: trigger parsed from `when:`; a misfiled row and an unknown-trigger table fail |
+| D1 | valid | the apply step had no channel for an operation's answer | `Outcome.answer(value)`, returned by `_apply` after check and commit |
+
+- Evidence: six mutants (`ai_tmp/review/PD01-1/apply-coverage-mutant-1.txt` to
+  `-6.txt`), each exit 1 naming its target, reverted with SHA-256 confirmation; D1 red
+  run `ai_tmp/review/PD01-1/apply-d1-red.txt` (5 tests, 4 errors, exit 1).
+- Lead's decisions during triage: clock-trigger tables keyed by the trigger parsed from
+  `when:`; a tag above a decorated test fails closed.
+- Applied: Fix 1, Fix 2 and D1, as above.
+- Handed back (outside Files touched): PD02's acceptance line says the batch is
+  "asserted through the inspection seam"; Batch is Pull's answer, so PD02 rewords its own
+  line (`ai_tmp/pd/carry-forward.md`).
+- Re-run: `just python-double` ran 115 tests, OK; `just lint` exit 0; no `__pycache__`.
+- Second round: none, because no high-severity finding was valid.
+
+#### Checkpoint 2: conformance and breakage (before the final commit)
+
+- Ran at: `6ebb76b393687e88656ba6594cf1c53584fc5d70` plus uncommitted work (steps 2 to
+  7).
+- Harness and model: Codex `gpt-6-astra`, read-only, the corrected command; one sonnet
+  runner subagent per lens; findings are Codex's last message (`Source: last-message`).
+  Codex's own `just check` and `just check-docs` attempts failed on sandbox write denial;
+  the tree was confirmed unchanged afterwards.
+- Triage and apply: one fresh opus subagent, mutations on copies outside the worktree,
+  then fixes applied as the only writer.
+- Findings: 0 high, 2 medium, 2 low.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| B1 | medium | valid | an untagged class losing its `TestCase` base drops 6 tests; run still OK (124) | `tests/__init__` records `COLLECTED`; a new check walks every `def test*` by `ast` and requires collected, and passed outside `test_coverage.py` |
+| C1 | medium | valid (duplicate of B1) | same, `UnknownPublisherTest`, 129 OK | same fix; mutants 1 to 4 each exit 1 |
+| C2 | low | valid | S011, S014 and S016 assert absolute positions that rest on N04's initial `next_position` 0 | `# impl-choice (spec note N04)` above the three tags; N04 retitled `impl-choice` and names them |
+| C3 | low | valid (a gap, not a code defect) | the three config refusals cannot compare a snapshot, because a refused `Config` never becomes a queue | `test_config` docstring and N09 say so; recorded as a departure in section 8 |
+
+- Evidence: `ai_tmp/review/PD01-2/apply-mutant-1.txt` to `-4.txt` and `apply-final.txt`.
+- Residual gaps named by triage: a test renamed off the `test` prefix is invisible to
+  unittest and to the new check; a decorator-skipped test inside `test_coverage.py` is
+  checked only for collection.
+- Re-run after apply: `just python-double` 131 tests OK, exit 0; `just lint` exit 0; no
+  `__pycache__`.
+- Second round: none, because no high-severity finding.
+- Handed back: nothing outside Files touched.
+
+### 7. Spec notes added
+
+| Id | Note |
+| --- | --- |
+| N01 | Timestamps and durations are whole milliseconds. |
+| N02 | A payload is `bytes`. |
+| N03 | A rank is an unbounded integer. |
+| N04 | The queue's first position is 0 (S011, S014 and S016 are `impl-choice`). |
+| N05 | A lease has an id, which the specification does not declare. |
+| N06 | A reference to an entity is that entity's key. |
+| N07 | `a != b` in an invariant compares entities, not their fields. |
+| N08 | A field declared `when status = ...` is the entity's shape, not an invariant. |
+| N09 | A config that breaks a config invariant is refused when it is made (S005 is `impl-choice`). |
+| N10 | A publish by a publisher that never joined is refused (`impl-choice`). |
+| N11 | The equal-rank publish is the Publish table's refusal, `EqualRankRefused`. |
+| N12 | A join with an id already taken is refused. |
+
+### 8. Departures for the maintainer
+
+- The series lands on one branch in one worktree, two commits per ticket (section 1).
+- S003 to S005's config refusals compare no snapshot, which departs from step 5 and the
+  acceptance criterion. No queue exists before the refusal (checkpoint 2, C3; N09).
+- The red-first evidence for the checker and the apply step came after the fact. Probes
+  09, 10 and 12 break the finished code; the queue, inspection and invariants modules
+  were written with their tests (`summary-A.md`, doubt 3).
+- S017 could not go red on its own. Its assertion is the Publish table's no-guard
+  refusal, which landed with the table before any row. Before the table existed it could
+  fail only on a missing `Queue.publish`, and before `PublishIntoNewPocket` only on its
+  setup publish. In `red-S014-S016-S017-S018.txt` it passes.
+- The builder once used the system `python3` as a text editor on `test_rules.py`, and
+  ran no test through it.
+- The builder could not write to `ai_tmp/` through its Write tool. The lead saved
+  `summary-A.md`, and `summary-B.md` went through a heredoc.
+- Codex cannot write files under read-only, so every findings file is Codex's last
+  message (section 6).
+
+### 9. Verification
+
+The Verification block ran at `bb9319d59d16d8bcfdc3d126c4690f314a4ae682`, the work commit, as one `sh` script under
+`set -eu`. It exited 0 (`exit=0`). The opening and closing lines of its output:
+
+```text
+bb9319d59d16d8bcfdc3d126c4690f314a4ae682
+Python 3.14.10
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+...................................................................................................................................
+----------------------------------------------------------------------
+Ran 131 tests in 0.024s
+
+OK
+…  (just check-docs and just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
@@ -462,3 +678,18 @@ and Verification quoted under its commit.
 - `AGENTS.md`'s project map does not list `double/`. Adding it changes the agent contract
   (`writing-for-agents`, `just check-agents`), so it is the maintainer's call, here or in
   PD06.
+- PD02's acceptance wording about the batch: its line says the batch is "asserted
+  through the inspection seam", but Batch and `NoPocketAvailable` are Pull's answer, not
+  state. PD02 rewords its own acceptance line and says so in its hand-back
+  (`ai_tmp/pd/carry-forward.md`).
+- Residual gaps from checkpoint 2: a test renamed off the `test` prefix is invisible to
+  unittest and to the new check, and a decorator-skipped test inside `test_coverage.py`
+  is checked only for collection.
+- `_apply`'s `event_tables` keyword is a test-only seam. `test_queue` calls the private
+  `_apply`, and `Queue` reads `outcome._state`. The maintainer may prefer a public seam
+  (`summary-A.md`, doubt 1).
+- A lease id drawn inside an outcome that is then refused is not given back: the fake
+  source's counter advances while the snapshot stays unchanged. No PD01 rule draws one;
+  PD02's pull is the first, so PD02 decides whether a refused pull may consume an id
+  (`summary-A.md`, doubt 4). `docs/project/repository-map.md` now lists `double/`, so
+  only `AGENTS.md`'s project map is still without it.
