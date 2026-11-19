@@ -24,6 +24,7 @@ from pachinko_double.model import (
     SupersededRecord,
     Timestamp,
 )
+from pachinko_double.pull import Batch
 from pachinko_double.queue import Queue
 
 DEFAULT_CONFIG = ConfigValues.of(Config())
@@ -172,9 +173,27 @@ CONSUMERS = ("c1", "c2", "c3")
 
 
 def scenario_queue(**config_fields: int) -> tuple[Queue, FakeClock]:
+    queue, clock, _ = scenario_setting(**config_fields)
+    return queue, clock
+
+
+def scenario_setting(**config_fields: int) -> tuple[Queue, FakeClock, SequentialLeaseIds]:
+    """The scenarios' setting, with the lease-id source a test counts draws from."""
     settings = dict(lease_ttl=LEASE_TTL, superseded_ttl=SUPERSEDED_TTL, dead_letter_ttl=DEAD_LETTER_TTL)
-    queue, clock, _ = new_queue(Config(**(settings | config_fields)), now=T0)
+    queue, clock, lease_ids = new_queue(Config(**(settings | config_fields)), now=T0)
     queue.publisher_joins(PUBLISHER)
     for consumer in CONSUMERS:
         queue.consumer_joins(consumer)
-    return queue, clock
+    return queue, clock, lease_ids
+
+
+def batch(queue: Queue, consumer: str, limit: int) -> Batch:
+    """A pull that must answer a batch."""
+    answer = queue.pull(consumer, limit)
+    assert isinstance(answer, Batch), f"{consumer} was answered {answer!r}"
+    return answer
+
+
+def keys(answer: Batch) -> list[str]:
+    """The batch's record keys, in the batch's order."""
+    return [record.key for record in answer.records]

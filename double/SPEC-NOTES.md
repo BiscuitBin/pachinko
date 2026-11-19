@@ -218,3 +218,178 @@ it concerns, what the specification says, what the double does, and the question
 - **Question:** should a second join with the same id be refused, as here, or succeed
   and change nothing, which the specification's words also allow? The Rust refuses it
   (`JoinError::PublisherExists`), and the catalog rows S009 and S010 say "joins once".
+
+## N13: a batch names its lease and pocket by key, and carries no expiry
+
+- **Ticket:** PD02.
+- **Concerns:** the `Batch` answer of `PullWithinLease` and `PullClaimsFrontPocket`,
+  the Batch vocabulary entry, the Pull comment ("Batch names the lease the records were
+  handed under"), and the `Renew` rule.
+- **The specification says:**
+  - `Batch(consumer, lease, pocket, records: batch)`, where `batch` is
+    `oldest(pocket.queued_records, …)`;
+  - the vocabulary calls it "the lease, the pocket key and zero or more records";
+  - `PullClaimsFrontPocket` names the lease as `Lease{pocket: pocket, consumer: consumer,
+    status: active}`, read in the resulting state;
+  - `Renew` ensures only the new `expires_at`, and answers nothing.
+- **The double does:**
+  - `Batch` has four fields: the consumer's id, the lease's id (N05), the pocket's key,
+    and `records`, a tuple of the `Record` entities the rule read before the pull, oldest
+    first.
+  - The batch is computed before `Handed` is emitted, so its records still carry their
+    queued status. Their key, rank and payload are what the consumer was handed.
+    `HoldRecord` then copies the same rank and payload into `held_rank` and
+    `held_payload`.
+  - `PullClaimsFrontPocket` names the lease it has just created. That is the one lease
+    the specification's lookup can find, by `OneActiveLeasePerPocket`.
+  - Neither `Batch` nor `Queue.renew` carries an expiry. The Rust's batch and renew both
+    answer the lease's `expires_at`; the double's tests read it from the snapshot's lease
+    instead (S027, S036 and S050).
+  - So the acceptance criterion that a pull's batch is asserted "through the inspection
+    seam" is met for the lease and the held records, and the batch itself is asserted
+    through `Queue.pull`'s return value, since it is an answer, not state.
+- **Question:** should `Batch` carry the lease's `expires_at`? A consumer needs it to
+  know when to renew, and the `Consuming` surface exposes it only through the lease.
+
+## N14: the Pull table's refusal is unreachable
+
+- **Ticket:** PD02.
+- **Concerns:** `PullWithinLease`'s `requires: pocket.status = leased`,
+  `PullClaimsFrontPocket`'s `requires: pocket.status = queued`, and the invariant
+  `UnleasedHasNoActiveLease`.
+- **The specification says:**
+  - `PullWithinLease` needs an active lease of the consumer and its pocket leased;
+  - the other two Pull rules need no active lease, and split on whether a pocket is
+    queued;
+  - `UnleasedHasNoActiveLease`: a pocket that is not leased has no active lease.
+- **The double does:**
+  - The three guards are disjoint, and a test shows exactly one holds in each state PD02
+    reaches.
+  - In any state that holds `UnleasedHasNoActiveLease`, an active lease's pocket is
+    leased, so `PullWithinLease`'s second `requires` cannot fail once its first holds.
+  - `PullClaimsFrontPocket`'s `requires: pocket.status = queued` cannot fail either,
+    since `pocket` is chosen from `Pockets where status = queued`.
+  - So one of the three always holds, and the Pull table's answer when none holds is
+    never reached through `Queue`. Shared rule 4 still asks every action's table for a
+    refusal, so the table has one, `PullRefused`.
+  - One test (`impl-choice`) builds a state that breaks the invariant, an active lease
+    on a queued pocket, and shows that no guard holds there and the dispatch refuses
+    without writing anything.
+- **Question:** are the two `requires` meant as guards, or as restatements of what the
+  invariants already give? If restatements, the specification could say so, or drop
+  them.
+
+## N15: a pull draws a lease id only when it creates a lease
+
+- **Ticket:** PD02.
+- **Concerns:** `PullClaimsFrontPocket`'s `Lease.created`, and N05's lease id.
+- **The specification says:** a lease has no id (N05). Only `PullClaimsFrontPocket`
+  creates a lease.
+- **The double does:**
+  - The lease-id source is drawn from only in `PullClaimsFrontPocket`'s effect, which
+    runs only once dispatch has chosen that row, so only a pull that creates a lease
+    draws an id.
+  - A pull within a lease, a pull answered `NoPocketAvailable`, and a refused pull,
+    whether by an unknown consumer (N18) or by the Pull table (N14), draw none.
+  - An id drawn in an outcome that is then refused is not given back (PD01's open
+    point). No PD02 outcome can draw and then refuse: after the claim, only `HoldRecord`
+    and the checker run, and a failure there is a defect, not a refusal.
+  - The tests count draws (S027, S033, S036 and the unknown-consumer refusal), and none
+    asserts a literal id. The Rust's S027 asserts lease id 1, which only the fake source
+    fixes.
+- **Question:** none, unless the maintainer wants lease identity in the specification
+  (N05).
+
+## N16: S012, S015 and S022 assert absolute positions (`impl-choice`)
+
+- **Ticket:** PD02.
+- **Concerns:** `Queue.next_position`, N04, and scenarios S012, S015 and S022.
+- **The specification says:** no initial value for `next_position` (N04).
+- **The double does:** it ports the Rust tests' absolute positions, which hold only
+  because the double starts at 0:
+  - S012: the pocket at 0, the new key's record at 2, and `next_position` 3;
+  - S015: the superseded key keeps position 1;
+  - S022: the pocket stays at 0.
+  The relative facts these rows also assert are the specification's: a new key takes
+  the next position, a supersede keeps the record's position, and a publish into a
+  queued pocket leaves its position alone.
+- **Question:** as N04.
+
+## N17: S019's large ranks are a 64-bit integer's extremes, not the double's
+
+- **Ticket:** PD02.
+- **Concerns:** `Record.rank`, N03, and scenario S019.
+- **The specification says:** a rank is an `Integer`, unbounded.
+- **The double does:**
+  - It ports S019 with the Rust test's ranks, `-(2**63)`, `-(2**63) + 1`,
+    `2**63 - 2` and `2**63 - 1`, and asserts what the Rust asserts: every supersede and
+    the stale publish order exactly, and the pull hands out `2**63 - 1`.
+  - A Python `int` is unbounded (N03), so these values are not a boundary for the
+    double: it would accept `2**63` as a rank and order it above them, where the Rust's
+    64-bit rank cannot hold it.
+  - The row is not `impl-choice`, since everything it asserts follows from the
+    specification's `Integer`.
+- **Question:** as N03: should the specification bound a rank, so that S019's values
+  become the boundary for every implementation?
+
+## N18: a pull or a renew by a consumer that never joined is refused (`impl-choice`)
+
+- **Ticket:** PD02.
+- **Concerns:** the `Pull(consumer, limit)` and `Renew(consumer, lease)` triggers, the
+  `Consuming` surface's `facing consumer: Consumer`, and `ConsumerJoins`.
+- **The specification says:** both triggers take a `Consumer` entity, and only
+  `ConsumerJoins` creates one. Nothing says what a pull or renew naming an id that never
+  joined does.
+- **The double does:**
+  - `Queue.pull` and `Queue.renew` take a consumer id and raise `UnknownConsumer` when
+    no consumer with that id has joined.
+  - They do so before the outcome starts, as N10 does for a publisher: the clock is not
+    read, no lease id is drawn, no table is consulted, and the snapshot is unchanged.
+  - Without the check, such a pull would claim a pocket under a lease naming a consumer
+    the state does not hold, which the snapshot refuses as a dangling reference.
+  - This is `impl-choice`, because the specification states no such refusal.
+- **Question:** should the specification say that a pull and a renew require a joined
+  consumer, as N10 asks for a publish?
+
+## N19: a pull whose limit is not positive still claims a pocket
+
+- **Ticket:** PD02.
+- **Concerns:** `PullClaimsFrontPocket`, the `OldestFirst` guarantee, the
+  `PullBatchPositive` comment, and scenarios S031 and S032.
+- **The specification says:** `PullClaimsFrontPocket` has no `requires` on `limit`, and
+  `oldest` returns no record when `n` is not positive. `OldestFirst` says "a limit that
+  is not positive yields an empty batch, not an error".
+- **The double does:**
+  - A pull with limit 0 or below, by a consumer with no lease, claims the front pocket.
+    It creates a lease with `expires_at = now + lease_ttl`, leases the pocket, and
+    answers an empty batch; no record is handed.
+  - The pocket leaves the pocket order for the lease's life, though it still holds
+    queued records, so other consumers cannot reach them until that lease ends.
+- **Question:** is a claim that hands nothing intended? The comment above
+  `PullWithinLease` explains why an empty batch extends a held lease, but not why a
+  non-positive limit claims a new one. A consumer probing with `limit = 0` takes a pocket
+  away from every other consumer until it releases it or the lease lapses.
+
+## N20: Renew's refusal is `LeaseFenced`, and an unknown lease id meets it
+
+- **Ticket:** PD02.
+- **Concerns:** the `Renew` rule and the `ActionsNameTheirLease` guarantee.
+- **The specification says:** `Renew` requires `lease.status = active` and
+  `lease.consumer = consumer`. One rule shares the trigger, so a renew for which either
+  is false is rejected. Neither the rule, the `Consuming` surface nor its
+  `ActionsNameTheirLease` guarantee ("one naming an ended lease is rejected") names the
+  rejection, and no catalog row covers a lease id that was never issued.
+- **The double does:**
+  - Since the specification names no refusal, the name is the double's: the Renew
+    table refuses with `LeaseFenced`, carrying the action, the consumer's id
+    and the lease's id. PD03's fencing can reuse it for ack, nack and release.
+  - A lease id that names no lease fails the same guard and meets the same refusal. It
+    is not refused before the outcome, as an unknown consumer is (N18), because a lease
+    id, unlike a consumer id, is the double's own (N05).
+  - PD02 tests the guard in full on a hand-built state, and tests the refusal on the one
+    input that needs nothing PD03 lands: a renew naming a lease id never issued is
+    refused with `LeaseFenced`, and the complete snapshot is unchanged. That test is
+    untagged, since no catalog row covers that input. The refusal's tagged tests, an ended
+    lease and another consumer's lease, are PD03's (S052, S070).
+- **Question:** none on the behaviour. The refusal's name is the double's, and whether
+  an unknown lease is a distinct refusal is left to PD03.

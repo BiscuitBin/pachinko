@@ -14,7 +14,7 @@ from pachinko_double.publish import PUBLISH, Publish
 from pachinko_double.queue import Queue
 from pachinko_double.refusals import EqualRankRefused, UnknownPublisher
 
-from .fixtures import PUBLISHER, SUPERSEDED_TTL, T0, scenario_queue
+from .fixtures import PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, scenario_queue
 
 
 def publish(queue: Queue, pocket_key: str, record_key: str, rank: int, payload: bytes) -> None:
@@ -144,6 +144,104 @@ class ExistingKeyTest(unittest.TestCase):
             [(shed.rank, shed.reason) for shed in state.superseded],
             [(-5, ShedReason.SUPERSEDED), (-1, ShedReason.SUPERSEDED), (-2, ShedReason.STALE)],
         )
+
+
+class PublishThenPullTest(unittest.TestCase):
+    """Publish rows whose Rust tests finish with a pull: what was published is
+    what the pull hands out."""
+
+    # impl-choice (spec note N16): positions 0 and 2 and next_position 3 rest on
+    # the double's first position, 0 (N04); that the new key takes the next
+    # position and the pocket keeps its own is the specification's.
+    # scenario: S012
+    def test_a_publish_of_a_new_key_appends_to_an_existing_pocket(self) -> None:
+        queue, _ = scenario_queue()
+        publish(queue, "pk", "a", 1, b"x")
+        publish(queue, "pk", "b", 7, b"y")
+        state = queue.snapshot()
+        self.assertEqual(len(state.pockets), 1)
+        self.assertEqual(state.pockets_keyed("pk")[0].position, 0)
+        appended = record(state, "pk", "b")
+        self.assertEqual((appended.position, appended.status), (2, RecordStatus.QUEUED))
+        self.assertEqual(state.next_position, 3)
+        self.assertEqual(keys(batch(queue, "c1", 10)), ["a", "b"])
+
+    # impl-choice (spec note N16): position 1 rests on the double's first
+    # position, 0 (N04); that the key keeps its first slot is the specification's.
+    # scenario: S015
+    def test_repeated_supersede_keeps_the_first_slot_and_sheds_every_loser(self) -> None:
+        queue, _ = scenario_queue()
+        publish(queue, "pk", "a", 1, b"v1")
+        publish(queue, "pk", "b", 1, b"b")
+        for rank, payload in ((2, b"v2"), (3, b"v3"), (4, b"v4")):
+            publish(queue, "pk", "a", rank, payload)
+        state = queue.snapshot()
+        kept = record(state, "pk", "a")
+        self.assertEqual((kept.position, kept.rank, kept.payload), (1, 4, b"v4"))
+        self.assertEqual(
+            [(shed.rank, shed.payload, shed.reason) for shed in state.superseded],
+            [(1, b"v1", ShedReason.SUPERSEDED), (2, b"v2", ShedReason.SUPERSEDED), (3, b"v3", ShedReason.SUPERSEDED)],
+        )
+        answer = batch(queue, "c1", 10)
+        self.assertEqual(keys(answer), ["a", "b"])
+        self.assertEqual((answer.records[0].rank, answer.records[0].payload), (4, b"v4"))
+
+    # The ranks are the Rust test's, a 64-bit integer's extremes; the double's
+    # ranks are unbounded, so they are not its extremes (spec notes N03, N17).
+    # scenario: S019
+    def test_large_ranks_keep_full_precision_across_supersede_and_stale(self) -> None:
+        low, high = -(2**63), 2**63 - 1
+        queue, _ = scenario_queue()
+        publish(queue, "pk", "a", low, b"min")
+        for rank, payload in ((low + 1, b"min+1"), (high - 1, b"max-1"), (high, b"max")):
+            publish(queue, "pk", "a", rank, payload)
+        publish(queue, "pk", "a", high - 1, b"late")
+        state = queue.snapshot()
+        kept = record(state, "pk", "a")
+        self.assertEqual((kept.rank, kept.payload), (high, b"max"))
+        self.assertEqual(
+            [(shed.rank, shed.reason) for shed in state.superseded],
+            [
+                (low, ShedReason.SUPERSEDED),
+                (low + 1, ShedReason.SUPERSEDED),
+                (high - 1, ShedReason.SUPERSEDED),
+                (high - 1, ShedReason.STALE),
+            ],
+        )
+        answer = batch(queue, "c1", 1)
+        self.assertEqual(answer.records[0].rank, high)
+        self.assertEqual(record(queue.snapshot(), "pk", "a").held_rank, high)
+
+    # Payloads are bytes (spec note N02) and keys are str, compared exactly.
+    # scenario: S020
+    def test_payload_bytes_and_keys_round_trip_unchanged(self) -> None:
+        every_byte = bytes(range(256))
+        pocket_key, record_key = "pocket-\u00e9\u4e2d\U0001f600", "key-\u03b1\u03b2\u0000"
+        queue, _ = scenario_queue()
+        publish(queue, pocket_key, record_key, 1, every_byte)
+        answer = batch(queue, "c1", 1)
+        self.assertEqual(answer.pocket, pocket_key)
+        self.assertEqual(answer.records[0].key, record_key)
+        self.assertEqual(answer.records[0].payload, every_byte)
+        held = record(queue.snapshot(), pocket_key, record_key)
+        self.assertEqual((held.key, held.held_payload, held.payload), (record_key, every_byte, every_byte))
+
+    # impl-choice (spec note N16): position 0 rests on the double's first
+    # position, 0 (N04); that the pocket's position does not move is the
+    # specification's.
+    # scenario: S022
+    def test_publishing_into_a_queued_pocket_does_not_move_it_in_the_pocket_order(self) -> None:
+        queue, _ = scenario_queue()
+        publish(queue, "first", "a", 1, b"a")
+        publish(queue, "second", "a", 1, b"a")
+        publish(queue, "first", "b", 1, b"b")
+        publish(queue, "first", "a", 2, b"a2")
+        publish(queue, "first", "a", 0, b"a0")
+        state = queue.snapshot()
+        (first,) = state.pockets_keyed("first")
+        self.assertEqual((first.position, first.status), (0, PocketStatus.QUEUED))
+        self.assertEqual(pocket_order(state), ["first", "second"])
+        self.assertEqual(batch(queue, "c1", 0).pocket, "first")
 
 
 class PublishGuardsTest(unittest.TestCase):

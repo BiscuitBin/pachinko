@@ -46,3 +46,40 @@ class EqualRankRefused(Refusal):
         self.pocket_key = pocket_key
         self.record_key = record_key
         self.rank = rank
+
+
+class PullRefused(Refusal):
+    """A pull no Pull rule answers (spec note N14).
+
+    The three Pull rules leave no gap in any state that holds the invariants,
+    so `Queue` never raises this; it is the Pull table's answer when no guard
+    holds, as shared rule 4 asks of every action's table.
+    """
+
+    def __init__(self, consumer_id: str) -> None:
+        super().__init__(f"no Pull rule answers a pull by {consumer_id!r}")
+        self.consumer_id = consumer_id
+
+
+class UnknownConsumer(Refusal):
+    """A pull or renew named a consumer id that never joined (spec note N18)."""
+
+    def __init__(self, consumer_id: str) -> None:
+        super().__init__(f"no consumer with id {consumer_id!r} has joined")
+        self.consumer_id = consumer_id
+
+
+class LeaseFenced(Refusal):
+    """An action on a lease that is not active or not the consumer's.
+
+    `action` names the trigger, such as "Renew". The specification's lease
+    actions each require `lease.status = active` and
+    `lease.consumer = consumer`; with either false, or with an id that names
+    no lease, no rule answers, and the action is refused.
+    """
+
+    def __init__(self, action: str, consumer_id: str, lease_id: str) -> None:
+        super().__init__(f"{action} by {consumer_id!r}: lease {lease_id!r} is not active and theirs")
+        self.action = action
+        self.consumer_id = consumer_id
+        self.lease_id = lease_id

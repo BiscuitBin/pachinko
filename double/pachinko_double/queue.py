@@ -26,18 +26,19 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import identity, publish
+from . import identity, publish, pull, settle
 from .config import Config
 from .effects import Clock, LeaseIds
 from .inspection import ConfigValues, Snapshot, View
 from .invariants import InvariantsBroken, check
 from .model import Consumer, DeadLetter, Lease, Pocket, Publisher, Record, SupersededRecord, Timestamp
-from .refusals import UnknownPublisher
+from .pull import Batch, NoPocketAvailable
+from .refusals import UnknownConsumer, UnknownPublisher
 from .rules import Defect, Table, dispatch
 
-# The tables of the events a rule emits, by event type. Handed's table follows
-# in PD02, Freed's in PD03 and LeaseLapsed's in PD05.
-EVENT_TABLES: Mapping[type, Table] = {publish.PocketTouched: publish.POCKET_TOUCHED}
+# The tables of the events a rule emits, by event type. Freed's table follows
+# in PD03 and LeaseLapsed's in PD05.
+EVENT_TABLES: Mapping[type, Table] = {publish.PocketTouched: publish.POCKET_TOUCHED, pull.Handed: pull.HANDED}
 
 type Entity = Publisher | Consumer | Pocket | Record | Lease | SupersededRecord | DeadLetter
 
@@ -193,6 +194,26 @@ class Queue:
             raise UnknownPublisher(publisher_id)
         trigger = publish.Publish(publisher_id, pocket_key, record_key, rank, payload)
         self._apply(publish.PUBLISH, trigger)
+
+    # Pull ----------------------------------------------------------------
+
+    def pull(self, consumer_id: str, limit: int) -> Batch | NoPocketAvailable:
+        """`Pull(consumer, limit)`: the pull's answer, a `Batch` or `NoPocketAvailable`."""
+        self._require_consumer(consumer_id)
+        return self._apply(pull.PULL, pull.Pull(consumer_id, limit))
+
+    # Renew and release ---------------------------------------------------
+
+    def renew(self, consumer_id: str, lease_id: str) -> None:
+        """`Renew(consumer, lease)`, naming the lease by its id (N05); it answers nothing."""
+        self._require_consumer(consumer_id)
+        self._apply(settle.RENEW, settle.Renew(consumer_id, lease_id))
+
+    def _require_consumer(self, consumer_id: str) -> None:
+        # The trigger takes a Consumer, so an id that never joined cannot make
+        # one: refused before the outcome starts (spec note N18, impl-choice).
+        if consumer_id not in self._state.consumers:
+            raise UnknownConsumer(consumer_id)
 
     # The apply step ------------------------------------------------------
 
