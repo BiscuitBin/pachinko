@@ -71,13 +71,13 @@ ENV_SUITE = "PACHINKO_DOUBLE_SUITE"
 PENDING_SCENARIOS = frozenset(
     {
         "S002", "S006", "S007",
-        "S021", "S023", "S024", "S025", "S026",
-        "S034", "S035", "S037", "S040",
-        "S041", "S042", "S043", "S044", "S045", "S046", "S047", "S048", "S049",
-        "S051", "S052", "S053", "S054", "S055", "S056", "S057", "S058", "S059", "S060",
-        "S061", "S062", "S063", "S064", "S065", "S066", "S067", "S068", "S069", "S070",
+        "S021", "S024", "S025", "S026",
+        "S034", "S037",
+        "S043", "S044", "S045", "S046", "S048",
+        "S054", "S056", "S058", "S059", "S060",
+        "S061", "S062", "S063", "S064", "S065", "S066", "S067", "S069",
         "S071", "S072", "S073", "S074", "S075", "S076", "S077", "S078", "S079", "S080",
-        "S081", "S082", "S083", "S084", "S085", "S086", "S087", "S088", "S089", "S090",
+        "S081", "S082", "S083", "S087", "S088", "S089",
         "S091", "S092", "S093",
     }
 )
@@ -85,23 +85,13 @@ PENDING_SCENARIOS = frozenset(
 PENDING_RULES = frozenset(
     {
         "DeferBehindHeldVersion",
-        "ReviveIdlePocket",
         "ReviveParkedPocket",
-        "AckMarksRecord",
-        "AckRepeats",
-        "NackMarksRecord",
-        "NackRepeats",
-        "ReleaseRequeuesPocket",
-        "ReleaseIdlesEmptyPocket",
         "LeaseLapses",
         "LeaseExpiryParksPocket",
         "LeaseExpiryKeepsPocketAtFront",
         "LeaseExpiryIdlesEmptyPocket",
-        "RequeueUnsettledRecord",
         "SupersedeUnsettledHeldVersion",
-        "ConsumeAckedRecord",
         "ConsumeAckedVersionQueueDeferred",
-        "DeadLetterNackedRecord",
         "DeadLetterNackedVersionQueueDeferred",
         "SupersededRecordDecays",
         "DeadLetterDecays",

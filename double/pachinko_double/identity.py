@@ -61,7 +61,7 @@ PUBLISHER_JOINS = SPECIFICATION.register(
         "PublisherJoins",
         (Rule("PublisherJoins", _publisher_joins_guard, _publisher_joins),),
         NoGuardHolds.REFUSAL,
-        lambda trigger: PublisherAlreadyJoined(f"a publisher with id {trigger.publisher_id!r} has joined"),
+        lambda view, trigger: PublisherAlreadyJoined(f"a publisher with id {trigger.publisher_id!r} has joined"),
     )
 )
 
@@ -70,6 +70,6 @@ CONSUMER_JOINS = SPECIFICATION.register(
         "ConsumerJoins",
         (Rule("ConsumerJoins", _consumer_joins_guard, _consumer_joins),),
         NoGuardHolds.REFUSAL,
-        lambda trigger: ConsumerAlreadyJoined(f"a consumer with id {trigger.consumer_id!r} has joined"),
+        lambda view, trigger: ConsumerAlreadyJoined(f"a consumer with id {trigger.consumer_id!r} has joined"),
     )
 )

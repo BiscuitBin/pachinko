@@ -288,7 +288,7 @@ class PocketOrderTest(unittest.TestCase):
 
 
 class RecordingOutcome:
-    """Stands in for the apply step's `Outcome` when a test runs one Pull row
+    """Stands in for the apply step's `Outcome` when a test runs one row
     on a hand-built snapshot: it records what the row writes and answers."""
 
     def __init__(self, config: Config = Config()) -> None:
@@ -296,16 +296,24 @@ class RecordingOutcome:
         self.writes: list[tuple[str, object]] = []
         self.answers: list[object] = []
         self.drawn = 0
+        self.allotted = 0
 
     def draw_lease_id(self) -> str:
         self.drawn += 1
         return f"scratch-{self.drawn}"
+
+    def allot_position(self) -> int:
+        self.allotted += 1
+        return 1_000 + self.allotted
 
     def create(self, entity: object) -> None:
         self.writes.append(("create", entity))
 
     def replace(self, entity: object) -> None:
         self.writes.append(("replace", entity))
+
+    def remove(self, entity: object) -> None:
+        self.writes.append(("remove", entity))
 
     def emit(self, event: object) -> None:
         self.writes.append(("emit", event))

@@ -3,7 +3,10 @@
 Every method hands its trigger to the one apply step, `Queue._apply`, which
 makes the whole outcome of that trigger, in this order:
 
-- It reads the clock once; that is `now` for the whole outcome.
+- It reads the clock at most once, the first time a guard, a refusal or an
+  effect reads `now`; that one value is `now` for the whole outcome. An
+  outcome whose rules never read `now`, such as a refused mark, reads no
+  clock at all (S085).
 - It dispatches the trigger through its table (rules.py), on a working copy
   of the state.
 - It dispatches each event an effect emitted, first in first out, through
@@ -26,8 +29,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import identity, publish, pull, settle
+from . import consuming, identity, lease_end, publish, pull, settle
 from .config import Config
+from .consuming import LeaseView
 from .effects import Clock, LeaseIds
 from .inspection import ConfigValues, Snapshot, View
 from .invariants import InvariantsBroken, check
@@ -36,9 +40,13 @@ from .pull import Batch, NoPocketAvailable
 from .refusals import UnknownConsumer, UnknownPublisher
 from .rules import Defect, Table, dispatch
 
-# The tables of the events a rule emits, by event type. Freed's table follows
-# in PD03 and LeaseLapsed's in PD05.
-EVENT_TABLES: Mapping[type, Table] = {publish.PocketTouched: publish.POCKET_TOUCHED, pull.Handed: pull.HANDED}
+# The tables of the events a rule emits, by event type. LeaseLapsed's table
+# follows in PD05.
+EVENT_TABLES: Mapping[type, Table] = {
+    publish.PocketTouched: publish.POCKET_TOUCHED,
+    pull.Handed: pull.HANDED,
+    lease_end.Freed: lease_end.FREED,
+}
 
 type Entity = Publisher | Consumer | Pocket | Record | Lease | SupersededRecord | DeadLetter
 
@@ -93,6 +101,19 @@ class _State:
         )
 
 
+class _Now:
+    """`now` for one outcome: the clock, read at most once, when first asked."""
+
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._value: Timestamp | None = None
+
+    def __call__(self) -> Timestamp:
+        if self._value is None:
+            self._value = self._clock.now()
+        return self._value
+
+
 class Outcome:
     """What an effect writes through: the working state of one outcome.
 
@@ -100,14 +121,19 @@ class Outcome:
     new value under the same key.
     """
 
-    def __init__(self, state: _State, now: Timestamp, config: Config, lease_ids: LeaseIds) -> None:
+    def __init__(self, state: _State, now: Callable[[], Timestamp], config: Config, lease_ids: LeaseIds) -> None:
         self._state = state
         self._lease_ids = lease_ids
-        self.now = now
+        self._now = now
         self.config = config
         self.events: deque[Any] = deque()
         self._answer: Any = None
         self._answered = False
+
+    @property
+    def now(self) -> Timestamp:
+        """The outcome's one timestamp; reading it may read the clock, once."""
+        return self._now()
 
     def answer(self, value: Any) -> None:
         """What the trigger hands back to its caller, such as Pull's `Batch`.
@@ -202,12 +228,43 @@ class Queue:
         self._require_consumer(consumer_id)
         return self._apply(pull.PULL, pull.Pull(consumer_id, limit))
 
+    # Ack and nack --------------------------------------------------------
+
+    def ack(self, consumer_id: str, lease_id: str, record_key: str) -> None:
+        """`Ack(consumer, lease, record_key)`, naming the lease by its id; it answers nothing."""
+        self._require_consumer(consumer_id)
+        self._apply(settle.ACK, settle.Ack(consumer_id, lease_id, record_key))
+
+    def nack(self, consumer_id: str, lease_id: str, record_key: str) -> None:
+        """`Nack(consumer, lease, record_key)`, naming the lease by its id; it answers nothing."""
+        self._require_consumer(consumer_id)
+        self._apply(settle.NACK, settle.Nack(consumer_id, lease_id, record_key))
+
     # Renew and release ---------------------------------------------------
 
     def renew(self, consumer_id: str, lease_id: str) -> None:
         """`Renew(consumer, lease)`, naming the lease by its id (N05); it answers nothing."""
         self._require_consumer(consumer_id)
         self._apply(settle.RENEW, settle.Renew(consumer_id, lease_id))
+
+    def release(self, consumer_id: str, lease_id: str) -> None:
+        """`Release(consumer, lease)`, naming the lease by its id; it answers nothing.
+
+        The release and every `Freed` it sends are one outcome, checked once.
+        """
+        self._require_consumer(consumer_id)
+        self._apply(settle.RELEASE, settle.Release(consumer_id, lease_id))
+
+    # The Consuming surface's exposure ------------------------------------
+
+    def lease_view(self, consumer_id: str) -> LeaseView | None:
+        """The consumer's active lease and its held records, or None (consuming.py).
+
+        A read, not a trigger: it reads the committed snapshot, no clock and
+        no rule. An id that never joined is refused, as for the actions (N22).
+        """
+        self._require_consumer(consumer_id)
+        return consuming.lease_view(self.snapshot(), consumer_id)
 
     def _require_consumer(self, consumer_id: str) -> None:
         # The trigger takes a Consumer, so an id that never joined cannot make
@@ -227,7 +284,7 @@ class Queue:
         step with scratch tables.
         """
         routes = EVENT_TABLES if event_tables is None else event_tables
-        outcome = Outcome(self._state.copy(), self._clock.now(), self._config, self._lease_ids)
+        outcome = Outcome(self._state.copy(), _Now(self._clock), self._config, self._lease_ids)
         self._dispatch(table, trigger, outcome)
         while outcome.events:
             event = outcome.events.popleft()
@@ -242,5 +299,5 @@ class Queue:
         return outcome._answer
 
     def _dispatch(self, table: Table, trigger: Any, outcome: Outcome) -> None:
-        view = View(outcome._state.snapshot(self._config_values), outcome.now)
+        view = View(outcome._state.snapshot(self._config_values), outcome._now)
         dispatch(table, view, outcome, trigger)

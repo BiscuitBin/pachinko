@@ -239,7 +239,7 @@ PULL = SPECIFICATION.register(
             Rule("PullFindsNoPocket", _pull_finds_no_pocket_guard, _pull_finds_no_pocket),
         ),
         NoGuardHolds.REFUSAL,
-        lambda trigger: PullRefused(trigger.consumer),
+        lambda view, trigger: PullRefused(trigger.consumer),
     )
 )
 

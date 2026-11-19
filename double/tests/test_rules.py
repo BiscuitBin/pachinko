@@ -43,7 +43,8 @@ class Log:
 
 
 def table(log: Log, holding: dict[str, bool], answer: NoGuardHolds) -> Table:
-    refusal = (lambda trigger: ScratchRefused(f"scratch refused {trigger}")) if answer is NoGuardHolds.REFUSAL else None
+    refuses = answer is NoGuardHolds.REFUSAL
+    refusal = (lambda view, trigger: ScratchRefused(f"scratch refused {trigger}")) if refuses else None
     return Table(
         "Poke",
         tuple(log.row(name, holds) for name, holds in holding.items()),
@@ -106,7 +107,7 @@ class TableTest(unittest.TestCase):
     def test_only_a_refusing_table_takes_a_refusal(self) -> None:
         for answer in (NoGuardHolds.NOTHING, NoGuardHolds.DEFECT):
             with self.subTest(answer=answer), self.assertRaises(ValueError):
-                Table("Poke", (), answer, lambda trigger: ScratchRefused())
+                Table("Poke", (), answer, lambda view, trigger: ScratchRefused())
 
     def test_two_rows_of_one_table_cannot_share_a_name(self) -> None:
         log = Log()

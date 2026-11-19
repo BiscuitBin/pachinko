@@ -62,7 +62,7 @@ class PullRefused(Refusal):
 
 
 class UnknownConsumer(Refusal):
-    """A pull or renew named a consumer id that never joined (spec note N18)."""
+    """A consumer action or read named a consumer id that never joined (N18, N22)."""
 
     def __init__(self, consumer_id: str) -> None:
         super().__init__(f"no consumer with id {consumer_id!r} has joined")
@@ -81,5 +81,52 @@ class LeaseFenced(Refusal):
     def __init__(self, action: str, consumer_id: str, lease_id: str) -> None:
         super().__init__(f"{action} by {consumer_id!r}: lease {lease_id!r} is not active and theirs")
         self.action = action
+        self.consumer_id = consumer_id
+        self.lease_id = lease_id
+
+
+class RecordNotHeld(Refusal):
+    """A mark naming a key its lease's pocket does not hold (spec note N21).
+
+    The lease is active and the consumer's, but `Record{pocket: lease.pocket,
+    key: record_key}` does not exist or is queued, so no Ack or Nack rule
+    answers. A key held in another pocket meets the same refusal.
+    """
+
+    def __init__(self, action: str, consumer_id: str, lease_id: str, record_key: str) -> None:
+        super().__init__(f"{action} by {consumer_id!r} under lease {lease_id!r}: {record_key!r} is not held")
+        self.action = action
+        self.consumer_id = consumer_id
+        self.lease_id = lease_id
+        self.record_key = record_key
+
+
+class MarkConflict(Refusal):
+    """An ack of a nacked record or a nack of an acked one (spec note N21).
+
+    The first mark stands, and no rule covers the other of the two, so the
+    action is refused. `mark` is the mark that stands.
+    """
+
+    def __init__(self, action: str, consumer_id: str, lease_id: str, record_key: str, mark: str) -> None:
+        super().__init__(f"{action} by {consumer_id!r} under lease {lease_id!r}: {record_key!r} is already {mark}")
+        self.action = action
+        self.consumer_id = consumer_id
+        self.lease_id = lease_id
+        self.record_key = record_key
+        self.mark = mark
+
+
+class ReleaseRefused(Refusal):
+    """A release of an active lease of the consumer's that no Release rule answers (N26).
+
+    Both release rules also require the lease's pocket to be leased, which
+    `UnleasedHasNoActiveLease` makes true of every active lease, so `Queue`
+    never raises this; it is the Release table's answer once the lease is
+    not fenced, as `PullRefused` is the Pull table's.
+    """
+
+    def __init__(self, consumer_id: str, lease_id: str) -> None:
+        super().__init__(f"no Release rule answers a release of {lease_id!r} by {consumer_id!r}")
         self.consumer_id = consumer_id
         self.lease_id = lease_id

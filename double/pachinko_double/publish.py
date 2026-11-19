@@ -5,10 +5,11 @@ covers a rank equal to the stored rank, so that publish reaches the table's
 answer when no guard holds, and is refused with `EqualRankRefused` (spec note
 N11). The stored rank is `record.rank` whatever the record's state.
 
-PD03 adds `ReviveIdlePocket` and PD05 `ReviveParkedPocket` to the
-PocketTouched table; until then a touched pocket is left as it is, which is
-the table's answer when no guard holds. PD04 adds `DeferBehindHeldVersion` to
-the Publish table.
+`ReviveIdlePocket` answers `PocketTouched` on an idle pocket, queueing it at
+a fresh position at the back; PD05 adds `ReviveParkedPocket` beside it. A
+touched pocket that is queued or leased is left as it is, which is the
+table's answer when no guard holds. PD04 adds `DeferBehindHeldVersion` to the
+Publish table.
 """
 
 from dataclasses import dataclass, replace
@@ -189,6 +190,29 @@ def _drop_stale_publish(view: View, outcome: "Outcome", trigger: Publish) -> Non
     )
 
 
+# rule ReviveIdlePocket ----------------------------------------------------
+
+
+def _revive_idle_pocket_guard(view: View, event: PocketTouched) -> bool:
+    # let pocket = Pocket{key: pocket_key}
+    # requires: exists pocket
+    # requires: pocket.status = idle
+    pocket = _pocket(view, event.pocket_key)
+    return pocket is not None and pocket.status is PocketStatus.IDLE
+
+
+def _revive_idle_pocket(view: View, outcome: "Outcome", event: PocketTouched) -> None:
+    pocket = _pocket(view, event.pocket_key)
+    assert pocket is not None
+    # let position = queue.next_position
+    # ensures: queue.next_position = position + 1
+    position = outcome.allot_position()
+    # ensures: pocket.status = queued
+    # ensures: pocket.position = position
+    # ensures: pocket.consecutive_expiries = 0
+    outcome.replace(replace(pocket, status=PocketStatus.QUEUED, position=position, consecutive_expiries=0))
+
+
 PUBLISH = SPECIFICATION.register(
     Table(
         "Publish",
@@ -199,8 +223,14 @@ PUBLISH = SPECIFICATION.register(
             Rule("DropStalePublish", _drop_stale_publish_guard, _drop_stale_publish),
         ),
         NoGuardHolds.REFUSAL,
-        lambda trigger: EqualRankRefused(trigger.pocket_key, trigger.record_key, trigger.rank),
+        lambda view, trigger: EqualRankRefused(trigger.pocket_key, trigger.record_key, trigger.rank),
     )
 )
 
-POCKET_TOUCHED = SPECIFICATION.register(Table("PocketTouched", (), NoGuardHolds.NOTHING))
+POCKET_TOUCHED = SPECIFICATION.register(
+    Table(
+        "PocketTouched",
+        (Rule("ReviveIdlePocket", _revive_idle_pocket_guard, _revive_idle_pocket),),
+        NoGuardHolds.NOTHING,
+    )
+)

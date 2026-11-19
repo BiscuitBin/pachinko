@@ -1,9 +1,10 @@
 """`Queue` and its one apply step.
 
-No specification row is registered yet, let alone one that chains an event,
-so the apply-step tests drive `Queue._apply` directly with scratch tables and
-scratch event routes. None of
-these tables is registered, so none reaches the coverage test's record.
+The apply-step tests drive `Queue._apply` directly with scratch tables and
+scratch event routes, so each property is shown on the smallest chain that
+has it; the specification's own chains, a pull and its `Handed`, a release
+and its `Freed`, are tested through `Queue` in their sections' modules. None
+of these tables is registered, so none reaches the coverage test's record.
 """
 
 import unittest
@@ -69,7 +70,7 @@ SETTLE = Table(
     NoGuardHolds.DEFECT,
 )
 LEAVE = Table("Settle", (), NoGuardHolds.NOTHING)
-REFUSE = Table("Open", (), NoGuardHolds.REFUSAL, lambda trigger: ScratchRefused())
+REFUSE = Table("Open", (), NoGuardHolds.REFUSAL, lambda view, trigger: ScratchRefused())
 
 
 class NewQueueTest(unittest.TestCase):
@@ -130,9 +131,38 @@ class ApplyStepTest(unittest.TestCase):
             queue._apply(strays, Open("p", PocketStatus.QUEUED), event_tables={})
 
     def test_it_reads_the_clock_once_per_outcome(self) -> None:
+        # The trigger's guard and effect, and the event's guard and effect, all
+        # read now; the outcome reads the clock once, and all four see that value.
+        seen: list[int] = []
+
+        def sees(view: View) -> bool:
+            seen.append(view.now)
+            return True
+
+        def open_seeing(view: View, outcome: Outcome, trigger: Open) -> None:
+            seen.append(outcome.now)
+            open_pocket(view, outcome, trigger)
+
+        def settle_seeing(view: View, outcome: Outcome, event: Settle) -> None:
+            seen.append(view.now)
+            settle(view, outcome, event)
+
+        opens = Table("Open", (Rule("OpensSeeing", lambda view, t: sees(view), open_seeing),), NoGuardHolds.NOTHING)
+        settles = Table(
+            "Settle", (Rule("SettlesSeeing", lambda view, e: sees(view), settle_seeing),), NoGuardHolds.DEFECT
+        )
+        queue, clock, _ = new_queue(now=40)
+        queue._apply(opens, Open("p", PocketStatus.IDLE), event_tables={Settle: settles})
+        self.assertEqual((clock.reads, seen), (1, [40, 40, 40, 40]))
+
+    def test_an_outcome_whose_rules_never_read_now_reads_no_clock(self) -> None:
+        # So does a refusal whose table never reads now, as a mark conflict's
+        # does (S085).
         queue, clock, _ = new_queue()
         queue._apply(OPEN, Open("p", PocketStatus.IDLE), event_tables={Settle: SETTLE})
-        self.assertEqual(clock.reads, 1)
+        with self.assertRaises(ScratchRefused):
+            queue._apply(REFUSE, Open("q", PocketStatus.QUEUED))
+        self.assertEqual(clock.reads, 0)
 
     def test_positions_come_from_next_position_in_allotment_order(self) -> None:
         queue, _, _ = new_queue()

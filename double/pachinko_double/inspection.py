@@ -13,7 +13,7 @@ snapshots of the same state are equal, so a test proves that a refusal changed
 nothing by comparing the snapshot before and after.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, fields
 from types import MappingProxyType
 
@@ -139,7 +139,19 @@ class Snapshot:
 
 @dataclass(frozen=True)
 class View:
-    """What a guard and an effect read: the state before the rule, and `now`."""
+    """What a guard and an effect read: the state before the rule, and `now`.
+
+    `now` is the outcome's one timestamp. The apply step gives every view of
+    one outcome the same reader, which reads the clock the first time a rule
+    reads `now` and never again in that outcome, so an outcome whose rules
+    never read it, such as a refused mark, reads no clock (S085). A test that
+    builds a view by hand gives it a plain timestamp.
+    """
 
     state: Snapshot
-    now: Timestamp
+    clock_read: Timestamp | Callable[[], Timestamp]
+
+    @property
+    def now(self) -> Timestamp:
+        read = self.clock_read
+        return read() if callable(read) else read

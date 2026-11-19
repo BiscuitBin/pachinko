@@ -5,6 +5,9 @@ it changes. Most of the states the invariant controls need are not reachable
 through `Queue` yet, which is why they are built by hand.
 """
 
+from collections.abc import Callable
+from unittest import TestCase
+
 from pachinko_double.config import Config
 from pachinko_double.effects import FakeClock, SequentialLeaseIds
 from pachinko_double.inspection import ConfigValues, Snapshot
@@ -197,3 +200,27 @@ def batch(queue: Queue, consumer: str, limit: int) -> Batch:
 def keys(answer: Batch) -> list[str]:
     """The batch's record keys, in the batch's order."""
     return [record.key for record in answer.records]
+
+
+def refused[R: Exception](test: TestCase, queue: Queue, refusal: type[R], action: Callable[[], object]) -> R:
+    """Run `action`, which must raise `refusal`; the complete snapshot is unchanged.
+
+    It returns the refusal, so a test can check what it names.
+    """
+    before = queue.snapshot()
+    with test.assertRaises(refusal) as raised:
+        action()
+    test.assertEqual(queue.snapshot(), before, "a refused action changed the queue")
+    return raised.exception
+
+
+def two_pockets() -> tuple[Queue, FakeClock]:
+    """Pocket a with a1 and a2, then pocket b with b1, in the scenarios' setting.
+
+    a stands at 0, a1 at 1, a2 at 2, b at 3 and b1 at 4; the next position is 5.
+    """
+    queue, clock = scenario_queue()
+    queue.publish(PUBLISHER, "a", "a1", 1, b"a1")
+    queue.publish(PUBLISHER, "a", "a2", 1, b"a2")
+    queue.publish(PUBLISHER, "b", "b1", 1, b"b1")
+    return queue, clock

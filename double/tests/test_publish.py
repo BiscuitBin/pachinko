@@ -14,7 +14,7 @@ from pachinko_double.publish import PUBLISH, Publish
 from pachinko_double.queue import Queue
 from pachinko_double.refusals import EqualRankRefused, UnknownPublisher
 
-from .fixtures import PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, scenario_queue
+from .fixtures import PUBLISHER, SUPERSEDED_TTL, T0, batch, keys, scenario_queue, two_pockets
 
 
 def publish(queue: Queue, pocket_key: str, record_key: str, rank: int, payload: bytes) -> None:
@@ -242,6 +242,32 @@ class PublishThenPullTest(unittest.TestCase):
         self.assertEqual((first.position, first.status), (0, PocketStatus.QUEUED))
         self.assertEqual(pocket_order(state), ["first", "second"])
         self.assertEqual(batch(queue, "c1", 0).pocket, "first")
+
+
+class RevivalTest(unittest.TestCase):
+    # scenario: S023
+    def test_a_publish_revives_an_idle_pocket_at_the_back(self) -> None:
+        queue, _ = two_pockets()
+        lease_id = batch(queue, "c1", 10).lease
+        queue.ack("c1", lease_id, "a1")
+        queue.ack("c1", lease_id, "a2")
+        queue.release("c1", lease_id)
+        (a,) = queue.snapshot().pockets_keyed("a")
+        self.assertEqual(a.status, PocketStatus.IDLE)
+        publish(queue, "c", "c1", 1, b"c")
+        next_position = queue.snapshot().next_position
+        publish(queue, "a", "a3", 1, b"a3")
+        state = queue.snapshot()
+        (a,) = state.pockets_keyed("a")
+        self.assertEqual(a.status, PocketStatus.QUEUED)
+        self.assertEqual(record(state, "a", "a3").position, next_position, "PublishNewKey takes its position first")
+        self.assertEqual(a.position, next_position + 1, "then the revive: the back")
+        self.assertEqual(a.consecutive_expiries, 0)
+        self.assertEqual(state.next_position, next_position + 2)
+        self.assertEqual(pocket_order(state), ["b", "c", "a"])
+        publish(queue, "a", "a4", 1, b"a4")
+        (a,) = queue.snapshot().pockets_keyed("a")
+        self.assertEqual(a.position, next_position + 1, "a queued pocket stays put")
 
 
 class PublishGuardsTest(unittest.TestCase):

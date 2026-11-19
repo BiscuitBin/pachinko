@@ -25,7 +25,7 @@ from .refusals import Refusal
 
 type Guard = Callable[[Any, Any], bool]
 type Effect = Callable[[Any, Any, Any], None]
-type RefusalFor = Callable[[Any], Refusal]
+type RefusalFor = Callable[[Any, Any], Refusal]
 
 
 class NoGuardHolds(Enum):
@@ -49,8 +49,10 @@ class Rule:
 class Table:
     """The rules that share one trigger, and the answer when no guard holds.
 
-    `refusal` builds the refusal from the trigger, and a table takes one only
-    when its answer is `NoGuardHolds.REFUSAL`.
+    `refusal` builds the refusal from the view and the trigger, and a table
+    takes one only when its answer is `NoGuardHolds.REFUSAL`. Like a guard, it
+    is pure: it reads the view to name which `requires` failed, as the Ack
+    table does to tell a fenced lease from a mark conflict.
     """
 
     trigger: str
@@ -133,7 +135,7 @@ def dispatch(table: Table, view: Any, outcome: Any, trigger: Any, *, registry: R
         match table.when_no_guard_holds:
             case NoGuardHolds.REFUSAL:
                 assert table.refusal is not None
-                raise table.refusal(trigger)
+                raise table.refusal(view, trigger)
             case NoGuardHolds.DEFECT:
                 raise Defect(f"no rule of the {table.trigger} table answers {trigger!r}")
             case NoGuardHolds.NOTHING:

@@ -4,8 +4,9 @@
 read its state, and `check(snapshot)` names every invariant a state breaks.
 """
 
-from . import identity, publish, pull, rules, settle
+from . import consuming, identity, lease_end, publish, pull, rules, settle
 from .config import Config
+from .consuming import HeldRecordView, LeaseView
 from .effects import Clock, FakeClock, LeaseIds, SequentialLeaseIds
 from .inspection import ConfigValues, Snapshot
 from .invariants import InvariantsBroken, Violation, check
@@ -34,9 +35,12 @@ from .refusals import (
     ConsumerAlreadyJoined,
     EqualRankRefused,
     LeaseFenced,
+    MarkConflict,
     PublisherAlreadyJoined,
     PullRefused,
+    RecordNotHeld,
     Refusal,
+    ReleaseRefused,
     UnknownConsumer,
     UnknownPublisher,
 )
@@ -59,22 +63,27 @@ __all__ = [
     "Defect",
     "FakeClock",
     "GuardOverlap",
+    "HeldRecordView",
     "InvariantsBroken",
     "Lease",
     "LeaseFenced",
     "LeaseIds",
+    "LeaseView",
     "LeaseStatus",
     "Mark",
+    "MarkConflict",
     "NoPocketAvailable",
     "Pocket",
     "PocketStatus",
     "Publisher",
     "PublisherAlreadyJoined",
     "PullRefused",
+    "RecordNotHeld",
     "Queue",
     "Record",
     "RecordStatus",
     "Refusal",
+    "ReleaseRefused",
     "SequentialLeaseIds",
     "ShedReason",
     "Snapshot",
@@ -83,7 +92,9 @@ __all__ = [
     "UnknownPublisher",
     "Violation",
     "check",
+    "consuming",
     "identity",
+    "lease_end",
     "publish",
     "pull",
     "rules",

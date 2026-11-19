@@ -393,3 +393,169 @@ it concerns, what the specification says, what the double does, and the question
     lease and another consumer's lease, are PD03's (S052, S070).
 - **Question:** none on the behaviour. The refusal's name is the double's, and whether
   an unknown lease is a distinct refusal is left to PD03.
+
+## N21: the refusals of a mark are the double's: `LeaseFenced`, `RecordNotHeld`, `MarkConflict`
+
+- **Ticket:** PD03.
+- **Concerns:** `AckMarksRecord`, `AckRepeats`, `NackMarksRecord` and `NackRepeats`; the
+  Ack and nack comment; the `ActionsNameTheirLease` and `MarksStandHoweverLeaseEnds`
+  guarantees; scenarios S042, S049, S068, S070 and S085.
+- **The specification says:**
+  - the four mark rules require the lease to be active and the consumer's, then
+    `exists Record{pocket: lease.pocket, key: record_key}`, held, with the mark the rule
+    names;
+  - "no rule covers an ack of a nacked record or a nack of an acked one, so that action is
+    rejected";
+  - "an action meant for a lease that has ended is rejected".
+  - It names no rejection, and says nothing of which applies when more than one
+    `requires` fails.
+- **The double does:**
+  - Each action's table refuses when no row holds, and its refusal reads the view to name
+    the first `requires` that fails. So a refusal builder now takes the view as well as the
+    trigger (`rules.Table.refusal`); like a guard, it reads and writes nothing else.
+  - The lease is checked first. An action on a lease that has ended, that is another
+    consumer's, or whose id names no lease, is `LeaseFenced`, whatever key it names. This
+    reuses Renew's refusal (N20) for all four lease actions. The Rust test splits it into
+    `LeaseNotActive` and `LeaseNotYours`; the double does not, because the specification
+    draws no line between the two `requires`. The tests check the refusal's action,
+    consumer and lease.
+  - With the lease good, a key the lease's pocket does not hold is `RecordNotHeld`. That
+    covers an absent key, a queued record of the same pocket, and a key held in another
+    pocket, since the lookup is `Record{pocket: lease.pocket, ...}`.
+  - With the record held, its mark is the other one, and the action is `MarkConflict`,
+    carrying the mark that stands.
+  - Every one of these refusals changes nothing, and each test compares the complete
+    snapshot before and after.
+- **Question:** is a refusal's kind the specification's to name at all? If so, should it
+  name these three, and the order in which they are checked (S070's `ack` by `c3` of a
+  key the lease does not hold is fenced, not "not held")?
+
+## N22: an ack, nack, release or lease read by a consumer that never joined is refused (`impl-choice`)
+
+- **Ticket:** PD03.
+- **Concerns:** the `Ack`, `Nack` and `Release` triggers, the `Consuming` surface's
+  `facing consumer: Consumer` and its exposure, N18, and scenarios S042 and S049.
+- **The specification says:** each trigger takes a `Consumer` entity, which only
+  `ConsumerJoins` creates. It says nothing of an id that never joined.
+- **The double does:** as N18 does for a pull and a renew. `Queue.ack`, `Queue.nack`,
+  `Queue.release` and `Queue.lease_view` raise `UnknownConsumer` before any outcome
+  starts. No clock is read, no table is consulted, and the snapshot is unchanged. S042 and
+  S049 port the Rust's `"nobody"` case this way, marked `impl-choice`.
+- **Question:** as N18.
+
+## N23: S090's lease view lists the held records smallest position first (`impl-choice`)
+
+- **Ticket:** PD03.
+- **Concerns:** the `Consuming` surface's `exposes` block and scenario S090.
+- **The specification says:** for the consumer's active lease, the surface exposes
+  `lease.pocket.key`, `lease.expires_at`, and for each record of
+  `lease.pocket.held_records` its key, `held_rank`, `held_payload` and `mark`. A set has
+  no order. The block exposes no lease identity.
+- **The double does:**
+  - `Queue.lease_view(consumer_id)` returns a `LeaseView` (the pocket's key,
+    `expires_at`, and one `HeldRecordView` per held record), or None when the consumer has
+    no active lease. It reads the committed snapshot only, and no clock.
+  - The records are listed smallest position first, which is the order a pull handed
+    them out in. S090 publishes `z`, `a` and `m` in that order and pins that order, not
+    key order. That is more than the surface states, so the row is `impl-choice`.
+  - The view carries no lease id, as the surface exposes none. A consumer names its lease
+    by the id its batch carried (N05, N13).
+- **Question:** should the surface state an order for the held records? And should it
+  expose the lease's identity, which every action it provides takes?
+
+## N24: an ended lease stays in the state, and a release and a mark answer nothing
+
+- **Ticket:** PD03.
+- **Concerns:** the `Lease` entity's `transitions status { ... terminal: released, expired
+  }`, `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket`, the four mark rules, and
+  scenarios S053, S055 and S057.
+- **The specification says:**
+  - a lease ends `released` or `expired`, both terminal, with `ended_at`; no rule removes
+    a lease;
+  - the release and mark rules ensure no answer to the caller.
+- **The double does:**
+  - An ended lease stays in the snapshot with its status and `ended_at`. Fencing compares
+    lease ids against it (S052, S068, S070).
+  - S053's Rust test asserts "an ended lease leaves the registry": its snapshot's lease
+    list is empty and every consumer has no lease. That is the Rust's inspection shape, not
+    the specification's. The double ports the facts the specification states instead: the
+    lease is `released` with `ended_at`, the consumer has no active lease, and its lease
+    view is None.
+  - `Queue.release`, `Queue.ack` and `Queue.nack` return None. The Rust's release answers
+    `(PocketFate, Lease)` and its marks answer `SettleOutcome`. The double's tests read
+    the pocket's fate and the ended lease from the snapshot, as N13 does for renew.
+- **Question:** none on the behaviour. If the specification means an ended lease to be
+  forgotten, it does not say so; fencing by lease needs the ended lease's identity kept
+  somewhere.
+
+## N25: one lease end sends `Freed` smallest held position first
+
+- **Ticket:** PD03.
+- **Concerns:** the `Freed(lease, record_key, ended_at)` event, the five rules that end a
+  lease (`for record in pocket.held_records: Freed(...)`), and the Lease end comment.
+- **The specification says:** the ending rule sends one `Freed` per held record. A set has
+  no order, and `Freed` names the lease as an entity.
+- **The double does:**
+  - `lease_end.end_lease` sends `Freed` in order of the held records' positions, smallest
+    first. The order decides the order of the dead letters, and in PD04 of the superseded
+    records, that one end creates. PD04's S091 pins that order as `impl-choice`.
+  - `Freed.lease` is the lease's id (N05, N06). Each row reads the ended lease from the
+    state, for its pocket and consumer.
+  - With nothing deferred no scenario can tell the order: S047's and S086's ends create
+    one dead letter each. A hand-built test pins it (`test_lease_end.py`).
+- **Question:** should the specification order the entries one lease end creates, or say
+  that their order is not observable?
+
+## N26: the Release table's refusal past fencing is unreachable
+
+- **Ticket:** PD03.
+- **Concerns:** `ReleaseRequeuesPocket`'s and `ReleaseIdlesEmptyPocket`'s
+  `requires: pocket.status = leased`, and the invariant `UnleasedHasNoActiveLease`.
+- **The specification says:** both release rules require the lease active and the
+  consumer's, the pocket leased, and between them `records.count >` or
+  `= ending_records.count`, which covers every pocket, since the ending records are some
+  of its records.
+- **The double does:**
+  - A release with the lease not active or not the consumer's is `LeaseFenced` (N21).
+  - Once the lease is good, `UnleasedHasNoActiveLease` makes the pocket leased, so one
+    row always holds. The refusal left, `ReleaseRefused`, is unreachable through `Queue`,
+    as `PullRefused` is (N14). Its one test dispatches the Release table on a hand-built
+    state that breaks the invariant, labelled `impl-choice (N26)`.
+- **Question:** as N14: is `requires: pocket.status = leased` a guard, or a restatement of
+  `UnleasedHasNoActiveLease`?
+
+## N27: an idle pocket keeps its position
+
+- **Ticket:** PD03.
+- **Concerns:** `ReleaseIdlesEmptyPocket`, `ReviveIdlePocket`, the Pocket comment ("Queued
+  pockets are ordered by position"), `UniquePocketPosition`, `PocketPositionsBelowNext`
+  and scenario S055.
+- **The specification says:** `ReleaseIdlesEmptyPocket` ensures `status = idle` and
+  `consecutive_expiries = 0` and leaves `position` alone. Only queued pockets are in the
+  pocket order. `ReviveIdlePocket` gives a revived pocket a fresh position.
+- **The double does:** an idle pocket keeps the position it had when its lease was
+  claimed, and the release allots none (S055 asserts both). No rule reads an idle
+  pocket's position, and a revival replaces it, so the stale value is never used. It stays
+  unique and below `next_position`, so both position invariants hold.
+- **Question:** does an idle pocket's position mean anything? If not, the specification
+  might say so, so that no reader orders idle pockets by it.
+
+## N28: a refused action reads no clock (S085)
+
+- **Ticket:** PD03.
+- **Concerns:** `now` in every rule, the four mark rules, and scenario S085.
+- **The specification says:** a rule's `now` is the time its trigger is processed. It says
+  nothing of whether a rejected action has a `now`. S085 says a changed mark "reads no
+  clock"; the Rust shows it by setting its clock back after the refusal and renewing.
+- **The double does:**
+  - The apply step reads the clock at most once per outcome, the first time a guard, a
+    refusal or an effect reads `now`, and every reader in that outcome sees that one
+    value. Until PD03 it read the clock once before dispatch.
+  - No guard or refusal of the Ack, Nack, Renew or Release tables reads `now`, so a
+    refused action reads no clock. S085 asserts it through `FakeClock`'s read count, and
+    keeps the Rust's renew at an earlier time.
+  - A committed outcome whose rules never read `now`, such as a join, now reads no clock
+    either.
+- **Question:** is "reads no clock" behaviour the specification should state, for
+  instance that a rejected action has no effect at all, time included? Or is it a property
+  of the Rust's monotonic clock only?
