@@ -92,7 +92,7 @@ proves and why.
 
 | Recipe | Purpose |
 | --- | --- |
-| `just check-docs` | markdownlint, `typos`, offline link check, then the documentation contract, then that every SVG under `docs/decisions/` is what the `diagrams.py` in its folder draws and that no symlink sits there. Gate 15. |
+| `just check-docs` | markdownlint, `typos`, offline link check, then the documentation contract, then that every SVG under `docs/decisions/` is what the `diagrams.py` in its folder draws, and that no symlink there could hide a diagram: one named like an SVG or a `diagrams.py`, or one to a folder. Gate 15. |
 | `just check-agents` | The agent contract: inventory, adapters, and skill bridges. Gate 16. |
 | `just check-specs` | `allium check` over `docs/specs/`. Asserts that every module reports an empty `diagnostics` array; anything reported is a regression. Waiver terms: [Work with the specifications](../how-to/work-with-the-specs.md). Gate 17. |
 | `just analyse-specs` | `allium analyse` over `docs/specs/`: the same structural diagnostics plus data flow, reachability, deadlocks and conflicts. Asserts that both arrays are empty; a finding cannot be waived, so any finding is a regression. Gate 18. |

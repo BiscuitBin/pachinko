@@ -434,11 +434,14 @@ diagrams:
 # diagrams.py anywhere else under docs/decisions/, which the glob would never
 # run. Every other script runs, failing or not, and in `check` a script that
 # exits 0 without its "compared N SVGs" line fails; its stdout is printed
-# either way. `check` then names every symlink under docs/decisions/ and every
-# SVG there, in any letter case, whose folder holds none of the scripts found,
-# so nothing compares it. The lists are held in variables, not a file or a
-# pipe, so `check` writes no file of its own and a failing `find` fails it.
-# The leading underscore keeps it out of `just --list`.
+# either way. `check` then names every symlink under docs/decisions/ that
+# could hide a diagram, one named like an SVG or a diagrams.py or one to a
+# folder, and every SVG there, in any letter case, whose folder holds none of
+# the scripts found, so nothing compares it. The lists are held in variables,
+# not a file or a pipe, so `check` writes no file of its own and a failing
+# `find` fails it; they are split on newlines, so a name under docs/decisions/
+# that holds one fails first, by itself. The leading underscore keeps it out
+# of `just --list`.
 _diagrams mode:
     #!/bin/sh
     set -eu
@@ -458,7 +461,13 @@ _diagrams mode:
         fi
     done
     nl=$(printf '\nx')
-    IFS=${nl%x}
+    nl=${nl%x}
+    odd=$(find docs/decisions -name "*$nl*" -prune)
+    if [ -n "$odd" ]; then
+        printf 'a name under docs/decisions/ holds a newline, which the diagram check splits its file lists on; rename it and run `just diagrams`:\n%s\n' "$odd" >&2
+        exit 1
+    fi
+    IFS=$nl
     set -f
     strays=$(find docs/decisions -type f -name diagrams.py)
     for stray in $strays; do
@@ -498,10 +507,10 @@ _diagrams mode:
         fi
     done
     if [ "$mode" = check ]; then
-        links=$(find docs/decisions -type l)
+        links=$(find docs/decisions -type l \( -name '*.[sS][vV][gG]' -o -name diagrams.py -o -exec test -d {} \; \) -print)
         svgs=$(find docs/decisions -type f -name '*.[sS][vV][gG]')
         for link in $links; do
-            printf '%s: a symlink, which the diagram check does not follow; replace it with a real file or folder and run `just diagrams`\n' "$link" >&2
+            printf '%s: a symlink to an SVG, a diagrams.py or a folder, which the diagram check does not follow; replace it with a real file or folder and run `just diagrams`\n' "$link" >&2
             bad=1
         done
         for svg in $svgs; do
