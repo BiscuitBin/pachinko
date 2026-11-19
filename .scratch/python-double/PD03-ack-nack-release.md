@@ -1,7 +1,7 @@
 ---
 id: PD03
 title: "Python double: ack, nack, release and the lease's end"
-status: todo
+status: done
 depends_on: [PD02]
 parallel_with: []
 branch: ticket/pd03-ack-nack-release
@@ -362,10 +362,345 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end. They record the base and its full commit id, the baseline, any
-scenario moved under shared rule 2, the checkpoint's record, the spec notes added, and
-Verification quoted under its commit.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `091f0e568e1b2fcba2af33a028fa79123c57c882`, PD02's record commit.
+- Work commit: `c5d0ff3897e4ccd25fd60de1286c470ac0a28e43`.
+- At the maintainer's direction the whole PD01 to PD06 series lands on this one branch
+  in this one worktree, as PD01's hand-back section 1 records. That departs from
+  AGENTS.md's one-ticket-per-worktree rule and from step 1's "create the worktree on
+  `branch:`". `ticket/pd03-ack-nack-release` was not created.
+- `just initialize` was not run. The series runs in one worktree, whose PD01 baseline
+  was green without it, and PD03's baseline is quoted from PD02.
+
+### 2. Baseline
+
+Quoted from PD02, not rerun (`ai_tmp/pd/PD03/baseline.txt`).
+
+- `just python-double` at `b8d4613e6ee3b3f274e779a1732c35f728800dfa` printed
+  `Ran 167 tests` and `OK` (PD02's Verification).
+- `just check` on the tree committed as `091f0e568e1b2fcba2af33a028fa79123c57c882` ended
+  `All checks passed and the worktree is unchanged.` (exit 0). It ran just before that
+  commit, which changed only the two ticket files.
+
+### 3. What landed
+
+Rows per table. Each row fires in at least one test, and the coverage test's fired-rule
+check passes. Both release rows end the lease only through `lease_end.end_lease`.
+
+| Table | Rows | When no guard holds |
+| --- | --- | --- |
+| Ack | `AckMarksRecord`, `AckRepeats` | A refusal: `LeaseFenced`, `RecordNotHeld` or `MarkConflict`, the lease checked first (N21) |
+| Nack | `NackMarksRecord`, `NackRepeats` | The same three refusals |
+| Release | `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket` | A refusal: `LeaseFenced`, else `ReleaseRefused`, unreachable through `Queue` (N26) |
+| `Freed` (new, in `lease_end.py`) | `RequeueUnsettledRecord`, `ConsumeAckedRecord`, `DeadLetterNackedRecord` | A defect |
+| `PocketTouched` | `ReviveIdlePocket` | Nothing happens |
+
+New files under `double/`:
+
+- `pachinko_double/lease_end.py`: `Freed`, `end_lease`, `ending_records`,
+  `a_record_outlasts_the_lease`, `no_record_outlasts_the_lease` and the `FREED` table.
+- `pachinko_double/consuming.py`: `LeaseView`, `HeldRecordView` and
+  `lease_view(snapshot, consumer_id)`.
+- `tests/test_ack_nack.py` and `tests/test_lease_end.py`.
+
+Changed files under `double/`:
+
+- `pachinko_double/settle.py`: the Ack, Nack and Release triggers and tables beside
+  Renew, with shared heads `_acting_lease`, `_held_record`, `_marked` and `_releasing`.
+- `pachinko_double/queue.py`: `Queue.ack`, `nack`, `release` and `lease_view`. `Freed` is
+  routed in `EVENT_TABLES`. The clock is read lazily through `_Now` (N28).
+- `pachinko_double/refusals.py`: `RecordNotHeld`, `MarkConflict`, `ReleaseRefused`.
+- `pachinko_double/rules.py`: a refusal builder takes `(view, trigger)`, where it took
+  `trigger`. This lets one table name three refusals.
+- `pachinko_double/inspection.py`: `View(state, clock_read)` with a `now` property.
+  `View(state, T0)` still works.
+- `pachinko_double/publish.py`: the `ReviveIdlePocket` row in the `PocketTouched` table.
+- `pachinko_double/identity.py` and `pull.py`: the refusal lambdas follow the new
+  builder signature.
+- `pachinko_double/__init__.py`: exports `consuming`, `lease_end`, the two view classes
+  and the three refusals.
+- `tests/fixtures.py`, `test_publish.py` (S023), `test_settle.py`, `test_pull.py`,
+  `test_queue.py`, `test_rules.py` and `test_coverage.py` (the pending lists).
+- `SPEC-NOTES.md`: N21 to N28.
+
+Outside `double/`, only this ticket's hand-back and `status:` and the README's PD03
+Status cell are written, as Files touched says.
+
+No scenario moved under shared rule 2. The Rust tests confirm that none of the 18
+publishes onto a held key or ticks. S068's rank-2 publish lands after the release, so it
+is a plain supersede of a queued record.
+
+Changes to PD01's and PD02's machinery. There are two:
+
+- The refusal builder takes `(view, trigger)`. Every existing table and the scratch
+  tables in `test_rules.py` and `test_queue.py` were updated.
+- The apply step reads the clock lazily, at most once per outcome (N28). A committed
+  outcome whose rules never read `now`, such as a join, no longer reads the clock. PD01's
+  `test_it_reads_the_clock_once_per_outcome` was rewritten so that its scratch rules read
+  `now` four times, and it still asserts exactly one read. A new test asserts zero reads
+  when no rule reads `now`.
+
+The lease-end interface, for PD04 and PD05:
+
+- `end_lease(view, outcome, lease, ended, ended_at)` replaces the lease with its status
+  and `ended_at`, then emits `Freed(lease.id, record_key, ended_at)` for each held
+  record, smallest position first. It raises `ValueError` for an active status. The
+  caller writes the pocket's own fields.
+- `a_record_outlasts_the_lease` and `no_record_outlasts_the_lease` compare
+  `records.count` against `ending_records.count`. The release guards read them now, and
+  PD05's lapse guards will.
+- `ending_records` reads the snapshot's `ending_by_pocket`. Its where clause (held, mark
+  not unsettled, `deferred_position = null`) is written in full in `inspection.py`'s
+  `_is_ending`, so the set is computed once, in the snapshot. The ticket words
+  `ending_records` as owned by the lease-end module. This one piece stays in
+  `inspection.py`.
+- Each of the three `Freed` rows guards `deferred_position is None`, so PD04's rows sit
+  beside them without a `GuardOverlap`. A hand-built test asserts, for each mark, that
+  none of the three answers a deferred record. It checks the three rows by name, so it
+  survives PD04's rows.
+- The rows stamp from `event.ended_at`, never from `now`. That includes the dead letter's
+  `expires_at`.
+
+### 4. Red runs and probes
+
+#### Red runs
+
+Each red run went through `just python-double`, was saved with its exit status, and was
+followed by the change that turned it green. Files are in `ai_tmp/pd/PD03/`. The tree for
+each is `091f0e568e1b2fcba2af33a028fa79123c57c882` plus the uncommitted PD03 files. In
+every run the coverage module's tag checks also fail on the new tags.
+
+| File | Red before | Key output line | Exit |
+| --- | --- | --- | --- |
+| `red-S023.txt` | The `PocketTouched` table has no rows | `InvariantsBroken: invariants broken: IdleHasNoRecords; idle pocket 'a' has 1 records`; `FAILED (failures=3, errors=1)` | 1 |
+| `red-S040.txt` | `Queue.ack` and the lease view exist, the Ack table has no rows | `LeaseFenced: Ack by 'c1': lease 'lease-1' is not active and theirs`; `FAILED (failures=3, errors=1)` | 1 |
+| `red-S040-import.txt` | `consuming.py` did not exist (weak) | `ModuleNotFoundError: No module named 'pachinko_double.consuming'`; `FAILED (errors=1)` | 1 |
+| `red-S042.txt` | `RecordNotHeld` exists, the Ack table refuses everything with `LeaseFenced`, no `AckRepeats` row | `LeaseFenced: Ack by 'c1': lease 'lease-1' is not active and theirs`; `FAILED (failures=3, errors=4)` | 1 |
+| `red-S047-S086.txt` | The `Freed` table has no `DeadLetterNackedRecord` row | `Defect: no rule of the Freed table answers Freed(lease='lease-1', record_key='k', ended_at=1000030)`; `FAILED (failures=3, errors=2)` | 1 |
+| `red-S049.txt` | `Queue.nack` missing (weak) | `AttributeError: 'Queue' object has no attribute 'nack'. Did you mean: 'ack'?`; `FAILED (failures=3, errors=2)` | 1 |
+| `red-S049-table.txt` | `Queue.nack` exists, the Nack table has no rows. Only the nack-mark test fails; S049 itself passes | `LeaseFenced: Nack by 'c1': lease 'lease-1' is not active and theirs`; `FAILED (failures=2, errors=1)` | 1 |
+| `red-S053-method.txt` | `Queue.release` missing (weak) | `AttributeError: 'Queue' object has no attribute 'release'`; `FAILED (failures=3, errors=1)` | 1 |
+| `red-S055.txt` | The Release table has only the requeue row | `ReleaseRefused: no Release rule answers a release of 'lease-1' by 'c1'`; `FAILED (failures=3, errors=1)` | 1 |
+| `red-S085.txt` | `MarkConflict` exists, the classifier answers `LeaseFenced` for a held record, the clock is read eagerly | `LeaseFenced: Ack by 'c1': lease 'lease-1' is not active and theirs`; `FAILED (failures=4, errors=2)` | 1 |
+| `red-S085-clock.txt` | The classifier is fixed, the clock is still read eagerly | `AssertionError: 11 != 9 : a refused mark reads no clock`; `FAILED (failures=4)` | 1 |
+
+Notes on the table:
+
+- `red-S040-import.txt`, `red-S049.txt` and `red-S053-method.txt` are weak, since they
+  fail only on a missing module or method.
+- `red-S049-table.txt` shows that S049 cannot go red through a row-less Nack table. Its
+  refusals are that table's answer when no row holds.
+- `red-S085.txt` and `red-S085-clock.txt` are two steps of one scenario. The second is
+  the one that needed the lazy clock read (N28).
+
+#### Scenarios with their own red run
+
+7 of the 18 owned scenarios went red for their own reason: S023, S040, S042, S047, S055,
+S085 and S086.
+
+#### Scenarios that could not be red on their own
+
+11 of the 18 could not: S035, S041, S049, S051, S052, S053, S057, S068, S070, S084 and
+S090.
+
+- S049 and S053 went red only on a missing method.
+- S049 passed against a row-less Nack table (above).
+- The rest were written after the rows they exercise.
+
+Mutant probes kill all 11. The 7 plus the 11 are 18, the number the ticket owns.
+
+#### Probes
+
+Each probe ran through `just python-double` on the tree at
+`091f0e568e1b2fcba2af33a028fa79123c57c882` plus the uncommitted PD03 files, then was
+reverted. `probe.sh` copies the file first, and every file below ends with a matching
+SHA-256 before and after. Probes 01 to 18 ran when the suite held 207 tests, and
+probe 19 at 208. The final suite holds 209 (section 5). Every exit status is 1. All
+files are in `ai_tmp/pd/PD03/`.
+
+| File | Breaks | Key output line | Exit |
+| --- | --- | --- | --- |
+| `probe-01-ack-no-extension.txt` | `AckMarksRecord` does not extend the lease | `FAILED (failures=4)` | 1 |
+| `probe-02-nack-repeat-restamps.txt` | `NackRepeats` re-stamps `nacked_at` | `FAILED (failures=4)` | 1 |
+| `probe-03-record-checked-before-lease.txt` | The mark refusal checks the record before the lease | `FAILED (failures=2, errors=11)` | 1 |
+| `probe-04-fencing-ignores-status.txt` | `_acting_lease` ignores the lease's status | `FAILED (failures=3, errors=3)` | 1 |
+| `probe-05-fencing-ignores-consumer.txt` | `_acting_lease` ignores the consumer | `FAILED (failures=6, errors=2)` | 1 |
+| `probe-06-renew-ignores-status.txt` | Renew's guard ignores the lease's status | `FAILED (failures=5)` | 1 |
+| `probe-07-renew-stacks.txt` | Renewals stack | `FAILED (failures=5)` | 1 |
+| `probe-08-requeue-keeps-old-position.txt` | A requeue keeps the pocket's old position | `FAILED (failures=4)` | 1 |
+| `probe-09-acked-requeued-not-consumed.txt` | `ConsumeAckedRecord` requeues the record instead of removing it | `FAILED (failures=5, errors=2)` | 1 |
+| `probe-10-nacked-at-from-ended-at.txt` | A dead letter's `nacked_at` is `ended_at` | `FAILED (failures=6)` | 1 |
+| `probe-11-dead-letter-expires-from-now.txt` | A dead letter's `expires_at` counts from `now` | `FAILED (failures=3)` | 1 |
+| `probe-12-lease-view-by-key.txt` | The lease view sorts by key | `FAILED (failures=3)` | 1 |
+| `probe-13-freed-in-tuple-order.txt` | `Freed` goes out in tuple order | `FAILED (failures=2)` | 1 |
+| `probe-14-refusal-reads-now.txt` | The mark refusal reads `now` | `FAILED (failures=3)` | 1 |
+| `probe-15-check-part-way.txt` | The apply step also checks after the trigger's row, before its events | `FAILED (failures=21)` | 1 |
+| `probe-16-idle-takes-a-position.txt` | An idle release allots a position | `FAILED (failures=3)` | 1 |
+| `probe-17-revive-keeps-old-position.txt` | A revival keeps the pocket's old position | `FAILED (failures=3)` | 1 |
+| `probe-18-ack-keeps-the-count.txt` | `AckMarksRecord` leaves `consecutive_expiries` | `FAILED (failures=2)` | 1 |
+| `probe-19-release-skips-consumer-check.txt` | `Queue.release` skips the unknown-consumer check | `FAILED (failures=1, errors=1)` | 1 |
+
+Which tests kill which scenarios, from `summary.md`:
+
+| Scenario | Killed by probe |
+| --- | --- |
+| S041, S051 | 01; S051 also 07 |
+| S084 | 02 (S086 too) |
+| S042, S049, S070 | 03 and 05; S068 also 03 |
+| S057, S068 | 04 |
+| S052 | 06 |
+| S035, S053 | 08 |
+| S090 | 12 |
+| S023 | 09 and 17 |
+| S055 | 16 |
+| S085 | 14 |
+| Every scenario that reaches a release or `Freed` | 15 |
+
+Four limits on this evidence:
+
+- Probe 11 is killed only by `test_lease_end.py`, on a hand-built state. Through `Queue`,
+  `now` equals `ended_at`, so no scenario can tell the two apart.
+- Probe 13 is killed only by `test_lease_end.py`. With nothing deferred, no scenario can
+  tell the order of the `Freed` events (N25).
+- Probe 18 is killed only by the hand-built reset test. The count is always 0 before
+  PD05.
+- Probe 19 is killed only by the untagged N22 release test, since no catalog row covers a
+  release by a consumer that never joined.
+
+Probe 15 answers the breakage lens's question about the checker running part-way through
+a release. Probes 10 and 11 answer its question about a dead letter's timestamps coming
+from the wrong source.
+
+### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
+
+- Ran at: `091f0e568e1b2fcba2af33a028fa79123c57c882` plus uncommitted work (steps 2 to
+  4).
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command
+  (`< /dev/null`, `-o last-<lens>.md`, `>|` log). One Claude (sonnet) runner subagent per
+  lens. Codex cannot write under read-only, so each findings file is Codex's last
+  message and its first line says `Source: last-message`. Codex could not run
+  `just check` in its sandbox.
+- Triage and apply: one fresh opus subagent. The mutants first ran on a copy outside the
+  worktree, then in the tree with the subagent as the only writer.
+- Findings: 0 high, 2 medium, and the two are one defect.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | medium | valid | S084 compares one snapshot after both repeats at one instant, so either `AckRepeats` or `NackRepeats` could stop extending the lease. Both mutants passed all 208 tests | Untagged `test_each_repeat_on_its_own_extends_the_lease_from_its_own_time` beside S084 in `test_ack_nack.py`: ack alone at `T0 + 30`, nack alone at `T0 + 50`, the complete snapshot compared after each. S084's tagged test is unchanged |
+| B1 | medium | valid, duplicate of C1 | The same defect | The same fix |
+
+- Conformance also judged the S053 port faithful to the catalog row and the
+  specification, and N21 to N28 complete.
+- Evidence: `ai_tmp/review/PD03-1/apply-mutant-1.txt` (`AckRepeats` does not extend:
+  exit 1, 209 tests, `FAILED (failures=2)`, the `k2` subtest, reverted with matching
+  SHA-256), `apply-mutant-2.txt` (`NackRepeats` does not extend: exit 1, `FAILED
+  (failures=2)`, the `k1` subtest, reverted with matching SHA-256),
+  `apply-final.txt` and `verdicts.md`, all in `ai_tmp/review/PD03-1/`.
+- Re-run after apply: `just python-double` ran 209 tests, OK; `just lint` exit 0; no
+  `__pycache__`. Before the apply it ran 208 tests (`ai_tmp/pd/PD03/final.txt`).
+- Second round: none, because no high-severity finding was valid.
+- Handed back: nothing outside Files touched.
+
+### 6. Spec notes added
+
+| Id | Note |
+| --- | --- |
+| N21 | The mark refusals and their order. `LeaseFenced` is reused for all four actions, the Rust's `NotActive` and `NotYours` are not split, and an ack of a queued key in the same pocket is `RecordNotHeld`. |
+| N22 | An ack, nack, release or lease read by a consumer that never joined is refused (`impl-choice`, extends N18). |
+| N23 | S090's lease view lists the held records smallest position first (`impl-choice`). The view carries no lease id. |
+| N24 | An ended lease stays in the state, and a release and a mark answer nothing (S053's "leaves the registry"). |
+| N25 | One lease end sends `Freed` smallest held position first. |
+| N26 | The Release table's refusal past fencing, `ReleaseRefused`, is unreachable. |
+| N27 | An idle pocket keeps its position. |
+| N28 | A refused action reads no clock (S085): the lazy clock read. |
+
+### 7. Departures and rulings
+
+#### Maintainer's ruling on S053
+
+Recorded in `ai_tmp/pd/PD03/ruling-S053.txt`. On 2026-11-18, through AskUserQuestion, the
+maintainer chose "Accept N24's port (Recommended)".
+
+- The Rust's S053 asserts that the ended lease leaves the registry
+  (`snapshot.leases.is_empty()`). A double that follows the specification keeps released
+  leases, so that assertion fails against it.
+- The maintainer ruled that the empty registry is the Rust's inspection shape, not
+  behaviour.
+- The double ports the specification's facts: the lease is `released`, `ended_at` is set,
+  and the pocket has no active lease. N24 keeps the question open.
+- The builder ported the specification's facts and wrote N24 rather than stopping under
+  shared rule 1, and flagged the point to the lead as uncertain.
+
+#### Other departures
+
+- The series lands on one branch in one worktree (section 1).
+- Step 1 asks for `just initialize` and for `just check` and `just python-double` on the
+  untouched worktree. Neither was rerun. The baseline is quoted from PD02 (section 2).
+- The refusal builder's signature and the lazy clock read change PD01's machinery
+  (section 3). Both were needed so that one table can name three refusals and so that a
+  refusal reads no clock.
+- 11 of the 18 scenarios could not be red on their own (section 4). Mutant probes kill
+  them.
+- Probes 11, 13, 18 and 19 are killed only by hand-built or untagged tests (section 4).
+- `ReleaseRefused` is unreachable through `Queue` (N26). It is tested on a hand-built
+  state only, as PD02's `PullRefused` is.
+- Two untagged tests have no catalog row: the N22 release by a consumer that never
+  joined, and the C1 repeat test beside S084.
+- S040 does not assert the absolute position 1, which rests on N04. It asserts that the
+  ack leaves the record's position unchanged, and a comment says why.
+- The Rust S053 and the other ported rows were read for their setup, steps and
+  assertions only. No behaviour was taken from `crates/libpachinko/src/`.
+- `RecordingOutcome`, PD02's test-local class in `test_pull.py`, gained `remove` and
+  `allot_position`, so that the hand-built `Freed` and Release tests reuse it.
+- Codex cannot write files under read-only, so each findings file is Codex's last
+  message (section 5).
+
+### 8. Verification
+
+The Verification block ran at `c5d0ff3897e4ccd25fd60de1286c470ac0a28e43`, the work commit, as one `sh` script under
+`set -eu`. It exited 0 (`exit=0`). The opening and closing lines of its output:
+
+```text
+c5d0ff3897e4ccd25fd60de1286c470ac0a28e43
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+.................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 209 tests in 0.083s
+
+OK
+…  (the remaining output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
-None yet.
+- Should an ended lease leave the specification's lease set, as the Rust's inspection
+  shows, or stay with its end recorded? The double keeps it and the maintainer accepted
+  that port (N24, S053).
+- Should the specification name the refusals of an ack, a nack and a release? The double
+  reuses `LeaseFenced` for a fenced action and adds `RecordNotHeld` and `MarkConflict`,
+  and the Rust splits a lease that is not active from one that is not the consumer's
+  (N21).
+- Should the specification say that an ack, nack or release requires a joined consumer?
+  This extends PD02's N18 (N22, `impl-choice`).
+- Is S090's smallest-position-first order of the lease view intended, or is the order
+  unspecified? The surface does not state it (N23, `impl-choice`).
+- Should the specification fix the order in which one lease end sends `Freed`? With
+  nothing deferred, no scenario can tell (N25).
+- Is the `ReleaseRefused` branch reachable? If the two release guards are exhaustive past
+  fencing, the Release table's second refusal never runs (N26).
+- Should a pocket that goes idle keep its position, given that idle pockets are not in
+  the pocket order (N27)?
+- The lazy clock read (N28) changes PD01's apply step. PD05's `tick()` reads `now` once
+  and may want to hand `_apply` a fixed instant. `_Now` takes a clock, so a clock that
+  answers one value would do.
+- `ending_records` is computed in the snapshot (`inspection.py`'s `_is_ending`), not in
+  `lease_end.py` as the ticket words it. The where clause is written in full there.
+- The untagged repeat test (C1) and the untagged N22 release test have no catalog row.
+  The maintainer may want rows for them.
