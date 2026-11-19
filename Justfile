@@ -423,6 +423,16 @@ plan-spec module:
 diagrams:
     python scripts/diagrams.py
 
+# Run the Python double's tests under double/tests on pixi's Python, which must
+# be 3.14 or newer. It is not a gate of libpachinko and is outside `just check`.
+# `-t double` makes the start directory the package `tests`, so discovery
+# calls its load_tests, which runs test_coverage last; PACHINKO_DOUBLE_SUITE
+# tells test_coverage that this run must have gone through load_tests. `-B`
+# writes no __pycache__.
+python-double:
+    python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+    PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+
 check-links-online:
     prek run --all-files --hook-stage manual lychee-online
 
