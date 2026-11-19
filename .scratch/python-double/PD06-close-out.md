@@ -592,6 +592,52 @@ The worktree matches the check baseline.
 All checks passed and the worktree is unchanged.
 ```
 
+### 9. The final review, after the record commit
+
+After `1e2962835235e71b04bd050cff915745f9bb06a5`, the plan's final review ran over the
+whole series, `6ebb76b393687e88656ba6594cf1c53584fc5d70...HEAD`.
+
+- **Harness:** Claude Code's `/code-review` at medium effort. Its brief carried shared
+  rule 1 and the maintainer's rulings: N24, N31 and N38's inspection-shape ports, and
+  N32's answer.
+- **Result:** no important finding. It checked all 32 rules, the 35 invariants, the
+  guards, the ensures, `Freed`'s stamping and the allotting of positions against the
+  specification, and found no divergence.
+- **Five nits and one convention point:**
+
+| Finding | Disposition |
+| --- | --- |
+| `FakeClock.set()` accepts an earlier time, while `advance()` refuses a negative duration | Dropped and documented. A guard broke S085's port, which sets the clock back to keep the Rust's proof that a renew extends from its own time. `set()`'s docstring now says so. |
+| A drawn lease id survives an outcome that is not committed | Documented in `Outcome.draw_lease_id`. It remains PD01's open point (N15). |
+| A `Freed` naming a lease the state lacks raised a bare `ValueError` | Fixed test-first. No row answers it, so the table's `Defect` applies. |
+| `Outcome.remove` of a shed entry the state lacks raised a bare `ValueError` | Fixed test-first. It raises `Defect`, as the keyed branch does. |
+| `recording_run` never recorded a pass for a test run without a result | Fixed test-first. It makes a result, as `TestCase.run` does. |
+| `AGENTS.md`'s project map omits `double/` | Not applied. It is the maintainer's open point, as PD01's Open points say. |
+
+The fixes are in `10571fc6d3cb64c6de7b96d02b1da7c4a11a82fc`, committed after a green
+`just check`. The fixer once used the system `python3` to apply a test edit; it ran no
+test that way. It also removed an untracked `double/pachinko_double/__pycache__/` that an
+earlier run without `-B` had left after the record commit.
+
+The Verification block ran again at `10571fc6d3cb64c6de7b96d02b1da7c4a11a82fc` and
+exited 0. The opening and closing lines of its output:
+
+```text
+10571fc6d3cb64c6de7b96d02b1da7c4a11a82fc
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+..................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 274 tests in 0.129s
+
+OK
+…  (just check-docs and just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
+
 ## Open points
 
 - Whether the double later becomes an oracle for the Rust tests, or joins `just check`, is
