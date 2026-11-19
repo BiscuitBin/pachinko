@@ -436,7 +436,7 @@ The subagent checked each of the others itself. Its ShellCheck and `/bin/dash` r
 | R5: status and hand-back not written | none | deferred | Written here |
 | R6: branch name differs from `branch:` | low | recorded | Above, under Base |
 | R7: `relative_to(ROOT)` could raise | low | invalid | `ROOT` is always an ancestor of `OUT`; the cases it names are refused (probes 6, 6b, 13, 15) |
-| R8: `docs/project/repository-map.md` does not name the `diagrams.py` sources | low | valid, handed back | Outside Files touched |
+| R8: `docs/project/repository-map.md` does not name the `diagrams.py` sources | low | valid, fixed after the maintainer widened scope | The `docs/decisions/` row names each record's folder, its SVGs and the `diagrams.py` that draws them |
 
 B2 was a valid high finding, so round 2 ran over `21bd3e6..22b463f`:
 
@@ -474,11 +474,21 @@ bg-project-check clean "$1"
 The Git worktree is clean.
 ```
 
+### Maintainer's follow-up, 2026-11-18
+
+After the hand-back above, the maintainer answered four questions:
+
+- Strictness: "Keep all of it (Recommended)". The `_diagrams` recipe is unchanged.
+- Leftovers: "Fix the ci.yml comment here (Recommended)" and "Add R8 to repository-map here (Recommended)". R1 and B3 stay open.
+- Branch name: "Keep as is." The branch is pushed as `tickets/t36-diagram-drift-check.md`.
+- Push and PR: "Push + PR to wave-2-tickets (Recommended)", ready for review.
+
+The answer widens the scope beyond Files touched to `.github/workflows/ci.yml`, whose comment above `check-specs` now says that no hook runs the diagram check inside `check-docs`, and `docs/project/repository-map.md`, whose `docs/decisions/` row now names the diagram sources (R8).
+
 ## Open points
 
 - **B3 / C2-1, the maintainer's decision.** Each `diagrams.py` compares its own folder, and the recipe trusts a script that exits 0 and prints `compared N SVGs, all match` with N at least 1. A later script whose comparison loop broke while it kept printing its count would pass. A shared checker, which every decision's script imports and the recipe drives, would close this. It conflicts with choice (b) ("the SVG helpers move to a shared module then, not before") and needs a file outside Files touched. Gate 15's row states the trust limit.
 - **R1:** the `_diagrams` shell is not covered by the shellcheck hook, which reads `scripts/` only. Moving it there is outside Files touched.
-- **R8:** `docs/project/repository-map.md` does not name the `diagrams.py` sources under `docs/decisions/`.
-- **The `ci.yml` comment** above `check-specs` (lines 126 to 129) still describes `check-docs` as a duplicate of the hook gate, which is no longer quite true now that it runs the diagram check. `ci.yml` is outside Files touched.
 - **Not run on Linux.** The probes ran on macOS's `/bin/sh` and were smoke-run under `/bin/dash`; CI's `documents` job, on Ubuntu, is the first Linux run.
-- **Not pushed:** pushing and opening a pull request need authorisation.
+- **Push and pull request:** the maintainer authorised both on 2026-11-18, the push under the branch's local name and the pull request into `wave-2-tickets`, ready for review.
+- **Branch name:** the branch keeps its local name, `tickets/t36-diagram-drift-check.md`, not the ticket's `branch:` (R6).
