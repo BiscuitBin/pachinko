@@ -13,9 +13,12 @@ arrival position it allots then. With a version already deferred,
 inherits the arrival position. Neither sheds the held version.
 
 `ReviveIdlePocket` answers `PocketTouched` on an idle pocket, queueing it at
-a fresh position at the back; PD05 adds `ReviveParkedPocket` beside it. A
-touched pocket that is queued or leased is left as it is, which is the
-table's answer when no guard holds.
+a fresh position at the back, and `ReviveParkedPocket` answers it on a parked
+one the same way, with its count reset. A stale publish and a refused
+equal-rank publish emit no `PocketTouched`, so a parked pocket stays parked
+with its count (S025, S092). Whether anything else can revive a parked pocket
+is open question 7 (spec note N36). A touched pocket that is queued or
+leased is left as it is, which is the table's answer when no guard holds.
 """
 
 from dataclasses import dataclass, replace
@@ -256,6 +259,29 @@ def _revive_idle_pocket(view: View, outcome: "Outcome", event: PocketTouched) ->
     outcome.replace(replace(pocket, status=PocketStatus.QUEUED, position=position, consecutive_expiries=0))
 
 
+# rule ReviveParkedPocket --------------------------------------------------
+
+
+def _revive_parked_pocket_guard(view: View, event: PocketTouched) -> bool:
+    # let pocket = Pocket{key: pocket_key}
+    # requires: exists pocket
+    # requires: pocket.status = parked
+    pocket = _pocket(view, event.pocket_key)
+    return pocket is not None and pocket.status is PocketStatus.PARKED
+
+
+def _revive_parked_pocket(view: View, outcome: "Outcome", event: PocketTouched) -> None:
+    pocket = _pocket(view, event.pocket_key)
+    assert pocket is not None
+    # let position = queue.next_position
+    # ensures: queue.next_position = position + 1
+    position = outcome.allot_position()
+    # ensures: pocket.status = queued
+    # ensures: pocket.position = position
+    # ensures: pocket.consecutive_expiries = 0
+    outcome.replace(replace(pocket, status=PocketStatus.QUEUED, position=position, consecutive_expiries=0))
+
+
 PUBLISH = SPECIFICATION.register(
     Table(
         "Publish",
@@ -274,7 +300,10 @@ PUBLISH = SPECIFICATION.register(
 POCKET_TOUCHED = SPECIFICATION.register(
     Table(
         "PocketTouched",
-        (Rule("ReviveIdlePocket", _revive_idle_pocket_guard, _revive_idle_pocket),),
+        (
+            Rule("ReviveIdlePocket", _revive_idle_pocket_guard, _revive_idle_pocket),
+            Rule("ReviveParkedPocket", _revive_parked_pocket_guard, _revive_parked_pocket),
+        ),
         NoGuardHolds.NOTHING,
     )
 )

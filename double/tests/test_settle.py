@@ -298,9 +298,9 @@ def only_lease(queue: Queue, consumer_id: str = "c1") -> Lease:
 
 class ResetsOnHandBuiltStatesTest(unittest.TestCase):
     """A mark and a release reset the pocket's consecutive_expiries, and a
-    repeat leaves it. Before PD05 lands the lapse the count is always 0
-    through `Queue`, so these rows run on a hand-built pocket whose count is
-    2, a count a lapse leaves before the pocket is claimed again."""
+    repeat leaves it. These rows run on a hand-built pocket whose count is
+    2, a count a lapse leaves before the pocket is claimed again; through
+    `Queue`, S056, S064 and S077 in test_expiry.py show the same."""
 
     def view(self, mark: Mark, *more: Record) -> View:
         state = snapshot(

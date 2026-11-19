@@ -662,3 +662,147 @@ it concerns, what the specification says, what the double does, and the question
 - **Question:** decision 0020 fixes the answer, but the specification does not state
   it. Should the Publishing surface name what a publish answers, so that a double or a
   second implementation can port it?
+
+## N33: `tick()` is the double's only clock, and it reports what it did
+
+- **Ticket:** PD05.
+- **Concerns:** the three clock triggers (`LeaseLapses`, `SupersededRecordDecays`,
+  `DeadLetterDecays`), the Lease expiry comment ("The clock emits LeaseLapsed once per
+  active lease whose expires_at has passed"), N28, and scenarios S006, S059, S065, S073
+  and S074.
+- **The specification says:** each rule fires when its entity's `expires_at <= now`. It
+  names no process that notices this, and no surface reports a lapse or a decay.
+- **The double does:**
+  - It has no background time. A lease lapses and an entry decays only in
+    `Queue.tick()`. Tests move the fake clock and call it.
+  - `tick()` reads the injected clock once, even when nothing is due, and hands that
+    one `now` to every outcome it makes. N28's lazy read stays as it was for every
+    other trigger.
+  - Each due lapse is its own outcome: `LeaseLapses`, the expiry rule that answers its
+    `LeaseLapsed`, and every `Freed`, checked once. Each due decay is its own outcome,
+    checked once. A test counts the checker's calls.
+  - An action never lapses a lease, so an action after `expires_at` but before the tick
+    succeeds (branch A, decision 0019, S066 and S067).
+  - `tick()` answers a `TickReport`: the leases it lapsed, as the state keeps them
+    once ended, and the superseded records and dead letters that decayed, as they
+    stood. The Rust's report gives the lapsed leases and two counts. The double gives
+    the entries, so a test can say which entry decayed.
+- **Question:** should the specification, or a surface, name how the temporal triggers
+  are processed and what that processing reports? Today the report is the
+  implementation's to choose.
+
+## N34: one tick lapses in `expires_at` order, then decays in queue order
+
+- **Ticket:** PD05.
+- **Concerns:** `LeaseLapses`, `SupersededRecordDecays`, `DeadLetterDecays`, N25 and N29.
+- **The specification says:** every trigger due at `now` fires. It gives no order among
+  several due at once.
+- **The double does:**
+  - It applies the lapses first: smallest `expires_at` first, and among equal ones in
+    the order the leases were granted. Then the superseded records, oldest entry first.
+    Then the dead letters, oldest entry first.
+  - No expiry rule allots a position, and one active lease per pocket keeps two lapses
+    apart. So the order changes no pocket and no record. It shows only in the order of
+    the report and in the order in which two lapses' `Freed` rows add their entries to
+    the shed queues, as N29 says of one end's entries.
+- **Question:** as N29: should the specification order what several lapses in one tick
+  create, or say that the order is not observable?
+
+## N35: an entry a lapse creates with a zero TTL decays in the same tick
+
+- **Ticket:** PD05.
+- **Concerns:** `SupersedeUnsettledHeldVersion`, `DeadLetterNackedRecord`,
+  `DeadLetterNackedVersionQueueDeferred`, the two decays, `SupersededTtlNonNegative`,
+  `DeadLetterTtlNonNegative`, and scenario S007.
+- **The specification says:** a zero TTL is admitted, and then `expires_at` equals the
+  timestamp it is measured from. An entry a lapse creates at `now` therefore has
+  `expires_at = now`, and `expires_at <= now` holds at once.
+- **The double does:**
+  - `tick()` reads the decays due from the state its lapses left, at the same `now`. So
+    the entry decays in the tick whose lapse made it, and once a tick returns nothing is
+    due at its `now`. An untagged test shows it; the Rust has the same test.
+  - S007 itself makes its entries by a release, and they decay at the next tick at the
+    same instant.
+- **Question:** is "nothing is due once a tick returns" intended? The other reading,
+  that an entry made in a tick waits for the next one, also satisfies every rule.
+
+## N36: only a publish revives a parked pocket, as the rules stand (`oq:7`)
+
+- **Ticket:** PD05.
+- **Concerns:** `ReviveParkedPocket`, open question 7 ("Can anything other than a
+  publish revive a parked pocket, such as an operator action or a cooldown?"), the
+  comment above `PublishNewKey`, and scenarios S024, S025, S026 and S092.
+- **The specification says:** `ReviveParkedPocket` answers `PocketTouched`, which only
+  `PublishNewKey`, `Supersede` and `DeferBehindHeldVersion` emit. A stale publish and a
+  publish at the stored rank emit nothing.
+- **The double does:**
+  - `ReviveParkedPocket` is the second row of the `PocketTouched` table, beside
+    `ReviveIdlePocket`, and nothing else emits `PocketTouched`.
+  - S026, labelled `oq:7`, ports the question as the rules stand. Time, ticks, and
+    another pocket's lease, publish and release leave a parked pocket parked with its
+    count. S025 and S092 show that a refused equal-rank publish and a stale publish do
+    the same.
+  - The double adds no cooldown and no operator action. The question stays open.
+- **Question:** open question 7 itself. If anything else may revive a parked pocket, it
+  needs a rule, and S026 changes with it.
+
+## N37: the expiry rules' answer when no guard holds is unreachable through `tick()`
+
+- **Ticket:** PD05.
+- **Concerns:** `LeaseLapses`, the three expiry rules' `requires: lease.status = active`,
+  `requires: lease.expires_at <= now` and `requires: pocket.status = leased`, the two
+  decays, the Lease expiry comment, and N14 and N26.
+- **The specification says:** the lapse "stops at its guards" when an action processed
+  first released the lease or moved `expires_at` on.
+- **The double does:**
+  - A clock trigger's `<= now` is `tick()`'s filter: it offers only active leases whose
+    `expires_at` has passed, and only entries whose `expires_at` has passed.
+  - `LeaseLapses`'s guard is its `requires: lease.status = active`. The decays have no
+    `requires`, so each guard holds while the entry the trigger binds is still in its
+    queue. Each table answers nothing when no guard holds.
+  - `LeaseLapses` and its expiry rule are one outcome, so the expiry rules read the
+    state `tick()` filtered. Their restated guards always hold, and under branch A the
+    late action's effect shows at the filter, never at those guards. The `LeaseLapsed`
+    table's answer when none holds, nothing happens, is reached only by hand-built
+    dispatch. The tests do it for a renewed, a released, an expired lease and a pocket
+    that is not leased. They also show that exactly one expiry rule answers each due
+    lapse.
+- **Question:** as N14 and N26: are the expiry rules' `lease.status = active` and
+  `lease.expires_at <= now` guards in their own right, or restatements of what
+  `LeaseLapses` already established in the same chain?
+
+## N38: PD05's ports of the Rust's inspection shapes
+
+- **Ticket:** PD05.
+- **Concerns:** for S075, the Pocket comment ("Queued pockets are ordered by position,
+  smallest first. That order is the pocket order; nothing else positions a pocket."),
+  `UniquePocketPosition`, `UniqueRecordPosition`, `PocketPositionsBelowNext` and
+  `RecordPositionsBelowNext`; for S066's release half, `ReleaseRequeuesPocket` and the
+  `Lease` entity's `transitions status { ... terminal: released, expired }` (N24); for
+  S093, the `Record` comment ("One record per key per pocket. Queued records are ordered
+  by position, smallest first.") and `OldestSlotNewestPayload` (N31); for S067's pull
+  half, the `Batch` answer of `PullWithinLease` (N13); for S077's publish,
+  `DeferBehindHeldVersion` and the Publishing surface (N32); for the relative positions,
+  `Queue.next_position` and the `Position` vocabulary entry (N04); the inspection seam,
+  which no surface of the specification names; and scenarios S064, S066, S067, S075,
+  S077 and S093.
+- **The specification says:** nothing of the Rust's snapshot shape or of its outcomes'
+  names.
+- **The double does:** it ports each row's behaviour and leaves the shape, under the
+  existing notes and rulings:
+  - S066's release half asserts that the released lease leaves the Rust's registry. The
+    double keeps it, `released` with its `ended_at`, and asserts that the pocket has no
+    active lease (N24's ruling).
+  - S093 lists the pocket's records in the Rust's snapshot order. The double compares
+    them by key (N31's ruling).
+  - S075 checks, at each step, that the Rust's stored pocket order is the queued pockets
+    sorted by position. The double stores no pocket order, since it is the queued pockets
+    by position, so the test asserts the rest of that step: the four position invariants
+    from the snapshot, distinct record positions per pocket, and an empty `check`.
+  - S067's pull half reads `expires_at` off the Rust's batch, and the double off the
+    snapshot's lease (N13). S077's publish answers `Superseded` in the Rust and defers
+    in the double, which answers nothing (N32).
+  - S064 and S077 are `wire` rows. Only their library halves are ported.
+  - Positions are compared with the state before the step, not as the Rust's absolute
+    values (N04): S048's and S088's arrival positions, S078 to S081's kept positions.
+- **Question:** none beyond those notes. The list says where PD05 leaned on them.

@@ -68,31 +68,11 @@ STRICT_TAG = re.compile(r"^(?P<indent>\s*)# (?P<kind>scenario|invariant-control)
 
 ENV_SUITE = "PACHINKO_DOUBLE_SUITE"
 
-PENDING_SCENARIOS = frozenset(
-    {
-        "S002", "S006", "S007",
-        "S024", "S025", "S026",
-        "S034",
-        "S048",
-        "S056", "S058", "S059", "S060",
-        "S061", "S062", "S063", "S064", "S065", "S066", "S067", "S069",
-        "S073", "S074", "S075", "S076", "S077", "S078", "S079", "S080",
-        "S081", "S087", "S088", "S089",
-        "S092", "S093",
-    }
-)
+# Empty since PD05: every scenario and every rule is covered. PD06 deletes
+# both lists.
+PENDING_SCENARIOS: frozenset[str] = frozenset()
 
-PENDING_RULES = frozenset(
-    {
-        "ReviveParkedPocket",
-        "LeaseLapses",
-        "LeaseExpiryParksPocket",
-        "LeaseExpiryKeepsPocketAtFront",
-        "LeaseExpiryIdlesEmptyPocket",
-        "SupersededRecordDecays",
-        "DeadLetterDecays",
-    }
-)
+PENDING_RULES: frozenset[str] = frozenset()
 
 
 def parse(pattern: re.Pattern[str], path: Path) -> list[str]:

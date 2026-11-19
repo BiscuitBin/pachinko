@@ -29,23 +29,23 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import consuming, identity, lease_end, publish, pull, settle
+from . import consuming, decay, expiry, identity, lease_end, publish, pull, settle
 from .config import Config
 from .consuming import LeaseView
 from .effects import Clock, LeaseIds
 from .inspection import ConfigValues, Snapshot, View
 from .invariants import InvariantsBroken, check
-from .model import Consumer, DeadLetter, Lease, Pocket, Publisher, Record, SupersededRecord, Timestamp
+from .model import Consumer, DeadLetter, Lease, LeaseStatus, Pocket, Publisher, Record, SupersededRecord, Timestamp
 from .pull import Batch, NoPocketAvailable
 from .refusals import UnknownConsumer, UnknownPublisher
 from .rules import Defect, Table, dispatch
 
-# The tables of the events a rule emits, by event type. LeaseLapsed's table
-# follows in PD05.
+# The tables of the events a rule emits, by event type.
 EVENT_TABLES: Mapping[type, Table] = {
     publish.PocketTouched: publish.POCKET_TOUCHED,
     pull.Handed: pull.HANDED,
     lease_end.Freed: lease_end.FREED,
+    expiry.LeaseLapsed: expiry.LEASE_LAPSED,
 }
 
 type Entity = Publisher | Consumer | Pocket | Record | Lease | SupersededRecord | DeadLetter
@@ -99,6 +99,30 @@ class _State:
             superseded=tuple(self.superseded),
             dead_letters=tuple(self.dead_letters),
         )
+
+
+@dataclass(frozen=True)
+class TickReport:
+    """What one `Queue.tick()` did, in the order it did it (spec note N33).
+
+    `lapsed` holds each lease the tick lapsed, as the state keeps it once
+    ended: status expired, `ended_at` the tick's `now`. `decayed_superseded`
+    and `decayed_dead_letters` hold each entry that decayed, as it stood.
+    """
+
+    lapsed: tuple[Lease, ...] = ()
+    decayed_superseded: tuple[SupersededRecord, ...] = ()
+    decayed_dead_letters: tuple[DeadLetter, ...] = ()
+
+
+class _Instant:
+    """A clock that answers one timestamp: the `now` one tick read."""
+
+    def __init__(self, now: Timestamp) -> None:
+        self._now = now
+
+    def now(self) -> Timestamp:
+        return self._now
 
 
 class _Now:
@@ -255,6 +279,45 @@ class Queue:
         self._require_consumer(consumer_id)
         self._apply(settle.RELEASE, settle.Release(consumer_id, lease_id))
 
+    # The clock -----------------------------------------------------------
+
+    def tick(self) -> TickReport:
+        """Apply every temporal trigger due at the clock's `now`, and report it.
+
+        The double has no background time: a lease lapses and an entry decays
+        only here. The clock is read once, and every outcome of the tick sees
+        that one `now`. Each due lapse is its own outcome, `LeaseLapses` and
+        the expiry rule and every `Freed` it sends, checked once; then each
+        due decay is its own outcome, checked once (spec notes N33 to N35).
+
+        The lapses come first, in `expiry.due_lapses` order. The decays due
+        are read from the state the lapses left, so an entry a lapse creates
+        with a zero TTL decays in the same tick: once a tick returns, nothing
+        is due at its `now`.
+        """
+        now = self._clock.now()
+        instant = _Instant(now)
+        lapsed: list[Lease] = []
+        for lease in expiry.due_lapses(self.snapshot(), now):
+            self._apply(expiry.LEASE_EXPIRES_AT, expiry.LeaseExpiresAt(lease.id), clock=instant)
+            ended = self._state.leases[lease.id]
+            if lease.status is LeaseStatus.ACTIVE and ended.status is LeaseStatus.EXPIRED:
+                lapsed.append(ended)
+        state = self.snapshot()
+        decayed_superseded = tuple(
+            self._apply(decay.SUPERSEDED_RECORD_EXPIRES_AT, decay.SupersededRecordExpiresAt(shed), clock=instant)
+            for shed in decay.due_superseded(state, now)
+        )
+        decayed_dead_letters = tuple(
+            self._apply(decay.DEAD_LETTER_EXPIRES_AT, decay.DeadLetterExpiresAt(letter), clock=instant)
+            for letter in decay.due_dead_letters(state, now)
+        )
+        return TickReport(
+            lapsed=tuple(lapsed),
+            decayed_superseded=tuple(entry for entry in decayed_superseded if entry is not None),
+            decayed_dead_letters=tuple(entry for entry in decayed_dead_letters if entry is not None),
+        )
+
     # The Consuming surface's exposure ------------------------------------
 
     def lease_view(self, consumer_id: str) -> LeaseView | None:
@@ -274,17 +337,26 @@ class Queue:
 
     # The apply step ------------------------------------------------------
 
-    def _apply(self, table: Table, trigger: Any, *, event_tables: Mapping[type, Table] | None = None) -> Any:
+    def _apply(
+        self,
+        table: Table,
+        trigger: Any,
+        *,
+        event_tables: Mapping[type, Table] | None = None,
+        clock: Clock | None = None,
+    ) -> Any:
         """Make the whole outcome of one trigger, check it, then commit it.
 
         It returns the outcome's answer, what an effect gave `Outcome.answer`,
         or None when no effect answered.
 
         `event_tables` replaces `EVENT_TABLES` for a test that drives the apply
-        step with scratch tables.
+        step with scratch tables. `clock` replaces the queue's clock for this
+        outcome: `tick()` passes the one instant it read.
         """
         routes = EVENT_TABLES if event_tables is None else event_tables
-        outcome = Outcome(self._state.copy(), _Now(self._clock), self._config, self._lease_ids)
+        now = _Now(self._clock if clock is None else clock)
+        outcome = Outcome(self._state.copy(), now, self._config, self._lease_ids)
         self._dispatch(table, trigger, outcome)
         while outcome.events:
             event = outcome.events.popleft()
