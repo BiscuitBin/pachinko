@@ -1,7 +1,10 @@
 //! The shed queue: superseded and stale payloads, kept visible until they decay
 //! (`EveryDropIsVisible`), and the dead letters beside them. `Supersede` and
-//! `DropStalePublish` feed the first, the two nack rules the second; a tick's
-//! decay drains both (`SupersededRecordDecays`, `DeadLetterDecays`).
+//! `DropStalePublish` feed the first at a publish, and
+//! `SupersedeUnsettledHeldVersion` at a lease's end; the two dead-letter rules,
+//! `DeadLetterNackedRecord` and `DeadLetterNackedVersionQueueDeferred`, feed the
+//! second at a lease's end, never at the nack. A tick's decay drains both
+//! (`SupersededRecordDecays`, `DeadLetterDecays`).
 
 use std::collections::BTreeMap;
 
@@ -54,7 +57,7 @@ impl Shed {
             .insert((record.expires_at, self.arrivals), record);
     }
 
-    /// Keeps a nacked payload until it decays.
+    /// Keeps a nacked payload, made at its lease's end, until it decays.
     pub(super) fn keep_dead_letter(&mut self, letter: DeadLetter) {
         self.arrivals = self.arrivals.saturating_add(1);
         self.dead_letters

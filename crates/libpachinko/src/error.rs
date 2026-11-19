@@ -36,19 +36,22 @@ pub enum PublishError {
     /// The publish names a publisher that has not joined.
     #[error("publisher {0} has not joined")]
     UnknownPublisher(PublisherId),
-    /// The rank equals the stored record's. No rule covers it, so the publish is
-    /// refused: a placeholder for the specification's first open question, not a
-    /// decision.
+    /// The rank equals the stored record's, whatever its payload. No publish rule
+    /// covers it, so the publish is rejected and changes nothing: the maintainer's
+    /// decision, which closed the specification's question on an equal rank.
     ///
     /// ```
     /// use libpachinko::{PublishError, Rank, RecordKey};
     ///
     /// let error = PublishError::EqualRank { key: RecordKey::new("k"), rank: Rank::new(2) };
-    /// assert!(error.to_string().contains("placeholder"));
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "rank 2 equals the stored rank of k; a publish at the stored rank is rejected and changes nothing"
+    /// );
     /// ```
     #[error(
-        "rank {rank} equals the stored rank of {key}; no rule covers an equal rank \
-        (open question 1), so this refusal is a placeholder"
+        "rank {rank} equals the stored rank of {key}; a publish at the stored rank is \
+        rejected and changes nothing"
     )]
     EqualRank {
         /// The record key published.
@@ -73,6 +76,51 @@ pub enum PullError {
     /// The pull or lease read names a consumer that has not joined.
     #[error("consumer {0} has not joined")]
     UnknownConsumer(ConsumerId),
+    /// A pull that claims a pocket found no lease id for it: the source is
+    /// exhausted, or it returned an id that is still active. A pull within a lease
+    /// and a pull that finds no pocket draw no id, so they never meet this.
+    ///
+    /// ```
+    /// use libpachinko::{LeaseIdError, PullError};
+    ///
+    /// let error = PullError::from(LeaseIdError::Exhausted);
+    /// assert_eq!(error, PullError::LeaseId(LeaseIdError::Exhausted));
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "no lease id for the claim: the lease-id source is exhausted: it has no id it has not given before"
+    /// );
+    /// ```
+    #[error("no lease id for the claim: {0}")]
+    LeaseId(#[from] LeaseIdError),
+}
+
+/// Why no lease id could be drawn for a claim: the refusal of a
+/// [`LeaseIds`](crate::lease_ids::LeaseIds) source, or the queue's refusal of the id
+/// it gave.
+///
+/// ```
+/// use libpachinko::{LeaseId, LeaseIdError};
+///
+/// assert_eq!(
+///     LeaseIdError::Exhausted.to_string(),
+///     "the lease-id source is exhausted: it has no id it has not given before"
+/// );
+/// let repeated = LeaseIdError::StillActive(LeaseId::from_u128(1));
+/// assert_eq!(
+///     repeated.to_string(),
+///     "the lease-id source returned 00000000000000000000000000000001, which is still active"
+/// );
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum LeaseIdError {
+    /// The source's refusal: it cannot give an id it has not given before.
+    #[error("the lease-id source is exhausted: it has no id it has not given before")]
+    Exhausted,
+    /// The queue's refusal: the source broke its contract and returned an id that is
+    /// still active. The queue never draws again for the same claim.
+    #[error("the lease-id source returned {0}, which is still active")]
+    StillActive(LeaseId),
 }
 
 /// A refused ack, nack, renew or release. The guards are checked in this order,
@@ -101,6 +149,17 @@ pub enum LeaseActionError {
     /// An ack or nack named a record key the lease's pocket does not hold.
     #[error("record {0} is not held under this lease")]
     RecordNotHeld(RecordKey),
+    /// An ack named a record already nacked under the lease, or a nack one already
+    /// acked: the first mark stands. Checked after `RecordNotHeld`.
+    ///
+    /// ```
+    /// use libpachinko::{LeaseActionError, RecordKey};
+    ///
+    /// let error = LeaseActionError::MarkConflict(RecordKey::new("k"));
+    /// assert_eq!(error.to_string(), "record k is already marked the other way under this lease");
+    /// ```
+    #[error("record {0} is already marked the other way under this lease")]
+    MarkConflict(RecordKey),
 }
 
 /// A configuration the config invariants exclude.
@@ -126,7 +185,7 @@ pub enum ConfigError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigError, JoinError, LeaseActionError, PublishError, PullError};
+    use super::{ConfigError, JoinError, LeaseActionError, LeaseIdError, PublishError, PullError};
     use crate::ids::{ConsumerId, LeaseId, PublisherId, Rank, RecordKey};
 
     #[test]
@@ -139,6 +198,16 @@ mod tests {
             (
                 PullError::UnknownConsumer(ConsumerId::new("c")).to_string(),
                 "consumer c has not joined",
+            ),
+            (
+                PullError::LeaseId(LeaseIdError::Exhausted).to_string(),
+                "no lease id for the claim: the lease-id source is exhausted: \
+                it has no id it has not given before",
+            ),
+            (
+                PullError::LeaseId(LeaseIdError::StillActive(LeaseId::from_u128(0xab))).to_string(),
+                "no lease id for the claim: the lease-id source returned \
+                000000000000000000000000000000ab, which is still active",
             ),
             (
                 JoinError::PublisherExists(PublisherId::new("p")).to_string(),
@@ -155,6 +224,10 @@ mod tests {
             (
                 LeaseActionError::RecordNotHeld(RecordKey::new("k")).to_string(),
                 "record k is not held under this lease",
+            ),
+            (
+                LeaseActionError::MarkConflict(RecordKey::new("k")).to_string(),
+                "record k is already marked the other way under this lease",
             ),
             (
                 ConfigError::MaxConsecutiveExpiriesZero.to_string(),

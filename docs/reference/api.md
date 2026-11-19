@@ -71,7 +71,11 @@ a value between threads, copy it or print it. Public structs and enums are
 invariants of [the agent contract](agent-contract.md). Every refusal is a variant of a
 `thiserror` enum for its operation (`JoinError`, `PublishError`, `PullError`,
 `LeaseActionError`, `ConfigError`), and an outcome that is not a refusal, such as
-`NoPocketAvailable`, is a variant of the operation's outcome instead.
+`NoPocketAvailable`, is a variant of the operation's outcome instead. A pull that
+claims a pocket can be refused with `PullError::LeaseId`, which carries a
+`LeaseIdError`: `Exhausted` is the lease-id source's refusal once it has no id it has
+not given before, and `StillActive` is the queue's refusal of an id the source
+returned that is still active.
 
 `libpachinko`'s public API has three surfaces, and each item has one path. The crate
 root is the caller's, and one `use libpachinko::{…}` names all of it: `version`, `Config`
@@ -84,11 +88,14 @@ effect traits `clock::Clock` and `lease_ids::LeaseIds` beside their fakes
 `pachinko`'s public API is `run`.
 
 The lease actions each name the consumer and the `LeaseId` its pull returned, and each
-refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey` and return a
-`SettleOutcome`, `Settled` or `Deferred`. `renew` returns the lease's new `expires_at`,
-a `Timestamp`. `release` returns a `PocketFate`, `Queued` or `Idle`, with the ended
-`Lease`. `tick` takes nothing, refuses nothing and returns a `TickReport`: the leases
-that lapsed and how many superseded records and dead letters decayed.
+refuses with `LeaseActionError`. `ack` and `nack` also take a `RecordKey`, mark the held
+record and return a `SettleOutcome`, `Acked` or `Nacked`, a repeat answering as the first
+mark did; the other mark is refused with `MarkConflict`. The record stays held, and
+`lease_view` shows each held record's `Mark` in a `MarkedRecord`, until the lease ends.
+`renew` returns the lease's new `expires_at`, a `Timestamp`. `release` returns a
+`PocketFate`, `Queued` or `Idle`, with the ended `Lease`. `tick` takes nothing, refuses
+nothing and returns a `TickReport`: the leases that lapsed and how many superseded
+records and dead letters decayed.
 
 `libpachinko` has one feature, `testing`, which no normal build turns on. It adds the
 `testing` module and two `Queue` methods, `snapshot` and `tick_with_cost`, for tests, and

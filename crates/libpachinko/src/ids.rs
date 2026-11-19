@@ -1,7 +1,8 @@
 //! The specification's names and values: who publishes and consumes, which pocket
-//! and key a record has, its rank and payload, a held record as a batch carries it,
-//! and the id of a lease, the fencing token every ack, nack, renew and release
-//! carries back, with the one text form the wire carries it in.
+//! and key a record has, its rank and payload, a held record as a batch carries it
+//! and, with its mark, as the lease read shows it, and the id of a lease, the
+//! fencing token every ack, nack, renew and release carries back, with the one
+//! text form the wire carries it in.
 
 use std::fmt;
 use std::str::FromStr;
@@ -185,8 +186,8 @@ impl From<&[u8]> for Payload {
     }
 }
 
-/// A held record as a batch carries it and the `Consuming` surface exposes it: the
-/// key, the held rank and the held payload.
+/// A held record as a pull's batch carries it: the key, the held rank and the held
+/// payload. The lease read shows it with its mark, as a [`MarkedRecord`].
 ///
 /// ```
 /// use libpachinko::{HeldRecord, Payload, Rank, RecordKey};
@@ -217,6 +218,69 @@ impl HeldRecord {
     #[must_use]
     pub const fn new(key: RecordKey, rank: Rank, payload: Payload) -> Self {
         Self { key, rank, payload }
+    }
+}
+
+/// What the consumer has said of a held record under its lease: nothing yet, an
+/// ack or a nack. The first mark stands until the lease ends (`AckMarksRecord`,
+/// `NackMarksRecord`).
+///
+/// ```
+/// use libpachinko::Mark;
+/// assert_ne!(Mark::Unsettled, Mark::Acked);
+/// assert_ne!(Mark::Acked, Mark::Nacked);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Mark {
+    /// Neither acked nor nacked under the lease.
+    Unsettled,
+    /// Acked under the lease.
+    Acked,
+    /// Nacked under the lease.
+    Nacked,
+}
+
+/// A held record as the lease read shows it: the key, the held rank, the held
+/// payload and the record's [`Mark`].
+///
+/// ```
+/// use libpachinko::{Mark, MarkedRecord, Payload, Rank, RecordKey};
+///
+/// let marked = MarkedRecord::new(RecordKey::new("k"), Rank::new(2), Payload::default(), Mark::Acked);
+/// assert_eq!(marked.key.as_str(), "k");
+/// assert_eq!(marked.mark, Mark::Acked);
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct MarkedRecord {
+    /// The record key.
+    pub key: RecordKey,
+    /// The rank of the version handed out.
+    pub rank: Rank,
+    /// The payload of the version handed out.
+    pub payload: Payload,
+    /// What the consumer has said of it.
+    pub mark: Mark,
+}
+
+impl MarkedRecord {
+    /// A marked record with these parts.
+    ///
+    /// ```
+    /// use libpachinko::{Mark, MarkedRecord, Payload, Rank, RecordKey};
+    ///
+    /// let marked = MarkedRecord::new(RecordKey::new("k"), Rank::new(7), Payload::default(), Mark::Unsettled);
+    /// assert_eq!((marked.rank.get(), marked.mark), (7, Mark::Unsettled));
+    /// ```
+    #[must_use]
+    pub const fn new(key: RecordKey, rank: Rank, payload: Payload, mark: Mark) -> Self {
+        Self {
+            key,
+            rank,
+            payload,
+            mark,
+        }
     }
 }
 
@@ -300,8 +364,8 @@ impl FromStr for LeaseId {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConsumerId, HeldRecord, LeaseId, ParseLeaseIdError, Payload, PocketKey, PublisherId, Rank,
-        RecordKey,
+        ConsumerId, HeldRecord, LeaseId, Mark, MarkedRecord, ParseLeaseIdError, Payload, PocketKey,
+        PublisherId, Rank, RecordKey,
     };
 
     #[test]
@@ -330,6 +394,25 @@ mod tests {
         assert_eq!(
             (held.key.as_str(), held.rank, held.payload.as_ref()),
             ("k", Rank::new(2), [1].as_slice())
+        );
+    }
+
+    #[test]
+    fn a_marked_record_keeps_its_parts() {
+        let marked = MarkedRecord::new(
+            RecordKey::new("k"),
+            Rank::new(2),
+            Payload::from(vec![1]),
+            Mark::Nacked,
+        );
+        assert_eq!(
+            (
+                marked.key.as_str(),
+                marked.rank,
+                marked.payload.as_ref(),
+                marked.mark
+            ),
+            ("k", Rank::new(2), [1].as_slice(), Mark::Nacked)
         );
     }
 

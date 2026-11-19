@@ -3,20 +3,27 @@
 //! The scope is one [`JoinSet`] holding four tasks: the queue's owner, its ticker,
 //! the HTTP listener and the shutdown signal. The first to end, for whatever
 //! reason, starts the shutdown; all of them are joined before `serve` returns, and
-//! the first error is the one returned. No other task is spawned here; axum spawns one task per
-//! connection outside the scope, which the cut ends at its next read or write.
+//! the first error is the one returned. No other task is spawned here; axum spawns one
+//! task per connection outside the scope, which the scope neither ends nor joins.
 //!
 //! Shutdown runs in this order. Readiness goes `Stopping`, so `GET /readyz` answers
 //! 503 at once; the listener stops accepting and in-flight requests finish. If every
 //! task ends within `--shutdown-grace-ms` (the owner ends when the listener has
-//! dropped the last handle), that is the end. Otherwise the open connections are
-//! cut and the owner is told to stop, and the tasks are joined again for at most
-//! one more grace period; only then is any of the scope's tasks still running
-//! aborted, at its next yield point. The owner yields between commands, so `serve`
-//! returns within two grace periods plus the one command or tick the owner was
-//! applying, and releasing the queue's state when the owner ends. A zero grace
-//! period cuts at once and joins the tasks for at most one second before aborting
-//! what is left.
+//! dropped the last handle), that is the end. Otherwise the cut comes: the listener
+//! stops waiting for the connections still open and the owner is told to stop, and
+//! the tasks are joined again for at most one more grace period; only then is any of
+//! the scope's tasks still running aborted, at its next yield point. The owner yields
+//! between commands, so `serve` returns within two grace periods plus the one command
+//! or tick the owner was applying, and releasing the queue's state when the owner
+//! ends. A zero grace period cuts at once and joins the tasks for at most one second
+//! before aborting what is left.
+//!
+//! The cut does not close a connection. The task axum serves one on lasts until the
+//! connection ends or the runtime is dropped, which for the binary is its exit, right
+//! after `serve` returns. Until then a request that completes on it is still
+//! answered, and a command it sends finds the owner stopped: 503 `not_ready`.
+//! Nothing bounds a connection that sends nothing or trickles its head either; T38
+//! owns both gaps.
 //!
 //! Every task in the scope must end once the shutdown begins, on the lifecycle's
 //! `shutdown` watch or on the owner ending, without waiting for the cut: the cut is
@@ -24,17 +31,13 @@
 //! shutdown into an overrun. The cut is the backstop for a task that overran.
 
 use std::io::{self, Write};
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
 use libpachinko::Queue;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinError, JoinSet};
-use tokio::time::{Instant, Sleep, sleep_until, timeout};
+use tokio::time::timeout;
 
 use crate::actor::{self, QueueHandle, Readiness, ServiceQueue, Tick};
 use crate::http::{Limits, router};
@@ -47,11 +50,13 @@ type TaskResult = Result<(), ServeError>;
 type Owner<F> = (QueueHandle, F);
 
 /// What the scope shares with the owner, its bounds and the router's request-shape
-/// limits (T27): the readiness the owner
-/// sets to `Serving` and the scope to `Stopping`; the shutdown, which turns true
-/// when the shutdown begins and which every task beside the owner ends on; the
-/// cut, which ends the open connections and tells the owner to stop; and the tick
-/// lane, whose sender the ticker holds and whose receiver the owner takes.
+/// limits (T27): the readiness the owner sets to `Serving` and the scope to
+/// `Stopping`; the shutdown, which turns true when the shutdown begins and which
+/// every task beside the owner ends on; the cut, which ends the listener's wait for
+/// the open connections and tells the owner to stop; and the tick lane's sender,
+/// which the ticker holds. The lane's receiver is not kept here: [`Lifecycle::new`]
+/// hands it back, and [`Lifecycle::start`] takes it by value for the owner, so one
+/// receiver serves one start.
 pub(crate) struct Lifecycle {
     readiness: watch::Sender<Readiness>,
     shutdown: watch::Sender<bool>,
@@ -59,48 +64,42 @@ pub(crate) struct Lifecycle {
     bounds: Bounds,
     limits: Limits,
     lane: mpsc::Sender<Tick>,
-    ticks: Option<mpsc::Receiver<Tick>>,
 }
 
 impl Lifecycle {
     /// A lifecycle `Starting`, not shutting down, not cut, with the bounds and the
-    /// limits `config` sets.
-    pub(crate) fn new(config: &ServeConfig) -> Self {
+    /// limits `config` sets, and the receiving end of its tick lane, for
+    /// [`Lifecycle::start`].
+    pub(crate) fn new(config: &ServeConfig) -> (Self, mpsc::Receiver<Tick>) {
         let (lane, ticks) = actor::tick_lane();
-        Self {
+        let lifecycle = Self {
             readiness: watch::channel(Readiness::Starting).0,
             shutdown: watch::channel(false).0,
             cut: watch::channel(false).0,
             bounds: Bounds::of(config),
             limits: Limits::from(config),
             lane,
-            ticks: Some(ticks),
-        }
+        };
+        (lifecycle, ticks)
     }
 
     /// The owner of `queue`, reporting to this lifecycle, stopping on its cut and
-    /// taking its ticks. A second start gets a tick lane whose ticker has gone.
+    /// taking its ticks from `ticks`, the receiver [`Lifecycle::new`] handed back.
     pub(crate) fn start(
-        &mut self,
+        &self,
         queue: ServiceQueue,
-        lease_ids: EpochSerialLeaseIds,
+        ticks: mpsc::Receiver<Tick>,
     ) -> Owner<impl Future<Output = TaskResult> + Send + 'static> {
-        actor::start(
-            queue,
-            lease_ids,
-            self.readiness.clone(),
-            self.cut.subscribe(),
-            self.ticks.take().unwrap_or_else(|| actor::tick_lane().1),
-        )
+        actor::start(queue, self.readiness.clone(), self.cut.subscribe(), ticks)
     }
 }
 
-/// The scope's two bounds, from the flags.
+/// The scope's bounds, from the flags.
 #[derive(Clone, Copy, Debug)]
 struct Bounds {
     /// `--shutdown-grace-ms`: each of shutdown's two waits.
     grace: Duration,
-    /// `--request-timeout-ms`: each handler, and each connection's idle read.
+    /// `--request-timeout-ms`: each handler.
     request: Duration,
     /// `--sweep-ms`: the ticker's sleep between one tick's answer and the next.
     sweep: Duration,
@@ -128,7 +127,7 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         .with_max_level(config.log_level())
         .try_init()
         .ok();
-    let (queue, lease_ids) = service_queue(config)?;
+    let queue = service_queue(config)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -140,8 +139,8 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
         let signals = install_signals()?;
         announce(&listener, out)?;
         let (_never_sent, stop) = watch::channel(());
-        let mut lifecycle = Lifecycle::new(config);
-        let owner = lifecycle.start(queue, lease_ids);
+        let (lifecycle, ticks) = Lifecycle::new(config);
+        let owner = lifecycle.start(queue, ticks);
         scope(listener, owner, lifecycle, stop, signals).await
     })
 }
@@ -158,9 +157,14 @@ pub(crate) fn run(config: &ServeConfig, out: &mut impl Write) -> Result<(), Serv
 /// [`ServeError::Config`] before anything is served; then the first error of the
 /// owner, the listener or the signal handling, or [`ServeError::Task`] when a task
 /// panicked or did not finish within `--shutdown-grace-ms`, in which case the
-/// connections still open were cut, and the scope's tasks still running a grace
-/// period later were aborted, before `serve` returned; a cut connection's own task
-/// can outlive `serve` until its next read or write.
+/// listener stopped waiting for the connections still open, the owner was told to
+/// stop, and the scope's tasks still running a grace period later were aborted,
+/// before `serve` returned. The connections' own tasks are axum's and are not ended:
+/// each lasts until its connection ends or the runtime is dropped. The binary drops
+/// its runtime as soon as `serve` returns, which closes them. Under a caller's
+/// runtime one can outlive `serve`; a request that completes on it then is still
+/// answered, and a command it sends is refused 503 `not_ready`, because the owner
+/// has stopped.
 ///
 /// ```no_run
 /// # async fn example() -> Result<(), pachinko::ServeError> {
@@ -177,20 +181,19 @@ pub async fn serve(
     config: &ServeConfig,
     stop: watch::Receiver<()>,
 ) -> Result<(), ServeError> {
-    let (queue, lease_ids) = service_queue(config)?;
+    let queue = service_queue(config)?;
     let signals = install_signals()?;
-    let mut lifecycle = Lifecycle::new(config);
-    let owner = lifecycle.start(queue, lease_ids);
+    let (lifecycle, ticks) = Lifecycle::new(config);
+    let owner = lifecycle.start(queue, ticks);
     scope(listener, owner, lifecycle, stop, signals).await
 }
 
-/// The service's queue over the real clock and lease ids, and the owner's clone of
-/// the lease-id source.
-fn service_queue(config: &ServeConfig) -> Result<(ServiceQueue, EpochSerialLeaseIds), ServeError> {
+/// The service's queue over the real clock and lease ids.
+fn service_queue(config: &ServeConfig) -> Result<ServiceQueue, ServeError> {
     let clock = SystemClock::new()?;
     let lease_ids = EpochSerialLeaseIds::new()?;
-    let queue = Queue::new(config.queue().clone(), clock, lease_ids.clone())?;
-    Ok((queue, lease_ids))
+    let queue = Queue::new(config.queue().clone(), clock, lease_ids)?;
+    Ok(queue)
 }
 
 /// Writes `listening on <address>` and flushes it, so a reader sees it at once.
@@ -223,19 +226,18 @@ where
         bounds,
         limits,
         lane,
-        ticks: _,
     } = lifecycle;
     let shutting_down = shutdown.subscribe();
-    let connections = Connections {
-        listener,
-        cut: cut.subscribe(),
-        idle: bounds.request,
-    };
     let routes = router(handle, readiness.subscribe(), bounds.request, limits);
     let mut tasks = JoinSet::new();
     tasks.spawn(owner);
     tasks.spawn(actor::ticker(lane, bounds.sweep, shutting_down.clone()));
-    tasks.spawn(listen(connections, routes, shutting_down.clone()));
+    tasks.spawn(listen(
+        listener,
+        routes,
+        shutting_down.clone(),
+        cut.subscribe(),
+    ));
     tasks.spawn(signal(signals, stop, shutting_down));
     let first = tasks.join_next().await.map_or(Ok(()), task_result);
     readiness.send_replace(Readiness::Stopping);
@@ -251,19 +253,19 @@ fn task_result(joined: Result<TaskResult, JoinError>) -> TaskResult {
 
 /// Joins every remaining task, keeping the first error; each is expected to end
 /// because the shutdown has begun, which the scope sent before this, so the cut is
-/// only the backstop. Past the grace period every open connection is cut, which
-/// ends the listener's wait for them at their next read or write, and tells the
-/// owner to stop between commands; the tasks are then joined again for at most one
-/// more grace period, and whatever is still running after it is aborted. Nothing is
-/// aborted before then. The abort waits for the one command or tick the owner was
-/// applying, and for the queue's state to be released when the owner ends; neither
-/// is bounded by the grace. The connection tasks are axum's and sit outside `tasks`:
-/// the abort neither ends nor joins them, and one can outlive `serve` until its next
-/// read or write, which the cut fails. An error a task ended with inside the grace
-/// period is returned; failing that, the overrun's own error. A task that fails
-/// after the cut is logged. A zero grace period cuts at once and is no overrun: the
-/// tasks, which end on the cut, are joined for at most [`ZERO_GRACE_BACKSTOP`], and
-/// whatever is still running after it is aborted.
+/// only the backstop. Past the grace period the cut is sent, which ends the
+/// listener's wait for the open connections and tells the owner to stop between
+/// commands; the tasks are then joined again for at most one more grace period, and
+/// whatever is still running after it is aborted. Nothing is aborted before then.
+/// The abort waits for the one command or tick the owner was applying, and for the
+/// queue's state to be released when the owner ends; neither is bounded by the
+/// grace. The connection tasks are axum's and sit outside `tasks`: neither the cut
+/// nor the abort ends or joins them (the module's doc says what becomes of them). An
+/// error a task ended with inside the grace period is returned; failing that, the
+/// overrun's own error. A task that fails after the cut is logged. A zero grace
+/// period cuts at once and is no overrun: the tasks, which end on the cut, are joined
+/// for at most [`ZERO_GRACE_BACKSTOP`], and whatever is still running after it is
+/// aborted.
 async fn drain(
     tasks: &mut JoinSet<TaskResult>,
     cut: &watch::Sender<bool>,
@@ -317,7 +319,7 @@ async fn abort(tasks: &mut JoinSet<TaskResult>, first: TaskResult, waited: Durat
 async fn join_logging(tasks: &mut JoinSet<TaskResult>) {
     while let Some(joined) = tasks.join_next().await {
         if let Err(error) = task_result(joined) {
-            tracing::warn!(%error, "a task failed after its connections were cut");
+            tracing::warn!(%error, "a task failed after the cut");
         }
     }
 }
@@ -333,184 +335,22 @@ async fn join_into(tasks: &mut JoinSet<TaskResult>, first: &mut TaskResult) {
     }
 }
 
-/// The HTTP listener, until shutdown starts; in-flight requests finish first, unless
-/// their connections are cut. The router, and with it the last handle to the owner,
-/// is dropped when this returns.
+/// The HTTP listener: it stops accepting when the shutdown starts, and returns once
+/// the in-flight requests have finished or at the cut, whichever comes first. axum
+/// waits for every open connection, so without the cut a stalled one would hold this
+/// task until the abort. Returning drops the router, which is the owner's last handle
+/// unless the cut left a connection's task holding a clone of it.
 async fn listen(
-    connections: Connections,
+    listener: TcpListener,
     routes: axum::Router,
     shutting_down: watch::Receiver<bool>,
+    mut cut: watch::Receiver<bool>,
 ) -> TaskResult {
-    axum::serve(connections, routes)
-        .with_graceful_shutdown(shutdown_started(shutting_down))
-        .await
-        .map_err(ServeError::io("serving HTTP"))
-}
-
-/// The TCP listener, handing axum connections that `cut` can end and that close
-/// once idle for `idle`.
-struct Connections {
-    listener: TcpListener,
-    cut: watch::Receiver<bool>,
-    idle: Duration,
-}
-
-impl axum::serve::Listener for Connections {
-    type Io = Connection;
-    type Addr = SocketAddr;
-
-    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-        let (stream, address) = axum::serve::Listener::accept(&mut self.listener).await;
-        let mut cut = self.cut.clone();
-        let cut = Box::pin(async move { drop(cut.wait_for(|cut| *cut).await) });
-        (
-            Connection {
-                stream,
-                cut: Some(cut),
-                idle: Idle {
-                    bound: self.idle,
-                    waiting: None,
-                    owed_since: None,
-                },
-            },
-            address,
-        )
-    }
-
-    fn local_addr(&self) -> io::Result<Self::Addr> {
-        self.listener.local_addr()
-    }
-}
-
-/// One accepted connection: its reads and writes fail once it is cut, so the task
-/// axum serves it on ends at its next turn, and a read fails once [`Idle`] says the
-/// client has been idle too long.
-struct Connection {
-    stream: TcpStream,
-    /// Ends when the connection is cut; `None` once it has.
-    cut: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
-    idle: Idle,
-}
-
-/// A connection's idle bound: a read that stays pending for `bound` while the
-/// server owes the client nothing fails, and so does one still pending two bounds
-/// after the last byte that arrived while the server owed a reply.
-struct Idle {
-    /// How long a read may stay pending while the server owes no reply.
-    bound: Duration,
-    /// The deadline of the read now pending, if one is.
-    waiting: Option<Pin<Box<Sleep>>>,
-    /// When bytes last arrived since the server last wrote: a request is being read
-    /// or handled. The deadline is two bounds from this instant. The handler starts
-    /// no later than the head's last byte and the request timeout writes its 408 one
-    /// bound after that, so the 408 always comes first, however slowly the head
-    /// arrived once it completes. A client can hold the connection only by sending a byte at least
-    /// every two bounds, which hyper's limit on a head's size and the shutdown's cut
-    /// end; no deadline at all would let a client hold it with a partial head.
-    owed_since: Option<Instant>,
-}
-
-impl Idle {
-    /// Fails once a read has stayed pending for `bound` while nothing is owed, or
-    /// two bounds after the last byte that arrived while a reply was owed; until
-    /// then, wakes `context` when it would.
-    fn pending(&mut self, context: &mut Context<'_>) -> io::Result<()> {
-        let bound = self.bound;
-        let deadline = match self.owed_since {
-            Some(since) => since + 2 * bound,
-            None => Instant::now() + bound,
-        };
-        let waiting = self
-            .waiting
-            .get_or_insert_with(|| Box::pin(sleep_until(deadline)));
-        if waiting.as_mut().poll(context).is_pending() {
-            return Ok(());
-        }
-        self.waiting = None;
-        let message = match self.owed_since {
-            Some(_) => format!(
-                "no reply was written within {}ms of the last byte",
-                (2 * bound).as_millis()
-            ),
-            None => format!("no bytes arrived within {}ms", bound.as_millis()),
-        };
-        Err(io::Error::new(io::ErrorKind::TimedOut, message))
-    }
-
-    /// A read finished; `arrived` says whether it brought bytes, which the server
-    /// now owes a reply to.
-    fn read(&mut self, arrived: bool) {
-        self.waiting = None;
-        if arrived {
-            self.owed_since = Some(Instant::now());
-        }
-    }
-
-    /// The server wrote: whatever it owed is being answered.
-    fn wrote(&mut self) {
-        self.waiting = None;
-        self.owed_since = None;
-    }
-}
-
-impl Connection {
-    /// Fails once the connection is cut; until then, wakes `context` when it is.
-    fn open(&mut self, context: &mut Context<'_>) -> io::Result<()> {
-        if let Some(cut) = &mut self.cut {
-            if cut.as_mut().poll(context).is_pending() {
-                return Ok(());
-            }
-            self.cut = None;
-        }
-        Err(io::Error::new(
-            io::ErrorKind::ConnectionAborted,
-            "the shutdown grace period is over",
-        ))
-    }
-}
-
-impl AsyncRead for Connection {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        this.open(context)?;
-        let before = buf.filled().len();
-        let read = Pin::new(&mut this.stream).poll_read(context, buf);
-        if read.is_pending() {
-            this.idle.pending(context)?;
-        } else {
-            this.idle.read(buf.filled().len() > before);
-        }
-        read
-    }
-}
-
-impl AsyncWrite for Connection {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        context: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
-        this.open(context)?;
-        let written = Pin::new(&mut this.stream).poll_write(context, buf);
-        if matches!(written, Poll::Ready(Ok(count)) if count > 0) {
-            this.idle.wrote();
-        }
-        written
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        this.open(context)?;
-        Pin::new(&mut this.stream).poll_flush(context)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_shutdown(context)
+    let served =
+        axum::serve(listener, routes).with_graceful_shutdown(shutdown_started(shutting_down));
+    tokio::select! {
+        served = served.into_future() => served.map_err(ServeError::io("serving HTTP")),
+        _ = cut.wait_for(|cut| *cut) => Ok(()),
     }
 }
 
@@ -583,12 +423,36 @@ mod tests {
     /// How long a test waits for `serve` before it fails.
     const BOUND: Duration = Duration::from_secs(10);
 
-    /// A publish whose head promises a 2-byte body, asking to be told when the
-    /// handler starts reading it.
-    const HEAD: &[u8] = b"PUT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
-content-type: application/json\r\ncontent-length: 2\r\n\
-expect: 100-continue\r\n\r\n";
     const CONTINUE: &[u8] = b"HTTP/1.1 100 Continue\r\n\r\n";
+
+    /// A whole publish body.
+    const PUBLISH: &[u8] = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
+
+    /// A head promising [`PUBLISH`], asking to be told when the handler starts reading
+    /// it. The body is the caller's to send, or to withhold. It does not ask for the
+    /// connection to be closed, so a test that reads its reply to the end shows the
+    /// server closing it.
+    fn publish_head() -> String {
+        format!(
+            "PUT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
+content-type: application/json\r\ncontent-length: {}\r\n\
+expect: 100-continue\r\n\r\n",
+            PUBLISH.len()
+        )
+    }
+
+    /// Asserts `reply` is the whole 503 `not_ready` of a command that found the owner
+    /// stopped.
+    fn assert_owner_stopped(reply: &str) {
+        assert!(
+            reply.starts_with("HTTP/1.1 503 Service Unavailable\r\n"),
+            "{reply:?}"
+        );
+        assert!(
+            reply.ends_with(r#"{"error":"not_ready","message":"the queue's owner has stopped"}"#),
+            "{reply:?}"
+        );
+    }
 
     /// A config on port 0 with `flags` added.
     fn config(flags: &[&str]) -> ServeConfig {
@@ -615,9 +479,9 @@ expect: 100-continue\r\n\r\n";
     async fn a_panicked_owner_makes_serve_fail_within_three_grace_periods() {
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
-        let (queue, lease_ids) = service_queue(&config).unwrap();
-        let mut lifecycle = Lifecycle::new(&config);
-        let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+        let queue = service_queue(&config).unwrap();
+        let (lifecycle, ticks) = Lifecycle::new(&config);
+        let (handle, _real_owner) = lifecycle.start(queue, ticks);
         let (_stop, stopped) = watch::channel(());
         let owner = (handle, panicking_owner());
         let served = timeout(
@@ -643,9 +507,9 @@ expect: 100-continue\r\n\r\n";
     async fn a_task_that_ignores_the_cut_is_aborted_after_the_second_grace_period() {
         let config = config(&["--shutdown-grace-ms", "200"]);
         let listener = TcpListener::bind(config.listen()).await.unwrap();
-        let (queue, lease_ids) = service_queue(&config).unwrap();
-        let mut lifecycle = Lifecycle::new(&config);
-        let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+        let queue = service_queue(&config).unwrap();
+        let (lifecycle, ticks) = Lifecycle::new(&config);
+        let (handle, _real_owner) = lifecycle.start(queue, ticks);
         // The owner's place is taken by a future parked at a yield point that never
         // looks at the cut, so only the abort can end it.
         let owner = (handle, std::future::pending());
@@ -709,55 +573,86 @@ expect: 100-continue\r\n\r\n";
         assert_eq!(served.unwrap(), Ok(()));
     }
 
-    /// Sends `head` and waits until the handler is reading the body.
-    fn start_a_request(address: SocketAddr, head: &[u8]) -> TcpStream {
+    /// Sends [`publish_head`] and waits until the handler is reading the body.
+    fn start_a_request(address: SocketAddr) -> TcpStream {
         let mut stream = TcpStream::connect(address).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
-        stream.write_all(head).unwrap();
+        stream.write_all(publish_head().as_bytes()).unwrap();
         let mut continued = vec![0; CONTINUE.len()];
         stream.read_exact(&mut continued).unwrap();
         assert_eq!(continued, CONTINUE, "the handler is reading the body");
         stream
     }
 
-    /// Sends [`HEAD`] and waits until the handler is reading the body, then drops
-    /// `stop` with the body still unsent.
-    fn stall_a_request(address: SocketAddr, stop: watch::Sender<()>) -> TcpStream {
-        let stream = start_a_request(address, HEAD);
-        drop(stop);
-        stream
-    }
-
-    #[test]
-    fn a_connection_open_past_the_grace_period_is_cut_before_serve_returns() {
-        let runtime = runtime();
-        let (served, mut stream) = runtime.block_on(async {
-            let config = config(&["--shutdown-grace-ms", "100"]);
+    /// Serves under `flags`, over the real owner, while `client` runs against the
+    /// listener's address, holding the sender whose drop stops the server. Returns
+    /// what `serve` returned and what the client returned; `runtime` lives on.
+    fn serve_beside<T: Send>(
+        runtime: &tokio::runtime::Runtime,
+        flags: &[&str],
+        client: impl FnOnce(SocketAddr, watch::Sender<()>) -> T + Send,
+    ) -> (Result<(), ServeError>, T) {
+        runtime.block_on(async {
+            let config = config(flags);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
-            let client =
-                async move { tokio::task::block_in_place(|| stall_a_request(address, stop)) };
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
+            let client = async move { tokio::task::block_in_place(|| client(address, stop)) };
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
+            let owner = lifecycle.start(queue, ticks);
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             timeout(BOUND, async { tokio::join!(server, client) })
                 .await
                 .expect("serve returned within the bound")
-        });
+        })
+    }
+
+    #[test]
+    fn a_connection_open_past_the_grace_period_gets_no_command_applied_after_serve_returns() {
+        let runtime = runtime();
+        let grace = ["--shutdown-grace-ms", "100"];
+        let (served, (mut finishing, mut stalled)) =
+            serve_beside(&runtime, &grace, |address, stop| {
+                let finishing = start_a_request(address);
+                let stalled = start_a_request(address);
+                drop(stop);
+                (finishing, stalled)
+            });
+        // The listener ended on the cut, not by the abort a grace period later, whose
+        // error goes on to count the tasks it aborted.
         assert!(
             matches!(&served, Err(ServeError::Task(message)) if message.ends_with("open connections were cut")),
             "{served:?}"
         );
-        // `serve` has returned while the runtime lives on: finishing the body must not
-        // reach a handler. The connection must be closed, not merely silent: a read
-        // that times out fails the test.
-        stream.write_all(b"{}").ok();
-        let mut reply = [0; 256];
-        let read = match stream.read(&mut reply) {
+        // `serve` has returned while the runtime lives on, and with it the tasks axum
+        // serves the two connections on. Finishing the body reaches the handler, whose
+        // command finds the owner stopped: 503, never applied.
+        finishing.write_all(PUBLISH).unwrap();
+        let mut reply = String::new();
+        finishing.read_to_string(&mut reply).unwrap();
+        assert_owner_stopped(&reply);
+        // The stalled connection is still open while the runtime lives: a short read
+        // finds neither a reply nor the end.
+        stalled
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .unwrap();
+        let open = stalled.read(&mut [0; 1]);
+        assert!(
+            matches!(&open, Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)),
+            "the stalled connection closed or was answered before the runtime was dropped: {open:?}"
+        );
+        stalled
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        // Dropping the runtime, as the binary does once `serve` returns, closes the
+        // connection still stalled. It must be closed, not merely silent: a read that
+        // times out fails the test.
+        drop(runtime);
+        let mut rest = [0; 256];
+        let read = match stalled.read(&mut rest) {
             Ok(read) => read,
             Err(error) if matches!(error.kind(), ErrorKind::ConnectionReset) => 0,
             Err(error) => panic!("the connection neither closed nor answered: {error}"),
@@ -765,36 +660,35 @@ expect: 100-continue\r\n\r\n";
         assert_eq!(
             read,
             0,
-            "a handler answered after serve returned: {}",
-            String::from_utf8_lossy(&reply[..read])
+            "a handler answered the stalled request: {}",
+            String::from_utf8_lossy(&rest[..read])
         );
-        drop(runtime);
     }
 
-    /// Connects to `address`, sends `sent`, and returns whether the server closed
-    /// the connection and how long that took, dropping `stop` then. The read's own
-    /// deadline of five seconds ends the wait otherwise, and its error fails the
-    /// test.
-    fn wait_for_the_close(
-        address: SocketAddr,
-        sent: &'static [u8],
-        stop: watch::Sender<()>,
-    ) -> (bool, Duration) {
-        let mut stream = TcpStream::connect(address).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let started = Instant::now();
-        stream.write_all(sent).unwrap();
-        let closed = match stream.read(&mut [0; 64]) {
-            Ok(read) => read == 0,
-            Err(error) => {
-                assert_eq!(error.kind(), ErrorKind::ConnectionReset, "{error}");
-                true
-            }
-        };
-        drop(stop);
-        (closed, started.elapsed())
+    /// Reads `stream` until a refusal's JSON body has ended.
+    fn read_reply(stream: &mut TcpStream) -> String {
+        let mut reply = Vec::new();
+        let mut chunk = [0; 512];
+        while !reply.ends_with(b"}") {
+            let read = stream.read(&mut chunk).unwrap();
+            assert_ne!(read, 0, "the connection closed before the reply ended");
+            reply.extend_from_slice(&chunk[..read]);
+        }
+        String::from_utf8_lossy(&reply).into_owned()
+    }
+
+    /// Asserts `reply` is the 408 `request_timeout` of a handler that ran past a bound
+    /// of 100 ms.
+    fn assert_timed_out(reply: &str) {
+        assert!(
+            reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
+            "{reply:?}"
+        );
+        assert!(reply.contains(r#""error":"request_timeout""#), "{reply:?}");
+        assert!(
+            reply.contains("the request took longer than 100ms"),
+            "{reply:?}"
+        );
     }
 
     /// Waits until `readiness` reads `wanted`, failing after [`BOUND`].
@@ -806,84 +700,31 @@ expect: 100-continue\r\n\r\n";
         }
     }
 
-    /// Serves with a request timeout of 100 ms while a client sends `sent` and
-    /// waits for the close, returning whether it came and how long it took.
-    fn serve_until_closed(sent: &'static [u8]) -> (bool, Duration) {
-        let runtime = runtime();
-        let (served, closed) = runtime.block_on(async {
-            let config = config(&["--request-timeout-ms", "100"]);
-            let listener = TcpListener::bind(config.listen()).await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let (stop, stopped) = watch::channel(());
-            let client = async move {
-                tokio::task::block_in_place(|| wait_for_the_close(address, sent, stop))
-            };
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
-            let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
-            timeout(BOUND, async { tokio::join!(server, client) })
-                .await
-                .expect("serve returned within the bound")
-        });
-        assert_eq!(served, Ok(()));
-        drop(runtime);
-        closed
-    }
-
-    #[test]
-    fn a_connection_that_sends_nothing_is_closed_within_the_request_timeout() {
-        let (closed, waited) = serve_until_closed(b"");
-        assert!(closed, "the server closed the idle connection");
-        assert!(
-            waited >= Duration::from_millis(90) && waited < Duration::from_secs(3),
-            "closed after {waited:?}, not at the 100 ms bound"
-        );
-    }
-
-    #[test]
-    fn a_connection_that_stalls_inside_a_head_is_closed_within_two_request_timeouts() {
-        let (closed, waited) = serve_until_closed(b"G");
-        assert!(closed, "the server closed the stalled connection");
-        assert!(
-            waited >= Duration::from_millis(190) && waited < Duration::from_millis(1500),
-            "closed after {waited:?}, not at twice the 100 ms bound"
-        );
-    }
-
     #[test]
     fn a_request_whose_owner_has_stopped_answers_503_not_ready() {
-        let body = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
-        let head = format!(
-            "PUT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
-content-type: application/json\r\ncontent-length: {}\r\n\
-connection: close\r\nexpect: 100-continue\r\n\r\n",
-            body.len()
-        );
         let runtime = runtime();
         let (served, reply) = runtime.block_on(async {
             let config = config(&[]);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (_stop, stopped) = watch::channel(());
-            let mut lifecycle = Lifecycle::new(&config);
+            let (lifecycle, ticks) = Lifecycle::new(&config);
             let readiness = lifecycle.readiness.subscribe();
-            let ticks = lifecycle.ticks.take().unwrap();
             // The owner's stop is the test's to send: the same watch and the same
             // branch of the owner loop the scope's cut reaches.
             let (stop_owner, owner_stop) = watch::channel(false);
-            let (queue, lease_ids) = service_queue(&config).unwrap();
+            let queue = service_queue(&config).unwrap();
             let readiness_sender = lifecycle.readiness.clone();
-            let owner = actor::start(queue, lease_ids, readiness_sender, owner_stop, ticks);
+            let owner = actor::start(queue, readiness_sender, owner_stop, ticks);
             // On a blocking thread of its own: it waits for `Stopping`, which the
             // scope sends, so it must not hold the task the scope runs on.
             let client = tokio::task::spawn_blocking(move || {
                 wait_for_readiness(&readiness, Readiness::Serving);
-                let mut stream = start_a_request(address, head.as_bytes());
+                let mut stream = start_a_request(address);
                 stop_owner.send_replace(true);
                 // `Stopping` is sent once the owner's task has ended.
                 wait_for_readiness(&readiness, Readiness::Stopping);
-                stream.write_all(body).unwrap();
+                stream.write_all(PUBLISH).unwrap();
                 let mut reply = String::new();
                 stream.read_to_string(&mut reply).unwrap();
                 reply
@@ -895,31 +736,23 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
                 .expect("serve returned within the bound")
         });
         assert_eq!(served, Ok(()));
-        assert!(
-            reply.starts_with("HTTP/1.1 503 Service Unavailable\r\n"),
-            "{reply:?}"
-        );
-        assert!(
-            reply.ends_with(r#"{"error":"not_ready","message":"the queue's owner has stopped"}"#),
-            "{reply:?}"
-        );
+        assert_owner_stopped(&reply);
         drop(runtime);
     }
 
     #[test]
-    fn a_handler_slower_than_the_bound_gets_its_408_before_the_idle_bound_closes_it() {
+    fn a_handler_slower_than_the_bound_is_answered_408_on_its_connection() {
         let runtime = runtime();
         let (served, reply) = runtime.block_on(async {
             let config = config(&["--request-timeout-ms", "100", "--shutdown-grace-ms", "100"]);
             let listener = TcpListener::bind(config.listen()).await.unwrap();
             let address = listener.local_addr().unwrap();
             let (stop, stopped) = watch::channel(());
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
+            let queue = service_queue(&config).unwrap();
+            let (lifecycle, ticks) = Lifecycle::new(&config);
             // The real owner is kept but never run, so the command is never answered
-            // and the handler outlives the bound; the connection's read stays pending
-            // for as long, which must not close it first.
-            let (handle, _real_owner) = lifecycle.start(queue, lease_ids);
+            // and the handler outlives the bound.
+            let (handle, _real_owner) = lifecycle.start(queue, ticks);
             let owner = (handle, std::future::pending());
             let client = tokio::task::spawn_blocking(move || {
                 let mut stream = TcpStream::connect(address).unwrap();
@@ -927,10 +760,9 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
                 stream
                     .write_all(b"POST /publishers/p HTTP/1.1\r\nhost: test\r\n\r\n")
                     .unwrap();
-                let mut reply = [0; 512];
-                let read = stream.read(&mut reply).unwrap();
+                let reply = read_reply(&mut stream);
                 drop(stop);
-                String::from_utf8_lossy(&reply[..read]).into_owned()
+                reply
             });
             let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
             let client = async { client.await.unwrap() };
@@ -938,57 +770,32 @@ connection: close\r\nexpect: 100-continue\r\n\r\n",
                 .await
                 .expect("serve returned within the bound")
         });
-        assert!(
-            reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
-            "{reply:?}"
-        );
-        assert!(reply.contains(r#""error":"request_timeout""#), "{reply:?}");
+        assert_timed_out(&reply);
         // The parked owner ignores the cut, so serve ends by the abort.
         assert!(matches!(served, Err(ServeError::Task(_))), "{served:?}");
         drop(runtime);
     }
 
     #[test]
-    fn a_head_slower_than_the_bound_still_gets_its_408_before_the_idle_bound_closes_it() {
-        let body = br#"{"publisher_id": "p", "rank": 1, "payload": ""}"#;
-        let rest = format!(
-            "UT /pockets/a/records/k HTTP/1.1\r\nhost: test\r\n\
-content-type: application/json\r\ncontent-length: {}\r\n\r\n",
-            body.len()
-        );
+    fn a_body_that_never_arrives_is_answered_408_at_the_handlers_bound() {
         let runtime = runtime();
-        let (served, reply) = runtime.block_on(async {
-            let config = config(&["--request-timeout-ms", "100"]);
-            let listener = TcpListener::bind(config.listen()).await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let (stop, stopped) = watch::channel(());
-            let client = tokio::task::spawn_blocking(move || {
-                let mut stream = TcpStream::connect(address).unwrap();
-                stream.set_read_timeout(Some(BOUND)).unwrap();
-                // The head takes longer than the bound and the body never comes, so
-                // the handler overruns waiting for it.
-                stream.write_all(b"P").unwrap();
-                std::thread::sleep(Duration::from_millis(150));
-                stream.write_all(rest.as_bytes()).unwrap();
-                let mut reply = [0; 512];
-                let read = stream.read(&mut reply).unwrap();
-                drop(stop);
-                String::from_utf8_lossy(&reply[..read]).into_owned()
-            });
-            let (queue, lease_ids) = service_queue(&config).unwrap();
-            let mut lifecycle = Lifecycle::new(&config);
-            let owner = lifecycle.start(queue, lease_ids);
-            let server = scope(listener, owner, lifecycle, stopped, std::future::pending());
-            let client = async { client.await.unwrap() };
-            timeout(BOUND, async { tokio::join!(server, client) })
-                .await
-                .expect("serve returned within the bound")
+        let bound = ["--request-timeout-ms", "100"];
+        let (served, (reply, waited)) = serve_beside(&runtime, &bound, |address, stop| {
+            let started = Instant::now();
+            // The handler is reading a body that is never sent.
+            let mut stream = start_a_request(address);
+            let reply = read_reply(&mut stream);
+            let waited = started.elapsed();
+            drop(stop);
+            (reply, waited)
         });
+        assert_timed_out(&reply);
+        // No sooner than the bound, which starts after the client does, and with a wide
+        // margin after it: a handler bounded at ten times the flag fails here.
         assert!(
-            reply.starts_with("HTTP/1.1 408 Request Timeout\r\n"),
-            "{reply:?}"
+            waited >= Duration::from_millis(100) && waited < Duration::from_millis(1000),
+            "answered after {waited:?}, not at the 100 ms bound"
         );
-        assert!(reply.contains(r#""error":"request_timeout""#), "{reply:?}");
         assert_eq!(served, Ok(()));
         drop(runtime);
     }
@@ -1041,7 +848,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             .await
             .expect("drain returned within the bound");
         assert_eq!(drained, Ok(()));
-        assert!(*cut.borrow(), "the connections were cut");
+        assert!(*cut.borrow(), "the cut was sent");
         assert_eq!(tasks.len(), 0, "every task is joined");
     }
 
@@ -1054,7 +861,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             .await
             .expect("drain returned within the bound");
         assert!(matches!(drained, Err(ServeError::Task(_))), "{drained:?}");
-        assert!(*cut.borrow(), "the connections were cut");
+        assert!(*cut.borrow(), "the cut was sent");
         assert_eq!(tasks.len(), 0, "the parked task was aborted");
     }
 
@@ -1068,7 +875,7 @@ content-type: application/json\r\ncontent-length: {}\r\n\r\n",
             .await
             .expect("drain returned within the bound");
         assert_eq!(drained, Err(ServeError::Task(String::from("early"))));
-        assert!(*cut.borrow(), "the connections were cut");
+        assert!(*cut.borrow(), "the cut was sent");
         assert_eq!(tasks.len(), 0, "the parked task was aborted");
     }
 }

@@ -36,16 +36,16 @@ less its payload, which also covers the single `PUT`'s shorter envelope.
 | --- | --- | --- |
 | `--listen` | `127.0.0.1:8080` | The address the HTTP listener binds; loopback unless set. Port 0 picks a free port, which the `listening on <address>` line names. |
 | `--lease-ttl-ms` | `300000` (5 minutes) | `lease_ttl`: how long a lease lasts after its claim or its consumer's last pull. |
-| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many consecutive lease expiries park a pocket; at least 1. |
+| `--max-consecutive-expiries` | `3` | `max_consecutive_expiries`: how many lease expiries, with no ack, nack, release or revive between them, park a pocket; at least 1. |
 | `--max-pull-batch` | `100` | `max_pull_batch`: the most records one pull hands out; at least 1. |
 | `--superseded-ttl-ms` | `43200000` (12 hours) | `superseded_ttl`: how long a superseded or stale payload is kept. |
-| `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept. |
+| `--dead-letter-ttl-ms` | `43200000` (12 hours) | `dead_letter_ttl`: how long a dead letter is kept, from the end of the lease that nacked it. |
 | `--max-batch-rows` | `1000` | The most rows one batch publish carries; more is 413 `too_many_rows`. |
 | `--max-payload-bytes` | `1048576` (1 MiB) | The largest decoded payload of a single publish or a batch row; more is 413 `payload_too_large`. |
 | `--max-body-bytes` | `16777216` (16 MiB) | The largest request body any route reads; more is 413 `body_too_large`. At least the minimum above. |
 | `--log-level` | `info` | The most detailed log line written to standard error: `error`, `warn`, `info`, `debug` or `trace`, lower case. Each request writes one line at `debug`. |
-| `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`, and how long a connection may send nothing; at least 1. |
-| `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it cuts the open connections, and how long it then waits before aborting what is left; 0 cuts at once, then waits up to 1 second for the server's tasks, which end on the cut, before aborting what is left. |
+| `--request-timeout-ms` | `30000` (30 seconds) | How long a handler may run before it is answered 408 `request_timeout`; it bounds nothing else ([HTTP API](http-api.md#request-timeout)); at least 1. |
+| `--shutdown-grace-ms` | `5000` (5 seconds) | How long shutdown lets requests in flight finish before it stops waiting for the open connections, and how long it then waits before aborting the service's tasks still running; 0 stops waiting at once, then gives the service's tasks up to 1 second to end before aborting what is left ([HTTP API](http-api.md#shutdown)). |
 | `--sweep-ms` | `1000` (1 second) | How long the ticker waits after each sweep before the next; each sweep lapses the leases and decays the shed entries whose `expires_at` has passed; at least 1. |
 
 The five specification values' defaults are the specification's, which decision 0019
@@ -108,7 +108,7 @@ constants belong in source where they can be reviewed.
 | `.dockerignore` | What the image's build context leaves out: `.gitignore`'s entries, kept in step with it by hand, plus `.git` and `tickets/`. |
 | `renovate.json` | Renovate's configuration: which pins it reads, how it groups them, and the dependency-dashboard approval its updates wait for. [Decision 0018](../decisions/0018-renovate.md) is the record, and [Maintain dependencies](../how-to/maintain-dependencies.md) the procedure. |
 | `.pre-commit-config.yaml` | The read-only hook gate `just lint` runs and `just install-hooks` installs. |
-| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`. |
+| `.pre-commit-fix.yaml` | The mutating hooks (rustfmt, taplo, `cargo shear --fix`, the end-of-file and trailing-whitespace fixers and markdownlint's `--fix`), run only by `just fix`; the trailing-whitespace fixer skips the Markdown under `tickets/`, whose hand-backs quote output verbatim. |
 | `.markdownlint-cli2.jsonc` | markdownlint's rules and the directories it ignores. |
 | `lychee.toml` | The link checker's settings and excluded paths. |
 | `_typos.toml` | The only typos configuration: the excluded lockfiles and directories, and the allowlisted `mis`, `als` and `ede`. A `[tool.typos]` table in `pyproject.toml` would be ignored. |

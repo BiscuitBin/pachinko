@@ -9,7 +9,7 @@ of a record replace the one still waiting.
 **Status: early, pre-1.0.** Publishers publish keyed, ranked records into pockets; a
 higher rank supersedes the waiting record in place. A consumer pulls under a lease on one
 pocket, then acks, nacks, renews or releases. A lease left alone lapses, its pocket keeps
-its place in the queue, and repeated lapses park the pocket until a publish into it is accepted.
+its place in the queue, and repeated lapses park the pocket until a publish adds or raises a record in it.
 Superseded records and dead letters are kept for 12 hours by default, then decay. It does
 not persist anything yet: the queue lives in memory and a restart loses it. It has no
 authentication or TLS and listens on `127.0.0.1:8080` by default. One deployment is one
@@ -48,7 +48,7 @@ sequenceDiagram
     C1->>Q: pull
     Q-->>C1: batch [k1 rank 1] and a lease on tenant-a
     C1->>Q: ack k1
-    Q-->>C1: settled
+    Q-->>C1: acked
 ```
 
 One pocket has one consumer at a time. A second consumer gets a different pocket, and a
@@ -65,7 +65,7 @@ sequenceDiagram
     C2->>Q: pull
     Q-->>C2: lease on tenant-b, never tenant-a
     C2->>Q: ack k1
-    Q-->>C2: settled
+    Q-->>C2: acked
     Note over C1: goes quiet
     Note over Q: the lease timer lapses c1's lease
     Note over Q: tenant-a keeps its place at the front
@@ -97,17 +97,22 @@ sequenceDiagram
     Note over Q: c1 still holds rank 2
     Note over Q: rank 3 waits for the lease
     C1->>Q: ack k1
-    Q-->>C1: deferred
+    Q-->>C1: acked
+    Note over Q: k1 stays held at rank 2 until the lease ends
     C1->>Q: release
     Q-->>C1: queued
+    Note over Q: rank 2 is consumed and rank 3 is queued
     C1->>Q: pull
     Q-->>C1: lease on tenant-a, batch [k1 rank 3]
 ```
 
-A pocket whose lease ends with no records left goes idle until a publish into it, and a
-pocket whose lease lapses three times in a row (by default) parks until a publish into it
-is accepted. Expiry runs on a sweep, so a late action the service applies before the
-lapse is not refused for being late; its other checks still apply
+A pocket whose lease ends with no records left goes idle until a publish into it, unless
+the lease lapsed and the lapse parks it. A pocket whose lease lapses three times (by
+default), with no ack, nack, release or revival in between, parks until a publish adds
+or raises a record in it; an ack or a nack resets that count, so a pocket left with no
+records parks only when the limit is one. Expiry runs on a sweep, so a late action the
+service applies before the lapse is not refused for being late; its other checks still
+apply
 ([decision 0019](docs/decisions/0019-service-runtime-tokio-and-http.md)). The
 [HTTP API](docs/reference/http-api.md) has every route and reply, and the specification,
 [`docs/specs/pachinko.allium`](docs/specs/pachinko.allium), decides the behaviour.

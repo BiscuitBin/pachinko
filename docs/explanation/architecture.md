@@ -144,13 +144,13 @@ the queue from outside.
 | Surface | Holds |
 | --- | --- |
 | The crate root | `Queue`, its operations and the values they take and return: `Publication`, `PublishOutcome`, `PullOutcome`, `LeaseView`, `SettleOutcome`, `PocketFate`, `Lease`, `LeaseStatus`, `TickReport` |
-| The crate root | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `HeldRecord`; `Timestamp`, milliseconds since the Unix epoch; `LeaseId`, an opaque `u128` written as 32 lower-case hex digits, and `ParseLeaseIdError` |
+| The crate root | The names and values: `PublisherId`, `ConsumerId`, `PocketKey`, `RecordKey`, `Rank`, `Payload`, `HeldRecord`, `Mark`, `MarkedRecord`; `Timestamp`, milliseconds since the Unix epoch; `LeaseId`, an opaque `u128` written as 32 lower-case hex digits, and `ParseLeaseIdError` |
 | The crate root | `Config`, the specification's five values with its defaults, and `Config::check` |
-| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError` |
+| The crate root | One `thiserror` enum per operation: `JoinError`, `PublishError`, `PullError`, `LeaseActionError`, `ConfigError`; and `LeaseIdError`, which `PullError::LeaseId` carries: `Exhausted` from the lease-id source, `StillActive` from the queue |
 | The crate root | `version()` |
 | `clock` | The `Clock` trait; `FakeClock` |
 | `lease_ids` | The `LeaseIds` trait; `CountingLeaseIds` |
-| `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the values only the store speaks in, `RecordView`, `RecordStatus` and `Position` |
+| `records` | The store seam: the `PocketRecords` trait, `MemoryRecords`, and the values only the store speaks in, `RecordView`, `RecordStatus`, `EndedVersion` and `Position` |
 | `testing`, behind the `testing` feature | `Snapshot`, `PocketView`, `TickCost`, `InspectRecords`, `check_contract`, and `PocketStatus`, `ShedReason`, `SupersededRecord` and `DeadLetter`, which no other surface exports |
 
 Each item has exactly one public path, and one `use libpachinko::{…}` names `Queue`,
@@ -158,8 +158,8 @@ Each item has exactly one public path, and one `use libpachinko::{…}` names `Q
 lease-id source and the store a queue is built over come from the seam modules. `lib.rs`
 re-exports the root's items from five private modules:
 `queue` holds `Queue` and the values of the first row; `ids` the names and values with
-`HeldRecord`, `LeaseId` and `ParseLeaseIdError`; `timestamp` holds `Timestamp`; `config`
-holds `Config`; and `error` the five enums. `LeaseId` sits in `ids` rather than in a
+`HeldRecord`, `Mark`, `MarkedRecord`, `LeaseId` and `ParseLeaseIdError`; `timestamp` holds `Timestamp`; `config`
+holds `Config`; and `error` the six enums. `LeaseId` sits in `ids` rather than in a
 module of its own because gate 7 measures coupling for each top-level module: with a
 third value module `error` imported two modules, which made it less stable than `config`,
 its dependent, and failed the stable-dependencies check, and it left `queue` exactly at
@@ -177,17 +177,28 @@ keeps a handle, moves only when a test moves it. The queue clamps the clock: it 
 latest reading it has seen, so a clock that steps back stamps nothing before an earlier
 stamp. `LeaseIds` hands out the lease ids that fence an ack, nack, renew or release to
 its lease; the service's source draws an epoch once from the operating system's random
-source and counts a serial beside it, and `CountingLeaseIds` counts 1, 2, 3. Both traits
+source and counts a serial beside it, and `CountingLeaseIds` counts 1, 2, 3. The source
+is fallible: `next` returns `Result<LeaseId, LeaseIdError>`, and once a source cannot
+give an id it has not given before it answers `LeaseIdError::Exhausted` on every later
+call. Only a pull that claims a pocket draws, once, after it finds a queued pocket and
+before it claims it; an id that is still active is refused with
+`LeaseIdError::StillActive` and never drawn again, so a refused claim changes nothing and
+no source can spin the queue. Either refusal reaches the caller as `PullError::LeaseId`.
+A pull within a lease and a pull that finds no pocket never draw. Both traits
 are `Clone + Debug + Send + Sync + 'static`, so a queue over them meets invariant 3.
 
 **The store seam.** A pocket's records live behind `PocketRecords`, the record-level
-steps the rules take: look a key up, insert it queued, supersede it, hold the oldest
-queued records, settle, defer, and free every held and deferred record in
-O(outstanding). The queue decides every rule and asks the store for one step; the store
-decides nothing. `MemoryRecords` is the one store (decision 0019). The trait holds only
-the steps the queue calls: reading every record back is `testing::InspectRecords`, a
-second trait a store implements for tests, as `MemoryRecords` does behind the `testing`
-feature. `testing::check_contract` is the one contract every store passes, over a store
+steps the rules take: look a key up, insert it queued, supersede a version no consumer
+holds, defer a newer version behind a held one, hold the oldest queued records, mark a
+held record acked or nacked, list the held records with their marks, and end a lease
+over every held record by the six `Freed` rows in O(held × log records), smallest held
+position first, returning the versions it superseded or dead-lettered. The queue
+decides every rule that reads more than one record, the pocket or the lease, and asks
+the store for one step. The store decides only the six `Freed` rows, which read nothing
+but the record's own state: at a lease's end it picks each held record's row.
+`MemoryRecords` is the one store (decision 0019). The trait holds only the steps the
+queue calls: reading every record back is `testing::InspectRecords`, a second trait a
+store implements for tests, as `MemoryRecords` does behind the `testing` feature. `testing::check_contract` is the one contract every store passes, over a store
 that implements both traits, and it refuses a store that could hand out a held record
 twice, keep two records for one key, or share state between clones.
 
@@ -195,8 +206,8 @@ twice, keep two records for one key, or share state between clones.
 plain data with `&mut self` methods, so its owner applies one operation at a time, which
 is how decision 0019 serializes a lapse with a consumer's action. It holds the
 publishers, the consumers with their active lease, the pockets with the pocket order, the
-lease registry indexed by expiry, the shed queue of superseded records, and the one
-`next_position` counter pockets and records share. A clone forks all of that; the two
+lease registry indexed by expiry, the shed queues of superseded records and dead
+letters, and the one `next_position` counter pockets and records share. A clone forks all of that; the two
 share only what the clock and lease-id source share between clones. Behind `testing`,
 `Queue::snapshot` shows every entity as values, for tests, over a store that implements
 `InspectRecords`, and `Queue::tick_with_cost` returns a tick's `TickReport` beside a
@@ -205,8 +216,9 @@ share only what the clock and lease-id source share between clones. Behind `test
 **The lease actions and fencing.** `ack`, `nack`, `renew` and `release` each name the
 lease they act under, and check, in the order of the rules' `requires` and before any
 effect, that the consumer has joined, that the lease is in the active registry, that it
-is the consumer's, and, for ack and nack, that its pocket holds the record. A refused
-action changes nothing, its lease's `expires_at` included. The registry holds only
+is the consumer's, and, for ack and nack, that its pocket holds the record and that the
+record is not already marked the other way. A refused action changes nothing, its
+lease's `expires_at` included. The registry holds only
 active leases: an ended lease leaves both its id index and its expiry index and is
 returned to the caller as it ended, never kept. So an ended lease is unknown rather than
 remembered, one refusal covers a lease that ended and one that never existed, the
@@ -214,23 +226,28 @@ registry and a tick's lapse walk stay the size of the live leases, and an action
 for an old lease cannot land on a new lease over the same pocket, because the new lease
 has a new id. No action compares `expires_at` with the clock: a lease the registry
 holds is active, and the owner's serialization orders a late action against a lapse
-(decision 0019). A nack's dead letter sits in the shed queue beside the superseded
-records, keyed by expiry and arrival for the decay.
+(decision 0019). An ack or a nack only marks its record; the store keeps it held until
+the lease ends. A nacked version becomes a dead letter then, never at the nack: a
+release or a lapse reconciles the held set and stamps every entry it creates from the
+one `now` that ended the lease, and the dead letter sits in its shed queue beside the
+superseded records, keyed by expiry and arrival for the decay.
 
 **The tick.** `Queue::tick` is the clock's trigger. It reads `now` once, walks the
 expiry index from its earliest entry and stops at the first one later than `now`, so a
 tick costs the leases due, never the leases active. Each due lease ends as expired and
-leaves the registry, so it lapses once; its pocket's expiry count rises, its held and
-deferred records return to queued, and the pocket parks at `max_consecutive_expiries`,
-keeps its position, which is the front, with records, or goes idle without. Then both
-shed queues decay by removing entries from the front while their `expires_at` has
-passed, stopping at the first that has not. A tick is
-one operation like any other, so it never interleaves with an action.
+leaves the registry, so it lapses once; its pocket's expiry count rises (an ack, a
+nack, a release or a revive resets it to 0), its held records are reconciled as a
+release reconciles them, and the pocket parks at `max_consecutive_expiries`, keeps its
+position, which is the front, with records, or goes idle without. Then both shed queues
+decay by removing entries from the front while their `expires_at` has passed, stopping
+at the first that has not, so an entry a lapse made with a TTL of zero decays in the
+tick that made it. A tick is one operation like any other, so it never interleaves with
+an action.
 
 **A rule's code may land before its owner.** A rule is owned by the ticket whose test
-pins it. Every publish into an existing pocket ends in the `PocketTouched` dispatch, and
-its idle and parked arms, `ReviveIdlePocket` and `ReviveParkedPocket`, landed with
-publish in T23. A release first makes a pocket idle, and T25 owns `ReviveIdlePocket`
+pins it. Every publish into an existing pocket that adds or raises a record ends in the
+`PocketTouched` dispatch, a stale one never, and its idle and parked arms,
+`ReviveIdlePocket` and `ReviveParkedPocket`, landed with publish in T23. A release first makes a pocket idle, and T25 owns `ReviveIdlePocket`
 and its test; a lapse first parks one, and T26 owns `ReviveParkedPocket`.
 
 ## What crosses the boundary
@@ -271,20 +288,22 @@ it builds a multi-thread tokio runtime and serves until SIGTERM or SIGINT.
   epoch, behind the queue's clamp, which never lets the queue's time step back;
   `EpochSerialLeaseIds` draws a 64-bit epoch from the operating system's random source
   once and pairs it with a serial from 1. `serve` refuses to start when the clock reads
-  before the epoch or the random source fails, and the owner stops rather than reissue a
-  lease id once the serial is exhausted.
+  before the epoch or the random source fails. Once the serial is exhausted, the owner
+  stops with `LeaseIdsExhausted` at the first pull that needs a new lease id, rather
+  than reissue one, and leaves that pull unanswered; a pull within a lease and a pull
+  that finds no pocket need no new id, so they are still answered.
 - **The task scope.** `serve` holds the owner, the ticker, the listener and the signal task in one
   `JoinSet`. The first to end starts the shutdown: `GET /readyz` answers 503 at once, the
-  listener stops accepting, lets in-flight requests finish, cuts connections still open
-  after `--shutdown-grace-ms`, and drops the router, whose handle was the owner's last
-  sender, so the owner ends too. A task that panicked comes back as an error, and the
-  binary exits 1. [HTTP API](../reference/http-api.md#shutdown)
-  owns the shutdown's contract.
+  listener stops accepting, lets in-flight requests finish and drops the router, whose
+  handle was the owner's last sender, so the owner ends too. After `--shutdown-grace-ms`
+  the listener stops waiting for connections still open, and the owner is told to stop.
+  A task that panicked comes back as an error, and the binary exits 1.
+  [HTTP API](../reference/http-api.md#shutdown) owns the shutdown's contract.
 - **The wire.** axum routes each request to one command and maps every refusal through
   one exhaustive table of codes; [HTTP API](../reference/http-api.md) owns the routes,
   bodies and codes. `--request-timeout-ms` answers a request still running at
-  the bound with 408 `request_timeout` and closes an idle connection, and `GET /readyz` reports whether the owner is
-  serving. Each request is logged at `debug`, below the default `info`, which
+  the bound with 408 `request_timeout`, and `GET /readyz` reports whether the owner
+  is serving. Each request is logged at `debug`, below the default `info`, which
   `--log-level` sets.
 
 The tests sit in three places. Unit tests live in the modules: the flag parser, the

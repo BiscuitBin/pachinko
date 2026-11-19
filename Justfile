@@ -116,7 +116,8 @@ loadgen *args:
     cargo run --manifest-path loadgen/Cargo.toml --release --locked -- "$@"
 
 # The excluded loadgen/ crate's own unit tests, which `test` cannot reach: the
-# crate is outside the workspace. Run by hand, outside `check`, like the crate.
+# crate is outside the workspace. Outside `check`, like the crate; CI's
+# `loadgen` job runs it.
 test-loadgen:
     cargo test --manifest-path loadgen/Cargo.toml --locked
 
@@ -142,6 +143,30 @@ test:
 
 test-doc:
     cargo test --doc --workspace --all-features --locked
+
+# Gate 20: every doctest with default features. libpachinko has no default
+# features, so this is the build a user of the crate gets, and a doc example that
+# needs `testing` must guard its lines with `# #[cfg(feature = "testing")]`.
+# Each package runs on its own, so a sibling's dev-dependency features cannot
+# unify into libpachinko's doctest build. A package's own dependencies,
+# dev-dependencies included, could still enable `testing`, so the recipe first
+# reads each package's feature graph and fails if it names libpachinko's
+# `testing`, or does not name libpachinko at all.
+test-doc-default:
+    #!/bin/sh
+    set -eu
+    for package in libpachinko pachinko; do
+        tree=$(cargo tree --edges features --package "$package" --invert libpachinko --locked --offline)
+        case $tree in
+            *'libpachinko v'*) ;;
+            *) printf '%s\n' "$package: cargo tree does not list libpachinko" >&2; exit 1 ;;
+        esac
+        case $tree in
+            *'libpachinko feature "testing"'*) printf '%s\n' "$package: its doctest build enables libpachinko's testing feature" >&2; exit 1 ;;
+        esac
+    done
+    cargo test --doc --package libpachinko --locked
+    cargo test --doc --package pachinko --locked
 
 # Optional baseline overrides discovery. Before any library release, compare this
 # branch with main's merge base; afterwards use the latest reachable library tag.
@@ -200,6 +225,7 @@ format:
 fix:
     -prek run --all-files --config .pre-commit-fix.yaml
     prek run --all-files --config .pre-commit-fix.yaml
+    just _fix-untracked
     cargo fmt --manifest-path fuzz/Cargo.toml
     cargo fmt --manifest-path loadgen/Cargo.toml
     cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged
@@ -207,10 +233,67 @@ fix:
     cargo clippy --manifest-path loadgen/Cargo.toml --all-targets --locked --fix --allow-dirty --allow-staged
     just lint
 
+# The same two fixer passes over untracked files Git does not ignore, which
+# `--all-files` leaves out, as `lint` reads them, over one list; the first pass
+# may fail on what a fixer repaired, the second must pass. The leading
+# underscore keeps it out of `just --list`.
+_fix-untracked:
+    just _prek-untracked .pre-commit-fix.yaml 2
+
+# prek over every untracked file Git does not ignore, with the given hook
+# configuration; skipped when there is none. The list goes through a file
+# outside the worktree, not a pipe, so a failing `git ls-files` fails the
+# recipe; -z and xargs -0 keep a path with a space or a newline whole. prek
+# hands paths to hooks without `--`, so a path that begins with `-`, such as
+# `--help`, would be read as an option: it is named and fails the recipe
+# instead, and the other paths are still checked. Nothing is staged:
+# `git add -N` would change the index `just check` snapshots. With `passes` 2
+# the same list is run twice, and only the first run's failure is ignored.
+_prek-untracked config passes="1":
+    #!/bin/sh
+    set -eu
+    config=$1
+    passes=$2
+    case $passes in
+        1 | 2) ;;
+        *) printf "%s\n" "passes must be 1 or 2, not $passes" >&2; exit 2 ;;
+    esac
+    list=$(mktemp)
+    trap 'rm -f "$list"' EXIT
+    git ls-files -z --others --exclude-standard >"$list"
+    if [ ! -s "$list" ]; then
+        exit 0
+    fi
+    # The inner shell takes the configuration as $0 and the paths as $@.
+    run() {
+        xargs -0 sh -c '
+            bad=0
+            n=$#
+            for f do
+                case $f in
+                    -*) printf "%s\n" "untracked path begins with -: $f" >&2; bad=1 ;;
+                    *) set -- "$@" "$f" ;;
+                esac
+            done
+            shift "$n"
+            if [ "$#" -gt 0 ]; then
+                prek run --config "$0" --files "$@" || bad=1
+            fi
+            exit "$bad"
+        ' "$config" <"$list"
+    }
+    if [ "$passes" = 2 ]; then
+        run || true
+    fi
+    run
+
 # ------------------------------------------------------------------ check ---
 
+# prek's `--all-files` reads tracked files only, so `_prek-untracked` runs the
+# hook gate a second time over every untracked file Git does not ignore.
 lint:
     prek run --all-files
+    just _prek-untracked .pre-commit-config.yaml
 
 fmt-check:
     cargo fmt --all --check
@@ -311,6 +394,7 @@ deps-unused:
 check-docs:
     prek run --all-files markdownlint-cli2 typos lychee
     bg-validate-docs
+    just _diagrams check
 
 check-agents:
     bg-validate-agents
@@ -333,6 +417,116 @@ analyse-specs:
 # on PATH.
 plan-spec module:
     .tools/bin/allium plan "docs/specs/$1.allium"
+
+# Redraw the SVG diagrams decision records embed: each
+# docs/decisions/<n>/diagrams.py owns the layout and words of the SVGs in its
+# own folder, so edit the script, never an SVG. It writes under
+# docs/decisions/, so it is not a check and is outside `just check`;
+# `check-docs` checks the files against the scripts.
+diagrams:
+    just _diagrams draw
+
+# The one discovery behind `diagrams` and `check-docs`: every
+# docs/decisions/*/diagrams.py, run plain to draw or with --check to compare.
+# A glob that matches nothing stays literal, hence the -f test, and finding no
+# script fails. A script that is a symlink, or sits in a symlinked folder,
+# fails rather than running against the folder it points at, and so does a
+# diagrams.py anywhere else under docs/decisions/, which the glob would never
+# run. Every other script runs, failing or not, and in `check` a script that
+# exits 0 without its "compared N SVGs" line fails; its stdout is printed
+# either way. `check` then names every symlink under docs/decisions/ that
+# could hide a diagram, one named like an SVG or a diagrams.py or one to a
+# folder, and every SVG there, in any letter case, whose folder holds none of
+# the scripts found, so nothing compares it. The lists are held in variables,
+# not a file or a pipe, so `check` writes no file of its own and a failing
+# `find` fails it; they are split on newlines, so a name under docs/decisions/
+# that holds one fails first, by itself. The leading underscore keeps it out
+# of `just --list`.
+_diagrams mode:
+    #!/bin/sh
+    set -eu
+    mode=$1
+    case $mode in
+        draw | check) ;;
+        *) printf '%s\n' "mode must be draw or check, not $mode" >&2; exit 2 ;;
+    esac
+    bad=0
+    set --
+    for script in docs/decisions/*/diagrams.py; do
+        if [ -L "$script" ] || [ -L "${script%/*}" ]; then
+            printf '%s: a symlink or in a symlinked folder, so it would draw and check the folder it points at; replace it with a real file and run `just diagrams`\n' "$script" >&2
+            bad=1
+        elif [ -f "$script" ]; then
+            set -- "$@" "$script"
+        fi
+    done
+    nl=$(printf '\nx')
+    nl=${nl%x}
+    odd=$(find docs/decisions -name "*$nl*" -prune)
+    if [ -n "$odd" ]; then
+        printf 'a name under docs/decisions/ holds a newline, which the diagram check splits its file lists on; rename it and run `just diagrams`:\n%s\n' "$odd" >&2
+        exit 1
+    fi
+    IFS=$nl
+    set -f
+    strays=$(find docs/decisions -type f -name diagrams.py)
+    for stray in $strays; do
+        found=0
+        for script do
+            if [ "$script" = "$stray" ]; then
+                found=1
+            fi
+        done
+        if [ "$found" = 0 ]; then
+            printf '%s: outside the discovery, which runs only docs/decisions/*/diagrams.py; move it to such a folder and run `just diagrams`\n' "$stray" >&2
+            bad=1
+        fi
+    done
+    if [ "$#" -eq 0 ]; then
+        printf '%s\n' 'found no docs/decisions/*/diagrams.py, so nothing draws or checks the diagrams; restore or add the script beside its SVGs and run `just diagrams`' >&2
+        exit 1
+    fi
+    for script do
+        if [ "$mode" = check ]; then
+            rc=0
+            out=$(python "$script" --check) || rc=$?
+            [ -z "$out" ] || printf '%s\n' "$out"
+            if [ "$rc" = 0 ]; then
+                case $out in
+                    *"$script: compared "[1-9]*" SVGs, all match"*) ;;
+                    *)
+                        printf '%s: --check exited 0 without saying how many SVGs it compared; give it the check mode docs/decisions/0020/diagrams.py has and run `just diagrams`\n' "$script" >&2
+                        bad=1
+                        ;;
+                esac
+            else
+                bad=1
+            fi
+        else
+            python "$script" || bad=1
+        fi
+    done
+    if [ "$mode" = check ]; then
+        links=$(find docs/decisions -type l \( -name '*.[sS][vV][gG]' -o -name diagrams.py -o -exec test -d {} \; \) -print)
+        svgs=$(find docs/decisions -type f -name '*.[sS][vV][gG]')
+        for link in $links; do
+            printf '%s: a symlink to an SVG, a diagrams.py or a folder, which the diagram check does not follow; replace it with a real file or folder and run `just diagrams`\n' "$link" >&2
+            bad=1
+        done
+        for svg in $svgs; do
+            covered=0
+            for script do
+                if [ "$script" = "${svg%/*}/diagrams.py" ]; then
+                    covered=1
+                fi
+            done
+            if [ "$covered" = 0 ]; then
+                printf '%s: no docs/decisions/*/diagrams.py draws it; add one in its folder and run `just diagrams`, or remove the SVG\n' "$svg" >&2
+                bad=1
+            fi
+        done
+    fi
+    exit "$bad"
 
 check-links-online:
     prek run --all-files --hook-stage manual lychee-online

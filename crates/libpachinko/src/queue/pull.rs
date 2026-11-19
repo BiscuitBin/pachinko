@@ -5,7 +5,7 @@ use super::Queue;
 use super::leases::Active;
 use super::types::PullOutcome;
 use crate::clock::Clock;
-use crate::error::PullError;
+use crate::error::{LeaseIdError, PullError};
 use crate::ids::{ConsumerId, LeaseId};
 use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
@@ -26,10 +26,17 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// holds `min(limit, max_pull_batch)` records, none when `limit` is not
     /// positive, and carries the lease's `expires_at` as this pull left it.
     ///
+    /// Only a claim draws a lease id, once, and only after it finds a queued
+    /// pocket: a pull within a lease and a pull that finds no pocket never draw.
+    ///
     /// # Errors
     ///
     /// [`PullError::UnknownConsumer`] when the consumer has not joined, checked
-    /// first. Finding no pocket is an outcome, never an error.
+    /// first. [`PullError::LeaseId`] when a claim needs a lease id and the source
+    /// cannot give one ([`LeaseIdError::Exhausted`]), or gives one that is still
+    /// active ([`LeaseIdError::StillActive`]); the source is not drawn again, and
+    /// the refused pull changes nothing. Finding no pocket is an outcome, never an
+    /// error.
     ///
     /// ```
     /// use libpachinko::PullOutcome;
@@ -55,10 +62,10 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     pub fn pull(&mut self, consumer_id: &ConsumerId, limit: i64) -> Result<PullOutcome, PullError> {
         let active = self.active_lease(consumer_id)?;
         let size = batch_size(limit, self.config.max_pull_batch);
-        Ok(match active {
-            Some(lease) => self.pull_within_lease(lease, size),
+        match active {
+            Some(lease) => Ok(self.pull_within_lease(lease, size)),
             None => self.claim_front_pocket(consumer_id, size),
-        })
+        }
     }
 
     /// `PullWithinLease`.
@@ -77,13 +84,29 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     }
 
     /// `PullClaimsFrontPocket`, or `PullFindsNoPocket` when nothing is queued.
-    fn claim_front_pocket(&mut self, consumer_id: &ConsumerId, size: usize) -> PullOutcome {
+    ///
+    /// It peeks at the front pocket, draws one lease id and checks it is not active
+    /// before it claims the pocket, so a refused claim changes nothing and the
+    /// source is drawn at most once.
+    fn claim_front_pocket(
+        &mut self,
+        consumer_id: &ConsumerId,
+        size: usize,
+    ) -> Result<PullOutcome, PullError> {
+        if self.pockets.front().is_none() {
+            return Ok(PullOutcome::NoPocketAvailable);
+        }
+        let lease = self.lease_ids.next()?;
+        if self.leases.is_active(lease) {
+            return Err(LeaseIdError::StillActive(lease).into());
+        }
+        // The front pocket was just seen, so the claim takes it; the `else` mirrors
+        // `pull_within_lease` rather than panic on a state that cannot occur.
         let Some(pocket_key) = self.pockets.claim_front() else {
-            return PullOutcome::NoPocketAvailable;
+            return Ok(PullOutcome::NoPocketAvailable);
         };
         let granted_at = self.now();
         let expires_at = granted_at + self.config.lease_ttl;
-        let lease = self.fresh_lease_id();
         self.leases.grant(
             lease,
             Active {
@@ -95,23 +118,12 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         );
         self.consumers.insert(consumer_id.clone(), Some(lease));
         let records = self.pockets.hold(&pocket_key, size);
-        PullOutcome::Batch {
+        Ok(PullOutcome::Batch {
             lease,
             pocket_key,
             expires_at,
             records,
-        }
-    }
-
-    /// A lease id from the source. The source never repeats one; should it return
-    /// an id that is still active, the queue draws again rather than let two
-    /// leases share it.
-    fn fresh_lease_id(&self) -> LeaseId {
-        let mut id = self.lease_ids.next();
-        while self.leases.is_active(id) {
-            id = self.lease_ids.next();
-        }
-        id
+        })
     }
 }
 
@@ -123,6 +135,7 @@ mod tests {
     use super::batch_size;
     use crate::clock::FakeClock;
     use crate::config::Config;
+    use crate::error::{LeaseIdError, PullError};
     use crate::ids::{ConsumerId, LeaseId, Payload, PocketKey, PublisherId, Rank, RecordKey};
     use crate::lease_ids::LeaseIds;
     use crate::queue::{Publication, PullOutcome, Queue};
@@ -143,14 +156,16 @@ mod tests {
     struct Repeating(Arc<AtomicUsize>);
 
     impl LeaseIds for Repeating {
-        fn next(&self) -> LeaseId {
+        fn next(&self) -> Result<LeaseId, LeaseIdError> {
             let ids = [1, 1, 2];
-            LeaseId::from_u128(ids[self.0.fetch_add(1, Ordering::SeqCst).min(2)])
+            Ok(LeaseId::from_u128(
+                ids[self.0.fetch_add(1, Ordering::SeqCst).min(2)],
+            ))
         }
     }
 
     #[test]
-    fn a_repeated_lease_id_that_is_still_active_is_drawn_again() {
+    fn a_repeated_lease_id_that_is_still_active_refuses_the_claim_and_changes_nothing() {
         let mut queue: Queue<MemoryRecords, _, _> = Queue::new(
             Config::default(),
             FakeClock::default(),
@@ -168,15 +183,76 @@ mod tests {
             );
             queue.publish(&publisher, publication).unwrap();
         }
-        let mut leases = Vec::new();
-        for consumer in ["c1", "c2"] {
-            queue.consumer_joins(ConsumerId::new(consumer)).unwrap();
-            let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&ConsumerId::new(consumer), 1)
-            else {
-                panic!("expected a batch");
-            };
-            leases.push(lease);
+        let (c1, c2) = (ConsumerId::new("c1"), ConsumerId::new("c2"));
+        queue.consumer_joins(c1.clone()).unwrap();
+        queue.consumer_joins(c2.clone()).unwrap();
+        let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&c1, 1) else {
+            panic!("expected a batch");
+        };
+        assert_eq!(lease, LeaseId::from_u128(1));
+        assert_eq!(
+            queue.pull(&c2, 1),
+            Err(PullError::LeaseId(LeaseIdError::StillActive(
+                LeaseId::from_u128(1)
+            )))
+        );
+        let leased: Vec<LeaseId> = queue
+            .leases
+            .by_expiry()
+            .into_iter()
+            .map(|(_, id)| id)
+            .collect();
+        assert_eq!(leased, [LeaseId::from_u128(1)], "one lease is active");
+        let only = queue.leases.get(LeaseId::from_u128(1)).unwrap();
+        assert_eq!(only.pocket_key.as_str(), "a", "a is the only pocket leased");
+        assert_eq!(queue.pockets.front().map(PocketKey::as_str), Some("b"));
+        assert_eq!(queue.consumers.get(&c2), Some(&None));
+    }
+
+    /// A faulty source that returns id 1 on every draw and counts its draws. It
+    /// panics past the second, so a queue that draws again while the id is active
+    /// fails here rather than spin.
+    #[derive(Clone, Debug, Default)]
+    struct AlwaysOne(Arc<AtomicUsize>);
+
+    impl LeaseIds for AlwaysOne {
+        fn next(&self) -> Result<LeaseId, LeaseIdError> {
+            let drawn = self.0.fetch_add(1, Ordering::SeqCst) + 1;
+            assert!(drawn <= 2, "the source was drawn {drawn} times");
+            Ok(LeaseId::from_u128(1))
         }
-        assert_eq!(leases, [LeaseId::from_u128(1), LeaseId::from_u128(2)]);
+    }
+
+    #[test]
+    fn a_source_that_repeats_an_active_id_is_drawn_twice_and_refused() {
+        let source = AlwaysOne::default();
+        let mut queue: Queue<MemoryRecords, _, _> =
+            Queue::new(Config::default(), FakeClock::default(), source.clone()).unwrap();
+        let publisher = PublisherId::new("p");
+        queue.publisher_joins(publisher.clone()).unwrap();
+        for pocket in ["a", "b"] {
+            let publication = Publication::new(
+                PocketKey::new(pocket),
+                RecordKey::new("k"),
+                Rank::new(1),
+                Payload::default(),
+            );
+            queue.publish(&publisher, publication).unwrap();
+        }
+        let (c1, c2) = (ConsumerId::new("c1"), ConsumerId::new("c2"));
+        queue.consumer_joins(c1.clone()).unwrap();
+        queue.consumer_joins(c2.clone()).unwrap();
+        let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&c1, 1) else {
+            panic!("expected a batch");
+        };
+        assert_eq!(lease, LeaseId::from_u128(1));
+        let refused = queue.pull(&c2, 1);
+        assert_eq!(
+            refused,
+            Err(PullError::LeaseId(LeaseIdError::StillActive(
+                LeaseId::from_u128(1)
+            )))
+        );
+        assert_eq!(source.0.load(Ordering::SeqCst), 2);
     }
 }

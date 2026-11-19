@@ -1,40 +1,34 @@
-//! Ack and nack: `AckSettlesRecord`, `AckDefersNewerVersion`, `NackSettlesRecord`
-//! and `NackDefersNewerVersion`.
+//! Ack and nack: `AckMarksRecord`, `AckRepeats`, `NackMarksRecord` and
+//! `NackRepeats`. An ack or a nack marks the held record and removes nothing: the
+//! record stays held until its lease ends, and the lease's end acts on the mark.
+//! The first mark also resets its pocket's consecutive-expiry count; a repeat
+//! only extends the lease.
 
 use super::Queue;
-use super::types::{DeadLetter, SettleOutcome};
+use super::types::SettleOutcome;
 use crate::clock::Clock;
 use crate::error::LeaseActionError;
-use crate::ids::{ConsumerId, HeldRecord, LeaseId, PocketKey, RecordKey};
+use crate::ids::{ConsumerId, LeaseId, Mark, RecordKey};
 use crate::lease_ids::LeaseIds;
 use crate::records::PocketRecords;
-use crate::timestamp::Timestamp;
-
-/// What a settle step leaves for a nack's dead letter.
-struct Settled {
-    /// The lease's pocket.
-    pocket_key: PocketKey,
-    /// The held version, as it was handed out.
-    held: HeldRecord,
-    /// The one `now` the step read: the lease's extension and the dead letter's
-    /// stamps are all measured from it.
-    at: Timestamp,
-}
 
 impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
-    /// `Ack` of `record_key` under `lease`. When the held version is the latest the
-    /// record is removed (`AckSettlesRecord`, [`SettleOutcome::Settled`]); when a
-    /// newer version arrived while it was held, the record is deferred at a fresh
-    /// position and pulled again only once the lease ends
-    /// (`AckDefersNewerVersion`, [`SettleOutcome::Deferred`]). Either way the
-    /// lease's `expires_at` moves to `now + lease_ttl`.
+    /// `Ack` of `record_key` under `lease`: the held record is marked acked and
+    /// stays held, at the version it was handed out with, until the lease ends,
+    /// which consumes it (`AckMarksRecord`). A repeat ack succeeds and changes
+    /// nothing but the lease's expiry (`AckRepeats`). Either way the lease's
+    /// `expires_at` moves to `now + lease_ttl` and the answer is
+    /// [`SettleOutcome::Acked`]; the first ack also resets the pocket's
+    /// consecutive-expiry count to 0.
     ///
     /// # Errors
     ///
     /// In this order: [`LeaseActionError::UnknownConsumer`],
     /// [`LeaseActionError::LeaseNotActive`], [`LeaseActionError::LeaseNotYours`],
-    /// and [`LeaseActionError::RecordNotHeld`] when the lease's pocket does not
-    /// hold the key. A refused ack changes nothing, `expires_at` included.
+    /// [`LeaseActionError::RecordNotHeld`] when the lease's pocket does not hold
+    /// the key, and [`LeaseActionError::MarkConflict`] when the record is already
+    /// nacked. A refused ack changes nothing, `expires_at` included, and reads no
+    /// clock.
     ///
     /// ```
     /// use libpachinko::{LeaseActionError, PullOutcome, SettleOutcome};
@@ -49,13 +43,17 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// # queue.publisher_joins(p.clone()).unwrap();
     /// # let c = ConsumerId::new("c");
     /// # queue.consumer_joins(c.clone()).unwrap();
-    /// let publish = |rank| Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(rank), Payload::default());
-    /// queue.publish(&p, publish(1)).unwrap();
-    /// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&c, 1) else { panic!() };
-    /// queue.publish(&p, publish(2)).unwrap();
-    /// let key = RecordKey::new("rk");
-    /// assert_eq!(queue.ack(&c, lease, &key), Ok(SettleOutcome::Deferred));
-    /// assert_eq!(queue.ack(&c, lease, &key), Err(LeaseActionError::RecordNotHeld(key)));
+    /// let publish = |key| Publication::new(PocketKey::new("pk"), RecordKey::new(key), Rank::new(1), Payload::default());
+    /// queue.publish(&p, publish("a")).unwrap();
+    /// queue.publish(&p, publish("b")).unwrap();
+    /// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&c, 2) else { panic!() };
+    /// let (a, b) = (RecordKey::new("a"), RecordKey::new("b"));
+    /// assert_eq!(queue.ack(&c, lease, &a), Ok(SettleOutcome::Acked));
+    /// assert_eq!(queue.ack(&c, lease, &a), Ok(SettleOutcome::Acked));
+    /// assert_eq!(queue.nack(&c, lease, &b), Ok(SettleOutcome::Nacked));
+    /// assert_eq!(queue.ack(&c, lease, &b), Err(LeaseActionError::MarkConflict(b)));
+    /// let other = RecordKey::new("other");
+    /// assert_eq!(queue.ack(&c, lease, &other), Err(LeaseActionError::RecordNotHeld(other)));
     /// ```
     pub fn ack(
         &mut self,
@@ -63,20 +61,21 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         lease: LeaseId,
         record_key: &RecordKey,
     ) -> Result<SettleOutcome, LeaseActionError> {
-        self.settle_held(consumer_id, lease, record_key)
-            .map(|(outcome, _)| outcome)
+        self.mark_held(consumer_id, lease, record_key, Mark::Acked)?;
+        Ok(SettleOutcome::Acked)
     }
 
-    /// `Nack` of `record_key` under `lease`: as [`Queue::ack`], and the held
-    /// version becomes a dead letter stamped `nacked_at = now` and
-    /// `expires_at = now + dead_letter_ttl`, kept beside the superseded records
-    /// (`NackSettlesRecord`, `NackDefersNewerVersion`). The record is never handed
-    /// out again under this lease.
+    /// `Nack` of `record_key` under `lease`: as [`Queue::ack`], but the held record
+    /// is marked nacked with `nacked_at = now` (`NackMarksRecord`), and a repeat
+    /// nack keeps the first nack's time (`NackRepeats`). The answer is
+    /// [`SettleOutcome::Nacked`]. The record is never handed out again under this
+    /// lease, and no dead letter exists yet: the lease's end makes one, keeping
+    /// this `nacked_at`.
     ///
     /// # Errors
     ///
-    /// As [`Queue::ack`]. A refused nack changes nothing and creates no dead
-    /// letter.
+    /// As [`Queue::ack`], with [`LeaseActionError::MarkConflict`] when the record
+    /// is already acked. A refused nack changes nothing.
     ///
     /// ```
     /// use libpachinko::{PullOutcome, SettleOutcome};
@@ -93,9 +92,10 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
     /// # queue.consumer_joins(c.clone()).unwrap();
     /// # queue.publish(&p, Publication::new(PocketKey::new("pk"), RecordKey::new("rk"), Rank::new(1), Payload::default())).unwrap();
     /// let Ok(PullOutcome::Batch { lease, .. }) = queue.pull(&c, 1) else { panic!() };
-    /// assert_eq!(queue.nack(&c, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Settled));
+    /// assert_eq!(queue.nack(&c, lease, &RecordKey::new("rk")), Ok(SettleOutcome::Nacked));
     /// let Ok(PullOutcome::Batch { records, .. }) = queue.pull(&c, 1) else { panic!() };
     /// assert!(records.is_empty());
+    /// assert_eq!(queue.lease_view(&c).unwrap().unwrap().records.len(), 1);
     /// ```
     pub fn nack(
         &mut self,
@@ -103,51 +103,34 @@ impl<R: PocketRecords, C: Clock, L: LeaseIds> Queue<R, C, L> {
         lease: LeaseId,
         record_key: &RecordKey,
     ) -> Result<SettleOutcome, LeaseActionError> {
-        let (outcome, settled) = self.settle_held(consumer_id, lease, record_key)?;
-        let Settled {
-            pocket_key,
-            held,
-            at: nacked_at,
-        } = settled;
-        self.shed.keep_dead_letter(DeadLetter {
-            pocket_key,
-            key: held.key,
-            rank: held.rank,
-            payload: held.payload,
-            nacked_by: consumer_id.clone(),
-            nacked_at,
-            expires_at: nacked_at + self.config.dead_letter_ttl,
-        });
-        Ok(outcome)
+        self.mark_held(consumer_id, lease, record_key, Mark::Nacked)?;
+        Ok(SettleOutcome::Nacked)
     }
 
-    /// What ack and nack share: the four guards in rule order, then the lease's
-    /// extension, then the settle or defer split. Returns the rule taken and what
-    /// a nack's dead letter is made from.
-    fn settle_held(
+    /// What ack and nack share: the guards in rule order, all read before the
+    /// clock, so a refusal reads none; then the lease's extension; then, on the
+    /// first mark only, the mark and the pocket's count reset.
+    fn mark_held(
         &mut self,
         consumer_id: &ConsumerId,
         lease: LeaseId,
         record_key: &RecordKey,
-    ) -> Result<(SettleOutcome, Settled), LeaseActionError> {
+        mark: Mark,
+    ) -> Result<(), LeaseActionError> {
         let pocket_key = self.authorise(consumer_id, lease)?;
-        if !self.pockets.is_held(&pocket_key, record_key) {
-            return Err(LeaseActionError::RecordNotHeld(record_key.clone()));
+        let stored = self
+            .pockets
+            .mark_of(&pocket_key, record_key)
+            .ok_or_else(|| LeaseActionError::RecordNotHeld(record_key.clone()))?;
+        let first = stored == Mark::Unsettled;
+        if !first && stored != mark {
+            return Err(LeaseActionError::MarkConflict(record_key.clone()));
         }
         let at = self.now();
         self.leases.extend(lease, at + self.config.lease_ttl);
-        // Unreachable: `is_held` held above, and nothing between changed the record.
-        let (outcome, held) = self
-            .pockets
-            .settle(&pocket_key, record_key)
-            .ok_or_else(|| LeaseActionError::RecordNotHeld(record_key.clone()))?;
-        Ok((
-            outcome,
-            Settled {
-                pocket_key,
-                held,
-                at,
-            },
-        ))
+        if first {
+            self.pockets.mark(&pocket_key, record_key, mark, at);
+        }
+        Ok(())
     }
 }

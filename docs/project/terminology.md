@@ -27,16 +27,19 @@ naming the module it comes from.
 | Rank | The publisher-supplied order between the versions of one key; higher wins, and pachinko only compares. A version is one publish of a key and its rank orders it; the rank itself is never called a version. |
 | Payload | The opaque bytes a record carries; pachinko never reads them. Typed `String` in the module because Allium 3 has no byte type. Never body or value. |
 | Supersede | A higher rank replaces a record's rank and payload in place; the record keeps its slot. Never duel, dedupe or upsert. |
-| Superseded record | A payload that lost a supersede, or arrived with a lower rank than stored and is marked stale, kept visible until it decays. Never dropped: nothing is dropped silently. |
-| Dead letter | A nacked payload, kept visible until it decays. Never poison message. |
+| Superseded record | A version that lost a supersede while no consumer held it; a held version no consumer acked or nacked, replaced at its lease's end by the newer version deferred behind it; or an arrival with a lower rank than stored, marked stale. Kept visible until it decays. Never dropped: nothing is dropped silently. |
+| Dead letter | A nacked version, made when the lease it was nacked under ends, never at the nack, and kept visible until it decays. Never poison message. |
 | Lease | A consumer's exclusive, renewable claim on one pocket: one per consumer and one per pocket at a time. A batch names the lease it was pulled under; ack, nack, renew and release carry that lease and are rejected once it has ended. Pull, ack, nack and renew extend it; release ends it. Never lock. |
 | Consumer | The party that pulls, acks, nacks, renews and releases. Never holder, subscriber or worker, and never the library's caller, which is the row below. |
 | Publisher | The party that publishes records into pockets. Never producer. |
 | Batch | What a pull hands back: the lease, the pocket key and zero or more records, smallest position first. An empty batch is not an error. |
-| Queued, leased, idle, parked | A pocket's states. Queued waits in the pocket order; leased is held by one consumer; idle has no records; parked was set aside after consecutive lease expiries until a publish revives it. |
-| Queued, held, deferred | A record's states. Queued waits in its pocket; held has been handed to the pocket's consumer; deferred means a newer version arrived while the key was held and the held version was acked or nacked, so it restarts at the back with a fresh position and is pullable again once the lease ends. |
+| Queued, leased, idle, parked | A pocket's states. Queued waits in the pocket order; leased is held by one consumer; idle has no records; parked was set aside after `max_consecutive_expiries` lease expiries with no ack, nack, release or revive between them, until a publish that adds or raises a record revives it. |
+| Queued, held | A record's states. Queued waits in its pocket; held has been handed to the pocket's consumer and stays in the lease's held set until the lease ends. |
+| Held set | The records a lease holds: each one handed out under it, at the rank and payload it was handed out with, with its mark, until the lease ends, whether acked, nacked or neither. The lease read shows it, and the lease's end, by release or lapse, reconciles it. Never transaction. |
+| Mark | What the consumer has said of a held record under its lease: unsettled, acked or nacked. The first ack or nack stands; the lease's end acts on it. Never a record state, which is queued or held. |
+| Deferred | A newer version that arrived while its key was held, waiting behind the held version until the lease ends; a still newer one replaces it and sheds it. Not a record state: the record is held. |
 | Queue | The deployment's one queue: it owns the pocket order and hands out positions. One deployment is one queue; never topic. |
-| Position | Where a pocket stands in the pocket order and a record in its pocket: the queue's counter when it entered or re-entered, smallest first. A supersede and an expiry requeue keep it; a deferral takes a fresh one for the record, a release or revival for the pocket. Never timestamp. |
+| Position | Where a pocket stands in the pocket order and a record in its pocket: the queue's counter when it entered or re-entered, smallest first. A supersede and an expiry requeue keep it. A deferred version takes a fresh one when it arrives, its arrival position, which the record takes at the lease's end when the held version was acked or nacked; behind an unsettled held version it takes the held version's position instead. A release or revival gives the pocket a fresh one. Never timestamp. |
 | Pocket order, the pocket's records | Say the pocket order for the queue of pockets and the pocket's records for what one pocket holds. Never primary queue or secondary queue. |
 
 ## The repository
