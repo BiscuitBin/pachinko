@@ -1,7 +1,7 @@
 ---
 id: PD04
 title: "Python double: deferral behind the held version"
-status: todo
+status: done
 depends_on: [PD03]
 parallel_with: []
 branch: ticket/pd04-deferral
@@ -338,10 +338,323 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end. They record the base and its full commit id, the baseline, any
-scenario moved under shared rule 2, the checkpoint's record, the spec notes added, and
-Verification quoted under its commit.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `dab253a7a02737a7d42806eee7146b1b6a1e2bd1`, PD03's record commit.
+- Work commit: `252e98f7f5bee89c7b36554d12c0fceb26eb72d6`.
+- At the maintainer's direction the whole PD01 to PD06 series lands on this one branch
+  in this one worktree, as PD01's hand-back section 1 records. That departs from
+  AGENTS.md's one-ticket-per-worktree rule and from step 1's "create the worktree on
+  `branch:`". `ticket/pd04-deferral` was not created.
+- `just initialize` was not run. The series runs in one worktree, whose PD01 baseline
+  was green without it, and PD04's baseline is quoted from PD03.
+
+### 2. Baseline
+
+Quoted from PD03, not rerun (`ai_tmp/pd/PD04/baseline.txt`).
+
+- `just python-double` at `c5d0ff3897e4ccd25fd60de1286c470ac0a28e43` printed
+  `Ran 209 tests` and `OK` (PD03's Verification).
+- `just check` on the tree committed as `dab253a7a02737a7d42806eee7146b1b6a1e2bd1` ended
+  `All checks passed and the worktree is unchanged.` (exit 0). It ran just before that
+  commit, which changed only the two ticket files.
+
+### 3. What landed
+
+Rows per table. Each row fires in at least one test, and the coverage test's fired-rule
+check passes. No table raised a `GuardOverlap`.
+
+| Table | Rows added | Rows now |
+| --- | --- | --- |
+| Publish | `DeferBehindHeldVersion` | 5 |
+| `Freed` | `SupersedeUnsettledHeldVersion`, `ConsumeAckedVersionQueueDeferred`, `DeadLetterNackedVersionQueueDeferred` | 6 |
+
+PD01's `Supersede` held branch now fires, in S045 and S082.
+
+Files under `double/`:
+
+- `pachinko_double/publish.py`: the `DeferBehindHeldVersion` row in `PUBLISH`, between
+  `Supersede` and `DropStalePublish`, and the module docstring.
+- `pachinko_double/lease_end.py`: the three deferred `Freed` rows, with the helpers
+  `_freed_deferred` (the sibling of `_freed_with`) and `_queued_at_arrival`, and the
+  docstring.
+- `tests/test_deferral.py` (new): the 12 owned scenarios and three untagged tests.
+- `tests/test_lease_end.py`: `CONFIG` gained a distinct `superseded_ttl`, and four new
+  tests.
+- `tests/test_coverage.py`: the pending lists.
+- `SPEC-NOTES.md`: N29 to N32.
+
+Outside `double/`, only this ticket's hand-back and `status:` and the README's PD04
+Status cell are written, as Files touched says.
+
+Unchanged, confirmed by `git diff --quiet` before the commit: `settle.py` (the release
+callers), `queue.py`, `inspection.py` and `invariants.py`. PD03's three `Freed` rows,
+`_freed_with`, `end_lease`, `Freed`, `ending_records` and the two predicates are
+byte-for-byte unchanged, so the lease-end module's interface and its release callers are
+as PD03 left them.
+
+Pending lists, each checked by `diff` against PD05's ownership table:
+
+- `PENDING_SCENARIOS` holds 34 ids (the ticket asks for 34).
+- `PENDING_RULES` holds 7 rules (the ticket asks for 7).
+
+No scenario moved under shared rule 2. None of the 12 Rust tests ticks. S054 uses a short
+`lease_ttl` but only releases. S080 and S088 had already moved to PD05 before this
+ticket.
+
+The three untagged tests in `test_deferral.py`:
+
+- The Publish guards on a held record, per mark, deferred or not.
+- `ArrivalPositionInvariantsAreReachedTest`, the non-vacuity test below.
+- `DeferralTouchesItsPocketTest`, a hand-built dispatch that asserts the replace, the
+  `PocketTouched` emit and one allotment.
+
+The four new tests in `test_lease_end.py`:
+
+- One that exactly one of the six rows answers each (mark, deferred) pair.
+- `FreedDeferredRowsTest`: three hand-built rows where `now != ended_at`. Each asserts
+  the exact writes and `allotted == 0`.
+
+Non-vacuity of the seven arrival-position invariants. S091's committed state before the
+release has `b` and `z` with a deferred version and `y` and `a` without. All seven
+premises are true there, including `UniqueArrivalPosition`'s, which needs two deferred
+records, and `check(state) == ()`. PD01's positive controls are unchanged and pass.
+
+### 4. Red runs and probes
+
+#### Red runs
+
+Each red run went through `just python-double`, was saved with its exit status, and was
+followed by the change that turned it green. Files are in `ai_tmp/pd/PD04/`. The tree
+for each is `dab253a7a02737a7d42806eee7146b1b6a1e2bd1` plus the uncommitted PD04 files.
+In every run the coverage module's tag-run check and test-def check also fail, on the new
+tags and test defs.
+
+| File | Red before | Scenarios | Key output line | Exit |
+| --- | --- | --- | --- | --- |
+| `red-S021-S037-S043-S046-S082-S083.txt` | No `DeferBehindHeldVersion` row in the Publish table | S021, S037, S043, S046, S082 (three marks), S083 | `FAILED (failures=2, errors=8)`; 215 tests | 1 |
+| `red-S044-S045-S054-S071-S072-S091.txt` | No deferred row in the `Freed` table | S044, S045, S054, S071, S072, S091 | `FAILED (failures=2, errors=6)`; 221 tests | 1 |
+| `red-S072-S091.txt` | `ConsumeAckedVersionQueueDeferred` added, the other two rows absent | S072, S091 | `FAILED (failures=2, errors=2)`; 221 tests | 1 |
+| `red-S091.txt` | `DeadLetterNackedVersionQueueDeferred` added, `SupersedeUnsettledHeldVersion` absent | S091 | `FAILED (failures=2, errors=1)`; 221 tests | 1 |
+
+Notes on the table:
+
+- The last two files are steps of the second run, taken as each `Freed` row went in.
+  They show S072 and S091 still red after the acked row, and S091 alone after the nacked
+  row.
+- The first file's errors were `EqualRankRefused` where the specification defers. The
+  second file's were `Defect: no rule of the Freed table answers Freed(...)`.
+- The scenario column is the builder's reading of the failing test names in each file.
+  S082 appears as three subtests, one per mark.
+
+#### Scenarios with their own red run
+
+12 of the 12 owned scenarios went red for their own reason: S021, S037, S043, S044, S045,
+S046, S054, S071, S072, S082, S083 and S091. The first file holds six of them and the
+second holds the other six.
+
+#### Scenarios that could not be red on their own
+
+None. Mutant probes still ran against all of them (below).
+
+#### Probes
+
+Each probe ran through `just python-double` on the tree at
+`dab253a7a02737a7d42806eee7146b1b6a1e2bd1` plus the uncommitted PD04 files, then was
+reverted. `probe.sh` copies the file first, and every file ends with a matching SHA-256
+before and after. `probes.sh` drives `probe.sh`. The sweep ran at 228 tests. Every
+numbered probe exits 1. All files are in `ai_tmp/pd/PD04/`.
+
+| File | Breaks | Key output line | Exit |
+| --- | --- | --- | --- |
+| `probe-01-defer-overwrites-held.txt` | Defer overwrites the held version | `FAILED (failures=4, errors=18)` | 1 |
+| `probe-02-defer-advances-nothing.txt` | Defer does not advance the counter | `FAILED (failures=4, errors=18)` | 1 |
+| `probe-03-supersede-held-reallots.txt` | `Supersede`'s held branch re-allots the arrival position | `FAILED (failures=6)` | 1 |
+| `probe-04-unsettled-queues-at-arrival.txt` | The unsettled row queues at the arrival position | `FAILED (failures=4)` | 1 |
+| `probe-05-acked-keeps-held-position.txt` | The acked row keeps the held position | `FAILED (failures=7)` | 1 |
+| `probe-06-nacked-keeps-held-position.txt` | The nacked row keeps the held position | `FAILED (failures=4)` | 1 |
+| `probe-07-acked-allots-at-end.txt` | The acked row allots at the lease's end | `FAILED (failures=7)` | 1 |
+| `probe-08-shed-newest-version.txt` | The newest version is shed, not the held one | `FAILED (failures=4)` | 1 |
+| `probe-09-shed-at-now.txt` | `shed_at` comes from `now` | `FAILED (failures=2)` | 1 |
+| `probe-10-shed-expires-from-now.txt` | A shed record's `expires_at` counts from `now` | `FAILED (failures=2)` | 1 |
+| `probe-11-nacked-deferred-no-letter.txt` | The nacked deferred row makes no dead letter | `FAILED (failures=4)` | 1 |
+| `probe-12-nacked-deferred-in-both-queues.txt` | The nacked deferred row also sheds the held version | `FAILED (failures=4)` | 1 |
+| `probe-13-defer-guard-ignores-deferred.txt` | The Defer guard ignores a deferred version | `FAILED (failures=5, errors=4)` | 1 |
+| `probe-14-supersede-drops-held-branch.txt` | `Supersede` loses its held branch | `FAILED (failures=5, errors=4)` | 1 |
+| `probe-15-stale-against-held-rank.txt` | Stale is judged against the held rank | `FAILED (failures=5, errors=5)` | 1 |
+| `probe-16-ending-ignores-deferred.txt` | `ending_records` counts a deferred record | `FAILED (failures=5, errors=3)` | 1 |
+| `probe-17-freed-order-by-key.txt` | `Freed` is sent in key order | `FAILED (failures=4)` | 1 |
+| `probe-18-defer-sheds-held.txt` | Defer sheds the held version at once | `FAILED (failures=15)` | 1 |
+| `probe-19-defer-touches-nothing.txt` | Defer emits no `PocketTouched` | `FAILED (failures=2)` | 1 |
+| `probe-19a-defer-touches-nothing-before-its-test.txt` | The probe 19 mutation, run before its test existed | `OK` (`Ran 227 tests`) | 0 |
+
+Which tests kill which breakages, from `summary.md`:
+
+| Probe | Killed by |
+| --- | --- |
+| 01, 02 | All 12 scenarios, the guards test and the premises test |
+| 03 | S045, S082 |
+| 04, 08 | S091 and the hand-built `Freed` tests |
+| 05, 07 | S044, S045, S054, S071 and the hand-built tests |
+| 06, 11, 12 | S072 and the hand-built tests |
+| 09, 10 | The hand-built `Freed` tests only |
+| 13, 14 | S045, S082 and the guards test |
+| 15 | S046, S082, S083 and the guards test |
+| 16 | S045, S054, S071, S072 and two `ending_records` tests |
+| 17 | S091 through `Queue`, and PD03's hand-built order test |
+| 18 | S021, S043, S044, S045, S046, S072, S082, S083, S091 |
+| 19 | `DeferralTouchesItsPocketTest` only |
+
+Probe 13's log shows `GuardOverlap: Publish: the guards of Supersede,
+DeferBehindHeldVersion all hold`, so the table's overlap check catches that mutation too.
+
+How the surviving probe was handled. Probe 19 first ran as `probe-19a-...txt`, before
+any test pinned the `PocketTouched` emit. That run exited 0 with 227 tests `OK`: the
+mutant survived. The builder then added `DeferralTouchesItsPocketTest`, the hand-built
+dispatch that asserts the replace, the emit and one allotment, and reran the probe as
+`probe-19-defer-touches-nothing.txt`, which exits 1. The 19a file is kept as the record
+of the survivor.
+
+Limits on this evidence:
+
+- Probes 09 and 10 are killed only by hand-built tests. Through `Queue`, `now` equals
+  `ended_at`, so no scenario can tell the two apart.
+- Probe 19 is killed only by a hand-built dispatch. The pocket of a held record is always
+  leased, so through `Queue` the `PocketTouched` event is a no-op.
+
+The three breakage-lens questions of step 5:
+
+- A held version shed during its lease: probes 01 and 18.
+- A deferred version that loses its arrival position on a second supersede: probe 03.
+- One publish that ends in both shed queues: probe 12.
+
+### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
+
+- Ran at: `dab253a7a02737a7d42806eee7146b1b6a1e2bd1` plus uncommitted work (steps 2 to
+  4).
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command
+  (`< /dev/null`, `-o last-<lens>.md`, `>|` log). One Claude (sonnet) runner subagent per
+  lens. Codex cannot write under read-only, so each findings file is Codex's last
+  message and its first line says `Source: last-message`. Codex could not run
+  `just check` in its sandbox.
+- Triage and apply: one fresh opus subagent, the only writer.
+- Findings: breakage 0; conformance 2 low. 0 high, 0 medium.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | low | valid | N30's Question said shed timestamps order a queued key's ranks, but `DropStalePublish` also creates `SupersededRecord` entries (reason `stale`, `shed_at: now`) | N30's Question limits the claim to the entries `Supersede` sheds while one record stays queued, with the rank-10 example of publishes at 5, 3 and 4 |
+| C2 | low | valid | N31's Concerns named no specification anchor, which shared rule 5 requires | N31 names the `Record` comment and `OldestSlotNewestPayload`, and says no surface of the specification names the inspection seam |
+
+- Evidence: `ai_tmp/review/PD04-1/verdicts.md`, `findings-conformance.md`,
+  `findings-breakage.md` and `apply-final.txt`.
+- Re-run after apply: `just python-double` ran 228 tests, OK, exit 0; `just lint` exit 0;
+  no `__pycache__`. The triage subagent's `just lint` skipped markdownlint and lychee
+  ("no files to check"), so `double/SPEC-NOTES.md` was not linted as Markdown there. That
+  is left to `just check`.
+- Second round: none, because no high-severity finding was valid.
+- Handed back: nothing outside Files touched.
+- After triage the lead added N31's Ruling line (section 7).
+
+### 6. Spec notes added
+
+| Id | Note |
+| --- | --- |
+| N29 | S091 pins the order of the entries one lease end creates (`impl-choice`). It extends N25: superseded records and dead letters come out smallest held position first. |
+| N30 | A deferred version shed by a later publish takes the publish's `now`, while a held version shed at the lease's end takes `ended_at`. It asks whether a reader should be told that `shed_at` does not order a key's versions. |
+| N31 | S091's record order is the Rust's inspection shape, not behaviour. The test compares the kept positions by key. The note carries the maintainer's Ruling line. |
+| N32 | A deferral answers nothing, where the Rust (and decision 0020) answers `Superseded`. The specification names no outcome. |
+
+### 7. Departures and rulings
+
+#### Maintainer's ruling on S091
+
+Recorded in `ai_tmp/pd/PD04/ruling-S091.txt`. On 2026-11-18, through AskUserQuestion, the
+maintainer chose "For now, go with option one, but add a note or even a ticket to
+investigate further".
+
+- The Rust's S091 ends with a literal list of the pocket's records, `[("b", 3), ("z", 1)]`.
+  The double lists them `[("z", 1), ("b", 3)]`, because its snapshot keeps records in
+  insertion order and a replaced record keeps its place. The ported assertion fails
+  against it.
+- Option one is N31's port. The test compares the kept positions as a map from key to
+  position, and the listing order is the Rust's inspection shape, not behaviour.
+- The builder ported by key and wrote N31 rather than stopping under shared rule 1. The
+  lead and the maintainer had to accept it, as S053's was in PD03.
+- N31 now carries a Ruling line that records the acceptance and the request for further
+  investigation.
+- A follow-up ticket, `.scratch/python-double/PD07-inspection-contract.md`, takes up N31
+  together with N24 (S053's kept ended lease). It lands in its own commit right after
+  this ticket's record.
+
+#### Other departures
+
+- The series lands on one branch in one worktree (section 1).
+- Step 1 asks for `just initialize` and for `just check` and `just python-double` on the
+  untouched worktree. Neither was rerun. The baseline is quoted from PD03 (section 2).
+- The builder edited three stale forward references in lines PD01 and PD03 wrote. Each
+  said PD04's rows were future work, and each was stale once the rows landed:
+  - `double/pachinko_double/publish.py`: the module docstring ("PD04 adds
+    `DeferBehindHeldVersion`").
+  - `double/pachinko_double/lease_end.py`: the docstring paragraph that said the deferred
+    rows land later.
+  - `double/tests/test_lease_end.py`: one test comment ("join the same table in PD04").
+
+  This reads "own lines" as allowing it. The three edits revert cleanly if the maintainer
+  reads it otherwise.
+- The builder extracted a shared `_dead_letter` builder from PD03's
+  `DeadLetterNackedRecord`, then reverted it under the own-lines rule. The new nacked row
+  repeats the specification's `DeadLetter.created`, as the specification itself does.
+- Probes 09, 10 and 19 are killed only by hand-built tests (section 4). Probe 19 first
+  survived, as `probe-19a-...txt` records, and its test was written afterwards.
+- Seven tests have no catalog row: the three untagged tests in `test_deferral.py` and the
+  four new tests in `test_lease_end.py` (section 3).
+- A deferral answers nothing, where decision 0020's publish table answers `superseded`.
+  The tests assert the state the deferral leaves instead (N32).
+- S091's order is ported as `impl-choice`, as shared rule 1 and step 3 ask (N29).
+- The Rust S021, S037 and the other ported rows were read for their setup, steps and
+  assertions only. No behaviour was taken from `crates/libpachinko/src/`.
+- Codex cannot write files under read-only, so each findings file is Codex's last
+  message (section 5).
+
+### 8. Verification
+
+The Verification block ran at `252e98f7f5bee89c7b36554d12c0fceb26eb72d6`, the work commit, as one `sh` script under
+`set -eu`. It exited 0 (`exit=0`). The opening and closing lines of its output:
+
+```text
+252e98f7f5bee89c7b36554d12c0fceb26eb72d6
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+....................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 228 tests in 0.097s
+
+OK
+…  (the remaining output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
-None yet.
+- Should the specification order the entries one lease end creates, or say that their
+  order is not observable? S091 is the first scenario that can tell, and the double pins
+  smallest held position first as `impl-choice` (N29, extends N25).
+- Should a reader of the superseded queue be told that `shed_at` does not order a key's
+  versions? A deferred version shed by a publish takes the publish's `now`, and a held
+  version shed at the lease's end takes `ended_at`, so a key's lowest rank can be shed
+  last (N30).
+- Is the order in which a snapshot lists a pocket's records part of the inspection
+  contract? The maintainer accepted the port by key for now. PD07 takes this up with
+  N24's kept ended lease (N31, S091, S053).
+- Should the Publishing surface name what a publish answers? Decision 0020 gives a
+  deferral the answer `superseded`, and the specification gives it none, so the double
+  answers nothing (N32).
+- `just lint` did not lint `double/SPEC-NOTES.md` as Markdown after the checkpoint's
+  apply, since markdownlint reported no files to check. Only `just check` covers it.
+- The three stale forward references edited in PD01's and PD03's lines (section 7) are
+  the builder's reading of "own lines". The maintainer may want a different reading.
+- The seven untagged tests have no catalog row. The maintainer may want rows for them.
