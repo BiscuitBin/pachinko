@@ -20,7 +20,18 @@ from pachinko_double.lease_end import (
     ending_records,
     no_record_outlasts_the_lease,
 )
-from pachinko_double.model import Consumer, DeadLetter, Lease, LeaseStatus, Mark, PocketStatus, Record, RecordStatus
+from pachinko_double.model import (
+    Consumer,
+    DeadLetter,
+    Lease,
+    LeaseStatus,
+    Mark,
+    PocketStatus,
+    Record,
+    RecordStatus,
+    ShedReason,
+    SupersededRecord,
+)
 from pachinko_double.refusals import ReleaseRefused
 from pachinko_double.rules import Defect, Registry, dispatch
 from pachinko_double.settle import RELEASE, Release
@@ -29,7 +40,8 @@ from .fixtures import T0, held, lease, pocket, queued, snapshot
 from .test_pull import RecordingOutcome
 
 DEAD_LETTER_TTL = 7_000
-CONFIG = Config(dead_letter_ttl=DEAD_LETTER_TTL)
+SUPERSEDED_TTL = 5_000
+CONFIG = Config(superseded_ttl=SUPERSEDED_TTL, dead_letter_ttl=DEAD_LETTER_TTL)
 ENDED_AT = T0 + 5
 LATER = T0 + 999
 NOTHING_DEFERRED = ("RequeueUnsettledRecord", "ConsumeAckedRecord", "DeadLetterNackedRecord")
@@ -109,7 +121,7 @@ class FreedTableTest(unittest.TestCase):
 
     def test_these_rows_leave_a_version_deferred_behind_the_held_one_to_the_rows_for_it(self) -> None:
         # Only the three rows with nothing deferred: the rows for a deferred
-        # version join the same table in PD04 and answer this record then.
+        # version sit beside them in the same table and answer this record.
         rows = [row for row in FREED.rows if row.name in NOTHING_DEFERRED]
         self.assertEqual(sorted(row.name for row in rows), sorted(NOTHING_DEFERRED))
         for mark in Mark:
@@ -120,6 +132,84 @@ class FreedTableTest(unittest.TestCase):
             view, event = View(state(deferred, the_lease=ENDED), LATER), Freed("lease-1", "k", ENDED_AT)
             with self.subTest(mark=mark):
                 self.assertEqual([row.name for row in rows if row.guard(view, event)], [])
+
+    def test_exactly_one_row_answers_each_mark_with_or_without_a_deferred_version(self) -> None:
+        # The specification's six rows, one per row of the reconciliation table.
+        expected = {
+            (Mark.UNSETTLED, False): "RequeueUnsettledRecord",
+            (Mark.UNSETTLED, True): "SupersedeUnsettledHeldVersion",
+            (Mark.ACKED, False): "ConsumeAckedRecord",
+            (Mark.ACKED, True): "ConsumeAckedVersionQueueDeferred",
+            (Mark.NACKED, False): "DeadLetterNackedRecord",
+            (Mark.NACKED, True): "DeadLetterNackedVersionQueueDeferred",
+        }
+        self.assertEqual(sorted(row.name for row in FREED.rows), sorted(expected.values()))
+        for (mark, deferred), name in expected.items():
+            nacked_at = T0 if mark is Mark.NACKED else None
+            deferral = dict(rank=2, held_rank=1, held_payload=b"old", deferred_position=9) if deferred else {}
+            found = held("p", "k", mark=mark, nacked_at=nacked_at, **deferral)
+            view, event = View(state(found, the_lease=ENDED), LATER), Freed("lease-1", "k", ENDED_AT)
+            with self.subTest(mark=mark, deferred=deferred):
+                self.assertEqual([row.name for row in FREED.rows if row.guard(view, event)], [name])
+
+
+# Three held records, each with a newer version deferred behind it: the held
+# version is rank 1, the newer rank 3, and each arrival position is after the
+# held position.
+DEFERRED_UNSETTLED = held(
+    "p", "d1", rank=3, payload=b"new1", position=4, held_rank=1, held_payload=b"old1", deferred_position=8
+)
+DEFERRED_ACKED = held(
+    "p",
+    "d2",
+    rank=3,
+    payload=b"new2",
+    position=6,
+    held_rank=1,
+    held_payload=b"old2",
+    mark=Mark.ACKED,
+    deferred_position=9,
+)
+DEFERRED_NACKED = held(
+    "p",
+    "d3",
+    rank=3,
+    payload=b"new3",
+    position=7,
+    held_rank=1,
+    held_payload=b"old3",
+    mark=Mark.NACKED,
+    nacked_at=T0 + 2,
+    deferred_position=10,
+)
+DEFERRED = (DEFERRED_UNSETTLED, DEFERRED_ACKED, DEFERRED_NACKED)
+
+
+class FreedDeferredRowsTest(unittest.TestCase):
+    """The three rows for a deferred version, on a view whose `now` is not the
+    lease's `ended_at`. None of them allots a position: the arrival position
+    was allotted when the newer version arrived."""
+
+    def test_an_unsettled_held_version_is_shed_from_ended_at_and_the_newer_one_keeps_the_held_position(self) -> None:
+        outcome = freed("d1", *DEFERRED)
+        shed = SupersededRecord("p", "d1", 1, b"old1", ShedReason.SUPERSEDED, ENDED_AT, ENDED_AT + SUPERSEDED_TTL)
+        self.assertEqual(
+            outcome.writes, [("create", shed), ("replace", queued("p", "d1", rank=3, payload=b"new1", position=4))]
+        )
+        self.assertEqual(outcome.allotted, 0)
+
+    def test_an_acked_held_version_is_consumed_and_the_newer_one_is_queued_at_its_arrival_position(self) -> None:
+        outcome = freed("d2", *DEFERRED)
+        self.assertEqual(outcome.writes, [("replace", queued("p", "d2", rank=3, payload=b"new2", position=9))])
+        self.assertEqual(outcome.allotted, 0)
+
+    def test_a_nacked_held_version_is_dead_lettered_from_ended_at_and_the_newer_one_queued_at_arrival(self) -> None:
+        outcome = freed("d3", *DEFERRED)
+        letter = DeadLetter("p", "d3", 1, b"old3", "c", T0 + 2, ENDED_AT + DEAD_LETTER_TTL)
+        self.assertEqual(
+            outcome.writes, [("create", letter), ("replace", queued("p", "d3", rank=3, payload=b"new3", position=10))]
+        )
+        self.assertEqual(outcome.allotted, 0)
 
 
 class PocketFateTest(unittest.TestCase):

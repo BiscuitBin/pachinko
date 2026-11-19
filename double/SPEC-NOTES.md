@@ -559,3 +559,106 @@ it concerns, what the specification says, what the double does, and the question
 - **Question:** is "reads no clock" behaviour the specification should state, for
   instance that a rejected action has no effect at all, time included? Or is it a property
   of the Rust's monotonic clock only?
+
+## N29: S091 pins the order of the entries one lease end creates (`impl-choice`)
+
+- **Ticket:** PD04.
+- **Concerns:** the five rules that end a lease (`for record in pocket.held_records:
+  Freed(...)`), `SupersedeUnsettledHeldVersion`, `DeadLetterNackedRecord`, the Lease end
+  comment, and scenario S091.
+- **The specification says:** the ending rule sends one `Freed` for each held record, a
+  set with no order. Each `SupersededRecord.created` and `DeadLetter.created` adds an
+  entry to a queue the specification lists in no order either.
+- **The double does:**
+  - `end_lease` sends `Freed` smallest held position first (N25), so the superseded
+    records and the dead letters one end creates are added in that order too. S091
+    asserts it through `Queue`: `z` then `b` in the superseded queue, `y` then `a` in
+    the dead letters, against a key order that is the reverse.
+  - The test carries the `impl-choice` label. The entries themselves, their `shed_at`
+    and `expires_at` at the lease's end, and the kept positions are the
+    specification's.
+  - S091 is the first scenario that can tell the order, so N25's "no scenario can tell"
+    holds only for PD03's rows.
+  - Decision 0020's Consequences say the same: the specification leaves this order
+    open, and the library pins smallest held position first.
+- **Question:** as N25: should the specification order the entries one lease end
+  creates, or say that their order is not observable?
+
+## N30: a deferred version shed by a later publish takes the publish's `now`
+
+- **Ticket:** PD04.
+- **Concerns:** `Supersede`'s held branch, `SupersedeUnsettledHeldVersion`, the Lease end
+  comment ("a superseded record made here has shed_at at the lease's end"), and
+  scenarios S045, S082 and S091.
+- **The specification says:**
+  - `Supersede` sheds the loser with `shed_at: now` and `expires_at: now +
+    config.superseded_ttl`, whether the record is queued or held with a version
+    deferred.
+  - `SupersedeUnsettledHeldVersion` sheds the held version with `shed_at: ended_at`.
+- **The double does:**
+  - A deferred version that a still higher rank supersedes is shed with the publish's
+    `now` (S045, S082). It is the time the publish is processed, not the lease's time:
+    the lease has not ended, and the rule reads no lease.
+  - A held version shed at the lease's end takes `ended_at` from `Freed` (S091, and
+    hand-built tests in `test_lease_end.py` whose `now` differs from `ended_at`).
+  - So the entries of one key's superseded versions can carry stamps from two clocks
+    in the same lease, the publish's and the end's. Through `Queue` they coincide only
+    when the publish and the end are processed at the same instant.
+- **Question:** none on the stamps, which the rules state. One consequence may be worth
+  stating. While one record of a key stays queued, the entries `Supersede` sheds for it,
+  with reason `superseded`, are ordered by rank as well as by `shed_at`, since each
+  publish it accepts outranks the last. The stale entries `DropStalePublish` sheds follow
+  no rank order: with the record queued at rank 10, publishes of 5, 3 and 4 are shed in
+  that order. For a held key even the `superseded` entries need not be ordered by rank.
+  With `v1` held, `v3` deferred at 10 ms and `v5` published at 20 ms, `v3` is shed at
+  20 ms, but `v1`, the lowest rank, is shed only when the lease ends, later. Is that
+  intended, and should a reader of the superseded queue be told that `shed_at` does not
+  order a key's versions?
+
+## N31: S091's record order is the Rust's inspection shape, not behaviour
+
+- **Ticket:** PD04.
+- **Concerns:** the `Record` comment ("One record per key per pocket. Queued records are
+  ordered by position, smallest first."), `OldestSlotNewestPayload`, which says which
+  positions S091's kept records hold, the inspection seam, which no surface of the
+  specification names, and scenario S091.
+- **The specification says:** a pocket's records are a set. Queued records are ordered
+  by position, which no rule asks to be listed.
+- **The double does:** the Rust's S091 lists the pocket's records in its own snapshot
+  order, `[("b", 3), ("z", 1)]`. The double's snapshot keeps records in insertion order,
+  which is not behaviour, so the test compares the kept positions as a map from key to
+  position. The positions themselves are compared relative to the state before, never as
+  the absolute values that rest on N04.
+  - The literal list fails against the double. Records are kept in the order they were
+    created, and replacing one keeps its place, so the double lists `[("z", 1), ("b", 3)]`.
+  - This is the builder's reading, not a ruling. The maintainer's ruling under N24
+    covered S053's empty lease registry only. This note applies the same reasoning to a
+    second row and is put to the maintainer.
+- **Question:** is the order in which a snapshot lists a pocket's records part of the
+  inspection contract? If so, which order: by key, by position, or another? If not, may
+  S091's last assertion be ported as a comparison by key, as the double does?
+- **Ruling (2026-11-18):** the maintainer accepted the port by key for now and asked for
+  further investigation. `.scratch/python-double/PD07-inspection-contract.md` takes this
+  question up together with N24's kept ended lease (S053).
+
+## N32: a deferral answers nothing, where the Rust answers `Superseded`
+
+- **Ticket:** PD04.
+- **Concerns:** `DeferBehindHeldVersion`, `Supersede`, the Publishing surface, and
+  scenarios S021, S043, S045, S071, S072 and S082.
+- **The specification says:** the Publish rules ensure state and emit `PocketTouched`.
+  No rule answers the publisher, and the surface names no outcome.
+- **The double does:** `Queue.publish` answers nothing, as in PD01. Where the Rust
+  asserts `PublishOutcome::Superseded` for a publish that the double defers, the test
+  asserts the state the deferral leaves instead: `rank`, `payload` and
+  `deferred_position` move, the held version does not, and the counter advances by
+  one.
+  - Decision 0020 records the answer outside the specification: its publish table gives
+    a deferral the answer `superseded`, "the maintainer chose `superseded` for it at
+    step 1". So the Rust follows a recorded decision. A publisher cannot tell a
+    deferral from a supersede of a queued record.
+  - The double does not port that answer, because shared rule 1 derives the double
+    from the specification alone.
+- **Question:** decision 0020 fixes the answer, but the specification does not state
+  it. Should the Publishing surface name what a publish answers, so that a double or a
+  second implementation can port it?

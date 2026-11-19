@@ -3,13 +3,19 @@
 The rules that share the `Publish` trigger have disjoint guards. No rule
 covers a rank equal to the stored rank, so that publish reaches the table's
 answer when no guard holds, and is refused with `EqualRankRefused` (spec note
-N11). The stored rank is `record.rank` whatever the record's state.
+N11). The stored rank is `record.rank` whatever the record's state: on a held
+record it is the newest version's, not the held one's.
+
+A higher rank onto a held record splits on what is deferred. With nothing
+deferred, `DeferBehindHeldVersion` defers it behind the held version, at the
+arrival position it allots then. With a version already deferred,
+`Supersede`'s held branch sheds that version at once, and the newer one
+inherits the arrival position. Neither sheds the held version.
 
 `ReviveIdlePocket` answers `PocketTouched` on an idle pocket, queueing it at
 a fresh position at the back; PD05 adds `ReviveParkedPocket` beside it. A
 touched pocket that is queued or leased is left as it is, which is the
-table's answer when no guard holds. PD04 adds `DeferBehindHeldVersion` to the
-Publish table.
+table's answer when no guard holds.
 """
 
 from dataclasses import dataclass, replace
@@ -158,6 +164,43 @@ def _supersede(view: View, outcome: "Outcome", trigger: Publish) -> None:
     outcome.emit(PocketTouched(trigger.pocket_key))
 
 
+# rule DeferBehindHeldVersion ----------------------------------------------
+
+
+def _defer_behind_held_version_guard(view: View, trigger: Publish) -> bool:
+    # let pocket = Pocket{key: pocket_key}
+    # requires: exists pocket
+    if _pocket(view, trigger.pocket_key) is None:
+        return False
+    # let record = Record{pocket: pocket, key: record_key}
+    # requires: exists record
+    record = view.state.record(trigger.pocket_key, trigger.record_key)
+    # requires: rank > record.rank
+    # requires: record.status = held
+    # requires: record.deferred_position = null
+    return (
+        record is not None
+        and trigger.rank > record.rank
+        and record.status is RecordStatus.HELD
+        and record.deferred_position is None
+    )
+
+
+def _defer_behind_held_version(view: View, outcome: "Outcome", trigger: Publish) -> None:
+    record = view.state.record(trigger.pocket_key, trigger.record_key)
+    assert record is not None
+    # let position = queue.next_position
+    # ensures: queue.next_position = position + 1
+    position = outcome.allot_position()
+    # ensures: record.rank = rank
+    # ensures: record.payload = payload
+    # ensures: record.deferred_position = position
+    # The held version, held_rank and held_payload, and its mark do not change.
+    outcome.replace(replace(record, rank=trigger.rank, payload=trigger.payload, deferred_position=position))
+    # ensures: PocketTouched(pocket_key: pocket_key)
+    outcome.emit(PocketTouched(trigger.pocket_key))
+
+
 # rule DropStalePublish ----------------------------------------------------
 
 
@@ -220,6 +263,7 @@ PUBLISH = SPECIFICATION.register(
             Rule("PublishIntoNewPocket", _publish_into_new_pocket_guard, _publish_into_new_pocket),
             Rule("PublishNewKey", _publish_new_key_guard, _publish_new_key),
             Rule("Supersede", _supersede_guard, _supersede),
+            Rule("DeferBehindHeldVersion", _defer_behind_held_version_guard, _defer_behind_held_version),
             Rule("DropStalePublish", _drop_stale_publish_guard, _drop_stale_publish),
         ),
         NoGuardHolds.REFUSAL,

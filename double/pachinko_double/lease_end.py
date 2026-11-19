@@ -24,12 +24,18 @@ a lease call it:
 
 `Freed` carries `ended_at`, the timestamp the ending rule wrote to
 `lease.ended_at`, and a row that creates an entry stamps it from that, never
-from its own `now` (DeadLetterNackedRecord's `expires_at`).
+from its own `now`: both dead letters' `expires_at`, and the `shed_at` and
+`expires_at` of the held version SupersedeUnsettledHeldVersion sheds.
 
-The rows here are the three with nothing deferred. Each guards
-`record.deferred_position = null`, so the three rows for a deferred version sit
-beside them in the same table, with disjoint guards, and nothing above
-changes when they land.
+The table has six rows, one per row of the specification's reconciliation
+table: three with nothing deferred, which guard
+`record.deferred_position = null`, and three for a newer version deferred
+behind the held one, which guard `record.deferred_position != null`. For
+each mark the two guards are disjoint. Behind an unsettled version the newer
+version is queued at the held version's position; behind an acked or nacked
+one, at its arrival position, `deferred_position`. No row allots a position:
+the arrival position was allotted when the newer version arrived
+(DeferBehindHeldVersion), and the counter does not advance again here.
 
 The `Freed` events of one end go out smallest held position first. The
 specification sends them as `for record in pocket.held_records`, in no stated
@@ -40,7 +46,7 @@ N25).
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from .model import DeadLetter, Lease, LeaseStatus, Mark, Record, RecordStatus, Timestamp
+from .model import DeadLetter, Lease, LeaseStatus, Mark, Record, RecordStatus, ShedReason, SupersededRecord, Timestamp
 from .rules import SPECIFICATION, NoGuardHolds, Rule, Table
 
 if TYPE_CHECKING:
@@ -115,6 +121,26 @@ def _freed_with(view: "View", event: Freed, mark: Mark) -> tuple[Lease, Record] 
     return found if record.mark is mark and record.deferred_position is None else None
 
 
+def _freed_deferred(view: "View", event: Freed, mark: Mark) -> tuple[Lease, Record] | None:
+    """`_freed_record`, when the record's mark is `mark` and a newer version is deferred."""
+    found = _freed_record(view, event)
+    if found is None:
+        return None
+    record = found[1]
+    # requires: record.mark = <mark>
+    # requires: record.deferred_position != null
+    return found if record.mark is mark and record.deferred_position is not None else None
+
+
+def _queued_at_arrival(record: Record) -> Record:
+    """The newer version queued at its arrival position, which was allotted when
+    it arrived: nothing is allotted here."""
+    # let arrival_position = record.deferred_position
+    # ensures: record.position = arrival_position
+    assert record.deferred_position is not None
+    return replace(_queued_again(record), position=record.deferred_position)
+
+
 def _queued_again(record: Record) -> Record:
     # ensures: record.status = queued
     # ensures: record.held_rank = null, record.held_payload = null, record.mark = null,
@@ -144,6 +170,38 @@ def _requeue_unsettled_record(view: "View", outcome: "Outcome", event: Freed) ->
     outcome.replace(_queued_again(found[1]))
 
 
+# rule SupersedeUnsettledHeldVersion ---------------------------------------
+
+
+def _supersede_unsettled_held_version_guard(view: "View", event: Freed) -> bool:
+    return _freed_deferred(view, event, Mark.UNSETTLED) is not None
+
+
+def _supersede_unsettled_held_version(view: "View", outcome: "Outcome", event: Freed) -> None:
+    found = _freed_deferred(view, event, Mark.UNSETTLED)
+    assert found is not None
+    lease, record = found
+    # let held_rank = record.held_rank
+    # let held_payload = record.held_payload
+    assert record.held_rank is not None and record.held_payload is not None
+    # ensures: SupersededRecord.created(pocket, key: record_key, rank: held_rank, payload: held_payload,
+    #     reason: superseded, shed_at: ended_at, expires_at: ended_at + config.superseded_ttl)
+    outcome.create(
+        SupersededRecord(
+            pocket=lease.pocket,
+            key=event.record_key,
+            rank=record.held_rank,
+            payload=record.held_payload,
+            reason=ShedReason.SUPERSEDED,
+            shed_at=event.ended_at,
+            expires_at=event.ended_at + outcome.config.superseded_ttl,
+        )
+    )
+    # The newer version is queued at the held version's position: a key
+    # nobody acked or nacked keeps its place, so position is left as it is.
+    outcome.replace(_queued_again(record))
+
+
 # rule ConsumeAckedRecord --------------------------------------------------
 
 
@@ -156,6 +214,21 @@ def _consume_acked_record(view: "View", outcome: "Outcome", event: Freed) -> Non
     assert found is not None
     # ensures: not exists record
     outcome.remove(found[1])
+
+
+# rule ConsumeAckedVersionQueueDeferred ------------------------------------
+
+
+def _consume_acked_version_queue_deferred_guard(view: "View", event: Freed) -> bool:
+    return _freed_deferred(view, event, Mark.ACKED) is not None
+
+
+def _consume_acked_version_queue_deferred(view: "View", outcome: "Outcome", event: Freed) -> None:
+    found = _freed_deferred(view, event, Mark.ACKED)
+    assert found is not None
+    # The acked version is consumed: recorded nowhere. Behind it the newer
+    # version is a new arrival and stands where it arrived.
+    outcome.replace(_queued_at_arrival(found[1]))
 
 
 # rule DeadLetterNackedRecord ----------------------------------------------
@@ -190,13 +263,60 @@ def _dead_letter_nacked_record(view: "View", outcome: "Outcome", event: Freed) -
     outcome.remove(record)
 
 
+# rule DeadLetterNackedVersionQueueDeferred --------------------------------
+
+
+def _dead_letter_nacked_version_queue_deferred_guard(view: "View", event: Freed) -> bool:
+    return _freed_deferred(view, event, Mark.NACKED) is not None
+
+
+def _dead_letter_nacked_version_queue_deferred(view: "View", outcome: "Outcome", event: Freed) -> None:
+    found = _freed_deferred(view, event, Mark.NACKED)
+    assert found is not None
+    lease, record = found
+    # let held_rank = record.held_rank
+    # let held_payload = record.held_payload
+    # let nacked_at = record.nacked_at
+    assert record.held_rank is not None and record.held_payload is not None and record.nacked_at is not None
+    # ensures: DeadLetter.created(pocket, key: record_key, rank: held_rank, payload: held_payload,
+    #     nacked_by: lease.consumer, nacked_at: nacked_at, expires_at: ended_at + config.dead_letter_ttl)
+    outcome.create(
+        DeadLetter(
+            pocket=lease.pocket,
+            key=event.record_key,
+            rank=record.held_rank,
+            payload=record.held_payload,
+            nacked_by=lease.consumer,
+            nacked_at=record.nacked_at,
+            expires_at=event.ended_at + outcome.config.dead_letter_ttl,
+        )
+    )
+    # The newer version is a new arrival and stands where it arrived.
+    outcome.replace(_queued_at_arrival(record))
+
+
 FREED = SPECIFICATION.register(
     Table(
         "Freed",
         (
             Rule("RequeueUnsettledRecord", _requeue_unsettled_record_guard, _requeue_unsettled_record),
+            Rule(
+                "SupersedeUnsettledHeldVersion",
+                _supersede_unsettled_held_version_guard,
+                _supersede_unsettled_held_version,
+            ),
             Rule("ConsumeAckedRecord", _consume_acked_record_guard, _consume_acked_record),
+            Rule(
+                "ConsumeAckedVersionQueueDeferred",
+                _consume_acked_version_queue_deferred_guard,
+                _consume_acked_version_queue_deferred,
+            ),
             Rule("DeadLetterNackedRecord", _dead_letter_nacked_record_guard, _dead_letter_nacked_record),
+            Rule(
+                "DeadLetterNackedVersionQueueDeferred",
+                _dead_letter_nacked_version_queue_deferred_guard,
+                _dead_letter_nacked_version_queue_deferred,
+            ),
         ),
         NoGuardHolds.DEFECT,
     )

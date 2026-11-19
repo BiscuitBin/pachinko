@@ -71,28 +71,24 @@ ENV_SUITE = "PACHINKO_DOUBLE_SUITE"
 PENDING_SCENARIOS = frozenset(
     {
         "S002", "S006", "S007",
-        "S021", "S024", "S025", "S026",
-        "S034", "S037",
-        "S043", "S044", "S045", "S046", "S048",
-        "S054", "S056", "S058", "S059", "S060",
+        "S024", "S025", "S026",
+        "S034",
+        "S048",
+        "S056", "S058", "S059", "S060",
         "S061", "S062", "S063", "S064", "S065", "S066", "S067", "S069",
-        "S071", "S072", "S073", "S074", "S075", "S076", "S077", "S078", "S079", "S080",
-        "S081", "S082", "S083", "S087", "S088", "S089",
-        "S091", "S092", "S093",
+        "S073", "S074", "S075", "S076", "S077", "S078", "S079", "S080",
+        "S081", "S087", "S088", "S089",
+        "S092", "S093",
     }
 )
 
 PENDING_RULES = frozenset(
     {
-        "DeferBehindHeldVersion",
         "ReviveParkedPocket",
         "LeaseLapses",
         "LeaseExpiryParksPocket",
         "LeaseExpiryKeepsPocketAtFront",
         "LeaseExpiryIdlesEmptyPocket",
-        "SupersedeUnsettledHeldVersion",
-        "ConsumeAckedVersionQueueDeferred",
-        "DeadLetterNackedVersionQueueDeferred",
         "SupersededRecordDecays",
         "DeadLetterDecays",
     }
