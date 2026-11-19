@@ -485,6 +485,8 @@ After the hand-back above, the maintainer answered four questions:
 
 The answer widens the scope beyond Files touched to `.github/workflows/ci.yml`, whose comment above `check-specs` now says that no hook runs the diagram check inside `check-docs`, and `docs/project/repository-map.md`, whose `docs/decisions/` row now names the diagram sources (R8).
 
+After pull request 51 opened, `origin/wave-2-tickets` moved from `8f27860` to `5b4d474`, which holds T37 (pull request 50), and the maintainer asked for it to be merged in. The merge, `433a20d`, had one conflict, T36's and T37's Status cells in `tickets/README.md`; both tickets are done, so both cells say `done`. T37's `shell-fences` hook skips this ticket's fences, because its status is `done`.
+
 ## Open points
 
 - **B3 / C2-1, the maintainer's decision.** Each `diagrams.py` compares its own folder, and the recipe trusts a script that exits 0 and prints `compared N SVGs, all match` with N at least 1. A later script whose comparison loop broke while it kept printing its count would pass. A shared checker, which every decision's script imports and the recipe drives, would close this. It conflicts with choice (b) ("the SVG helpers move to a shared module then, not before") and needs a file outside Files touched. Gate 15's row states the trust limit.
