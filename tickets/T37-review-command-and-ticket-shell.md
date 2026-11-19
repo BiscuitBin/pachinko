@@ -1,7 +1,7 @@
 ---
 id: T37
 title: "Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos"
-status: todo
+status: done
 depends_on: [T35]
 parallel_with: [T33, T36]
 branch: ticket/t37-review-and-ticket-shell
@@ -260,8 +260,196 @@ test -z "$status"
 
 ## Hand-back notes
 
+### Base, branch and baseline
+
+- **Base.** `origin/main` (`611a86e`) does not hold T35, so the base is `wave-2-tickets` at
+  `8f27860`, which has T35 `done` and `a482609` as an ancestor. Diffs and the §14 briefs
+  use `origin/wave-2-tickets...HEAD`.
+- **Branch.** The work is on `tickets/t37-review-command-and-ticket-shell`, the branch the
+  maintainer created, not this ticket's `branch:` value, `ticket/t37-review-and-ticket-shell`.
+  It was not renamed. The maintainer keeps or renames it before the push.
+- **Baseline**, at `8f27860`. `just initialize` exited 0; this is a secondary worktree, so
+  it skipped `install-hooks`. `just check` exited 0, with the last line
+  `All checks passed and the worktree is unchanged.`
+
+### Step 2, the facts that moved (at `8f27860`)
+
+- There are 42 fences tagged `sh`, not 40. The README fences moved to lines 215 and 221.
+- Decision B's scope is T36, T37, T38, `CONVENTIONS.md` and `README.md`. The pinned
+  shellcheck 0.11.0 fails:
+  - `CONVENTIONS.md:882` (SC2261);
+  - `README.md:215` (SC1009, SC1072, SC1073);
+  - `README.md:221` (SC2261);
+  - one fence the table in Context does not list, `T38:416`, which fails SC3040
+    (`set -o pipefail` under `sh`) and passes once retagged `bash`.
+
+  T36 and T37 pass. No moved fact undermines a decision.
+
+### Step 3, red first (at `8f27860` plus the scratch break)
+
+The fence break went in before the typos break: with the typos break present, `just lint`
+fails, so it could not show the gap.
+
+- **The fence gap.** A fence tagged `sh` holding `set -eu` and `test -z "$(false)"` was
+  added to this section.
+  - The pinned shellcheck, run as `--norc -s sh -o check-extra-masked-returns`, reports
+    `SC2312 (info)` and exits 1.
+  - `just lint` exits 0. That is the gap.
+- **typos.** `git rev-parse --short=7 be7caf3e03bfd8a4dd360470af150a697663e094` prints
+  `be7caf3`. With that id on a line of this ticket,
+  `prek run typos --files tickets/T37-review-command-and-ticket-shell.md` fails. The hook
+  reads the letters inside the id as a misspelt "calf", at `:263:21`, with
+  `exit code: 2`, and prek exits 1.
+- **Decision C's condition is confirmed.** The probe was a scratch second hook under the
+  shellcheck-py `repo:` and `rev:`, carrying `alias: shell-fences-probe`,
+  `entry: python ai_tmp/t37/probe_env.py`, `language: python`,
+  `files: ^tickets/.*\.md$` and `types: [markdown]`.
+  - `prek run --all-files shell-fences-probe` exits 0.
+  - It prints `executable: …/.cache/prek/hooks/python-tEyY1hFF5MAVnVkl5ZEE/bin/python`,
+    `version: 3.15.0`, `shellcheck: …/python-tEyY1hFF5MAVnVkl5ZEE/bin/shellcheck`, the
+    worktree as `cwd`, and `argc: 35`, which is one invocation over the ticket Markdown.
+  - So prek honours an `entry` override on a remote hook, and the override runs in that
+    hook's environment with the pinned shellcheck on `PATH`.
+  - Without `--verbose`, prek prints only `Passed`. With `verbose: true` on the hook, it
+    prints the hook's output, so the hook carries `verbose: true`.
+
+  The probe was reverted.
+
+### Steps 4 to 8
+
+- **Step 4.** `codex exec --help` (`codex-cli 0.169.1`) lists `-s, --sandbox` with
+  `read-only`, `-C, --cd` and `-o, --output-last-message`. The §14 block now opens with
+  example assignments, runs `mkdir -p`, then runs the ticket's Codex line exactly, then the
+  `claude -p` line with its `>` kept.
+- **Step 5.** §14 now says the following, and the introduction points at the size-S
+  exception:
+  - **Phase 2:** at size S the executing agent may triage inline, and any finding it would
+    reject goes to a separate subagent whose verdict stands. `verdicts.md` is written at
+    every size.
+  - **Phase 3:** the executing agent may apply the fixes at size S.
+  - **Record:** each checkpoint cites its `verdicts.md`.
+- **Step 6, at `8f27860` plus the working tree.**
+  - The step 3 id now passes typos: `Passed`, exit 0.
+  - A line holding the id and a real misspelling of "receive" fails on the misspelling
+    only, with `exit code: 2`. It was reverted.
+  - Deleting the `ede` word failed typos in four files that name the word as a code span
+    (T10, T11, `CONVENTIONS.md` twice, `docs/reference/configuration.md`), but not on
+    `097ede1` itself. That word is now a second `extend-ignore-re` pattern, the code span
+    alone, and a bare one fails again (probe at `b2151ed`'s content: `exit code: 2` on
+    the bare word only).
+- **Step 7.** `scripts/shell_fences.py` and the `shell-fences` hook are in.
+  - T38's Verification fence is retagged `bash`.
+  - The README fences use `id` and `branch`.
+  - The probes, at `8f27860` plus the working tree, each quoting prek's own exit status:
+    - The step 3 break fails `prek run --all-files shell-fences` with
+      `tickets/T37-review-command-and-ticket-shell.md:265:12: note: … [SC2312]`.
+      `just lint` exits 1 on it, with `shell fences in tickets…Failed`. It was reverted.
+    - `set -o pipefail` in an `sh` fence fails with `…:270:8: warning: In POSIX sh, set
+      option pipefail is undefined. [SC3040]`, prek exit 1. Retagged `bash`, it passes
+      with prek exit 0.
+    - The same SC2312 fence appended to T35 prints
+      `tickets/T35-decide-q1-q2.md: skipped: status done`, prek exit 0.
+    - A ticket with no fence prints `no sh or bash fence; checked nothing`, prek exit 0.
+    - An unclosed fence, a `shell` tag, an untagged fence and a block-quoted fence each
+      fail with prek exit 1.
+    - With `shellcheck` off `PATH`, the script exits 2.
+- **Step 8.** The `shell-fences` row sits above `shellcheck`, so the prose below the
+  table, "the `shellcheck` hook one row up" from `actionlint`, still holds. The `typos`
+  row reads "excluding the lockfiles and commit ids". `just check-docs` exits 0 with
+  `Validated 48 pages and 49 canonical topics.`
+
+### Step 9, the adversarial review (checkpoint 1, at `dac0b1b`)
+
+- **Reviewers.** Codex `gpt-6-astra` (`codex-cli 0.169.1`), one per lens, ran in parallel
+  with §14's command as rewritten, `-s read-only`. Both runs exited 0.
+  - Each log printed `Reading additional input from stdin...` and then went on, growing
+    past its header. §14 now says so.
+  - Each reviewer wrote `findings-$lens.md` itself (7.1 KB and 6.5 KB), and `-o` put only
+    the closing message in `last-$lens.md`.
+  - **Can a read-only reviewer write the findings file?** Observed with `codex-cli 0.169.1`
+    on this machine and its Codex configuration: yes. Each log shows a plain `cat >` from
+    the reviewer's shell under `sandbox: read-only`, with no escalation. Elsewhere it may
+    not, and then the log is the fallback §14 already names.
+  - The `code-review` skill also ran over the diff, at medium effort.
+- **Findings.** Conformance had 3 (1 medium, 2 low), breakage had 3 (3 medium), and
+  code-review had 10. None was high, so no second round ran.
+- **Triage** followed decision A, recorded in `ai_tmp/review/T37-1/verdicts.md`. The
+  executing agent accepted 13. It would have rejected 3, which went to a fresh Claude
+  subagent (`verdicts-subagent.md`), whose verdict stands. That subagent's brief was not
+  wholly free of the agent's reasoning, as §14 now asks: it pointed at step 4 for CR3 and
+  asked whether CR9 was a correctness problem at all. It still upheld CR3 against the
+  agent. Its verdicts:
+  - **CR1**, "a read-only Codex cannot write the findings": invalid. The real run wrote
+    both files.
+  - **CR3**, "the `claude -p` line has no stdin or stderr redirection and uses `>`":
+    valid, but step 4 orders that line left as it is, so it is handed back below.
+  - **CR9**, "one shellcheck process per fence": invalid. It is performance only, and the
+    hook takes 0.249 s.
+- **Applied at `b2151ed`.**
+  - The extractor reads openers behind list markers (B1).
+  - A closer counts only within three columns of the body's indent (CR5).
+  - A status counts as done only when it is exactly `done`, `"done"` or `'done'` (B2).
+  - Any tag that is neither `sh`, `bash` nor in `NOT_SHELL` fails (B3, CR4).
+  - `check_file` returns its skip flag rather than leaving it to be parsed from text
+    (CR10).
+  - `ede` is now a code-span pattern (C2).
+  - The §14 introduction (C3) and the `claude -p` prose (CR2) were corrected.
+  - The handbook row now names the new failures and how the hook is selected (CR7, CR8).
+- **Handed back.** C1, the empty hand-back, is this section. CR3 and CR6 are in Open
+  points.
+- **Re-run at `b2151ed`.**
+  - `python3 ai_tmp/t37/probes.py` exits 0 with `probe failures: 0` over 25 cases: every
+    probe above, plus a list-marker opener, an ordered-list opener, a list-marker fence
+    left unclosed, `status: '''done'''`, two statuses, a tab-indented fence, a
+    deep-indented closer inside a `markdown` fence, and the `bash-session` and
+    `shell-script` tags.
+  - `prek run --all-files shell-fences` exits 0 with
+    `checked 6 fences in 5 files; skipped 30 with status done`.
+
+### Step 10
+
+- `git fetch origin` ran. `git merge origin/wave-2-tickets` and `git merge origin/main`
+  each printed `Already up to date.` (`8f27860` and `611a86e` are ancestors), so the head
+  stayed at `b2151ed`.
+- With this ticket `done`, the hook skips it, so the clean-tree count drops by one fence
+  and one file. The Verification quote below is taken at the commit that sets `done`.
+- **Verification, at `3e0758b`.** The fence ran as one `sh -x` script with
+  `.pixi/envs/default/bin` on `PATH`. This excerpt leaves out the trace of `before=`, which
+  holds the whole of the old `CONVENTIONS.md`, and the body of `just check`:
+
+  ```text
+  + rg -q -- '-o ai_tmp/review/[^ ]*findings'
+  + rg -q -- '-o ai_tmp/review/[^ ]*findings' tickets/CONVENTIONS.md
+  + test 1 -eq 1
+  + rg -n dev/null tickets/CONVENTIONS.md
+  889:    < /dev/null >| ai_tmp/review/"$id"-"$n"/log-"$lens".txt 2>&1
+  900:  - **Codex.** `< /dev/null` closes stdin: without it a backgrounded `codex exec` prints
+  + prek run --all-files shell-fences
+  shell fences in tickets..................................................Passed
+    checked 5 fences in 4 files; skipped 31 with status done
+  + prek run --all-files typos
+  typos....................................................................Passed
+  + just check
+  All checks passed and the worktree is unchanged.
+  + status=
+  + test -z ''
+  verification exit 0
+  ```
+
 ## Open points
 
 - The typos pattern exempts all-hex words of seven letters or more. If one hides a real
   misspelling, a pattern that needs a digit,
   `\\b[0-9a-f]*[0-9][0-9a-f]*\\b`, behaved the same on the scratch probe in Context.
+- **Handed back (CR3).** §14's `claude -p` line has no `< /dev/null`, no stderr capture,
+  and a plain `>`, which fails with "file exists" under `noclobber` when a failed round is
+  rerun at the same path. Step 4 ordered that line left as it is. A follow-up could use
+  `< /dev/null >| …/findings-"$lens".md 2>| …/log-claude-"$lens".txt`, after confirming
+  with `claude --help` whether a backgrounded `claude -p` waits on stdin. The same
+  follow-up should finish CR2. §14's prose says the Claude brief asks for the findings as
+  the reply, but the fence passes one `$brief`, which names the findings path, to both
+  commands.
+- **Handed back (CR6).** `docs/reference/configuration.md:114`, which owns `_typos.toml`,
+  still describes it as excluded paths and the words `mis`, `als` and `ede`. It names
+  neither `extend-ignore-re` pattern, nor that the commit-id pattern exempts every all-hex
+  word of seven letters or more. That page is outside Files touched.
