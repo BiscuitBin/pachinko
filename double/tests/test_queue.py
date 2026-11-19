@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from pachinko_double.inspection import Snapshot, View
 from pachinko_double.invariants import InvariantsBroken
-from pachinko_double.model import Pocket, PocketStatus, Record, RecordStatus
+from pachinko_double.model import DeadLetter, Pocket, PocketStatus, Record, RecordStatus, ShedReason, SupersededRecord
 from pachinko_double.queue import Outcome
 from pachinko_double.refusals import Refusal
 from pachinko_double.rules import Defect, NoGuardHolds, Rule, Table
@@ -183,6 +183,25 @@ class ApplyStepTest(unittest.TestCase):
         with self.assertRaises(Defect):
             queue._apply(doubles, Open("p", PocketStatus.IDLE))
         self.assertEqual(queue.snapshot().pockets, ())
+
+    def test_removing_a_shed_entry_the_state_lacks_is_a_defect(self) -> None:
+        absent = (
+            SupersededRecord("p", "k", 1, b"v", ShedReason.SUPERSEDED, 0, 10),
+            DeadLetter("p", "k", 1, b"v", "c", 0, 10),
+        )
+        for entry in absent:
+
+            def remove(
+                view: View, outcome: Outcome, trigger: Open, entry: SupersededRecord | DeadLetter = entry
+            ) -> None:
+                outcome.remove(entry)
+
+            removes = Table("Open", (Rule("Removes", lambda view, t: True, remove),), NoGuardHolds.NOTHING)
+            queue, _, _ = new_queue()
+            before = queue.snapshot()
+            with self.subTest(entry=type(entry).__name__), self.assertRaises(Defect):
+                queue._apply(removes, Open("p", PocketStatus.IDLE))
+            self.assertEqual(queue.snapshot(), before)
 
     def test_it_returns_the_answer_an_effect_gave_once_committed(self) -> None:
         queue, _, _ = new_queue()

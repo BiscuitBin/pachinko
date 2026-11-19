@@ -99,8 +99,14 @@ def no_record_outlasts_the_lease(state: "Snapshot", pocket_key: str) -> bool:
 
 
 def _freed_record(view: "View", event: Freed) -> tuple[Lease, Record] | None:
-    """The ended lease and `Record{pocket: lease.pocket, key: record_key}`, held."""
-    (lease,) = (lease for lease in view.state.leases if lease.id == event.lease)
+    """The ended lease and `Record{pocket: lease.pocket, key: record_key}`, held.
+
+    A `Freed` naming a lease the state lacks finds nothing, so no row answers
+    it and the table's own answer, a `Defect`, applies.
+    """
+    lease = next((lease for lease in view.state.leases if lease.id == event.lease), None)
+    if lease is None:
+        return None
     # let record = Record{pocket: lease.pocket, key: record_key}
     # requires: exists record
     # requires: record.status = held

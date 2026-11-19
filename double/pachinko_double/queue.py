@@ -179,6 +179,14 @@ class Outcome:
         return position
 
     def draw_lease_id(self) -> str:
+        """The next lease id, drawn straight from the queue's shared source.
+
+        The draw is not part of the working copy, so nothing gives it back: an
+        outcome that draws an id and is then refused, raises a defect or
+        breaks an invariant commits nothing, yet the id stays drawn. Only
+        `PullClaimsFrontPocket` draws one (spec note N15); whether a draw may
+        survive an outcome that is not committed is PD01's open point.
+        """
         return self._lease_ids.next_id()
 
     def emit(self, event: Any) -> None:
@@ -201,7 +209,10 @@ class Outcome:
 
     def remove(self, entity: Entity) -> None:
         if type(entity) in _LISTED:
-            getattr(self._state, _LISTED[type(entity)]).remove(entity)
+            entries = getattr(self._state, _LISTED[type(entity)])
+            if entity not in entries:
+                raise Defect(f"{type(entity).__name__} {entity!r} is not in the state")
+            entries.remove(entity)
             return
         collection, key = self._keyed(entity)
         if collection.get(key) != entity:

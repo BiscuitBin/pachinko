@@ -30,6 +30,13 @@ class FakeClock:
         return self._now
 
     def set(self, now: Timestamp) -> None:
+        """Set the time, earlier than the current one included, unlike `advance`.
+
+        It accepts an earlier time on purpose: S085's port sets the clock back
+        to keep the Rust's proof that a renew extends the lease from its own
+        time. A state reached by setting the clock back may break an
+        invariant, such as GrantedBeforeExpiry, that a forward clock keeps.
+        """
         self._now = now
 
     def advance(self, by: Duration) -> None:

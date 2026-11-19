@@ -252,3 +252,31 @@ class InvariantCoverageTest(unittest.TestCase):
 
     def test_every_invariant_has_a_positive_control(self) -> None:
         self.assertEqual(sorted(self.specified - self.controlled), [])
+
+
+class PassRecordTest(unittest.TestCase):
+    """tests/__init__.py's wrapped run records a pass whether or not a result is given."""
+
+    def test_a_run_given_no_result_records_its_pass_and_not_its_failure(self) -> None:
+        from . import COLLECTED, PASSED, _record_passes
+
+        class Passes(unittest.TestCase):
+            def runTest(self) -> None:
+                pass
+
+        class Fails(unittest.TestCase):
+            def runTest(self) -> None:
+                self.fail("fails on purpose")
+
+        recorded = {}
+        for case_type in (Passes, Fails):
+            code = case_type.runTest.__code__
+            site = (str(Path(code.co_filename).resolve()), code.co_firstlineno)
+            self.addCleanup(PASSED.discard, site)
+            self.addCleanup(COLLECTED.discard, site)
+            case = case_type()
+            _record_passes(case)
+            result = case.run()
+            assert result is not None
+            recorded[case_type.__name__] = (result.wasSuccessful(), site in PASSED)
+        self.assertEqual(recorded, {"Passes": (True, True), "Fails": (False, False)})

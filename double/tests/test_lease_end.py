@@ -119,6 +119,13 @@ class FreedTableTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(Defect):
                 freed(key, *records)
 
+    def test_a_freed_naming_a_lease_the_state_lacks_is_a_defect_no_row_answers(self) -> None:
+        view = View(state(ACKED, the_lease=ENDED), LATER)
+        event = Freed("lease-9", "k2", ENDED_AT)
+        self.assertEqual([row.name for row in FREED.rows if row.guard(view, event)], [])
+        with self.assertRaises(Defect):
+            dispatch(FREED, view, RecordingOutcome(CONFIG), event, registry=Registry())
+
     def test_these_rows_leave_a_version_deferred_behind_the_held_one_to_the_rows_for_it(self) -> None:
         # Only the three rows with nothing deferred: the rows for a deferred
         # version sit beside them in the same table and answer this record.

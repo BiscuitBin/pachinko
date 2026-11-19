@@ -53,7 +53,14 @@ def _record_passes(test: unittest.TestCase) -> None:
 
     def recording_run(result: unittest.TestResult | None = None) -> unittest.TestResult | None:
         if result is None:
-            return run(result)
+            # As TestCase.run does: make a result and open and close a run on
+            # it, so a pass run this way is recorded too.
+            result = test.defaultTestResult()
+            result.startTestRun()
+            try:
+                return recording_run(result)
+            finally:
+                result.stopTestRun()
         before = tuple(len(getattr(result, name)) for name in OUTCOMES)
         outcome = run(result)
         if tuple(len(getattr(result, name)) for name in OUTCOMES) == before:
