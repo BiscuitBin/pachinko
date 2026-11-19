@@ -92,12 +92,12 @@ proves and why.
 
 | Recipe | Purpose |
 | --- | --- |
-| `just check-docs` | markdownlint, `typos`, offline link check, then the documentation contract. Gate 15. |
+| `just check-docs` | markdownlint, `typos`, offline link check, then the documentation contract, then that every SVG under `docs/decisions/` is what the `diagrams.py` in its folder draws. Gate 15. |
 | `just check-agents` | The agent contract: inventory, adapters, and skill bridges. Gate 16. |
 | `just check-specs` | `allium check` over `docs/specs/`. Asserts that every module reports an empty `diagnostics` array; anything reported is a regression. Waiver terms: [Work with the specifications](../how-to/work-with-the-specs.md). Gate 17. |
 | `just analyse-specs` | `allium analyse` over `docs/specs/`: the same structural diagnostics plus data flow, reachability, deadlocks and conflicts. Asserts that both arrays are empty; a finding cannot be waived, so any finding is a regression. Gate 18. |
 | `just plan-spec <module>` | Print the raw JSON test obligations for `docs/specs/<module>.allium`; give the module name without the extension. Plans that module alone, reading no imports, so plan imported modules separately. A suggestion list: asserts nothing, writes nothing and is outside `just check`. Runs `.tools/bin/allium` by path, so it needs the pinned binary from `just install-allium` and never falls through to another `allium` on `PATH`. |
-| `just diagrams` | Redraw the SVG diagrams under `docs/decisions/0020/` from `scripts/diagrams.py`, standard-library Python run by the pixi environment's interpreter. The script owns each diagram's layout and words, so edit it and rerun, never the SVG. Writes, so it is outside `just check`, and nothing checks that the files match the script. |
+| `just diagrams` | Redraw the SVG diagrams under `docs/decisions/` by running every `docs/decisions/<n>/diagrams.py`, found by glob, each of which draws the SVGs in its own folder. Standard-library Python run by the pixi environment's interpreter. A script owns its diagrams' layout and words, so edit it and rerun, never the SVG. Writes, so it is outside `just check`; `just check-docs` checks that the files match the scripts. |
 | `just check-links-online` | Follow external links. Manual; needs the network. |
 
 The two spec gate recipes go through `bg-run-allium`, which reads the JSON rather than

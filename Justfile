@@ -394,6 +394,7 @@ deps-unused:
 check-docs:
     prek run --all-files markdownlint-cli2 typos lychee
     bg-validate-docs
+    just _diagrams check
 
 check-agents:
     bg-validate-agents
@@ -417,11 +418,66 @@ analyse-specs:
 plan-spec module:
     .tools/bin/allium plan "docs/specs/$1.allium"
 
-# Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
-# which owns their layout and words: edit the script, never an SVG. It writes
-# under docs/decisions/, so it is not a check and is outside `just check`.
+# Redraw the SVG diagrams decision records embed: each
+# docs/decisions/<n>/diagrams.py owns the layout and words of the SVGs in its
+# own folder, so edit the script, never an SVG. It writes under
+# docs/decisions/, so it is not a check and is outside `just check`;
+# `check-docs` checks the files against the scripts.
 diagrams:
-    python scripts/diagrams.py
+    just _diagrams draw
+
+# The one discovery behind `diagrams` and `check-docs`: every
+# docs/decisions/*/diagrams.py, run plain to draw or with --check to compare.
+# A glob that matches nothing stays literal, hence the -f test, and finding no
+# script fails. Every script runs, failing or not. `check` then names every
+# SVG under docs/decisions/ whose folder holds none of the scripts found, so
+# nothing compares it; the list goes through a file outside the worktree, not
+# a pipe, so a failing `find` fails the recipe. The leading underscore keeps it
+# out of `just --list`.
+_diagrams mode:
+    #!/bin/sh
+    set -eu
+    mode=$1
+    case $mode in
+        draw | check) ;;
+        *) printf '%s\n' "mode must be draw or check, not $mode" >&2; exit 2 ;;
+    esac
+    set --
+    for script in docs/decisions/*/diagrams.py; do
+        if [ -f "$script" ]; then
+            set -- "$@" "$script"
+        fi
+    done
+    if [ "$#" -eq 0 ]; then
+        printf '%s\n' 'found no docs/decisions/*/diagrams.py, so nothing draws or checks the diagrams' >&2
+        exit 1
+    fi
+    bad=0
+    for script do
+        if [ "$mode" = check ]; then
+            python "$script" --check || bad=1
+        else
+            python "$script" || bad=1
+        fi
+    done
+    if [ "$mode" = check ]; then
+        list=$(mktemp)
+        trap 'rm -f "$list"' EXIT
+        find docs/decisions -type f -name '*.svg' >"$list"
+        while IFS= read -r svg; do
+            covered=0
+            for script do
+                if [ "$script" = "${svg%/*}/diagrams.py" ]; then
+                    covered=1
+                fi
+            done
+            if [ "$covered" = 0 ]; then
+                printf '%s: no diagrams.py in its folder draws it; add one and run `just diagrams`, or remove the SVG\n' "$svg" >&2
+                bad=1
+            fi
+        done <"$list"
+    fi
+    exit "$bad"
 
 check-links-online:
     prek run --all-files --hook-stage manual lychee-online

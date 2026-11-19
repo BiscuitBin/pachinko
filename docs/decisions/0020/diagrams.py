@@ -1,7 +1,10 @@
-"""Draw the SVG diagrams under docs/ that a decision record embeds.
+"""Draw the SVG diagrams decision 0020 embeds, into this script's own folder.
 
-Run it through `just diagrams`. The script owns each diagram's layout and words:
-edit it and rerun the recipe, never the SVG. Standard library only. Every SVG
+Run it through `just diagrams`, which finds every docs/decisions/*/diagrams.py.
+The script owns each diagram's layout and words: edit it and rerun the recipe,
+never the SVG. With `--check` it writes nothing and fails, naming the file, on
+an SVG here that differs from what it draws, is missing, or is drawn by no
+diagram; `just check-docs` runs that. Standard library only. Every SVG
 carries its own light and dark colours, chosen by `prefers-color-scheme`, and an
 opaque background, so it stays legible when the page's theme and the reader's
 system theme differ.
@@ -14,8 +17,8 @@ import math
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "docs" / "decisions" / "0020"
+OUT = Path(__file__).resolve().parent
+ROOT = OUT.parents[2]
 
 LIGHT = {
     "bg": "#ffffff", "fg": "#1f2328", "muted": "#59636e", "line": "#d1d9e0",
@@ -324,14 +327,50 @@ DIAGRAMS = {
 }
 
 
-def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    for name, draw in DIAGRAMS.items():
+def render(name):
+    """One diagram as the exact bytes its file holds; drawing and checking both use it."""
+    return DIAGRAMS[name]().encode("utf-8")
+
+
+def draw():
+    for name in DIAGRAMS:
         path = OUT / name
-        path.write_text(draw(), encoding="utf-8")
+        path.write_bytes(render(name))
         print(path.relative_to(ROOT))
     return 0
 
 
+def check():
+    """Compare every SVG in this folder with what the script draws; open nothing for writing."""
+    script = Path(__file__).resolve().relative_to(ROOT)
+    problems = []
+    if not DIAGRAMS:
+        problems.append(f"{script}: draws nothing")
+    for name in DIAGRAMS:
+        path = OUT / name
+        if not path.is_file():
+            problems.append(f"{path.relative_to(ROOT)}: missing")
+        elif path.read_bytes() != render(name):
+            problems.append(f"{path.relative_to(ROOT)}: differs from what {script} draws")
+    for path in sorted(OUT.glob("*.svg")):
+        if path.name not in DIAGRAMS:
+            problems.append(f"{path.relative_to(ROOT)}: drawn by no diagram in {script}")
+    for problem in problems:
+        print(f"{problem}; run `just diagrams`", file=sys.stderr)
+    if problems:
+        return 1
+    print(f"{script}: compared {len(DIAGRAMS)} SVGs, all match")
+    return 0
+
+
+def main(args):
+    if not args:
+        return draw()
+    if args == ["--check"]:
+        return check()
+    print(f"usage: python {Path(__file__).name} [--check]", file=sys.stderr)
+    return 2
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
