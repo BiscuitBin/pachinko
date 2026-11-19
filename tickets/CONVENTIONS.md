@@ -863,7 +863,8 @@ them only by running the gate.
 A ticket marks each point where a mistake is expensive to undo with a bold
 **Adversarial review** paragraph at the end of a step. There the agent gets a second
 opinion from reviewers who did not write the change, and other subagents check each
-finding and fix the valid ones before the work goes on. This is a procedure for the
+finding and fix the valid ones before the work goes on (at size S, Phase 2 below lets the
+agent accept and apply findings itself). This is a procedure for the
 agent running a ticket; it is unrelated to T05's `review-change` skill, which this
 repository ships to its own contributors.
 
@@ -898,12 +899,14 @@ repository ships to its own contributors.
 
   - **Codex.** `< /dev/null` closes stdin: without it a backgrounded `codex exec` prints
     `Reading additional input from stdin...` and waits forever, with no error and no
-    findings. `-o` writes only the agent's last message, after the run, and overwrites
+    findings. With it the same line is printed and the run goes on. `-o` writes only the agent's last message, after the run, and overwrites
     the file it names, so it points at `last-$lens.md`, never at the findings. The log
     holds the whole run, stdout and stderr; it is what recovers a findings file that is
     missing or overwritten, so check that it grows past its header. `>|` writes the log
     even in a shell with `noclobber` set.
-  - **Claude.** The `claude -p` line keeps `>`, because its stdout is the findings.
+  - **Claude.** The `claude -p` line keeps `>`, because its stdout is the findings. Plan
+    mode cannot write a file, so its brief asks for the findings as the reply instead of
+    naming the path.
 - **Phase 1, review.** Two reviewer subagents run in parallel, each with a fresh context
   and one lens:
   - **(a) Conformance.** The diff against the ticket's Goal, Files touched, acceptance

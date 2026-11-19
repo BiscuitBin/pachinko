@@ -10,8 +10,9 @@ ticket's commands are a record of what ran (T37, decision B). Every other file
 is linted, including one with no frontmatter or no status, such as
 CONVENTIONS.md and README.md. A fence tagged `sh` is checked as POSIX sh and one
 tagged `bash` as bash, each with `-o check-extra-masked-returns`. The script
-fails closed: an untagged fence, a shell fence under another tag, a fence it
-cannot close and a fence inside a block quote are errors, never silent passes.
+fails closed: an untagged fence, a fence whose tag is neither a shell dialect
+nor in NOT_SHELL, a fence it cannot close and a fence inside a block quote are
+errors, never silent passes.
 """
 
 import os
@@ -23,15 +24,23 @@ import tempfile
 from pathlib import Path
 
 DIALECTS = {"sh": "sh", "bash": "bash"}
-# Tags that name a shell but not a dialect this hook checks. A fence under one
-# of them is shell the hook would otherwise never read, so it is an error.
-SHELL_TAGS = {
-    "ash", "console", "dash", "fish", "ksh", "mksh", "posix", "sh-session",
-    "shell", "shell-session", "shellscript", "shellsession", "zsh",
+# Tags known not to hold shell. Any other tag is an error, so shell under a tag
+# nobody thought of (bash-session, shell-script) cannot pass unread. A fence
+# that is not shell and is tagged with a language missing here adds it.
+NOT_SHELL = {
+    "allium", "css", "csv", "diff", "dockerfile", "html", "ini", "javascript",
+    "js", "json", "jsonc", "just", "make", "makefile", "markdown", "md",
+    "mermaid", "patch", "plaintext", "py", "python", "rs", "rust", "sql", "svg",
+    "text", "toml", "ts", "txt", "typescript", "xml", "yaml", "yml",
 }
-OPENER = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
-QUOTED_OPENER = re.compile(r"^[ \t]*>[ \t>]*(`{3,}|~{3,})")
+# A fence may open behind list markers ("- ```sh", "1. ```sh") and indentation.
+# A `>` among them puts the fence inside a block quote.
+OPENER = re.compile(
+    r"^(?P<prefix>(?:[ \t]*(?:>|[-*+][ \t]|\d{1,9}[.)][ \t]))*[ \t]*)"
+    r"(?P<fence>`{3,}|~{3,})(?P<info>.*)$"
+)
 STATUS = re.compile(r"^status:[ \t]*(?P<value>.*?)[ \t]*$")
+DONE = ("done", '"done"', "'done'")
 GCC = re.compile(r"^(?P<line>\d+):(?P<col>\d+): (?P<rest>.*)$")
 
 
@@ -42,7 +51,7 @@ def is_done(lines):
     statuses = []
     for line in lines[1:]:
         if line.rstrip() in ("---", "..."):
-            return len(statuses) == 1 and statuses[0].strip("\"'") == "done"
+            return len(statuses) == 1 and statuses[0] in DONE
         match = STATUS.match(line)
         if match:
             statuses.append(match.group("value"))
@@ -61,27 +70,31 @@ def fences(lines):
     """Yield (opener line number, tag, body, indent widths) or (line number, None, error, None)."""
     i = 0
     while i < len(lines):
-        line = lines[i]
-        if QUOTED_OPENER.match(line):
-            yield i + 1, None, "fence inside a block quote, which this hook does not read", None
-            i += 1
-            continue
-        match = OPENER.match(line)
+        match = OPENER.match(lines[i])
         if not match or (match.group("fence")[0] == "`" and "`" in match.group("info")):
             i += 1
             continue
-        indent, fence = match.group("indent"), match.group("fence")
-        closer = re.compile(r"^[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*$")
+        prefix, fence = match.group("prefix"), match.group("fence")
+        if ">" in prefix:
+            yield i + 1, None, "fence inside a block quote, which this hook does not read", None
+            i += 1
+            continue
+        # The body's indent is the opener's column: the prefix itself when it is
+        # only whitespace, or as many spaces as it is wide behind a list marker.
+        indent = prefix if not prefix.strip() else " " * len(prefix)
+        # A closer is indented at most three columns past the body's indent;
+        # a deeper run of the fence character is body text, as in CommonMark.
+        closer = re.compile(
+            r"^[ \t]{0," + str(len(indent) + 3) + "}"
+            + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*$"
+        )
         body, widths = [], []
         j = i + 1
         while j < len(lines) and not closer.match(lines[j]):
             text = lines[j]
-            if text.startswith(indent):
-                body.append(text[len(indent):])
-                widths.append(len(indent))
-            else:
-                body.append(text)
-                widths.append(0)
+            width = len(indent) if text.startswith(indent) else 0
+            body.append(text[width:])
+            widths.append(width)
             j += 1
         if j == len(lines):
             yield i + 1, None, "fence opened here is never closed", None
@@ -108,51 +121,56 @@ def run_shellcheck(shellcheck, workdir, dialect, body):
     return done.returncode, out, done.stderr
 
 
+def check_fence(name, start, body, widths, shellcheck, workdir, dialect):
+    """Return the problems shellcheck finds in one fence, mapped to the Markdown file."""
+    status, out, err = run_shellcheck(shellcheck, workdir, dialect, body)
+    if status == 0:
+        return []
+    if status != 1:
+        return [f"{name}:{start}: shellcheck exited {status}: {err.strip()}"]
+    mapped = []
+    for line in out.splitlines():
+        match = GCC.match(line)
+        if match:
+            k = int(match.group("line"))
+            col = int(match.group("col")) + (widths[k - 1] if k <= len(widths) else 0)
+            mapped.append(f"{name}:{start + k}:{col}: {match.group('rest')}")
+    return mapped or [f"{name}:{start}: shellcheck failed this fence: {out or err}".rstrip()]
+
+
 def check_file(name, shellcheck, workdir):
-    """Lint one file. Return (fences checked, problems, summary line)."""
+    """Lint one file. Return (skipped as done, fences checked, problems, summary line)."""
     try:
         text = Path(name).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
-        return 0, [f"{name}: cannot read: {error}"], f"{name}: unreadable"
+        return False, 0, [f"{name}: cannot read: {error}"], f"{name}: unreadable"
     lines = [line.rstrip("\r") for line in text.split("\n")]
     if is_done(lines):
-        return 0, [], f"{name}: skipped: status done"
-    checked, problems, skipped = 0, [], {}
+        return True, 0, [], f"{name}: skipped: status done"
+    checked, problems, others = 0, [], {}
     for start, tag, body, widths in fences(lines):
         if tag is None:
             problems.append(f"{name}:{start}: {body}")
+        elif tag in DIALECTS:
+            checked += 1
+            problems.extend(check_fence(name, start, body, widths, shellcheck, workdir, DIALECTS[tag]))
+        elif tag in NOT_SHELL:
+            others[tag] = others.get(tag, 0) + 1
         elif tag == "":
             problems.append(f"{name}:{start}: untagged fence; tag it sh, bash or what it holds")
-        elif tag in SHELL_TAGS:
-            problems.append(f"{name}:{start}: fence tagged {tag}; retag it sh or bash")
-        elif tag not in DIALECTS:
-            skipped[tag] = skipped.get(tag, 0) + 1
         else:
-            checked += 1
-            status, out, err = run_shellcheck(shellcheck, workdir, DIALECTS[tag], body)
-            if status == 0:
-                continue
-            if status != 1:
-                problems.append(f"{name}:{start}: shellcheck exited {status}: {err.strip()}")
-                continue
-            mapped = []
-            for line in out.splitlines():
-                match = GCC.match(line)
-                if match:
-                    k = int(match.group("line"))
-                    col = int(match.group("col")) + (widths[k - 1] if k <= len(widths) else 0)
-                    mapped.append(f"{name}:{start + k}:{col}: {match.group('rest')}")
-            if not mapped:
-                mapped.append(f"{name}:{start}: shellcheck failed this fence: {out or err}".rstrip())
-            problems.extend(mapped)
+            problems.append(
+                f"{name}:{start}: fence tagged {tag}; if it is shell, retag it sh or bash, "
+                "and if not, add its tag to NOT_SHELL in scripts/shell_fences.py"
+            )
     if checked:
         summary = f"{name}: {checked} checked"
     else:
         summary = f"{name}: no sh or bash fence; checked nothing"
-    if skipped:
-        summary += "; other tags not checked: " + ", ".join(
-            f"{tag} {count}" for tag, count in sorted(skipped.items()))
-    return checked, problems, summary
+    if others:
+        summary += "; not shell: " + ", ".join(
+            f"{tag} {count}" for tag, count in sorted(others.items()))
+    return False, checked, problems, summary
 
 
 def plural(count, noun):
@@ -167,12 +185,10 @@ def main(argv):
     total, linted, done, problems = 0, 0, 0, []
     with tempfile.TemporaryDirectory() as workdir:
         for name in argv:
-            checked, found, summary = check_file(name, shellcheck, workdir)
+            skipped, checked, found, summary = check_file(name, shellcheck, workdir)
             print(summary)
-            if summary.endswith("skipped: status done"):
-                done += 1
-            else:
-                linted += 1
+            done += skipped
+            linted += not skipped
             total += checked
             problems.extend(found)
     for problem in problems:

@@ -219,7 +219,7 @@ untracked file, so the second run never happens there.
 | `markdownlint-cli2` | Markdown structure. |
 | `typos` | Spelling, excluding the lockfiles and commit ids. |
 | `lychee` | Link targets, offline. |
-| `shell-fences` | The `sh` and `bash` fences of the tickets not `done`, and of `tickets/CONVENTIONS.md` and `tickets/README.md`, each in the dialect its tag names, through the shellcheck the `shellcheck` hook pins, with `check-extra-masked-returns`. An untagged fence, a shell fence under another tag or a fence left open fails. |
+| `shell-fences` | The `sh` and `bash` fences of the tickets not `done`, and of `tickets/CONVENTIONS.md` and `tickets/README.md`, each in the dialect its tag names, through the shellcheck the `shellcheck` hook pins, with `check-extra-masked-returns`. An untagged fence, a tag that is neither `sh`, `bash` nor a language `scripts/shell_fences.py` lists as not shell, a fence left open and a fence in a block quote each fail. It is a second instance of the `shellcheck` hook, so `prek run shellcheck` runs both and `prek run shell-fences` this one alone. |
 | `shellcheck` | The shell scripts under `scripts/`. |
 | `actionlint` | Every GitHub Actions workflow, its structure only — see below. |
 | `ripsecrets` | Credential material, with its output suppressed so a match is never logged. |
