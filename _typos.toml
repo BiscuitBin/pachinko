@@ -14,6 +14,13 @@ extend-exclude = [
   "allium-skill-reference/",
 ]
 
+[default]
+# Commit ids, short or full, such as T10's 097ede1, whose letters the checker
+# would otherwise read as misspelt words ("ede" for "edge"). The pattern also
+# exempts every all-hex word of seven letters or more, such as "defaced", so a
+# misspelling made only of the letters a to f would pass.
+extend-ignore-re = ['\b[0-9a-f]{7,40}\b']
+
 [default.extend-words]
 # "mis-" as a hyphenated prefix (mis-wired, mis-asserting) reads as the
 # fragment "mis", which the checker's dictionary mistakes for "miss"/"mist".
@@ -21,5 +28,6 @@ mis = "mis"
 # The tickets name "als" as the word this file once listed and now does not
 # need; the checker's dictionary rewrites it to "also".
 als = "als"
-# T10 cites commit 097ede1, whose letters the checker reads as a misspelt "edge".
+# The tickets and the handbook name "ede" as the word T10 once listed for commit
+# 097ede1, which the pattern above now covers; the checker reads it as "edge".
 ede = "ede"

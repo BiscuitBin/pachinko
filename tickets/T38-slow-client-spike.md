@@ -413,7 +413,7 @@ tickets that would land it are named. Nothing outside `tickets/` changes.
 Each command's exit status is quoted (`CONVENTIONS.md` §11, "Checks fail closed"). A
 line that must print nothing follows its positive control.
 
-```sh
+```bash
 set -o pipefail
 # the pins Context cites
 rg -n -A1 '^name = "(axum|axum-core|hyper|hyper-util|tower|tokio|socket2)"$' Cargo.lock; echo "exit $?"

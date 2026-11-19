@@ -209,17 +209,19 @@ the MVP wave.
 ## How to pick up a ticket
 
 1. Create a worktree on the branch the ticket's `branch:` field names, from `main`,
-   after every ticket it depends on has merged. `<branch>` is that field
-   (`ticket/t05-agent-contract`) and `<id>` the ticket id (`T05`):
+   after every ticket it depends on has merged. The first line holds example values:
+   `branch` is that field and `id` the ticket id:
 
    ```sh
-   supacode repo worktree-new --branch <branch> --base main --name <id>
+   id=T05 branch=ticket/t05-agent-contract
+   supacode repo worktree-new --branch "$branch" --base main --name "$id"
    ```
 
-   Outside a Supacode terminal:
+   Outside a Supacode terminal, with the same two variables:
 
    ```sh
-   git worktree add ../<id> -b <branch> main
+   id=T05 branch=ticket/t05-agent-contract
+   git worktree add ../"$id" -b "$branch" main
    ```
 
    Then run `just initialize` in the new worktree (network, authorised), except in T00,

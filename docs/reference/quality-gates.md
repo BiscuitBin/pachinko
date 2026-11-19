@@ -217,8 +217,9 @@ untracked file, so the second run never happens there.
 | `check-specs`, `analyse-specs` | The specifications, through `allium`. Needs the pinned binary; see above. |
 | `editorconfig-checker` | Whitespace, line endings, final newlines. |
 | `markdownlint-cli2` | Markdown structure. |
-| `typos` | Spelling, excluding the lockfiles. |
+| `typos` | Spelling, excluding the lockfiles and commit ids. |
 | `lychee` | Link targets, offline. |
+| `shell-fences` | The `sh` and `bash` fences of the tickets not `done`, and of `tickets/CONVENTIONS.md` and `tickets/README.md`, each in the dialect its tag names, through the shellcheck the `shellcheck` hook pins, with `check-extra-masked-returns`. An untagged fence, a shell fence under another tag or a fence left open fails. |
 | `shellcheck` | The shell scripts under `scripts/`. |
 | `actionlint` | Every GitHub Actions workflow, its structure only — see below. |
 | `ripsecrets` | Credential material, with its output suppressed so a match is never logged. |

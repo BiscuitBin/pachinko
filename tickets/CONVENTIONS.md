@@ -880,15 +880,30 @@ repository ships to its own contributors.
   the worktree (`claude` takes no directory flag):
 
   ```sh
-  codex exec -m gpt-6-astra -s read-only -C <worktree> \
-    -o ai_tmp/review/<id>-<n>/findings-<lens>.md "<brief>"
-  claude -p --model claude-opus-5-5 --permission-mode plan "<brief>" \
-    > ai_tmp/review/<id>-<n>/findings-<lens>.md
+  id=T05 n=1 lens=conformance worktree=$PWD
+  brief="… Write your findings to ai_tmp/review/$id-$n/findings-$lens.md."
+  mkdir -p ai_tmp/review/"$id"-"$n"
+  codex exec -m gpt-6-astra -s read-only -C "$worktree" \
+    -o ai_tmp/review/"$id"-"$n"/last-"$lens".md "$brief" \
+    < /dev/null >| ai_tmp/review/"$id"-"$n"/log-"$lens".txt 2>&1
+  claude -p --model claude-opus-5-5 --permission-mode plan "$brief" \
+    > ai_tmp/review/"$id"-"$n"/findings-"$lens".md
   ```
 
-  `<id>` is the ticket id, `<n>` the checkpoint's place among the ticket's checkpoints,
-  counting from 1, and `<lens>` is `conformance` or `breakage`. A second round (below)
-  writes beside the first with a `-2` suffix.
+  The first line holds example values. `id` is the ticket id, `n` the checkpoint's place
+  among the ticket's checkpoints, counting from 1, `lens` is `conformance` or `breakage`,
+  and `worktree` is the worktree's path. `brief` is the brief described under Phase 1,
+  ending with the findings path, `findings-$lens.md`. A second round (below) writes
+  beside the first with a `-2` suffix.
+
+  - **Codex.** `< /dev/null` closes stdin: without it a backgrounded `codex exec` prints
+    `Reading additional input from stdin...` and waits forever, with no error and no
+    findings. `-o` writes only the agent's last message, after the run, and overwrites
+    the file it names, so it points at `last-$lens.md`, never at the findings. The log
+    holds the whole run, stdout and stderr; it is what recovers a findings file that is
+    missing or overwritten, so check that it grows past its header. `>|` writes the log
+    even in a shell with `noclobber` set.
+  - **Claude.** The `claude -p` line keeps `>`, because its stdout is the findings.
 - **Phase 1, review.** Two reviewer subagents run in parallel, each with a fresh context
   and one lens:
   - **(a) Conformance.** The diff against the ticket's Goal, Files touched, acceptance
@@ -908,14 +923,21 @@ repository ships to its own contributors.
   hand-back notes' conclusions. Reviewers are read-only. Each finding has an id, a
   `file:line`, the claim, a concrete failure scenario, a severity (high, medium or low)
   and its evidence.
-- **Phase 2, triage.** Separate subagents, neither the reviewers nor the executing agent,
-  check every finding against the code, by running a command or reading the pinned
-  source. Each finding is marked valid, with a fix written, or invalid, with the reason.
-  The verdicts go to `ai_tmp/review/<id>-<n>/verdicts.md`. Subagents pass file paths to
-  each other, not pasted text.
+- **Phase 2, triage.** Separate subagents, neither the reviewers nor the executing agent
+  (except at size S, below), check every finding against the code, by running a command
+  or reading the pinned source. Each finding is marked valid, with a fix written, or
+  invalid, with the reason.
+  The verdicts go to `ai_tmp/review/$id-$n/verdicts.md`, at every size. Subagents pass
+  file paths to each other, not pasted text.
+  - **At `estimated_size: S`.** The executing agent may triage the findings itself and
+    write `verdicts.md`. Any finding it would mark invalid goes instead to a separate
+    triage subagent, with the finding and the evidence but not the agent's reason, and
+    that subagent's verdict stands. An author who rejects a finding is the case this
+    phase's independence exists for. An accepted finding costs nothing to audit.
 - **Phase 3, apply.** The triage subagents apply the valid fixes one at a time, never two
-  writers at once. Then the executing agent re-runs the checkpoint's verification
-  commands, and `just check` at the final checkpoint.
+  writers at once; at size S the executing agent may apply them itself. Then the
+  executing agent re-runs the checkpoint's verification commands, and `just check` at
+  the final checkpoint.
 - **Scope guard.** A fix edits only files in the ticket's Files touched. A valid finding
   whose fix lies outside that list, in a frozen file or in another lane's file, is handed
   back under §11 and never applied. At an authorisation checkpoint the fixes change what
@@ -927,6 +949,8 @@ repository ships to its own contributors.
   brief carries only this repository's content and the L, B and T files the ticket
   cites, never a credential.
 - **Record.** The hand-back notes record, for each checkpoint: the harness and model, the
-  findings, each verdict with a one-line reason, what was applied, what was handed back,
-  and the re-run output, headed by the commit it ran at (§11). The raw files stay in
+  findings, each verdict with a one-line reason and who gave it, citing that checkpoint's
+  `verdicts.md`, what was applied, what was handed back, and the re-run output, headed by
+  the commit it ran at (§11). A review whose record cites no `verdicts.md` skipped
+  triage. The raw files stay in
   `ai_tmp/` and are never committed.

@@ -171,6 +171,21 @@ repos:
     rev: 745eface02aef23e168a8afb6b5737818efbea95 # v0.11.0.1
     hooks:
       - id: shellcheck
+      # The shell fences of tickets not done, and of CONVENTIONS.md and
+      # README.md (T37, decisions B and C). A second instance of the same hook,
+      # so it runs in that hook's environment, where the shellcheck this rev pins
+      # is on PATH: one pin, not two. The entry is overridden to run the
+      # extractor, standard-library Python, on that environment's interpreter.
+      # Verbose, because the fence count is the evidence that the hook read
+      # something, and prek hides a passing hook's output otherwise.
+      - id: shellcheck
+        alias: shell-fences
+        name: shell fences in tickets
+        entry: python scripts/shell_fences.py
+        language: python
+        files: ^tickets/.*\.md$
+        types: [markdown]
+        verbose: true
 
   - repo: https://github.com/rhysd/actionlint
     rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
