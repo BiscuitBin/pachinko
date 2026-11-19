@@ -1,7 +1,7 @@
 ---
 id: PD02
 title: "Python double: pull and the lease"
-status: todo
+status: done
 depends_on: [PD01]
 parallel_with: []
 branch: ticket/pd02-pull-and-the-lease
@@ -324,10 +324,266 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end. They record the base and its full commit id, the baseline, any
-scenario moved under shared rule 2, the checkpoint's record, the spec notes added, and
-Verification quoted under its commit.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `cfbc4fcfd33657c611fcd6efc9dbf385811ae8d4`, PD01's record commit.
+- Work commit: `b8d4613e6ee3b3f274e779a1732c35f728800dfa`.
+- At the maintainer's direction the whole PD01 to PD06 series lands on this one branch
+  in this one worktree, two commits per ticket, as PD01's hand-back section 1 records.
+  That departs from AGENTS.md's one-ticket-per-worktree rule and from step 1's "create
+  the worktree on `branch:`". `ticket/pd02-pull-and-the-lease` was not created.
+- `just initialize` was not run. The series runs in one worktree, whose PD01 baseline
+  was green without it, and PD02's baseline is quoted from PD01.
+
+### 2. Baseline
+
+Quoted from PD01, not rerun. The tree under `double/` and the gate are the ones PD01
+left (`ai_tmp/pd/PD02/baseline.txt`).
+
+- `just python-double` at `bb9319d59d16d8bcfdc3d126c4690f314a4ae682` printed
+  `Ran 131 tests` and `OK` (PD01's Verification).
+- `just check` on the tree committed as `cfbc4fcfd33657c611fcd6efc9dbf385811ae8d4`
+  ended `All checks passed and the worktree is unchanged.` (exit 0). It ran just before
+  that commit, which changed only the two ticket files.
+
+### 3. What landed
+
+Rows per table. Each row fires in at least one test, and the coverage test's fired-rule
+check passes.
+
+| Table | Rows | When no guard holds |
+| --- | --- | --- |
+| Pull | `PullWithinLease`, `PullClaimsFrontPocket`, `PullFindsNoPocket` | A refusal, `PullRefused`, unreachable through `Queue` (N14) |
+| `Handed` | `HoldRecord` | A defect |
+| Renew | `Renew` | A refusal, `LeaseFenced` (N20) |
+
+New files under `double/`:
+
+- `pachinko_double/pull.py`: `Pull`, `Handed`, `Batch`, `NoPocketAvailable`, `oldest`,
+  the Pull table and the `Handed` table.
+- `pachinko_double/settle.py`: the `Renew` trigger and the Renew table.
+- `tests/test_pull.py` and `tests/test_settle.py`.
+
+Changed files under `double/`:
+
+- `pachinko_double/queue.py`: `Handed` is routed in `EVENT_TABLES`. `Queue.pull(
+  consumer_id, limit)` returns the answer. `Queue.renew(consumer_id, lease_id)` returns
+  None. `_require_consumer` raises `UnknownConsumer` before the outcome starts.
+- `pachinko_double/refusals.py`: `PullRefused`, `UnknownConsumer`, `LeaseFenced`.
+- `pachinko_double/__init__.py`: exports `pull`, `settle`, `Batch`, `NoPocketAvailable`
+  and the three refusals.
+- `tests/fixtures.py`: `scenario_setting()`, which also returns the lease-id source
+  (`scenario_queue()` now wraps it), `batch()` and `keys()`.
+- `tests/test_publish.py`: `PublishThenPullTest` (S012, S015, S019, S020, S022).
+- `tests/test_coverage.py`: the pending lists shrank to 64 scenarios and 21 rules.
+- `SPEC-NOTES.md`: N13 to N20.
+
+Outside `double/`, only this ticket's hand-back and `status:` and the README's PD02
+Status cell are written, as Files touched says.
+
+No scenario moved under shared rule 2. All 18 need only pull, renew and what PD01 landed.
+
+The batch shape:
+
+- `Batch(consumer: str, lease: str, pocket: str, records: tuple[Record, ...])`.
+- The first three fields are ids and keys (N05, N06).
+- `records` are the `Record` entities read before the pull, oldest first, so they still
+  carry status queued. No test asserts that status.
+- `Batch` and `Queue.renew` carry no `expires_at`. The Rust's batch and renew do. The
+  double's tests read the expiry from the snapshot's lease (N13).
+- The lease id is drawn only in `PullClaimsFrontPocket`'s effect (N15).
+
+### 4. Red runs and probes
+
+#### Red runs
+
+Each red run went through `just python-double`, was saved with its exit status, and was
+followed by the change that turned it green. Files are in `ai_tmp/pd/PD02/`. The tree
+for each is `cfbc4fcfd33657c611fcd6efc9dbf385811ae8d4` plus the uncommitted PD02 files.
+In every run the tag-run check also fails on the new tags.
+
+| File | Red before | Key output line | Exit |
+| --- | --- | --- | --- |
+| `red-S027.txt` | The Pull table has no rows | `pachinko_double.refusals.PullRefused: no Pull rule answers a pull by 'c1'`; `FAILED (failures=2, errors=1)` | 1 |
+| `red-S027-hold.txt` | The claim row lands, the `Handed` table is empty | `pachinko_double.rules.Defect: no rule of the Handed table answers Handed(pocket='pk', record_key='r0')` | 1 |
+| `red-S033.txt` | `PullFindsNoPocket` has no row | `pachinko_double.refusals.PullRefused: no Pull rule answers a pull by 'c1'`; `FAILED (failures=2, errors=1)` | 1 |
+| `red-S036.txt` | `PullWithinLease` has no row | `pachinko_double.refusals.PullRefused: no Pull rule answers a pull by 'c1'`; `FAILED (failures=2, errors=1)` | 1 |
+| `red-S050.txt` | The Renew table has no rows | `FAILED (failures=2, errors=1)` (the table refuses every renew with `LeaseFenced`) | 1 |
+| `red-unknown-consumer-1-import.txt` | The test ran before `UnknownConsumer` existed | `ImportError: cannot import name 'UnknownConsumer' from 'pachinko_double.refusals'`; `FAILED (errors=1)` | 1 |
+| `red-unknown-consumer.txt` | `UnknownConsumer` exists, `Queue.pull` does not check | `ValueError: a snapshot holds every entity it references: lease 'lease-1' names consumer 'stranger'`; `FAILED (failures=1, errors=1)` | 1 |
+| `red-pull-annotation.txt` | `Queue.pull`'s return annotation named `pull.Batch` inside the class, where `pull` is the method | `AttributeError: 'function' object has no attribute 'Batch'`; `FAILED (failures=1, errors=1)` | 1 |
+| `red-renew-unknown-lease.txt` | Scratch break: `settle._lease` falls back to an active lease when no lease has the id | `AssertionError: LeaseFenced not raised`; `FAILED (failures=3)` | 1 |
+
+Notes on the table:
+
+- `red-unknown-consumer-1-import.txt` is weak, since it fails only on the missing class.
+  `red-unknown-consumer.txt` replaces it.
+- The `pull.Batch` red run was fixed by importing `Batch` and `NoPocketAvailable` by
+  name. `PullSignatureTest` is its regression test.
+- `red-renew-unknown-lease.txt` is the red run of the untagged `RenewRefusalTest`, which
+  the lead asked for after the builder stopped. The break was reverted and its SHA-256
+  matched.
+
+#### Scenarios that could not be red on their own
+
+14 of the 18 owned scenarios could not be red for their own reason: all but S027, S033,
+S036 and S050. Each was written after the rows it exercises landed, and the publish halves are PD01's rows.
+Mutant probes kill them instead. The table below names the killing probe per scenario.
+The red runs above cover S027, S033, S036 and S050 directly.
+
+#### Probes
+
+Each probe ran through `just python-double` on the tree at
+`cfbc4fcfd33657c611fcd6efc9dbf385811ae8d4` plus the uncommitted PD02 files, then was
+reverted. `probe.sh` copies the file first, and every file below ends with a matching
+SHA-256 before and after. The probes ran when the suite held 163 tests; the final suite
+holds 167 (section 5). Every exit status is 1. All files are in `ai_tmp/pd/PD02/`.
+
+| File | Breaks | Key output line | Exit |
+| --- | --- | --- | --- |
+| `probe-01-batch-unsorted.txt` | The batch keeps the snapshot's tuple order | `FAILED (failures=7)` | 1 |
+| `probe-02-batch-uncapped.txt` | The batch ignores `max_pull_batch` | `FAILED (failures=6)` | 1 |
+| `probe-03-front-pocket-first-in-tuple.txt` | The claim takes the first queued pocket in the tuple | `FAILED (failures=4)` | 1 |
+| `probe-04-nonpositive-n-sliced.txt` | `oldest` handles zero but slices a negative `n` | `FAILED (failures=4)` | 1 |
+| `probe-05-claim-any-pocket.txt` | `free` is every pocket, so a leased pocket can be claimed | `FAILED (failures=3, errors=6)` | 1 |
+| `probe-06-within-lease-no-extension.txt` | `PullWithinLease` leaves `expires_at` where it was | `FAILED (failures=3)` | 1 |
+| `probe-07-renew-ignores-consumer.txt` | Renew's guard drops `lease.consumer = consumer` | `FAILED (failures=2)` | 1 |
+| `probe-08-no-pocket-draws-an-id.txt` | A pull that finds no pocket draws a lease id | `FAILED (failures=3)` | 1 |
+| `probe-09-renew-no-extension.txt` | Renew leaves `expires_at` where it was | `FAILED (failures=3)` | 1 |
+| `probe-10-empty-batch-claims-nothing.txt` | A pull whose limit is not positive claims no pocket | `FAILED (failures=2, errors=4)` | 1 |
+| `probe-11-batch-from-every-record.txt` | The batch is drawn from every record of the pocket, held ones included | `FAILED (failures=3, errors=5)` | 1 |
+| `probe-12-batch-newest-first.txt` | The batch takes the largest positions first | `FAILED (failures=20)` | 1 |
+| `probe-13-held-payload-altered.txt` | `HoldRecord` holds `record.payload + b"!"` | `FAILED (failures=3, errors=18)` | 1 |
+
+Which tests kill which scenarios:
+
+| Scenario | Killed by probe |
+| --- | --- |
+| S001, S008, S029 | 02 |
+| S028, S030 | 11, and 12 for S028 |
+| S031, S032, S022 | 10; S032 also 04 |
+| S033, S038, S039 | 05 |
+| S012, S015 | 12 |
+| S019, S020 | 13 |
+| S036 | 06, and its own red run |
+| S050 | 09, and its own red run |
+
+Three limits on this evidence:
+
+- Probe 13 shows only that S019 and S020's pull half is live (`HeldCopiesAgree` breaks).
+  Ranks, keys and payloads pass through with no encoding step, and their publish rows are
+  PD01's, so nothing PD02 lands can make those two red on their own assertions.
+- Probes 01 and 03 kill no scenario test. In every state reachable before PD03, tuple
+  order, key order and position order agree. Only the direct hand-built tests catch them
+  (`OldestTest`, `PullRowsOnHandBuiltStatesTest`). Probe 07 is caught only by
+  `RenewGuardTest`.
+- "The batch is computed after `HoldRecord`" has no probe. Effects only emit, so the view
+  the batch reads is always the pre-hold state. `BatchShapeTest` pins that the batch's
+  records equal the pre-pull snapshot's.
+
+### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
+
+- Ran at: `cfbc4fcfd33657c611fcd6efc9dbf385811ae8d4` plus uncommitted work (steps 2 to
+  4).
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command
+  (`< /dev/null`, `-o last-<lens>.md`, `>|` log). One Claude (sonnet) runner subagent per
+  lens. Codex cannot write under read-only, so each findings file is Codex's last
+  message and its first line says `Source: last-message`. Codex could not run
+  `just check` in its sandbox.
+- Triage and apply: one fresh opus subagent. The mutant first ran on a copy outside the
+  worktree, then in the tree with the subagent as the only writer.
+- Findings: 0 high, 1 medium, 1 low.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| B1 | medium | valid | No test pinned that `PullWithinLease` renews the lease on an empty batch, though the specification sets `expires_at = now + lease_ttl` unconditionally. The mutant "renew only on a nonempty batch" passed all 165 tests | Untagged `EmptyPullWithinLeaseTest` in `test_pull.py`: a drained pocket, and limits 0, -1 and -(2**63), each advancing `FakeClock` and asserting the new `expires_at` through the snapshot |
+| C1 | low | invalid | The single-branch landing is the maintainer's direction, recorded in PD01's section 1 | Nothing; section 1 above restates it |
+
+- Evidence: `ai_tmp/review/PD02-1/apply-mutant-1.txt` (`FAILED (failures=5)`, exit 1,
+  reverted with matching SHA-256), `ai_tmp/review/PD02-1/apply-final.txt`
+  (`Ran 167 tests`, `OK`, exit 0) and `ai_tmp/review/PD02-1/verdicts.md`.
+- Re-run after apply: `just python-double` ran 167 tests, OK; `just lint` exit 0; no
+  `__pycache__`. Before the apply it ran 165 tests (`ai_tmp/pd/PD02/final.txt`).
+- Second round: none, because no high-severity finding was valid.
+- Handed back: nothing outside Files touched.
+
+### 6. Spec notes added
+
+| Id | Note |
+| --- | --- |
+| N13 | A batch names its lease and pocket by key, and carries no expiry. |
+| N14 | The Pull table's refusal, `PullRefused`, is unreachable through `Queue`. |
+| N15 | A pull draws a lease id only when it creates a lease. |
+| N16 | S012, S015 and S022 assert absolute positions (`impl-choice`, on N04). |
+| N17 | S019's large ranks are a 64-bit integer's extremes, not the double's. |
+| N18 | A pull or a renew by a consumer that never joined is refused (`impl-choice`). |
+| N19 | A pull whose limit is not positive still claims a pocket. |
+| N20 | Renew's refusal is `LeaseFenced`, and an unknown lease id meets it. |
+
+### 7. Departures for the maintainer
+
+- The series lands on one branch in one worktree, two commits per ticket (section 1).
+- The acceptance line says a pull's batch is asserted "through the inspection seam".
+  The batch is Pull's answer, not state, so it is asserted through `Queue.pull`'s return
+  value. The lease's `granted_at` and `expires_at` and each handed record's held fields
+  are asserted through the snapshot (N13). The ticket was not reworded.
+- 14 of the 18 scenarios could not be red on their own (section 4). Mutant probes kill
+  them.
+- Probes 01 and 03 kill no scenario test, only direct hand-built tests (section 4).
+- `PullRefused` is unreachable through `Queue` (N14). Its one test dispatches the
+  registered Pull table on a hand-built state that breaks `UnleasedHasNoActiveLease`,
+  with a recording stand-in outcome and a private `Registry`, labelled
+  `impl-choice (N14)`. It is not a before-and-after snapshot proof through `Queue`.
+- The specification names no Renew refusal, so it is `LeaseFenced` (N20). Its one test
+  here is the untagged never-issued lease id, added at the lead's direction under shared
+  rule 4, and it compares the complete snapshot before and after. The ended-lease and
+  wrong-consumer cases stay with PD03's S052 and S070.
+- The hand-built row tests use `RecordingOutcome`, a test-local stand-in for `Outcome`.
+- `_batch` reads `max_pull_batch` from `outcome.config`, as publish's effects read their
+  TTLs, not from `view.state.config`. A hand-built test exposed the two sources.
+- S001's Rust test checks only the config values. The port also publishes 101 records and
+  checks that a pull caps at 100 and the lease expires at `T0 + 5 min`.
+- Codex cannot write files under read-only, so each findings file is Codex's last
+  message (section 5).
+
+### 8. Verification
+
+The Verification block ran at `b8d4613e6ee3b3f274e779a1732c35f728800dfa`, the work commit, as one `sh` script under
+`set -eu`. It exited 0 (`exit=0`). The opening and closing lines of its output:
+
+```text
+b8d4613e6ee3b3f274e779a1732c35f728800dfa
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+.......................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 167 tests in 0.066s
+
+OK
+…  (just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
-None yet.
+- Should `Batch` carry the lease's `expires_at`? A consumer needs it to know when to
+  renew (N13).
+- Are `PullWithinLease`'s and `PullClaimsFrontPocket`'s `requires: pocket.status = ...`
+  guards, or restatements of `UnleasedHasNoActiveLease`? If restatements, the Pull
+  table's refusal never runs (N14).
+- Should the specification say that a pull and a renew require a joined consumer, as N10
+  asks for a publish (N18, `impl-choice`)?
+- Is a claim that hands nothing intended? A non-positive limit still takes the front
+  pocket from every other consumer until its lease ends (N19).
+- Should the specification bound a rank, so that S019's `2**63` extremes become the
+  boundary for every implementation (N17, as N03)?
+- The name `LeaseFenced` for Renew's refusal is the double's. Whether an unknown lease
+  is a distinct refusal is left to PD03 (N20).
+- `test_queue.py`'s docstring, which is PD01's, still says no specification row chains an
+  event. `Handed` now does. It was left, since those lines are not PD02's.
+- `RenewRefusalTest` is untagged, because no catalog row covers a never-issued lease id.
+  The maintainer may want a catalog row for it.

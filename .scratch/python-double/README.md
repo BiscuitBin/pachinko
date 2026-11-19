@@ -51,7 +51,7 @@ snapshot.
 | Id | Title | File | Blocked by | Status |
 | --- | --- | --- | --- | --- |
 | PD01 | The foundation, the invariant checker and publish | `PD01-foundation-and-publish.md` | none | done |
-| PD02 | Pull and the lease | `PD02-pull-and-the-lease.md` | PD01 | todo |
+| PD02 | Pull and the lease | `PD02-pull-and-the-lease.md` | PD01 | done |
 | PD03 | Ack, nack, release and the lease's end | `PD03-ack-nack-release.md` | PD02 | todo |
 | PD04 | Deferral behind the held version | `PD04-deferral.md` | PD03 | todo |
 | PD05 | The clock, with lapse, parking and decay | `PD05-clock-lapse-parking-decay.md` | PD04 | todo |
