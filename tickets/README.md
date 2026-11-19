@@ -59,7 +59,7 @@ snapshot.
 | T34 | Gate gaps: default-features doctests, untracked files, quoted evidence, loadgen in CI | `T34-gate-gaps.md` | T31 | T32, T33 | todo |
 | T35 | Land the held set that lasts until the lease ends (Q1), the nack reset and no touch on stale (Q2), all decided | `T35-decide-q1-q2.md` | T32 | none | done |
 | T36 | Diagram drift: a check that the committed SVGs match the script that draws them, and where that script lives | `T36-diagram-drift-check.md` | T35 | T33 | todo |
-| T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | todo |
+| T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | done |
 | T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
