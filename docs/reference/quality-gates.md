@@ -30,7 +30,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | 12 | `doc` | `cargo doc` with `-D warnings --cfg docsrs` | rustdoc is warning-free under `--cfg docsrs`, intra-doc links and missing docs included. |
 | 13 | `deny` | `cargo deny check licenses bans sources` | Every dependency that ships has an allowed licence, no banned crate is in that graph, and every source is crates.io. Development dependencies are outside the graph. |
 | 14 | `deps-unused` | `cargo shear` | No crate declares a dependency it does not use. |
-| 15 | `check-docs` | markdownlint, typos, lychee, `bg-validate-docs` | The documentation contract holds. |
+| 15 | `check-docs` | markdownlint, typos, lychee, `bg-validate-docs`, the diagram check (`docs/decisions/*/diagrams.py --check`) | The documentation contract holds. Every SVG under `docs/decisions/`, in any letter case, is byte for byte what its folder's `diagrams.py` draws, none that a script draws is missing, and none is drawn by no script. At least one script is found, no `diagrams.py` sits under `docs/decisions/` where the discovery does not look, no symlink there is named like an SVG or a `diagrams.py` or points at a folder, and no name there holds a newline. Each script compares its own folder, and the recipe fails one whose `--check` exits 0 without printing how many SVGs it compared, but otherwise trusts its report. |
 | 16 | `check-agents` | `bg-validate-agents` | The agent contract holds. |
 | 17 | `check-specs` | `bg-run-allium check` | Every specification reports an empty `diagnostics` array. |
 | 18 | `analyse-specs` | `bg-run-allium analyse` | Every specification reports an empty `findings` array too. |
@@ -50,7 +50,9 @@ warm. The loadgen crate is checked the same way (T30); running it, by `just load
 unit tests, by `just test-loadgen`, stay outside the gate, and CI's `loadgen` job runs
 the unit tests.
 
-Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks.
+Gates 4, 5 and 14 to 18 also run inside `lint`, as its hooks, except gate 15's diagram
+check: no hook runs it, so it runs only through `check-docs`, in `just check` and CI's
+`documents` job.
 The duplication is deliberate: a regression names itself in the list of gates rather than
 being one line inside `lint`.
 

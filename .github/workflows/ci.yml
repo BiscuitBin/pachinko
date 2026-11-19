@@ -126,8 +126,9 @@ jobs:
       - run: just check-agents
       # Already run by the hook gate above; repeated here so a specification
       # regression names itself in the step list rather than inside `lint`.
-      # The same duplication as check-docs and check-agents, for the same
-      # reason.
+      # check-agents repeats its hook the same way, and so does check-docs,
+      # except for the diagram check (`just _diagrams check`), which no hook
+      # runs.
       - run: just check-specs
       - run: just analyse-specs
       - run: just check-clean
