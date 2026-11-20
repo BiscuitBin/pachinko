@@ -131,7 +131,8 @@ listing does not have to cite a note. The rest of this section goes past it.
 A scratch runner, `ai_tmp/pd/PD07/probe.py`, imports the double, wraps the snapshot in
 memory for one hypothetical shape, and runs the discovery `just python-double` runs. It
 writes nothing in the tree. Its output is in `ai_tmp/pd/PD07/probe.txt`, headed by
-`7b6bfd1259ca3da673d17f2586671d65781627d1`. Each case ran all 274 tests and exited 0. The
+`7b6bfd1259ca3da673d17f2586671d65781627d1`, with uncommitted changes to this ticket's
+file only. Each case ran all 274 tests and exited 0. The
 counts are test functions that did not pass, not counting the coverage test's own
 knock-on failures (it fails whenever another test does).
 
@@ -466,8 +467,8 @@ check the copy.
 - The proposals above go to Open points: the sentence on `Lease`, the lease's identity,
   the word "owns", and the two follow-ups for the double.
 - If the double is ever used as a test oracle beside the Rust, the comparison has to
-  project both snapshots first: active leases only; pockets, publishers, consumers and
-  each pocket's records by key; and the pocket order derived from positions. Whether the
+  project both snapshots first: active leases only, by id; pockets, publishers, consumers
+  and each pocket's records by key; and the pocket order derived from positions. Whether the
   two shed queues need a projection too is not known (section 3, `shed-reversed`).
 
 ### 5. Review record
