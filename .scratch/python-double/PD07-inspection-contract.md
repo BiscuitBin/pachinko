@@ -3,7 +3,7 @@ id: PD07
 title: "Python double: is the inspection shape part of the contract?"
 status: todo
 depends_on: [PD06]
-parallel_with: []
+parallel_with: [PD08]
 branch: ticket/pd07-inspection-contract
 estimated_size: S
 ---
