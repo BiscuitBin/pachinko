@@ -206,10 +206,13 @@ makes each of them explicit, so that every run is the same run:
   `Consuming` surface's exposure of the consumer's active lease.
 
 The snapshot keeps ended leases, and lists entities in the order the double stored them.
-Neither is a claim about the specification: whether the inspection shape is part of the
-contract is the question `.scratch/python-double/PD07-inspection-contract.md` takes up.
-The walkthrough below therefore reads a pocket's records by key, never by their place in
-the snapshot.
+Neither is a claim about the specification. On the investigation in
+`.scratch/python-double/PD07-inspection-contract.md` the maintainer ruled on two of
+these shapes: an implementation may forget an ended lease, and a pocket's records are a
+set, read by key. The order of the other listings is not ruled on. One of them reaches
+behaviour: a tick breaks a tie between two lapses by the order the leases are listed in
+(finding 7 of [`SPEC-NOTES.md`](SPEC-NOTES.md)). The walkthrough below reads a pocket's
+records by key, never by their place in the snapshot.
 
 ## Walkthrough: Scenarios A to D
 

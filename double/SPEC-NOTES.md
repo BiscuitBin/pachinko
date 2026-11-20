@@ -31,10 +31,10 @@ listed at the end of this section.
 
 The maintainer accepted three sets of ports for now. Each keeps the specification as it
 stands and treats the Rust's assertion as its inspection shape, not as behaviour. None
-of them settles a question about the specification, and
-`.scratch/python-double/PD07-inspection-contract.md` follows them up (finding 1). A
-fourth ruling, at PD06's review, keeps a publish answering nothing (N32); its question
-stays a finding.
+of the three settled a question about the specification. A fourth ruling, at PD06's
+review, keeps a publish answering nothing (N32); its question stays a finding. A fifth,
+on the investigation in `.scratch/python-double/PD07-inspection-contract.md`, answers
+finding 1 and makes the three sets of ports standing.
 
 | Date | Ruling | Rows | Note |
 | --- | --- | --- | --- |
@@ -42,20 +42,30 @@ stays a finding.
 | 2026-11-18 | The port that compares S091's kept positions by key is accepted for now, with further investigation asked for. | S091 | [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour) |
 | 2026-11-19 | The three ports stand as the Rust's inspection shape, and PD07's scope gains them. | S066's release half, S093, S075's stored pocket order | [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) |
 | 2026-11-19 | A publish answers nothing, as the specification states. The ported rows assert that answer and do not port the Rust's outcomes; whether the specification should name one stays open. | Every ported publish row the Rust checks for an outcome | [N32](#n32-a-deferral-answers-nothing-where-the-rust-answers-superseded) |
+| 2026-11-20 | The three inspection shapes are the implementation's, not the specification's. An implementation may keep an ended lease or forget it. A pocket's records are a set, read by key. The pocket order is only derived from positions. The ports stand. | S053, S066's release half, S075, S091, S093 | [N24](#n24-an-ended-lease-stays-in-the-state-and-a-release-and-a-mark-answer-nothing), [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour), [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) |
 
 ### Questions for the maintainer
 
-The first two weigh most: they decide what an implementation must show a caller.
+The first two weigh most: they decide what an implementation must show a caller. The
+first is answered, and it leaves a proposal.
 
 1. **Is the inspection shape part of the contract?** Five Rust tests assert facts about
    the Rust's snapshot that the specification does not state. S053's and S066's empty
    lease registry and S091's and S093's record order fail when ported literally against a
    double that follows the specification. S075's stored pocket order has nothing in the
-   double to assert, since the double derives that order from positions. PD07 asks the
+   double to assert, since the double derives that order from positions. PD07 asked the
    three questions this leaves. Is an ended lease part of the observable state, and what does
    fencing by lease id need kept? Is the order in which a pocket's records are listed part
    of the contract, and if so which order? Is the order of the queued pockets stored, or
    only derived from their positions? (N24, N31, N38; S053, S066, S075, S091, S093.)
+   - **Answered (2026-11-20):** no, for all three. An ended lease is an implementation
+     detail, a pocket's records are a set read by key, and the pocket order is only
+     derived. `.scratch/python-double/PD07-inspection-contract.md` holds the evidence.
+   - **What it leaves:** the specification's letter keeps every ended lease, and says
+     nowhere that one may be forgotten or that a lease's identity is never reused. The
+     ticket's Open points propose that it say both. The second belongs with finding 3.
+   - **What it does not answer:** the orders that reach a caller or behaviour, which are
+     finding 7's.
 2. **Should the surfaces name what each trigger answers?** The specification's rules
    answer a pull with `Batch` or `NoPocketAvailable` and every other trigger with
    nothing. A `Batch` carries no `expires_at`, which a consumer needs in order to renew
@@ -217,8 +227,9 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
     a lease;
   - the release and mark rules ensure no answer to the caller.
 - **The double does:**
-  - An ended lease stays in the snapshot with its status and `ended_at`. Fencing compares
-    lease ids against it (S052, S068, S070).
+  - An ended lease stays in the snapshot with its status and `ended_at`. Fencing looks
+    the id up among all the leases, ended ones included, and answers `LeaseFenced` alike
+    for an id that is absent, ended or another consumer's (S052, S068, S070).
   - S053's Rust test asserts "an ended lease leaves the registry": its snapshot's lease
     list is empty and every consumer has no lease. That is the Rust's inspection shape, not
     the specification's. The double ports the facts the specification states instead: the
@@ -228,12 +239,19 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
     `(PocketFate, Lease)` and its marks answer `SettleOutcome`. The double's tests read
     the pocket's fate and the ended lease from the snapshot, as N13 does for renew.
 - **Question:** none on the behaviour. If the specification means an ended lease to be
-  forgotten, it does not say so; fencing by lease needs the ended lease's identity kept
-  somewhere.
+  forgotten, it does not say so. Fencing by lease needs a lease's identity never to be
+  given to another lease; it does not need the ended lease kept.
 - **Ruling (2026-11-18):** the maintainer accepted this port of S053: the empty lease
   registry is the Rust's inspection shape, not behaviour, and the double keeps the ended
-  lease. The question stays open. `.scratch/python-double/PD07-inspection-contract.md`
-  takes it up.
+  lease. The question stayed open until the ruling below, on
+  `.scratch/python-double/PD07-inspection-contract.md`.
+- **Ruling (2026-11-20):** on PD07's investigation the maintainer ruled that an ended
+  lease is an implementation detail. An implementation may keep it, as the double does,
+  or forget it once the outcome that ends it is over, as the Rust does. The port of S053
+  stands. This note first said that fencing needs the ended lease's identity kept; PD07
+  showed it does not, and the two lines above now say so. The specification's letter
+  still keeps every ended lease, so the ticket's Open points propose that it say one may
+  be forgotten, and, with N05, that a lease's identity is never reused.
 
 ### N31: S091's record order is the Rust's inspection shape, not behaviour
 
@@ -258,8 +276,14 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
   inspection contract? If so, which order: by key, by position, or another? If not, may
   S091's last assertion be ported as a comparison by key, as the double does?
 - **Ruling (2026-11-18):** the maintainer accepted the port by key for now and asked for
-  further investigation. `.scratch/python-double/PD07-inspection-contract.md` takes this
-  question up together with N24's kept ended lease (S053).
+  further investigation. `.scratch/python-double/PD07-inspection-contract.md` took this
+  question up together with N24's kept ended lease (S053), and the ruling below answers
+  it.
+- **Ruling (2026-11-20):** on PD07's investigation the maintainer ruled that the order
+  in which a pocket's records are listed is not part of the contract. They are a set,
+  read by key, and the by-key port of S091 stands. The Rust's key order is a promise of
+  its own `testing` API. The order of the lease view's held records is a different
+  question, and stays with N23.
 
 ### N32: a deferral answers nothing, where the Rust answers `Superseded`
 
@@ -324,7 +348,13 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
 - **Question:** none beyond those notes. The list says where PD05 leaned on them.
 - **Ruling (2026-11-19):** the maintainer accepted the ports of S066's release half, S093
   and S075 as the Rust's inspection shape, and added them to the scope of
-  `.scratch/python-double/PD07-inspection-contract.md`. The questions stay open.
+  `.scratch/python-double/PD07-inspection-contract.md`. The questions stayed open until
+  the ruling below.
+- **Ruling (2026-11-20):** on PD07's investigation the maintainer ruled on all three, and
+  the ports stand. An ended lease is an implementation detail (N24). The order of a
+  pocket's records is not part of the contract (N31). The pocket order is only derived
+  from positions: the Rust's stored order is the index its claim takes from, and checking
+  that index is a test of the Rust, with no counterpart in the double.
 
 ## Where the specification is ambiguous
 

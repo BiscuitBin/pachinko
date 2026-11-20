@@ -56,7 +56,7 @@ snapshot.
 | PD04 | Deferral behind the held version | `PD04-deferral.md` | PD03 | done |
 | PD05 | The clock, with lapse, parking and decay | `PD05-clock-lapse-parking-decay.md` | PD04 | done |
 | PD06 | Close-out and the specification reader's guide | `PD06-close-out.md` | PD05 | done |
-| PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | todo |
+| PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | done |
 | PD08 | One read context for every rule | `PD08-one-read-context.md` | PD06 | todo |
 
 ## Dependencies
