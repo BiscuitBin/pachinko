@@ -88,6 +88,7 @@ test -z "$status"
 
 - Branch: `build-python-double`.
 - Base commit: `7b6bfd1259ca3da673d17f2586671d65781627d1`, PD08's ticket commit.
+- Work commit: `fe400fa34acdc319812d699aa22b3d16d988617f`.
 - The ticket names `ticket/pd07-inspection-contract` in its own worktree. It ran on this
   branch in this worktree instead, as PD01 to PD06 did at the maintainer's direction, and
   as the maintainer's `/implement` asked ("commit your work to the current branch").
@@ -583,7 +584,31 @@ changed.
 
 ### 7. Verification
 
-Written in the record commit.
+Before the work commit, `just python-double` and `just check` ran on the edited tree, at
+`7b6bfd1259ca3da673d17f2586671d65781627d1` with uncommitted changes. The first printed
+`Ran 274 tests` and `OK`, and the second ended
+`All checks passed and the worktree is unchanged.` (each exit 0;
+`ai_tmp/pd/PD07/pre-commit-python-double.txt` and `pre-commit-check.txt`).
+
+The Verification block then ran at `fe400fa34acdc319812d699aa22b3d16d988617f`, the work
+commit, as one `sh` script under `set -eu`. It exited 0 (`exit=0`). The opening and
+closing lines of its output:
+
+```text
+fe400fa34acdc319812d699aa22b3d16d988617f
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+..................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 274 tests in 0.132s
+
+OK
+…  (just check output elided; full log kept in ai_tmp/pd/PD07/verification.txt)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ### 8. The final review, before the work commit
 
