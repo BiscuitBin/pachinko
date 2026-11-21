@@ -433,6 +433,57 @@ python-double:
     python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
     PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
 
+# The Gleam double under gleam-double/ (decision 0021). Like python-double, it
+# is not a gate of libpachinko and is outside `just check`. gleam and erlang
+# live in their own pixi environment, `gleam`, which the exported PATH above
+# does not hold, so each line that runs one puts that environment's bin first
+# on its own PATH; gleam finds erl, erlc and escript there by name.
+gleam_bin := justfile_directory() / ".pixi" / "envs" / "gleam" / "bin"
+
+# The double's one network recipe: the gleam environment exactly as pixi.lock
+# pins it, then the hex packages manifest.toml pins, into gleam-double/build/.
+# Gleam has no locked mode: a gleam.toml that disagrees with manifest.toml is
+# rewritten and the command exits 0, so the line compares the file before and
+# after. Under `sh -e` a failing gleam ends the line before the comparison.
+gleam-double-deps:
+    pixi install --locked -e gleam
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; if test -f manifest.toml; then before=$(cksum < manifest.toml); else before=new; fi; gleam deps download; [ "$before" = new ] || [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+
+# Format check, build with warnings as errors (test/ included), then the
+# tests, whose own main runs every test and then the coverage check. Offline:
+# with build/packages holding what manifest.toml pins and manifest.toml
+# unchanged, gleam fetches nothing. A gleam.toml whose requirements differ
+# from the ones manifest.toml records would send gleam to hex.pm to resolve
+# them, so the third line compares the two before any gleam command runs. A
+# manifest.toml that pins a version build/packages does not hold, as after a
+# checkout that moved the pins, would send it there to fetch the package, so
+# the fourth line compares those two and names the recipe that fetches. The
+# cksum comparison on the build and test lines is the backstop for a rewrite
+# neither check sees. The first line tests the pinned binaries by path, so a
+# gleam elsewhere on the machine cannot stand in. The fifth line compares what
+# that environment holds, by its conda-meta records, with the two pins in
+# pyproject.toml, so an environment installed before a pin moved cannot stand
+# in either: `just lock` moves pixi.lock and installs nothing.
+# ERL_CRASH_DUMP_BYTES=0, on each line that starts the Erlang VM, leaves no
+# erl_crash.dump.
+gleam-double:
+    test -x "{{ gleam_bin }}/gleam" && test -x "{{ gleam_bin }}/erl" || { echo 'gleam-double: the gleam environment is missing; run just gleam-double-deps (needs network)' >&2; exit 2; }
+    test -f gleam-double/build/packages/packages.toml || { echo 'gleam-double: the hex packages are missing; run just gleam-double-deps (needs network)' >&2; exit 2; }
+    python -B -c 'import sys, tomllib; g = tomllib.load(open("gleam-double/gleam.toml", "rb")); m = tomllib.load(open("gleam-double/manifest.toml", "rb")); want = {**g.get("dependencies", {}), **g.get("dev-dependencies", {})}; have = {k: v.get("version") for k, v in m.get("requirements", {}).items()}; sys.exit(0 if want == have else "gleam-double: gleam.toml and manifest.toml disagree on the requirements; gleam would resolve them over the network and rewrite manifest.toml")'
+    python -B -c 'import os, sys, tomllib; m = tomllib.load(open("gleam-double/manifest.toml", "rb")); c = tomllib.load(open("gleam-double/build/packages/packages.toml", "rb")); pinned = {p["name"]: p["version"] for p in m.get("packages", [])}; held = {k: v for k, v in c.get("packages", {}).items() if os.path.isdir("gleam-double/build/packages/" + k)}; ok = pinned == held; ok or print("gleam-double: gleam-double/build/packages does not hold the versions manifest.toml pins, and gleam would fetch them; run just gleam-double-deps (needs network)", file=sys.stderr); sys.exit(0 if ok else 2)'
+    python -B -c 'import glob, json, sys, tomllib; pins = {n: v.removeprefix("==") for n, v in tomllib.load(open("pyproject.toml", "rb"))["tool"]["pixi"]["feature"]["gleam"]["dependencies"].items()}; held = {r["name"]: r["version"] for r in (json.load(open(f, "rb")) for f in glob.glob("{{ gleam_bin }}/../conda-meta/*.json"))}; ok = all(held.get(n) == v for n, v in pins.items()); ok or print("gleam-double: the gleam environment does not hold the gleam and erlang that pyproject.toml pins; run just gleam-double-deps (needs network)", file=sys.stderr); sys.exit(0 if ok else 2)'
+    export PATH="{{ gleam_bin }}:$PATH"; gleam --version
+    export PATH="{{ gleam_bin }}:$PATH"; ERL_CRASH_DUMP_BYTES=0 erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; gleam format --check src test
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam build --warnings-as-errors; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam test; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+
+# Rewrite the double's sources in gleam's own layout, which `just
+# gleam-double` only checks. It reads no package and touches no manifest.
+gleam-double-format:
+    test -x "{{ gleam_bin }}/gleam" || { echo 'gleam-double-format: the gleam environment is missing; run just gleam-double-deps (needs network)' >&2; exit 2; }
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; gleam format src test
+
 check-links-online:
     prek run --all-files --hook-stage manual lychee-online
 

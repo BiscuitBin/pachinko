@@ -39,6 +39,18 @@ taplo = "==0.10.0"
 [tool.pixi.pypi-dependencies]
 biscuit-games-tooling = { git = "https://github.com/steven-cutting/biscuit_games_tooling", tag = "v0.3.0" }
 
+# The Gleam double's compiler and runtime (gleam-double/; decision 0021), in an
+# environment of their own, so that the default one, and with it `just
+# initialize`, `just sync` and CI, installs neither. `just gleam-double-deps`
+# installs this one. conda-forge's gleam has no run dependency on erlang, so
+# both are pinned. gleam is conda-forge's newest on 2026-11-19.
+[tool.pixi.feature.gleam.dependencies]
+gleam = "==1.19.1"
+erlang = "==29.1.2"
+
+[tool.pixi.environments]
+gleam = { features = ["gleam"], no-default-feature = true }
+
 # typos is configured in _typos.toml; a [tool.typos] here would be ignored.
 
 [tool.biscuit-games-tooling]
