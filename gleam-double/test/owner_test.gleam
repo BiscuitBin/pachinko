@@ -33,14 +33,20 @@ fn refusal_keeps_state() -> List(String) {
   assert harness.publisher_joins(double, "q")
     == Ok(Outcome(["PublisherJoins"], None))
   let before = harness.inspect(double)
-  assert before == Snapshot(0, [Publisher("q")], [])
+  assert before
+    == Snapshot(..inspection.empty(config.defaults()), publishers: [
+      Publisher("q"),
+    ])
   assert harness.publisher_joins(double, "q")
     == Error(Refused(PublisherAlreadyJoined("q")))
   assert harness.inspect(double) == before
   assert harness.publisher_joins(double, "r")
     == Ok(Outcome(["PublisherJoins"], None))
   assert harness.inspect(double)
-    == Snapshot(0, [Publisher("q"), Publisher("r")], [])
+    == Snapshot(..inspection.empty(config.defaults()), publishers: [
+      Publisher("q"),
+      Publisher("r"),
+    ])
   assert harness.clock_reads(double.clock) == 0
   assert harness.lease_id_draws(double.lease_ids) == 0
   harness.fired(double)
@@ -67,6 +73,9 @@ fn competing_joins() -> List(String) {
   let refused = Error(Refused(PublisherAlreadyJoined("q")))
   assert list.count(answers, fn(answer) { answer == joined }) == 1
   assert list.count(answers, fn(answer) { answer == refused }) == callers - 1
-  assert harness.inspect(double) == Snapshot(0, [Publisher("q")], [])
+  assert harness.inspect(double)
+    == Snapshot(..inspection.empty(config.defaults()), publishers: [
+      Publisher("q"),
+    ])
   harness.fired(double)
 }

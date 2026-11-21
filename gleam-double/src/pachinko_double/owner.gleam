@@ -11,6 +11,7 @@ import pachinko_double/core.{type Trigger}
 import pachinko_double/domain.{type Answer, type Failure}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type State}
+import pachinko_double/publish.{type Publication}
 import pachinko_double/rules
 import pachinko_double/time.{type Timestamp}
 
@@ -87,6 +88,12 @@ pub fn publisher_joins(owner: Subject(Message), publisher_id: String) -> Reply {
 /// `ConsumerJoins(consumer_id)`, from the `Consuming` surface.
 pub fn consumer_joins(owner: Subject(Message), consumer_id: String) -> Reply {
   act(owner, core.ConsumerJoins(consumer_id))
+}
+
+/// `Publish(publisher, pocket_key, record_key, rank, payload)`, from the
+/// `Publishing` surface. `publisher` is the publisher's id.
+pub fn publish(owner: Subject(Message), publication: Publication) -> Reply {
+  act(owner, core.Publish(publication))
 }
 
 /// The complete snapshot of the state, as it is when the owner reaches this

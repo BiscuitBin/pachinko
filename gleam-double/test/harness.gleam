@@ -3,13 +3,16 @@
 //// fake into see one clock and one lease-id source. Neither holds any queue
 //// state.
 
+import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/otp/actor
 import pachinko_double/config.{type Config, type Settings, Settings}
 import pachinko_double/inspection.{type Snapshot}
+import pachinko_double/model.{type Pocket, type Record, PocketQueued}
 import pachinko_double/owner.{type Reply}
+import pachinko_double/publish.{Publication}
 import pachinko_double/time.{type Duration, type Timestamp}
 
 /// How long a call to a fake may take, in milliseconds.
@@ -208,6 +211,71 @@ pub fn consumer_joins(double: Double, consumer_id: String) -> Reply {
   logged(double, owner.consumer_joins(double.owner, consumer_id))
 }
 
+/// A publish by the fixture's publisher, `p`, with a text payload, as the
+/// Rust fixture's `publish` does.
+pub fn publish(
+  double: Double,
+  pocket_key: String,
+  record_key: String,
+  rank: Int,
+  payload: String,
+) -> Reply {
+  publish_as(double, "p", pocket_key, record_key, rank, payload)
+}
+
+/// A publish by any publisher id, joined or not.
+pub fn publish_as(
+  double: Double,
+  publisher: String,
+  pocket_key: String,
+  record_key: String,
+  rank: Int,
+  payload: String,
+) -> Reply {
+  let publication =
+    Publication(
+      publisher:,
+      pocket_key:,
+      record_key:,
+      rank:,
+      payload: bit_array.from_string(payload),
+    )
+  logged(double, owner.publish(double.owner, publication))
+}
+
 pub fn inspect(double: Double) -> Snapshot {
   owner.inspect(double.owner)
+}
+
+/// The pocket with this key, read from a fresh snapshot, as the Rust
+/// fixture's `pocket` does. The test fails if there is none.
+pub fn pocket(double: Double, pocket_key: String) -> Pocket {
+  let assert Ok(pocket) = model.pocket(inspect(double).pockets, pocket_key)
+  pocket
+}
+
+/// The record with this key in this pocket, read from a fresh snapshot, as
+/// the Rust fixture's `record` does: the pocket first, then its record. The
+/// test fails if there is no such pocket, or no such record in it.
+pub fn record(
+  double: Double,
+  pocket_key: String,
+  record_key: String,
+) -> Record {
+  let snapshot = inspect(double)
+  let assert Ok(pocket) = model.pocket(snapshot.pockets, pocket_key)
+  let assert Ok(record) =
+    model.record(snapshot.records, pocket: pocket.key, key: record_key)
+  record
+}
+
+/// The pocket keys in the pocket order, front first, as the Rust fixture's
+/// `order` gives them. The double stores no such order: it is the queued
+/// pockets by position, smallest first, which is the specification's
+/// definition of it.
+pub fn order(double: Double) -> List(String) {
+  inspect(double).pockets
+  |> list.filter(fn(pocket) { pocket.status == PocketQueued })
+  |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
+  |> list.map(fn(pocket) { pocket.key })
 }

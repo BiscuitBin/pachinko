@@ -7,10 +7,14 @@ import pachinko_double/refusals.{type Refusal}
 import pachinko_double/rules
 
 /// The events a rule emits for another table to answer within the same
-/// outcome. None exists yet: the first, `PocketTouched`, lands with Publish.
-pub type Event
+/// outcome.
+pub type Event {
+  /// A publish added or raised a record in this pocket.
+  PocketTouched(pocket_key: String)
+}
 
-/// What a rule answers its caller. No rule landed so far answers anything.
+/// What a rule answers its caller. No rule landed so far answers anything:
+/// a publish and a join answer nothing.
 pub type Answer
 
 pub type Plan =

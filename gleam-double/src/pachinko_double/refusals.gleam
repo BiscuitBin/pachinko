@@ -11,4 +11,10 @@ pub type Refusal {
   PublisherAlreadyJoined(publisher_id: String)
   /// A consumer with this id has already joined (spec note G03).
   ConsumerAlreadyJoined(consumer_id: String)
+  /// No publisher with this id has joined, so it cannot publish. Refused
+  /// before any rule runs (spec note G12).
+  UnknownPublisher(publisher_id: String)
+  /// The publish carries the rank the record already has. No Publish rule
+  /// covers that, whatever the payload (spec note G13).
+  EqualRankRefused(pocket_key: String, record_key: String, rank: Int)
 }
