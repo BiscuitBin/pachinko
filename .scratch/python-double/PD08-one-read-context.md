@@ -1,7 +1,7 @@
 ---
 id: PD08
 title: "Python double: one read context for every rule"
-status: todo
+status: done
 depends_on: [PD06]
 parallel_with: [PD07]
 branch: ticket/pd08-one-read-context
@@ -273,9 +273,191 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end, in the order PD06's hand-back uses: base and branch, baseline, what
-landed, the red steps, the checkpoint's record, departures, and Verification.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `acd466f3f5c6609be2cde98298481d91a23f9b37`, the commit after PD07's record.
+- Work commit: `38f43d34a4f4d1160348e9365007c668ff9af5c6`.
+- On 2026-11-20 the maintainer directed that PD08 land on this branch in this worktree, as
+  PD01 to PD06 did. That departs from AGENTS.md's one-ticket-per-worktree rule and from
+  step 1's "create the worktree on `branch:`". `ticket/pd08-one-read-context` was not
+  created, and `just initialize` was not run.
+
+### 2. Baseline
+
+Both ran on the untouched worktree at `acd466f3f5c6609be2cde98298481d91a23f9b37`
+(`ai_tmp/pd/PD08/baseline-python-double.txt` and `baseline-check.txt`).
+
+- `just python-double` printed `Ran 274 tests` and ended `OK`.
+- `just check` ended `All checks passed and the worktree is unchanged.`, and
+  `git status --short` printed nothing.
+
+### 3. What landed
+
+- `inspection.py`: `View.config`, a read-only property that hands back the snapshot's
+  `ConfigValues`. `View`'s docstring names the three things a rule reads there.
+- `pull.py`, `settle.py`, `publish.py` and `lease_end.py`: the ten effect sites read
+  `view.config`. `pull._batch` took the outcome only for the config, so it lost that
+  parameter, and its two callers changed with it.
+- `expiry.py`: `_at_threshold` reads `view.config`.
+- `queue.py`: `Outcome.__init__` takes the working state and the lease-id source. Its
+  `config` attribute, its `_now` and its `now` property are gone. `Queue._apply` still makes
+  one `_Now` per outcome and passes it to `Queue._dispatch`, which builds each `View` with
+  it. `Queue._config` is gone. The module docstring and `Outcome`'s docstring say so.
+- `double/README.md`: the `config` row, and the paragraph after the table, which now names
+  the view as the one place a rule reads and the outcome as write-only.
+- The suite has 275 tests, the baseline's 274 and the pin. The coverage test stays strict
+  at 93, 32 and 35.
+
+Test functions and helpers changed. None sits under a `# scenario:` tag, and
+`double/tests/test_guide.py` is untouched.
+
+| File | Name | Change |
+| --- | --- | --- |
+| `test_pull.py` | `RecordingOutcome.__init__` | no `config` parameter, no `config` attribute |
+| `test_pull.py` | `run_pull` | no `config` parameter |
+| `test_pull.py` | `PullRowsOnHandBuiltStatesTest.scrambled` | an optional `config`, passed to `snapshot` |
+| `test_pull.py` | `test_the_claim_caps_the_batch_at_max_pull_batch` | `max_pull_batch=2` is in the snapshot |
+| `test_lease_end.py` | `state` | the two TTLs are in the snapshot's config |
+| `test_lease_end.py` | `freed` | the recorder takes no argument |
+| `test_lease_end.py` | `test_a_freed_naming_a_lease_the_state_lacks_is_a_defect_no_row_answers` | the recorder takes no argument |
+| `test_lease_end.py` | `CONFIG` and the `Config` import | removed |
+| `test_queue.py` | `test_it_reads_the_clock_once_per_outcome` | its scratch effect `open_seeing` reads `view.now` |
+| `test_queue.py` | `test_the_outcome_an_effect_is_handed_only_writes` | new: the pin of step 5 |
+
+### 4. The red steps
+
+Each ran at `acd466f3f5c6609be2cde98298481d91a23f9b37` with uncommitted changes, and its
+output was saved as it happened under `ai_tmp/pd/PD08/`. Every failure is an assertion
+failure, not an error. In each run the coverage test's
+`test_every_test_def_was_collected_and_outside_this_module_passed` also failed, naming the
+same tests: it reports any test that did not pass.
+
+Step 2 (`red-step2.txt`), with `max_pull_batch=2` in the snapshot and no config given to
+`run_pull`:
+
+```text
+FAIL: test_the_claim_caps_the_batch_at_max_pull_batch (tests.test_pull.PullRowsOnHandBuiltStatesTest.test_the_claim_caps_the_batch_at_max_pull_batch)
+AssertionError: Lists differ: ['z1', 'z2', 'z3'] != ['z1', 'z2']
+```
+
+Step 3 (`red-step3.txt`), with the two TTLs in `state()`'s snapshot and both recorders
+built with no argument. Exactly four tests of `test_lease_end.py` failed, each with an
+entry's `expires_at` twelve hours (43,200,000 ms) past `ENDED_AT` where the test expects
+the TTL it set:
+
+```text
+FAIL: test_a_nacked_held_version_is_dead_lettered_from_ended_at_and_the_newer_one_queued_at_arrival (tests.test_lease_end.FreedDeferredRowsTest...)
+AssertionError: Lists differ: [('cr[105 chars]s_at=44200005)), ... != [('cr[105 chars]s_at=1007005)), ...
+FAIL: test_an_unsettled_held_version_is_shed_from_ended_at_and_the_newer_one_keeps_the_held_position (tests.test_lease_end.FreedDeferredRowsTest...)
+AssertionError: Lists differ: [('cr[140 chars]s_at=44200005)), ... != [('cr[140 chars]s_at=1005005)), ...
+FAIL: test_a_nacked_record_becomes_a_dead_letter_stamped_from_ended_at_not_now (tests.test_lease_end.FreedTableTest...)
+AssertionError: Lists differ: [('cr[106 chars]s_at=44200005)), ... != [('cr[106 chars]s_at=1007005)), ...
+FAIL: test_the_dead_letter_holds_the_held_version_not_the_records_newest (tests.test_lease_end.FreedTableTest...)
+AssertionError: Tuples differ: (... nacked_at=1000001, expires_at=44200005)) != (... nacked_at=1000001, expires_at=1007005))
+```
+
+Step 2's test was still red in that run. After step 4 the suite ran 274 tests, `OK`.
+
+Step 5 (`red-step5.txt`), with the pin added and `Outcome` not yet changed. Both subtests
+failed:
+
+```text
+FAIL: test_the_outcome_an_effect_is_handed_only_writes (tests.test_queue.ApplyStepTest.test_the_outcome_an_effect_is_handed_only_writes) (name='config')
+AssertionError: True is not false
+FAIL: test_the_outcome_an_effect_is_handed_only_writes (tests.test_queue.ApplyStepTest.test_the_outcome_an_effect_is_handed_only_writes) (name='now')
+AssertionError: True is not false
+```
+
+After step 6 `just python-double` ran 275 tests, `OK`.
+
+### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
+
+- Ran at: `acd466f3f5c6609be2cde98298481d91a23f9b37` plus uncommitted work (steps 2 to 7).
+  HEAD was the base, so the brief gave the uncommitted diff
+  (`ai_tmp/review/PD08-1/diff-uncommitted.patch`), the ticket's seven questions and the
+  saved red output, and none of the author's reasoning.
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command.
+  One Claude runner subagent per lens. Each findings file is Codex's last message
+  (`Source: last-message`). Codex ran `just python-double` itself (275 tests, `OK`); its
+  sandbox blocked `just check` and `just check-docs`. No writer or gate of the lead's ran
+  meanwhile, and the tree's diff was byte-identical to the reviewed patch afterwards.
+- Lenses: conformance and breakage.
+- Triage: one fresh subagent, which reproduced each finding on a throwaway copy under
+  `ai_tmp/review/PD08-1/` and edited no tree file (`verdicts.md`).
+- Findings: 0 high, 1 medium, 1 low. No second round, since no high-severity finding was
+  valid.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | medium | valid | Verification's count pipes `rg` into `wc` and `tr`, so `set -eu` does not see `rg` fail; a copy with a twelfth read in an unreadable file was accepted as eleven | not applied: the fix edits the Verification script, outside Files touched; handed back under Open points |
+| B1 | low | valid | the probes match spellings, not routes: an alias (`snapshot = view.state`) with a comment that restores the count passes all of them, as do `getattr` on an outcome and a recorder argument on the next line | not applied, for the same reason; handed back under Open points |
+
+Neither finding is about the tree as it stands. Triage confirmed that `rg` exits 0 there
+with exactly eleven matches, all code, and that none of B1's three shapes occurs under
+`double/`.
+
+### 6. Departures
+
+- PD08 landed on `build-python-double` in the series' worktree, with no new worktree, no
+  `ticket/pd08-one-read-context` and no `just initialize` (section 1).
+- `scrambled` in `test_pull.py` gained an optional `config` argument. That is the smallest
+  way to put the cap in the snapshot the test builds, and it is the one helper change
+  beyond removing the recorder's parameter.
+- `fixtures.config` is imported by name into `test_pull.py` and `test_lease_end.py`, as
+  those files import their other fixtures.
+- The review ran on the uncommitted diff from the base, not `git diff "$base"...HEAD`,
+  which was empty before the work commit.
+- Both valid review findings concern the ticket's own Verification script. They were not
+  applied, because the ticket's row in Files touched allows only `status:` and these
+  notes. Verification below ran as the ticket writes it.
+- The triage subagent left four throwaway directories under the gitignored
+  `ai_tmp/review/PD08-1/` (`triage-c1`, `triage-b1`, `triage-b1-probe`, `triage-b1-tests`).
+- The `/code-review` pass follows this ticket's record commit. Any fix it brings gets its
+  own commit.
+
+### 7. Verification
+
+The Verification block ran at `38f43d34a4f4d1160348e9365007c668ff9af5c6`, the work commit,
+as one `sh` script under `set -eu`. It exited 0 (`exit=0`). The four probes printed
+nothing. The opening and closing lines of its output
+(`ai_tmp/pd/PD08/verify-38f43d3.log`):
+
+```text
+38f43d34a4f4d1160348e9365007c668ff9af5c6
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+...................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 275 tests in 0.138s
+
+OK
+…  (just check-docs and just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
-None yet.
+- **C1: Verification's count does not see `rg` fail.** Proposed, replacing the line that
+  assigns `reads`:
+
+  ```sh
+  found=$(rg -o --no-filename "view\.config\.($fields)" double/pachinko_double)
+  reads=$(printf '%s\n' "$found" | wc -l | tr -d ' ')
+  ```
+
+  Triage ran it: exit 2 on the copy with the unreadable file, and 11 on the real tree.
+- **B1: the probes match spellings, not routes.** `ai_tmp/review/PD08-1/verdicts.md` holds
+  a tested, tighter block: an alias probe (any `<name>.config` that is not `view.config`,
+  outside `inspection.py` and `invariants.py`; it needs `rg -P`), a count that skips
+  comment lines and supersedes C1's two lines, and a recorder probe that spans a line
+  break. Adopting it also means rewording the Acceptance criteria that quote the old
+  patterns. It still does not catch `getattr` on an outcome; the pin in `test_queue.py`
+  covers `Queue`'s own `Outcome` there, not the recorder. A syntax-aware check would need
+  an exclusion list, which is the maintainer's choice.
+- The `/code-review` pass follows this ticket's record commit.
+- Pushing the branch and opening a pull request both need the maintainer's authorisation
+  (§11, "Separately authorised actions").
