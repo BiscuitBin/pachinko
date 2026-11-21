@@ -130,6 +130,8 @@ fn zero_ttls_decay_at_once() -> List(String) {
   let assert [letter] = snapshot.dead_letters
   assert shed.expires_at == harness.t0
   assert letter.expires_at == harness.t0
+  // `impl-choice` (spec note G57): the superseded record decays before the
+  // dead letter. The specification gives no order among decays due at once.
   assert tick(double)
     == TickReport(["SupersededRecordDecays", "DeadLetterDecays"], [], [shed], [
       letter,
@@ -151,6 +153,9 @@ fn superseded_decay_at_ttl() -> List(String) {
     == fired(["DropStalePublish"])
   let _ = harness.at(double, 4)
   assert harness.publish(double, "a", "a1", 3, "newer") == fired(["Supersede"])
+  // `impl-choice` (spec note G19): the superseded queue in the order its
+  // entries were created, the stale `a1` first. The specification gives that
+  // queue no order.
   let assert [stale, kept] = harness.inspect(double).superseded
   assert stale.reason == Stale
   assert stale.shed_at == stale_at

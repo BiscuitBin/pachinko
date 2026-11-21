@@ -445,9 +445,12 @@ gleam_bin := justfile_directory() / ".pixi" / "envs" / "gleam" / "bin"
 # Gleam has no locked mode: a gleam.toml that disagrees with manifest.toml is
 # rewritten and the command exits 0, so the line compares the file before and
 # after. Under `sh -e` a failing gleam ends the line before the comparison.
+# Without manifest.toml gleam would resolve gleam.toml's ranges afresh and
+# write a new pin, so the recipe refuses before it reaches hex.pm.
 gleam-double-deps:
+    test -f gleam-double/manifest.toml || { echo 'gleam-double-deps: gleam-double/manifest.toml, the pin, is missing; restore it from git' >&2; exit 2; }
     pixi install --locked -e gleam
-    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; if test -f manifest.toml; then before=$(cksum < manifest.toml); else before=new; fi; gleam deps download; [ "$before" = new ] || [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; before=$(cksum < manifest.toml); gleam deps download; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
 
 # Format check, build with warnings as errors (test/ included), then the
 # tests, whose own main runs every test and then the coverage check. Offline:
@@ -463,7 +466,10 @@ gleam-double-deps:
 # gleam elsewhere on the machine cannot stand in. The fifth line compares what
 # that environment holds, by its conda-meta records, with the two pins in
 # pyproject.toml, so an environment installed before a pin moved cannot stand
-# in either: `just lock` moves pixi.lock and installs nothing.
+# in either: `just lock` moves pixi.lock and installs nothing. The sixth line
+# compares the same records, by the URL each package came from, with the
+# packages pixi.lock pins for the gleam environment on this platform, so a
+# relock that changes a build or a dependency but no version is seen too.
 # ERL_CRASH_DUMP_BYTES=0, on each line that starts the Erlang VM, leaves no
 # erl_crash.dump.
 gleam-double:
@@ -472,6 +478,7 @@ gleam-double:
     python -B -c 'import sys, tomllib; g = tomllib.load(open("gleam-double/gleam.toml", "rb")); m = tomllib.load(open("gleam-double/manifest.toml", "rb")); want = {**g.get("dependencies", {}), **g.get("dev-dependencies", {})}; have = {k: v.get("version") for k, v in m.get("requirements", {}).items()}; sys.exit(0 if want == have else "gleam-double: gleam.toml and manifest.toml disagree on the requirements; gleam would resolve them over the network and rewrite manifest.toml")'
     python -B -c 'import os, sys, tomllib; m = tomllib.load(open("gleam-double/manifest.toml", "rb")); c = tomllib.load(open("gleam-double/build/packages/packages.toml", "rb")); pinned = {p["name"]: p["version"] for p in m.get("packages", [])}; held = {k: v for k, v in c.get("packages", {}).items() if os.path.isdir("gleam-double/build/packages/" + k)}; ok = pinned == held; ok or print("gleam-double: gleam-double/build/packages does not hold the versions manifest.toml pins, and gleam would fetch them; run just gleam-double-deps (needs network)", file=sys.stderr); sys.exit(0 if ok else 2)'
     python -B -c 'import glob, json, sys, tomllib; pins = {n: v.removeprefix("==") for n, v in tomllib.load(open("pyproject.toml", "rb"))["tool"]["pixi"]["feature"]["gleam"]["dependencies"].items()}; held = {r["name"]: r["version"] for r in (json.load(open(f, "rb")) for f in glob.glob("{{ gleam_bin }}/../conda-meta/*.json"))}; ok = all(held.get(n) == v for n, v in pins.items()); ok or print("gleam-double: the gleam environment does not hold the gleam and erlang that pyproject.toml pins; run just gleam-double-deps (needs network)", file=sys.stderr); sys.exit(0 if ok else 2)'
+    python -B -c 'import glob, json, sys; held = [json.load(open(f, "rb")) for f in glob.glob("{{ gleam_bin }}/../conda-meta/*.json")]; subdir = next((r["subdir"] for r in held if r.get("subdir") != "noarch"), ""); lines = open("pixi.lock").read().split("\n"); start = lines.index("  gleam:"); env = lines[start + 1:next((i for i in range(start + 1, len(lines)) if lines[i] and not lines[i].startswith("   ")), len(lines))]; head = "      " + subdir + ":"; rest = env[env.index(head) + 1:] if head in env else []; pinned = {l.split(": ", 1)[1] for l in rest[:next((i for i, l in enumerate(rest) if not l.startswith("      - conda: ")), len(rest))]}; ok = bool(pinned) and pinned == {r.get("url") for r in held}; ok or print("gleam-double: the gleam environment does not hold exactly the packages pixi.lock pins for it on " + (subdir or "this platform") + "; run just gleam-double-deps (needs network)", file=sys.stderr); sys.exit(0 if ok else 2)'
     export PATH="{{ gleam_bin }}:$PATH"; gleam --version
     export PATH="{{ gleam_bin }}:$PATH"; ERL_CRASH_DUMP_BYTES=0 erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
     cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; gleam format --check src test

@@ -6,8 +6,10 @@ under `src/pachinko_double/`. Its behaviour comes from the specification, togeth
 the four rulings the maintainer made on the Python double. The Rust implementation was
 never its source: the Rust's tests, and the doctest that owns S005, were opened only to port the
 catalog's scenarios. It serves two purposes. It is a second reading of the specification,
-and it is the first implementation in this repository built the way the specification's
-own words describe one: a single owner that applies a single serialized stream. Keep the
+and it is the first of the repository's doubles built the way the specification's own
+words describe an implementation: a single owner that applies a single serialized
+stream, as the service's queue-owning task does
+([decision 0019](../docs/decisions/0019-service-runtime-tokio-and-http.md)). Keep the
 specification open beside this page; no Gleam is assumed.
 
 Each choice the double had to make, where the specification says nothing, says it
@@ -448,11 +450,10 @@ and handed out in increasing order.
 
 ### The setting
 
-The owner starts over a configuration with short TTLs and a fake clock reading 0, and
-publisher `p` and consumers `c1` and `c2` join:
+`setting` starts the owner over a configuration with short TTLs and a fake clock reading
+0, and publisher `p` and consumers `c1` and `c2` join:
 
 ```gleam
-fn setting() -> Double {
   let assert Ok(config) =
     config.new(
       Settings(
@@ -466,9 +467,9 @@ fn setting() -> Double {
   assert harness.publisher_joins(double, "p") == fired(["PublisherJoins"])
   assert harness.consumer_joins(double, "c1") == fired(["ConsumerJoins"])
   assert harness.consumer_joins(double, "c2") == fired(["ConsumerJoins"])
-  double
-}
 ```
+
+### What a step shows
 
 After a step, `show` reads one snapshot through the owner and returns a `Shown`: the
 position counter, pocket `pk`, those records of `pk` whose keys it is given, found by key,
@@ -1238,14 +1239,18 @@ Gleam has no doctests. Instead, every run of `just gleam-double` reads this page
 - a section for one of Scenarios A to D whose blocks of the walkthrough, joined by a blank
   line, are not the whole body of its test, `scenario_a` to `scenario_d`, less the last
   line, which returns the rules the test saw fire. A block repeated, moved or left out is
-  a fault. The blocks of the setting and of the common start are checked one by one;
+  a fault;
+- a section for the setting or for the common start, under exactly `### The setting` or
+  `### The common start`, whose blocks, joined the same way, are not the whole body of
+  `setting` or of `v3_deferred_behind_v1`, less the last line, which returns the double;
 - a block fenced as `gleam` and a path under `src/` whose lines do not appear the same way
   in that file;
 - any other fence that names `gleam`, one inside a blockquote among them, a fence left
   open, or an empty block. As in Markdown, a fence closes on a run of its mark at least as
   long as the one that opened it;
-- a scenario among A to D without a section, with two, or with a section holding no block
-  of the walkthrough, or a section for a scenario this page does not walk.
+- the setting, the common start or a scenario among A to D without a section, with two,
+  or with a section holding no block of the walkthrough, or a section for a scenario this
+  page does not walk.
 
 The same file holds a control for each of those faults, run on a page and files built by
 hand.

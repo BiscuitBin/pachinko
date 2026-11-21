@@ -1760,10 +1760,15 @@ the terminal.
   refused before `gleam` runs. The maintainer judges whether the run should have paused.
 - **The pins: closed by step 4.** `gleam` 1.19.1 runs on conda's `erlang` 29.1.2, so no
   fallback was needed.
-- **The offline claim: closed by step 5, for files that agree.** With `gleam.toml`,
-  `manifest.toml`, `build/packages` and the `gleam` environment in agreement,
-  `just gleam-double` passes with the network denied, at the work commit too. Where they
-  disagree the recipe now refuses before `gleam` runs.
+- **The offline claim: shown by step 5 for files that agree, on one control.** With
+  `gleam.toml`, `manifest.toml`, `build/packages` and the `gleam` environment in
+  agreement, `just gleam-double` passes with the network denied, at the work commit too.
+  Where they disagree the recipe now refuses before `gleam` runs. The denial's evidence
+  is one negative control, the hostname `curl` to `https://hex.pm`, which fails on name
+  resolution. `tickets/CONVENTIONS.md` §11 asks for a pair, the hostname control and
+  `curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1`, both inside the denial and
+  both quoted. The direct-IP control was not run, because the plan authorised one `curl`,
+  so the claim stays open until it is (series review, 2026-11-21, finding C4).
 - **`AGENTS.md` gains one recipe name.** It lists the recipes that reach the network, and
   `just gleam-double-deps` is a new one. The maintainer approved the addition on
   2026-11-20.

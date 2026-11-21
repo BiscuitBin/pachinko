@@ -1,15 +1,17 @@
 //// The specification's Identity section: S009 and S010, each through the
 //// owner. A second join is refused and changes nothing (spec note G03). Each
 //// port asserts what its Rust test asserts: S009 the publishers in order,
-//// S010 that the consumer is there (spec note G06).
+//// S010 that the consumer is there and holds no lease (spec note G06).
 ////
 //// Then S002, a row of the Rust's identity file that `config_test`'s S001
-//// stands beside: the defaults an owner starts over.
+//// stands beside: the defaults an owner starts over. Last, a test of the
+//// double's own: a join that succeeds changes nothing but its new entity.
 
 import gleam/list
 import gleam/option.{None}
 import harness
 import pachinko_double/config
+import pachinko_double/inspection.{Snapshot}
 import pachinko_double/model.{Consumer, Publisher}
 import pachinko_double/owner.{Outcome}
 import pachinko_double/refusals.{ConsumerAlreadyJoined, PublisherAlreadyJoined}
@@ -26,6 +28,11 @@ pub fn tests() -> List(Test) {
       "the default parking threshold and decay TTLs apply",
       [Scenario("S002")],
       default_threshold_and_decay_ttls,
+    ),
+    Test(
+      "a join that succeeds keeps the superseded records and the dead letters, and changes nothing else",
+      [],
+      a_join_changes_only_its_entity,
     ),
   ]
 }
@@ -59,8 +66,14 @@ fn consumer_joins_once() -> List(String) {
     == Error(Refused(ConsumerAlreadyJoined("c4")))
   let after = harness.inspect(double)
   assert after == before
-  // As the Rust asserts it: `c4` is among the consumers, in no stated order.
+  // As the Rust asserts it, `(c4, None)`: `c4` is among the consumers, in no
+  // stated order, and holds no lease.
   assert list.contains(after.consumers, Consumer("c4"))
+  let assert Ok(c4) =
+    list.find(inspection.views(after).consumers, fn(view) {
+      view.consumer == Consumer("c4")
+    })
+  assert c4.active_leases == []
   // UniqueConsumerId, by hand until the checker lands.
   assert list.unique(after.consumers) == after.consumers
   assert harness.clock_reads(double.clock) == 0
@@ -95,5 +108,50 @@ fn default_threshold_and_decay_ttls() -> List(String) {
   assert snapshot.config.max_consecutive_expiries == 3
   assert snapshot.config.superseded_ttl == 12 * time.hour
   assert snapshot.config.dead_letter_ttl == 12 * time.hour
+  harness.fired(double)
+}
+
+/// The owner is driven to a state that holds something in every part a join
+/// could touch: `old`, superseded by a newer `a1`, in the superseded queue,
+/// and `a2`, nacked and released, in the dead-letter queue, with an ended
+/// lease. A consumer then joins, and a publisher: each changes the complete
+/// snapshot only by appending its entity, and reads no clock and draws no
+/// lease id.
+fn a_join_changes_only_its_entity() -> List(String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "a", "a1", 1, "old")
+    == Ok(Outcome(["PublishIntoNewPocket"], None))
+  assert harness.publish(double, "a", "a2", 1, "a2")
+    == Ok(Outcome(["PublishNewKey"], None))
+  assert harness.publish(double, "a", "a1", 2, "new")
+    == Ok(Outcome(["Supersede"], None))
+  let batch = harness.batch(double, "c1", 10)
+  assert harness.nack(double, "c1", batch.lease, "a2")
+    == Ok(Outcome(["NackMarksRecord"], None))
+  let assert Ok(_) = harness.release(double, "c1", batch.lease)
+  let before = harness.inspect(double)
+  assert before.superseded != []
+  assert before.dead_letters != []
+  let reads = harness.clock_reads(double.clock)
+  let draws = harness.lease_id_draws(double.lease_ids)
+  assert harness.consumer_joins(double, "c4")
+    == Ok(Outcome(["ConsumerJoins"], None))
+  assert harness.inspect(double)
+    == Snapshot(
+      ..before,
+      consumers: list.append(before.consumers, [Consumer("c4")]),
+    )
+  assert harness.clock_reads(double.clock) == reads
+  assert harness.lease_id_draws(double.lease_ids) == draws
+  let before = harness.inspect(double)
+  assert harness.publisher_joins(double, "q")
+    == Ok(Outcome(["PublisherJoins"], None))
+  assert harness.inspect(double)
+    == Snapshot(
+      ..before,
+      publishers: list.append(before.publishers, [Publisher("q")]),
+    )
+  assert harness.clock_reads(double.clock) == reads
+  assert harness.lease_id_draws(double.lease_ids) == draws
   harness.fired(double)
 }

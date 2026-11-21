@@ -66,7 +66,7 @@ It records each package's version and its checksum from hex.pm.
 
 **The guard.** With no `--locked` to pass, `just gleam-double` checks before it runs
 `gleam` and compares afterwards. Two lines of Python, from the default environment, run
-before any `gleam` command; a third, under "The recipes" below, compares the toolchain
+before any `gleam` command; two more, under "The recipes" below, compare the toolchain
 with its pins. The first refuses a `gleam.toml` whose requirements differ
 from the ones `manifest.toml` records, as knarr's pre-check does: `gleam` would resolve
 them on hex.pm and write the answer back. The second refuses a
@@ -82,7 +82,9 @@ the rewrite, which `git diff` then shows.
 and runs the tests, and reaches no network: with `gleam-double/build/packages/` holding
 what `manifest.toml` pins and `manifest.toml` unchanged, `gleam` downloads nothing.
 `just gleam-double-deps` is the one recipe that does: it installs the `gleam` environment
-exactly as `pixi.lock` pins it, then fetches the packages. `just gleam-double-format`
+exactly as `pixi.lock` pins it, then fetches the packages, and refuses to start without
+`manifest.toml`, since `gleam` would otherwise resolve `gleam.toml`'s ranges afresh and
+write a new pin. `just gleam-double-format`
 rewrites the sources in `gleam`'s own layout, which `just gleam-double` only checks; it
 reads no package and reaches no network. Each recipe line puts `.pixi/envs/gleam/bin`
 first on its own `PATH`, and `just gleam-double` refuses to start unless `gleam` and
@@ -90,8 +92,11 @@ first on its own `PATH`, and `just gleam-double` refuses to start unless `gleam`
 pinned one. It also refuses unless that environment holds the `gleam` and the `erlang`
 that `pyproject.toml` pins, which it reads from the environment's `conda-meta` records:
 `just lock` moves `pixi.lock` and installs nothing, so without the comparison an
-environment installed before a pin moved would run, and pass, as the old pair. None of
-the three is in `just check`.
+environment installed before a pin moved would run, and pass, as the old pair. It then
+compares the same records, by the URL each package was installed from, with the packages
+`pixi.lock` lists for the `gleam` environment on the machine's platform, so a relock that
+changes a build or a dependency of either, but no version, is refused too. None of the
+three is in `just check`.
 
 **No gleeunit.** Gleam's usual test package runs every test through EUnit, which fixes no
 order and never runs a test in the caller's process, and then halts the virtual machine.

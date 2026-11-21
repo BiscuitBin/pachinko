@@ -7,9 +7,18 @@
 //// page prints only what these tests assert: every block it fences as
 //// `gleam` is a run of whole lines of this file, copied verbatim. A block it
 //// fences as `gleam src/...` is an excerpt of that source file instead, and
-//// must appear there verbatim. `drift` checks both, that each scenario's
-//// section of the page holds at least one block of this file, and that a
-//// scenario's blocks, in order, make up the whole of its session.
+//// must appear there verbatim. `drift` checks both, and that the page has
+//// one section for the setting, one for the common start and one for each
+//// scenario, each holding at least one block of this file, whose blocks, in
+//// order, make up the whole body of its function: `setting`,
+//// `v3_deferred_behind_v1` or the scenario's session.
+////
+//// `impl-choice` (spec notes G04 and G48): every step asserts absolute
+//// positions and counter values, from the first publish's pocket at 0, its
+//// record at 1 and the counter at 2 on. They hold because the double's first
+//// position is 0. The specification gives `next_position` no initial value,
+//// and fixes only that positions are unique and handed out in increasing
+//// order.
 ////
 //// `lease_endings_test` holds the catalog's ports of the same scenarios,
 //// each ended both ways. The guide's sessions end A and C by release and B
@@ -57,7 +66,7 @@ pub fn tests() -> List(Test) {
       scenario_d,
     ),
     Test(
-      "every gleam block of the guide is verbatim in its source, and each scenario's section shows its whole session",
+      "every gleam block of the guide is verbatim in its source, and the setting's, the common start's and each scenario's section shows its whole function",
       [],
       guide_matches,
     ),
@@ -90,6 +99,11 @@ pub fn tests() -> List(Test) {
       "a scenario's section that repeats, moves or leaves out a step of its session is a fault",
       [],
       a_section_that_is_not_its_whole_session_is_a_fault,
+    ),
+    Test(
+      "a setting or a common start that is missing, repeated, reordered or not its whole function is a fault",
+      [],
+      a_setting_or_common_start_that_is_not_its_whole_function_is_a_fault,
     ),
   ]
 }
@@ -150,9 +164,12 @@ fn setting() -> Double {
   assert harness.publisher_joins(double, "p") == fired(["PublisherJoins"])
   assert harness.consumer_joins(double, "c1") == fired(["ConsumerJoins"])
   assert harness.consumer_joins(double, "c2") == fired(["ConsumerJoins"])
+
   double
 }
 
+/// The common start of the four sessions. `impl-choice` (spec notes G04 and
+/// G48): its positions and counter values are absolute.
 fn v3_deferred_behind_v1() -> Double {
   let double = setting()
   assert harness.publish(double, "pk", "k", 1, "v1")
@@ -790,6 +807,30 @@ pub const walkthrough_path = "test/guide_test.gleam"
 /// The scenarios whose sections the guide must have, one each.
 const scenarios = ["A", "B", "C", "D"]
 
+/// A section the guide must have once, which shows the whole body of one
+/// function of the walkthrough: the key its heading gives its blocks, its
+/// name in a fault, and the function's name and the type it returns.
+type Part {
+  Part(key: String, name: String, function: String, returns: String)
+}
+
+/// The setting, the common start and the scenarios, in the guide's order.
+/// A scenario's key is its letter.
+fn parts() -> List(Part) {
+  [
+    Part("setting", "the setting", "setting", "Double"),
+    Part("common start", "the common start", "v3_deferred_behind_v1", "Double"),
+    ..list.map(scenarios, fn(letter) {
+      Part(
+        letter,
+        "Scenario " <> letter,
+        "scenario_" <> string.lowercase(letter),
+        "List(String)",
+      )
+    })
+  ]
+}
+
 /// What a fence opens: a block of the walkthrough, an excerpt of a source
 /// file, or a block the check does not read.
 type Kind {
@@ -803,14 +844,14 @@ type Open {
 }
 
 /// A fenced block the check reads: the line its fence opens on, the file it
-/// must appear in, its text, and the scenario whose section holds it.
+/// must appear in, its text, and the key of the part whose section holds it.
 type Block {
-  Block(line: Int, source: String, text: String, scenario: Option(String))
+  Block(line: Int, source: String, text: String, section: Option(String))
 }
 
 type Reading {
   Reading(
-    scenario: Option(String),
+    section: Option(String),
     fence: Option(Open),
     blocks: List(Block),
     sections: List(String),
@@ -829,14 +870,18 @@ type Reading {
 ///   block cannot slip out of the check by its spelling. So is a fence that
 ///   never closes, and an empty block. A fence closes, as in Markdown, on a
 ///   run of its mark at least as long as the one that opened it.
-/// - Each of Scenarios A to D has exactly one section, a level-three heading
-///   that starts `### Scenario` and its letter, which runs to the next
-///   heading of level three or above and holds at least one block of the
-///   walkthrough. A heading for any other scenario is a fault.
-/// - Each of those sections shows its whole session: its blocks of the
+/// - The setting, the common start and each of Scenarios A to D has exactly
+///   one section, which runs from its level-three heading to the next heading
+///   of level three or above and holds at least one block of the
+///   walkthrough. The setting's heading is exactly `### The setting`, the
+///   common start's exactly `### The common start`, and a scenario's starts
+///   `### Scenario` and its letter. A heading for any other scenario is a
+///   fault.
+/// - Each of those sections shows its whole function: its blocks of the
 ///   walkthrough, in order and joined by a blank line, are the body of
-///   `scenario_<letter>`, less the line that returns. The setting and the
-///   common start are checked block by block only.
+///   `setting`, of `v3_deferred_behind_v1` or of `scenario_<letter>`, less
+///   the line that returns. So a reordered common start is a fault, as a
+///   reordered session is.
 ///
 /// `read` gives a file's text, or the fault that it cannot be read.
 pub fn drift(
@@ -864,12 +909,12 @@ pub fn drift(
         list.reverse(reading.faults),
         unclosed,
         list.flatten(block_faults),
-        list.flat_map(scenarios, fn(scenario) {
-          section_faults(scenario, reading.sections, blocks)
+        list.flat_map(parts(), fn(part) {
+          section_faults(part, reading.sections, blocks)
         }),
-        list.flat_map(scenarios, fn(scenario) {
+        list.flat_map(parts(), fn(part) {
           session_faults(
-            scenario,
+            part,
             reading.sections,
             list.zip(blocks, block_faults),
             read,
@@ -984,7 +1029,7 @@ fn run(text: String, mark: String) -> Int {
 fn close(reading: Reading, open: Open) -> Reading {
   let text = string.join(list.reverse(open.lines), "\n")
   let block = fn(source) {
-    Block(line: open.line, source:, text:, scenario: reading.scenario)
+    Block(line: open.line, source:, text:, section: reading.section)
   }
   case open.kind {
     Skipped -> Reading(..reading, fence: None)
@@ -999,22 +1044,21 @@ fn close(reading: Reading, open: Open) -> Reading {
 }
 
 /// A heading of level three or above ends the section it is in. A
-/// level-three heading that starts `### Scenario ` opens a scenario's.
+/// level-three heading that starts `### Scenario ` opens a scenario's, and
+/// `### The setting` and `### The common start` open theirs.
 fn heading(reading: Reading, number: Int, line: String) -> Reading {
   case run(line, "#") <= 3 {
     False -> reading
     True ->
       case line {
+        "### The setting" -> opens(reading, "setting")
+        "### The common start" -> opens(reading, "common start")
         "### Scenario " <> rest -> {
           let letter = string.slice(rest, 0, 1)
           case list.contains(scenarios, letter) {
-            True ->
-              Reading(..reading, scenario: Some(letter), sections: [
-                letter,
-                ..reading.sections
-              ])
+            True -> opens(reading, letter)
             False ->
-              Reading(..reading, scenario: None, faults: [
+              Reading(..reading, section: None, faults: [
                 "line "
                   <> int.to_string(number)
                   <> ": a section for a scenario the guide does not walk: "
@@ -1023,9 +1067,14 @@ fn heading(reading: Reading, number: Int, line: String) -> Reading {
               ])
           }
         }
-        _ -> Reading(..reading, scenario: None)
+        _ -> Reading(..reading, section: None)
       }
   }
+}
+
+/// The reading inside the section of the part with this key.
+fn opens(reading: Reading, key: String) -> Reading {
+  Reading(..reading, section: Some(key), sections: [key, ..reading.sections])
 }
 
 fn block_faults(
@@ -1047,16 +1096,16 @@ fn block_faults(
 }
 
 fn section_faults(
-  scenario: String,
+  part: Part,
   sections: List(String),
   blocks: List(Block),
 ) -> List(String) {
-  let name = "Scenario " <> scenario
+  let name = part.name
   let walked =
     list.count(blocks, fn(block) {
-      block.scenario == Some(scenario) && block.source == walkthrough_path
+      block.section == Some(part.key) && block.source == walkthrough_path
     })
-  case list.count(sections, fn(section) { section == scenario }), walked {
+  case list.count(sections, fn(section) { section == part.key }), walked {
     0, _ -> ["the guide has no section for " <> name]
     1, 0 -> ["the section for " <> name <> " has no gleam block"]
     1, _ -> []
@@ -1064,41 +1113,41 @@ fn section_faults(
   }
 }
 
-/// A scenario's section must show its whole session, in order. Its blocks of
-/// the walkthrough, joined by one blank line, are the body of
-/// `scenario_<letter>` in the walkthrough, without the body's last line,
-/// which returns the rules the test saw fire, and the blank line before it.
+/// A part's section must show its whole function, in order. Its blocks of
+/// the walkthrough, joined by one blank line, are the body of the part's
+/// function in the walkthrough, without the body's last line, which returns
+/// the double or the rules the test saw fire, and the blank lines before it.
 /// So a block repeated, moved or left out is a fault, although each block
 /// alone is verbatim.
 ///
-/// The check runs only on a scenario with exactly one section, holding at
-/// least one block of the walkthrough, each of them verbatim; any other case
+/// The check runs only on a part with exactly one section, holding at least
+/// one block of the walkthrough, each of them verbatim; any other case
 /// already has its fault.
 fn session_faults(
-  scenario: String,
+  part: Part,
   sections: List(String),
   checked: List(#(Block, List(String))),
   read: fn(String) -> Result(String, String),
 ) -> List(String) {
   let mine =
     list.filter(checked, fn(pair) {
-      { pair.0 }.scenario == Some(scenario)
+      { pair.0 }.section == Some(part.key)
       && { pair.0 }.source == walkthrough_path
     })
   let verbatim = list.all(mine, fn(pair) { pair.1 == [] })
-  let one = list.count(sections, fn(section) { section == scenario }) == 1
+  let one = list.count(sections, fn(section) { section == part.key }) == 1
   case one && verbatim && mine != [], read(walkthrough_path) {
     True, Ok(source) -> {
-      let name = "scenario_" <> string.lowercase(scenario)
       let shown =
         string.join(list.map(mine, fn(pair) { { pair.0 }.text }), "\n\n")
-      case session(source, name) == Ok(shown) {
+      let head = "fn " <> part.function <> "() -> " <> part.returns <> " {"
+      case session(source, head) == Ok(shown) {
         True -> []
         False -> [
-          "the blocks of Scenario "
-          <> scenario
+          "the blocks of "
+          <> part.name
           <> "'s section are not the whole of "
-          <> name
+          <> part.function
           <> " in "
           <> walkthrough_path
           <> ", in order",
@@ -1109,11 +1158,12 @@ fn session_faults(
   }
 }
 
-/// The body of the function `name` of a source, as a session shows it: every
-/// line between `fn name() -> List(String) {` and the first `}` that closes a
-/// top-level item, less the last line and the blank lines before it.
-fn session(source: String, name: String) -> Result(String, Nil) {
-  let head = "\nfn " <> name <> "() -> List(String) {\n"
+/// The body of the function whose head line is `head`, such as
+/// `fn setting() -> Double {`, in a source, as a section shows it: every line
+/// between the head line and the first `}` that closes a top-level item, less
+/// the last line and the blank lines before it.
+fn session(source: String, head: String) -> Result(String, Nil) {
+  let head = "\n" <> head <> "\n"
   case string.split_once("\n" <> source, head) {
     Error(Nil) -> Error(Nil)
     Ok(#(_, rest)) ->
@@ -1163,7 +1213,8 @@ fn files(
 }
 
 /// A walkthrough that holds `step one` and `step two`, with a session for
-/// each scenario whose body is that scenario's block in `page(four)`, and a
+/// each scenario whose body is that scenario's block in `page(four)`, a
+/// setting and a common start whose bodies are their blocks in `page`, and a
 /// source file.
 fn sources() -> fn(String) -> Result(String, String) {
   files([
@@ -1202,6 +1253,20 @@ fn scenario_d() -> List(String) {
 
   []
 }
+
+fn setting() -> Double {
+  set up
+
+  double
+}
+
+fn v3_deferred_behind_v1() -> Double {
+  start one
+
+  start two
+
+  double
+}
 "
 
 /// A section for a scenario, with one block of the walkthrough.
@@ -1209,8 +1274,9 @@ fn section(letter: String, block: String) -> String {
   "### Scenario " <> letter <> ": walked\n\n```gleam\n" <> block <> "\n```\n"
 }
 
-/// A page with all four sections, each with a block of the walkthrough, and
-/// an excerpt before them.
+/// A page with all four scenarios' sections, each with a block of the
+/// walkthrough, an excerpt before them, and after them the setting's
+/// section and the common start's, which ends the page at line 47.
 fn page(blocks: List(String)) -> String {
   let sections =
     list.zip(scenarios, blocks)
@@ -1222,7 +1288,28 @@ fn page(blocks: List(String)) -> String {
     ],
     "\n",
   )
+  <> "\n"
+  <> shared
 }
+
+/// The setting's section and the common start's, in the walkthrough's order.
+const shared =
+  "### The setting
+
+```gleam
+  set up
+```
+
+### The common start
+
+```gleam
+  start one
+```
+
+```gleam
+  start two
+```
+"
 
 const four = ["  step one", "  step two", "  step one\n  step two", "  step one"]
 
@@ -1284,7 +1371,7 @@ fn a_scenario_section_without_a_block_is_a_fault() -> List(String) {
   let unknown = page(four) <> "\n" <> section("E", "  step one")
   assert drift(Ok(unknown), sources())
     == [
-      "line 32: a section for a scenario the guide does not walk: ### Scenario E: walked",
+      "line 48: a section for a scenario the guide does not walk: ### Scenario E: walked",
     ]
   []
 }
@@ -1330,7 +1417,7 @@ fn an_unrecognised_fence_is_a_fault() -> List(String) {
   // A fence that never closes swallows the rest of the page.
   let unclosed = page(four) <> "\n```gleam\n  step one\n"
   assert drift(Ok(unclosed), sources())
-    == ["line 32: a fence that never closes"]
+    == ["line 48: a fence that never closes"]
   // A fence of another language is skipped, even with gleam-like text in it.
   let other = page(four) <> "\n```sh\njust gleam-double\n### Scenario A\n```\n"
   assert drift(Ok(other), sources()) == []
@@ -1358,6 +1445,9 @@ fn an_unreadable_excerpt_is_a_fault() -> List(String) {
       "line 15: cannot read test/guide_test.gleam",
       "line 21: cannot read test/guide_test.gleam",
       "line 28: cannot read test/guide_test.gleam",
+      "line 34: cannot read test/guide_test.gleam",
+      "line 40: cannot read test/guide_test.gleam",
+      "line 44: cannot read test/guide_test.gleam",
     ]
   []
 }
@@ -1367,24 +1457,24 @@ fn a_quoted_fence_and_a_longer_closing_fence() -> List(String) {
   // fault rather than a block the check skips.
   let quoted = page(four) <> "\n> ```gleam\n> assert False\n> ```\n"
   assert drift(Ok(quoted), sources())
-    == ["line 32: a gleam fence the check does not recognise: > ```gleam"]
+    == ["line 48: a gleam fence the check does not recognise: > ```gleam"]
   // A quoted fence of another language is skipped, and closes on its
   // quoted closing fence, so the block after it is still read.
   let quoted_sh =
     page(four)
     <> "\n> ```sh\n> just gleam-double\n> ```\n\n```gleam\n  step three\n```\n"
   assert drift(Ok(quoted_sh), sources())
-    == ["line 36: the gleam block is not verbatim in test/guide_test.gleam"]
+    == ["line 52: the gleam block is not verbatim in test/guide_test.gleam"]
   // A closing fence longer than its opening one closes the block, so the
   // gleam block after it is read, not swallowed.
   let longer =
     page(four)
     <> "\n```sh\njust gleam-double\n````\n\n```gleam\n  step three\n```\n"
   assert drift(Ok(longer), sources())
-    == ["line 36: the gleam block is not verbatim in test/guide_test.gleam"]
+    == ["line 52: the gleam block is not verbatim in test/guide_test.gleam"]
   // A shorter one, or one of the other mark, does not close it.
   let shorter = page(four) <> "\n````sh\njust gleam-double\n```\n~~~~\n"
-  assert drift(Ok(shorter), sources()) == ["line 32: a fence that never closes"]
+  assert drift(Ok(shorter), sources()) == ["line 48: a fence that never closes"]
   []
 }
 
@@ -1424,13 +1514,73 @@ fn a_section_that_is_not_its_whole_session_is_a_fault() -> List(String) {
   assert drift(Ok(shown(["one", "two", "two"])), two_steps) == [fault("A")]
   assert drift(Ok(shown(["two", "one"])), two_steps) == [fault("A")]
   assert drift(Ok(shown(["one"])), two_steps) == [fault("A")]
-  // A walkthrough with no session for any scenario.
+  // A walkthrough that holds every block but no function a section shows.
   let sessionless =
     files([
-      #(walkthrough_path, "fn walk() {\n  step one\n  step two\n}\n"),
+      #(
+        walkthrough_path,
+        "fn walk() {\n  step one\n  step two\n  set up\n  start one\n  start two\n}\n",
+      ),
       #("src/pachinko_double/row.gleam", "fn row() {\n  guard\n}\n"),
     ])
   assert drift(Ok(page(four)), sessionless)
-    == [fault("A"), fault("B"), fault("C"), fault("D")]
+    == [
+      "the blocks of the setting's section are not the whole of setting in test/guide_test.gleam, in order",
+      "the blocks of the common start's section are not the whole of v3_deferred_behind_v1 in test/guide_test.gleam, in order",
+      fault("A"),
+      fault("B"),
+      fault("C"),
+      fault("D"),
+    ]
+  []
+}
+
+fn a_setting_or_common_start_that_is_not_its_whole_function_is_a_fault() -> List(
+  String,
+) {
+  let setting =
+    "the blocks of the setting's section are not the whole of setting in test/guide_test.gleam, in order"
+  let start =
+    "the blocks of the common start's section are not the whole of v3_deferred_behind_v1 in test/guide_test.gleam, in order"
+  let start_one = "```gleam\n  start one\n```\n"
+  let start_two = "```gleam\n  start two\n```\n"
+  // The common start's two steps swapped, each block still verbatim.
+  let swapped =
+    string.replace(
+      page(four),
+      start_one <> "\n" <> start_two,
+      start_two <> "\n" <> start_one,
+    )
+  assert drift(Ok(swapped), sources()) == [start]
+  // A step of the common start left out, and one repeated.
+  let left_out = string.replace(page(four), start_one <> "\n", "")
+  assert drift(Ok(left_out), sources()) == [start]
+  let twice =
+    string.replace(page(four), start_two, start_two <> "\n" <> start_two)
+  assert drift(Ok(twice), sources()) == [start]
+  // A setting that shows a block of another function.
+  let other =
+    string.replace(
+      page(four),
+      "```gleam\n  set up\n```\n",
+      "```gleam\n  start one\n```\n",
+    )
+  assert drift(Ok(other), sources()) == [setting]
+  // A heading renamed, so the check would have nothing to compare.
+  let renamed =
+    string.replace(page(four), "### The common start", "### Common start")
+  assert drift(Ok(renamed), sources())
+    == ["the guide has no section for the common start"]
+  // A section with no block, and one repeated.
+  let empty =
+    string.replace(
+      page(four),
+      "### The setting\n\n```gleam\n  set up\n```\n",
+      "### The setting\n\nNo block here.\n",
+    )
+  assert drift(Ok(empty), sources())
+    == ["the section for the setting has no gleam block"]
+  let repeated = page(four) <> "\n### The setting\n\n```gleam\n  set up\n```\n"
+  assert drift(Ok(repeated), sources()) == ["the setting has 2 sections"]
   []
 }

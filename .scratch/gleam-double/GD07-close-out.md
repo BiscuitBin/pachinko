@@ -21,8 +21,9 @@ they were written. `.scratch/gleam-double/README.md` is the series' index.
 
 The Gleam double exists for two reasons. It is a second reading of the specification,
 made after the Python double's 38 notes and the maintainer's four rulings. And it is the
-first implementation in this repository whose shape is the one the specification asks
-for in words: one owner applying one serialized stream. This ticket turns the work into
+first of the repository's doubles whose shape is the one the specification asks for in
+words, one owner applying one serialized stream, which the service's queue-owning task
+(decision 0019) already has. This ticket turns the work into
 what the maintainer reads:
 
 - a guide that maps the specification's concepts to the double's modules;

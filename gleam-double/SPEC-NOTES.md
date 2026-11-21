@@ -2624,8 +2624,9 @@ carries the label and names its note.
   - S009 is `impl-choice` in one assertion. Its Rust test asserts the publishers as the
     ordered list `p`, `q`, and the port asserts the same. That holds because of this
     order, not because of anything the specification states.
-  - S010's Rust test asserts only that `c4` is among the consumers, and the port asserts
-    the same.
+  - S010's Rust test asserts that `c4` is among the consumers and that it holds no lease,
+    `(id, None)`, and the port asserts both: `c4` among the consumers, and no active lease
+    in its consumer view from `inspection.views`. Neither reads an order.
   - A test that pins no catalog row may assert the join order, since it is this double's
     stated order.
 - **`N`-note:** no `N`-note.
