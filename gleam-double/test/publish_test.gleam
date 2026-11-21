@@ -15,12 +15,22 @@
 //// order of the superseded queue, where a port asserts it, is `impl-choice`
 //// too (spec note G19).
 ////
+//// Then the catalog rows of the same file that publish onto a held record,
+//// S021, S082 and S083, ported the same way. Each pulls first, so that the
+//// record is held, and asserts the state through the snapshot: a higher rank
+//// with nothing deferred is `DeferBehindHeldVersion`'s, and a version
+//// deferred behind the held one is shed by a still higher rank. A refusal
+//// goes through `harness.refused`, which compares the complete snapshot, the
+//// clock's read count and the lease-id draws before and after. S082 and
+//// S083 assert absolute positions, `impl-choice` too (spec note G04, and
+//// G48).
+////
 //// Then the double's own tests, which pin no catalog row: the refusal of a
-//// publisher that never joined, what each of the four rules changes and how
-//// often it reads the clock, the events each emits, the held branch of
-//// `Supersede`'s guard, which no publish through the owner reaches until a
-//// version can be deferred behind a held record, and what `ReviveIdlePocket`
-//// changes when it answers `PocketTouched`.
+//// publisher that never joined, what each of the five rules changes and how
+//// often it reads the clock, the events each emits, the held branches of
+//// `Supersede`'s and `DeferBehindHeldVersion`'s guards over states built by
+//// hand, and what `ReviveIdlePocket` changes when it answers
+//// `PocketTouched`.
 
 import gleam/int
 import gleam/list
@@ -28,7 +38,9 @@ import gleam/option.{type Option, None, Some}
 import harness.{type Double, Driven}
 import pachinko_double/config
 import pachinko_double/core
-import pachinko_double/domain.{type Event, type Plan, PocketTouched}
+import pachinko_double/domain.{
+  type Event, type Plan, NoPocketAvailable, PocketTouched,
+}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -104,6 +116,21 @@ pub fn tests() -> List(Test) {
       queued_pocket_keeps_its_place,
     ),
     Test(
+      "publishing into a leased pocket neither requeues it nor escapes the lease, and sheds no held version",
+      [Scenario("S021")],
+      into_leased_pocket,
+    ),
+    Test(
+      "a publish onto a held record is judged alike whether it is unsettled, acked or nacked: higher defers, a second higher sheds the deferred version, equal is rejected, lower is stale",
+      [Scenario("S082")],
+      judged_alike,
+    ),
+    Test(
+      "publishing again at the held rank is rejected while nothing is deferred and stale once a newer version is",
+      [Scenario("S083")],
+      held_rank_again,
+    ),
+    Test(
       "a publish by a publisher that never joined is refused",
       [],
       unknown_publisher,
@@ -129,12 +156,17 @@ pub fn tests() -> List(Test) {
       stale_exactly,
     ),
     Test(
-      "PublishNewKey and Supersede touch the pocket, and the other two emit nothing",
+      "DeferBehindHeldVersion changes exactly what it ensures, reads no clock and draws no lease id",
+      [],
+      defer_exactly,
+    ),
+    Test(
+      "PublishNewKey, Supersede and DeferBehindHeldVersion touch the pocket, and the other two emit nothing",
       [],
       events,
     ),
     Test(
-      "Supersede takes a held record only with a version deferred behind it",
+      "Supersede takes a held record only with a version deferred behind it, and DeferBehindHeldVersion only with none",
       [],
       held_record_guards,
     ),
@@ -147,6 +179,11 @@ pub fn tests() -> List(Test) {
       "Supersede's effect without its record is a defect, and reads no clock",
       [],
       supersede_without_record,
+    ),
+    Test(
+      "DeferBehindHeldVersion's effect without its held record is a defect, and reads no clock",
+      [],
+      defer_without_held_record,
     ),
     Test(
       "ReviveIdlePocket changes exactly what it ensures and reads no clock",
@@ -478,6 +515,217 @@ fn queued_pocket_keeps_its_place() -> List(String) {
   harness.fired(double)
 }
 
+// The catalog rows that publish onto a held record ----------
+
+/// A superseded record of `k` in `pk`, shed at `at`, as the Rust's shed
+/// rows give one.
+fn shed_entry(
+  rank: Int,
+  payload: String,
+  reason: Reason,
+  at: Int,
+) -> model.SupersededRecord {
+  SupersededRecord(
+    pocket: "pk",
+    key: "k",
+    rank:,
+    payload: <<payload:utf8>>,
+    reason:,
+    shed_at: at,
+    expires_at: at + superseded_ttl(),
+  )
+}
+
+/// The Rust checks the three publishes for an outcome: a new key,
+/// superseded and stale. The port asserts that each answered nothing and
+/// names the rule it fired (the ruling on N32): the higher rank of the held
+/// `a` is deferred behind it, and the lower one is stale against the
+/// deferred version. For the deferral the port also asserts the state it
+/// leaves, against the record and the counter read just before it, so no
+/// absolute position is pinned. Each `PocketTouched` finds the pocket
+/// leased, so no revive rule fires.
+fn into_leased_pocket() -> List(String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "a", 1, "a")
+    == answers_nothing("PublishIntoNewPocket")
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  let pocket_before = harness.pocket(double, "pk")
+  let lease_before = harness.inspect(double).leases
+  assert harness.publish(double, "pk", "b", 1, "b")
+    == answers_nothing("PublishNewKey")
+  let a_before = harness.record(double, "pk", "a")
+  let counter = harness.inspect(double).next_position
+  assert harness.publish(double, "pk", "a", 2, "a2")
+    == answers_nothing("DeferBehindHeldVersion")
+  // The state the deferral leaves (the ruling on N32): `a` takes the rank
+  // and payload, with the counter's value as its arrival position; the held
+  // version, the mark, the nack time and the position stay; the counter
+  // advances by one.
+  assert harness.record(double, "pk", "a")
+    == Record(
+      ..a_before,
+      rank: 2,
+      payload: <<"a2":utf8>>,
+      status: RecordHeld(
+        held_rank: 1,
+        held_payload: <<"a":utf8>>,
+        mark: Unsettled,
+        nacked_at: None,
+        deferred_position: Some(counter),
+      ),
+    )
+  assert harness.inspect(double).next_position == counter + 1
+  assert harness.publish(double, "pk", "a", 0, "a0")
+    == answers_nothing("DropStalePublish")
+  // "The held a1 is not shed; a2 waits behind it."
+  assert harness.inspect(double).superseded
+    == [
+      SupersededRecord(
+        pocket: "pk",
+        key: "a",
+        rank: 0,
+        payload: <<"a0":utf8>>,
+        reason: Stale,
+        shed_at: harness.t0,
+        expires_at: harness.t0 + superseded_ttl(),
+      ),
+    ]
+  let pocket = harness.pocket(double, "pk")
+  assert pocket.status == PocketLeased
+  assert pocket.position == pocket_before.position
+  assert harness.order(double) == []
+  assert harness.inspect(double).leases == lease_before
+  assert harness.pull(double, "c2", 10)
+    == Ok(Outcome(["PullFindsNoPocket"], Some(NoPocketAvailable("c2"))))
+  let again = harness.batch(double, "c1", 10)
+  assert again.fired == ["PullWithinLease", "HoldRecord"]
+  assert again.lease == batch.lease
+  assert harness.keys(again.records) == ["b"]
+  harness.fired(double)
+}
+
+/// The Rust test file's `held_and_marked`: `pk` with `k` at rank 1, payload
+/// `v1`, held by `c1` from `t0` and marked at 10 ms as `mark` says; an
+/// unsettled record is not marked. `k` stands at 1, so the next position is
+/// 2. It answers the time of the nack, if `mark` is a nack.
+fn held_and_marked(mark: Mark) -> #(Double, Option(Int)) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "k", 1, "v1")
+    == answers_nothing("PublishIntoNewPocket")
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  let marked_at = harness.at(double, 10)
+  case mark {
+    Unsettled -> #(double, None)
+    Acked -> {
+      assert harness.ack(double, "c1", batch.lease, "k")
+        == answers_nothing("AckMarksRecord")
+      #(double, None)
+    }
+    Nacked -> {
+      assert harness.nack(double, "c1", batch.lease, "k")
+        == answers_nothing("NackMarksRecord")
+      #(double, Some(marked_at))
+    }
+  }
+}
+
+/// The status of `k` held at rank 1, payload `v1`, with this mark, this
+/// nack time and this arrival position: the Rust fixture's `held_as`.
+fn held_as(
+  mark: Mark,
+  nacked_at: Option(Int),
+  arrival: Option(Int),
+) -> model.RecordStatus {
+  RecordHeld(
+    held_rank: 1,
+    held_payload: <<"v1":utf8>>,
+    mark:,
+    nacked_at:,
+    deferred_position: arrival,
+  )
+}
+
+/// The Rust loops over the three marks; so does the port, with a fixture
+/// each. Where the Rust checks a publish for an outcome, the port asserts
+/// that it answered nothing and names its rule (the ruling on N32).
+fn judged_alike() -> List(String) {
+  list.flat_map(marks(), judged_alike_marked)
+}
+
+/// The Rust's `the_publish_table_against_a_held_record` and
+/// `equal_then_lower` for one mark. `impl-choice` (spec note G04, and
+/// G48): the arrival position 2, the counter at 3 and the position 1 are
+/// absolute; that the arrival position is the counter's value, that the
+/// counter advances by one and that the record keeps its position are the
+/// specification's. `impl-choice` (spec note G19): the order of the
+/// superseded queue, `v3` then `v4`.
+fn judged_alike_marked(mark: Mark) -> List(String) {
+  let #(double, nacked_at) = held_and_marked(mark)
+  let deferred = held_as(mark, nacked_at, Some(2))
+  let _ = harness.at(double, 20)
+  // Higher: "deferred behind the held version".
+  assert harness.publish(double, "pk", "k", 3, "v3")
+    == answers_nothing("DeferBehindHeldVersion")
+  let record = harness.record(double, "pk", "k")
+  assert #(record.status, record.rank) == #(deferred, 3)
+  let snapshot = harness.inspect(double)
+  // "Nothing is shed."
+  assert snapshot.superseded == []
+  assert snapshot.next_position == 3
+  let thirty = harness.at(double, 30)
+  // A second higher: "v3 at once".
+  assert harness.publish(double, "pk", "k", 5, "v5")
+    == answers_nothing("Supersede")
+  let v3 = shed_entry(3, "v3", Superseded, thirty)
+  assert harness.inspect(double).superseded == [v3]
+  // Equal: refused, and "equal changes nothing".
+  harness.refused(
+    double,
+    EqualRankRefused(pocket_key: "pk", record_key: "k", rank: 5),
+    fn() { harness.publish(double, "pk", "k", 5, "again") },
+  )
+  // Lower: stale.
+  assert harness.publish(double, "pk", "k", 4, "v4")
+    == answers_nothing("DropStalePublish")
+  let snapshot = harness.inspect(double)
+  assert snapshot.superseded == [v3, shed_entry(4, "v4", Stale, thirty)]
+  // "No dead letter while held."
+  assert snapshot.dead_letters == []
+  let record = harness.record(double, "pk", "k")
+  // "v5 keeps v3's arrival position."
+  assert #(record.status, record.rank, record.position) == #(deferred, 5, 1)
+  // The Rust's `invariants::all`, by the checker.
+  assert invariants.check(snapshot) == []
+  harness.fired(double)
+}
+
+/// The Rust's equal-rank error carries the record key and the rank; the
+/// double's refusal names the pocket as well (spec note G13). `impl-choice`
+/// (spec note G04, and G48): the arrival position 2 is absolute; that it
+/// is the counter's value is the specification's.
+fn held_rank_again() -> List(String) {
+  let #(double, _) = held_and_marked(Unsettled)
+  // "Nothing deferred: the held rank is the stored rank."
+  harness.refused(
+    double,
+    EqualRankRefused(pocket_key: "pk", record_key: "k", rank: 1),
+    fn() { harness.publish(double, "pk", "k", 1, "again") },
+  )
+  assert harness.publish(double, "pk", "k", 3, "v3")
+    == answers_nothing("DeferBehindHeldVersion")
+  let deferred = held_as(Unsettled, None, Some(2))
+  assert harness.record(double, "pk", "k").status == deferred
+  // "v3 deferred: the held rank is below the stored rank."
+  assert harness.publish(double, "pk", "k", 1, "again")
+    == answers_nothing("DropStalePublish")
+  assert harness.inspect(double).superseded
+    == [shed_entry(1, "again", Stale, harness.t0 + 10)]
+  assert harness.record(double, "pk", "k").status == deferred
+  harness.fired(double)
+}
+
 // The refusal of a publisher that never joined --------------
 
 /// `impl-choice` (spec note G12): the specification states no such refusal.
@@ -687,11 +935,12 @@ fn stale_exactly() -> List(String) {
 
 // The rows themselves, over states built by hand -------------
 //
-// No publish through the owner meets a held record with a version deferred
-// behind it until `DeferBehindHeldVersion` lands, and through the owner a
-// pocket that goes idle has seen no expiry. These tests read the Publish
-// table and the `PocketTouched` table directly, or run the apply step over
-// a state built by hand.
+// Through the owner a held record's pocket is leased, so the `PocketTouched`
+// a publish onto it emits meets no revive rule and shows nothing; a pocket
+// that goes idle has seen no expiry; and no two pockets of a scenario hold
+// one key while one of them is leased. These tests read the Publish table
+// and the `PocketTouched` table directly, or run the apply step over a
+// state built by hand.
 
 fn publication(
   pocket_key: String,
@@ -778,6 +1027,102 @@ fn leased(deferred: Bool, mark: Mark) -> State {
   )
 }
 
+/// Publisher `p` and consumers `c1` and `c2` joined, and no list in
+/// position order. `other` is queued, and holds an `a` of its own at rank 5,
+/// listed first, so that a lookup by key alone finds it. `pk` is leased to
+/// `c1` and holds `held_record(False, mark)`, `a` at 1 handed out at rank 5,
+/// and `b`, queued at 4. The superseded queue holds an earlier version of
+/// `pk`'s `a`, and the dead-letter queue a record `c2` once nacked out of
+/// `pk`. The counter stands at 6.
+fn deferring(mark: Mark) -> State {
+  State(
+    ..joined(),
+    queue: Queue(next_position: 6),
+    consumers: [Consumer("c1"), Consumer("c2")],
+    pockets: [
+      Pocket("other", PocketQueued, 2, 0),
+      Pocket("pk", PocketLeased, 0, 0),
+    ],
+    records: [
+      Record("other", "a", 5, <<"theirs":utf8>>, 3, RecordQueued),
+      held_record(False, mark),
+      Record("pk", "b", 4, <<"b":utf8>>, 4, RecordQueued),
+    ],
+    leases: [
+      Lease(
+        id: "lease-1",
+        pocket: "pk",
+        consumer: "c1",
+        status: LeaseActive,
+        granted_at: harness.t0,
+        expires_at: harness.t0 + 1000,
+      ),
+    ],
+    superseded: [
+      SupersededRecord(
+        pocket: "pk",
+        key: "a",
+        rank: 3,
+        payload: <<"older":utf8>>,
+        reason: Superseded,
+        shed_at: harness.t0 - 50,
+        expires_at: harness.t0 - 50 + config.defaults().superseded_ttl,
+      ),
+    ],
+    dead_letters: [
+      DeadLetter(
+        pocket: "pk",
+        key: "k0",
+        rank: 2,
+        payload: <<"zero":utf8>>,
+        nacked_by: "c2",
+        nacked_at: harness.t0 - 90,
+        expires_at: harness.t0 - 80 + config.defaults().dead_letter_ttl,
+      ),
+    ],
+  )
+}
+
+/// A publish of `pk`'s held `a` at rank 9, above the stored rank 5, with
+/// nothing deferred. The record takes rank 9 and the new payload, and its
+/// `deferred_position` is the counter's value, 6; the counter advances to
+/// 7. The held version, the mark, a nacked record's nack time and the
+/// record's position stay. Nothing else in the complete state changes:
+/// `other`'s `a`, `pk`'s `b`, the pockets, the lease and both shed queues.
+/// The `PocketTouched` it emits finds `pk` leased, so nothing more fires.
+/// The step reads no clock and draws no lease id. Once for each mark, since
+/// the rule reads none; run through the apply step, so the checker has read
+/// the state it leaves.
+fn defer_exactly() -> List(String) {
+  list.flat_map(marks(), fn(mark) {
+    let state = deferring(mark)
+    let assert [theirs, held, b] = state.records
+    let assert Record(status: RecordHeld(..) as status, ..) = held
+    let step =
+      core.apply(state, core.Publish(publication("pk", "a", 9, "newest")))
+    assert harness.drive(step, harness.t0 + 40, "unused")
+      == Driven(
+        Ok(Applied(
+          State(..state, queue: Queue(next_position: 7), records: [
+            theirs,
+            Record(
+              ..held,
+              rank: 9,
+              payload: <<"newest":utf8>>,
+              status: RecordHeld(..status, deferred_position: Some(6)),
+            ),
+            b,
+          ]),
+          ["DeferBehindHeldVersion"],
+          None,
+        )),
+        clock_reads: 0,
+        lease_id_draws: 0,
+      )
+    ["DeferBehindHeldVersion"]
+  })
+}
+
 /// Walks a row's plan by hand to the events it finishes with, answering a
 /// request for a position with the counter and one for the time with `t0`.
 fn walk(plan: Plan, next_position: Int) -> Result(List(Event), String) {
@@ -810,7 +1155,8 @@ fn rule(state: State, publication: Publication) -> Option(String) {
 }
 
 /// A publish into an existing pocket that adds or raises a record emits
-/// `PocketTouched` for that pocket, whichever of the two it is.
+/// `PocketTouched` for that pocket, whichever of the three it is: a new key,
+/// a supersede, or a deferral behind a held version.
 /// `PublishIntoNewPocket` ensures none, and a stale publish does not touch
 /// the pocket.
 fn events() -> List(String) {
@@ -833,30 +1179,40 @@ fn events() -> List(String) {
       publication("pk", "a", 7, "y"),
     )
     == #("Supersede", [PocketTouched("pk")])
+  assert rule_and_events(
+      leased(False, Unsettled),
+      publication("pk", "a", 6, "y"),
+    )
+    == #("DeferBehindHeldVersion", [PocketTouched("pk")])
+  assert rule_and_events(deferring(Acked), publication("pk", "a", 9, "y"))
+    == #("DeferBehindHeldVersion", [PocketTouched("pk")])
   []
 }
 
 /// The stored rank is `record.rank` whatever the record's state. Above it,
 /// `Supersede` takes a held record only when a version is already deferred
-/// behind the held one; with nothing deferred the publish is
-/// `DeferBehindHeldVersion`'s, whose row is not landed, so the only claim
-/// made of it here is that `Supersede`'s guard does not hold. Below it the
-/// publish is stale, held or not, and the held rank is below the stored rank
-/// once a version is deferred. All of it holds whatever the record's mark:
-/// `Supersede`'s guard names the status and the arrival position, and no
-/// mark.
+/// behind the held one, and `DeferBehindHeldVersion` only when none is, and
+/// never a queued record. At it no rule holds, held or not: the held rank
+/// while nothing is deferred, and the deferred version's rank once one is.
+/// Below it the publish is stale, held or not, and the held rank is below
+/// the stored rank once a version is deferred. All of it holds whatever the
+/// record's mark: the two guards name the status and the arrival position,
+/// and no mark. Dispatch evaluates every guard, so each `Some` here also
+/// says that no other guard held.
 fn held_record_guards() -> List(String) {
-  let assert Ok(supersede) =
-    list.find(publish.publish().rows, fn(row) { row.name == "Supersede" })
   list.each(marks(), fn(mark) {
     assert rule(leased(True, mark), publication("pk", "a", 7, "y"))
       == Some("Supersede")
-    assert !supersede.guard(leased(False, mark), publication("pk", "a", 6, "y"))
+    assert rule(leased(False, mark), publication("pk", "a", 6, "y"))
+      == Some("DeferBehindHeldVersion")
+    assert rule(leased(False, mark), publication("pk", "a", 5, "y")) == None
+    assert rule(leased(True, mark), publication("pk", "a", 6, "y")) == None
     assert rule(leased(False, mark), publication("pk", "a", 4, "y"))
       == Some("DropStalePublish")
     assert rule(leased(True, mark), publication("pk", "a", 5, "y"))
       == Some("DropStalePublish")
   })
+  assert rule(stored(), publication("pk", "a", 6, "y")) == Some("Supersede")
   []
 }
 
@@ -919,6 +1275,47 @@ fn supersede_without_record() -> List(String) {
       Error(Defect(
         "Publish",
         EffectFailed("Supersede", "no record a in pocket pk"),
+      )),
+    )
+  []
+}
+
+/// `DeferBehindHeldVersion`'s effect reads the held record its guard saw.
+/// Where there is no record, or the record is queued, which only a wrong
+/// guard could bring about, the outcome is a defect that names the rule.
+/// The step is done without asking for the time.
+fn defer_without_held_record() -> List(String) {
+  let assert Ok(defer) =
+    list.find(publish.publish().rows, fn(row) {
+      row.name == "DeferBehindHeldVersion"
+    })
+  let unguarded =
+    Table(
+      "Publish",
+      [
+        Row(
+          "DeferBehindHeldVersion",
+          fn(_state, _publication) { True },
+          defer.effect,
+        ),
+      ],
+      NothingHappens,
+    )
+  assert core.run(unguarded, publication("pk", "a", 6, "y"), joined())
+    == Done(
+      Error(Defect(
+        "Publish",
+        EffectFailed("DeferBehindHeldVersion", "no record a in pocket pk"),
+      )),
+    )
+  assert core.run(unguarded, publication("pk", "a", 6, "y"), stored())
+    == Done(
+      Error(Defect(
+        "Publish",
+        EffectFailed(
+          "DeferBehindHeldVersion",
+          "record a in pocket pk is not held",
+        ),
       )),
     )
   []

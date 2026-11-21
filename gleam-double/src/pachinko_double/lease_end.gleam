@@ -17,9 +17,9 @@ import gleam/result
 import pachinko_double/config
 import pachinko_double/domain.{type Event, type Row, type Table, Freed}
 import pachinko_double/model.{
-  type Lease, type Mark, type Record, type State, Acked, DeadLetter, Lease,
-  LeaseExpired, LeaseReleased, Nacked, Record, RecordHeld, RecordQueued, State,
-  Unsettled,
+  type DeadLetter, type Lease, type Mark, type Record, type State, Acked,
+  DeadLetter, Lease, LeaseExpired, LeaseReleased, Nacked, Record, RecordHeld,
+  RecordQueued, State, Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/rules.{Defective, Finish, Impossible, Row, Table}
 import pachinko_double/time.{type Timestamp}
@@ -89,20 +89,19 @@ pub type Freeing {
 
 /// `Freed(lease, record_key, ended_at)`. The specification gives it six
 /// rules with disjoint guards, one for each mark with and without a newer
-/// version deferred behind the held one. The three here are the ones with
-/// nothing deferred, in the specification's order. A lease's end emits
-/// `Freed` only for a held record of its pocket, so a `Freed` no rule
-/// answers is a defect.
+/// version deferred behind the held one, here in the specification's
+/// order. A lease's end emits `Freed` only for a held record of its pocket,
+/// so a `Freed` no rule answers is a defect.
 pub fn freed() -> Table(Freeing) {
   Table(
     "Freed",
     [
       requeue_unsettled_record(),
-      // `SupersedeUnsettledHeldVersion` goes here.
+      supersede_unsettled_held_version(),
       consume_acked_record(),
-      // `ConsumeAckedVersionQueueDeferred` goes here.
+      consume_acked_version_queue_deferred(),
       dead_letter_nacked_record(),
-      // `DeadLetterNackedVersionQueueDeferred` goes here.
+      dead_letter_nacked_version_queue_deferred(),
     ],
     Defective,
   )
@@ -178,6 +177,66 @@ fn without(state: State, record: Record) -> State {
   )
 }
 
+/// `let arrival_position = record.deferred_position`: the arrival position
+/// the guard promised, for `effect`. Where there is none, which only a
+/// wrong guard could bring about, the outcome is a defect.
+fn arrival(
+  held: Held,
+  freeing: Freeing,
+  effect: fn(Int) -> domain.Plan,
+) -> domain.Plan {
+  case held.deferred_position {
+    None ->
+      Impossible(
+        "held record " <> freeing.record_key <> " has no deferred_position",
+      )
+    Some(arrival_position) -> effect(arrival_position)
+  }
+}
+
+/// `let nacked_at = record.nacked_at`, for `effect`. `NackedHasItsTime`
+/// promises the time, and a dead letter cannot be made without one.
+fn nack_time(
+  held: Held,
+  freeing: Freeing,
+  effect: fn(Timestamp) -> domain.Plan,
+) -> domain.Plan {
+  case held.nacked_at {
+    None ->
+      Impossible("nacked record " <> freeing.record_key <> " has no nacked_at")
+    Some(nacked_at) -> effect(nacked_at)
+  }
+}
+
+/// `DeadLetter.created(...)` for the held version: the lease's pocket and
+/// consumer, the held rank and payload, the time of the nack, and
+/// `expires_at` stamped from the event's `ended_at`.
+fn letter(
+  state: State,
+  held: Held,
+  freeing: Freeing,
+  nacked_at: Timestamp,
+) -> DeadLetter {
+  DeadLetter(
+    pocket: held.lease.pocket,
+    key: freeing.record_key,
+    rank: held.held_rank,
+    payload: held.held_payload,
+    nacked_by: held.lease.consumer,
+    nacked_at:,
+    expires_at: freeing.ended_at + config.settings(state.config).dead_letter_ttl,
+  )
+}
+
+/// `record.status = queued` at `position`, with `held_rank`, `held_payload`,
+/// `mark`, `nacked_at` and `deferred_position` all null: the held variant's
+/// fields go with it. The record keeps its rank and payload, the newest
+/// version's, and its place in the list.
+fn queue_at(state: State, record: Record, position: Int) -> State {
+  let queued = Record(..record, position:, status: RecordQueued)
+  State(..state, records: model.replace_record(state.records, queued))
+}
+
 /// `RequeueUnsettledRecord`. The held version was neither acked nor nacked
 /// and nothing newer arrived: the record is queued again where it stood,
 /// with none of the held fields.
@@ -195,6 +254,43 @@ fn requeue_unsettled_record() -> Row(Freeing) {
       let queued = Record(..held.record, status: RecordQueued)
       Finish(
         State(..state, records: model.replace_record(state.records, queued)),
+        [],
+        None,
+      )
+    },
+  )
+}
+
+/// `SupersedeUnsettledHeldVersion`. The held version was neither acked nor
+/// nacked and a newer version is deferred behind it: the held version is
+/// shed, added at the end of the superseded queue with `shed_at` the
+/// event's `ended_at`, not a `now` of this rule's own, and the newer
+/// version is queued at the held version's position.
+fn supersede_unsettled_held_version() -> Row(Freeing) {
+  Row(
+    "SupersedeUnsettledHeldVersion",
+    fn(state: State, freeing: Freeing) {
+      case held(state, freeing) {
+        Error(Nil) -> False
+        Ok(held) -> held.mark == Unsettled && held.deferred_position != None
+      }
+    },
+    fn(state, freeing) {
+      use held <- free(state, freeing)
+      let shed =
+        SupersededRecord(
+          pocket: held.lease.pocket,
+          key: freeing.record_key,
+          rank: held.held_rank,
+          payload: held.held_payload,
+          reason: Superseded,
+          shed_at: freeing.ended_at,
+          expires_at: freeing.ended_at
+            + config.settings(state.config).superseded_ttl,
+        )
+      let state = queue_at(state, held.record, held.record.position)
+      Finish(
+        State(..state, superseded: list.append(state.superseded, [shed])),
         [],
         None,
       )
@@ -220,6 +316,27 @@ fn consume_acked_record() -> Row(Freeing) {
   )
 }
 
+/// `ConsumeAckedVersionQueueDeferred`. The held version was acked and a
+/// newer version is deferred behind it: the acked version is consumed and
+/// recorded nowhere, and the newer version, a new arrival, is queued at its
+/// arrival position. The counter does not move.
+fn consume_acked_version_queue_deferred() -> Row(Freeing) {
+  Row(
+    "ConsumeAckedVersionQueueDeferred",
+    fn(state: State, freeing: Freeing) {
+      case held(state, freeing) {
+        Error(Nil) -> False
+        Ok(held) -> held.mark == Acked && held.deferred_position != None
+      }
+    },
+    fn(state, freeing) {
+      use held <- free(state, freeing)
+      use arrival_position <- arrival(held, freeing)
+      Finish(queue_at(state, held.record, arrival_position), [], None)
+    },
+  )
+}
+
 /// `DeadLetterNackedRecord`. The held version was nacked and nothing newer
 /// arrived: the record is removed, and the held version becomes a dead
 /// letter, added at the end of the dead-letter queue. It keeps the time its
@@ -237,36 +354,43 @@ fn dead_letter_nacked_record() -> Row(Freeing) {
     },
     fn(state, freeing) {
       use held <- free(state, freeing)
-      case held.nacked_at {
-        // `NackedHasItsTime` promises the time, and a dead letter cannot be
-        // made without one.
-        None ->
-          Impossible(
-            "nacked record " <> freeing.record_key <> " has no nacked_at",
-          )
-        Some(nacked_at) -> {
-          let letter =
-            DeadLetter(
-              pocket: held.lease.pocket,
-              key: freeing.record_key,
-              rank: held.held_rank,
-              payload: held.held_payload,
-              nacked_by: held.lease.consumer,
-              nacked_at:,
-              expires_at: freeing.ended_at
-                + config.settings(state.config).dead_letter_ttl,
-            )
-          let state = without(state, held.record)
-          Finish(
-            State(
-              ..state,
-              dead_letters: list.append(state.dead_letters, [letter]),
-            ),
-            [],
-            None,
-          )
-        }
+      use nacked_at <- nack_time(held, freeing)
+      let letter = letter(state, held, freeing, nacked_at)
+      let state = without(state, held.record)
+      Finish(
+        State(..state, dead_letters: list.append(state.dead_letters, [letter])),
+        [],
+        None,
+      )
+    },
+  )
+}
+
+/// `DeadLetterNackedVersionQueueDeferred`. The held version was nacked and
+/// a newer version is deferred behind it: the held version becomes a dead
+/// letter, as `DeadLetterNackedRecord` makes one, and the newer version, a
+/// new arrival, is queued at its arrival position. The counter does not
+/// move.
+fn dead_letter_nacked_version_queue_deferred() -> Row(Freeing) {
+  Row(
+    "DeadLetterNackedVersionQueueDeferred",
+    fn(state: State, freeing: Freeing) {
+      case held(state, freeing) {
+        Error(Nil) -> False
+        Ok(held) -> held.mark == Nacked && held.deferred_position != None
       }
+    },
+    fn(state, freeing) {
+      use held <- free(state, freeing)
+      use arrival_position <- arrival(held, freeing)
+      use nacked_at <- nack_time(held, freeing)
+      let letter = letter(state, held, freeing, nacked_at)
+      let state = queue_at(state, held.record, arrival_position)
+      Finish(
+        State(..state, dead_letters: list.append(state.dead_letters, [letter])),
+        [],
+        None,
+      )
     },
   )
 }

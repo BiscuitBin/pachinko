@@ -2,7 +2,7 @@
 //// `PocketTouched` table.
 
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
 import pachinko_double/domain.{type Row, type Table, PocketTouched}
@@ -30,8 +30,9 @@ pub type Publication {
 }
 
 /// `Publish`. The specification gives it five rules with disjoint guards,
-/// and no rule covers a rank equal to the stored rank: that publish is
-/// rejected and changes nothing, whatever its payload (spec note G13).
+/// here in its order, and no rule covers a rank equal to the stored rank:
+/// that publish is rejected and changes nothing, whatever its payload (spec
+/// note G13).
 pub fn publish() -> Table(Publication) {
   Table(
     "Publish",
@@ -39,6 +40,7 @@ pub fn publish() -> Table(Publication) {
       publish_into_new_pocket(),
       publish_new_key(),
       supersede(),
+      defer_behind_held_version(),
       drop_stale_publish(),
     ],
     Refuses(fn(_state, publication: Publication) {
@@ -207,6 +209,69 @@ fn supersede() -> Row(Publication) {
             None,
           )
         }
+      }
+    },
+  )
+}
+
+/// `DeferBehindHeldVersion`. The loser is the held version, and nothing
+/// about it changes: its held rank and payload, its mark and its nack time
+/// stay in the held set until the lease ends. The newer version takes the
+/// record's rank and payload and waits behind the held one, given the
+/// counter's value as its arrival position. The record keeps its position.
+/// The rule reads no `now`.
+fn defer_behind_held_version() -> Row(Publication) {
+  Row(
+    "DeferBehindHeldVersion",
+    fn(state: State, publication: Publication) {
+      case record(state, publication) {
+        Error(Nil) -> False
+        Ok(record) ->
+          publication.rank > record.rank
+          && case record.status {
+            RecordQueued -> False
+            RecordHeld(deferred_position:, ..) -> deferred_position == None
+          }
+      }
+    },
+    fn(state, publication) {
+      case record(state, publication) {
+        Error(Nil) ->
+          Impossible(
+            "no record "
+            <> publication.record_key
+            <> " in pocket "
+            <> publication.pocket_key,
+          )
+        Ok(record) ->
+          case record.status {
+            RecordQueued ->
+              Impossible(
+                "record "
+                <> publication.record_key
+                <> " in pocket "
+                <> publication.pocket_key
+                <> " is not held",
+              )
+            RecordHeld(..) as held -> {
+              use position <- Position
+              let deferred =
+                Record(
+                  ..record,
+                  rank: publication.rank,
+                  payload: publication.payload,
+                  status: RecordHeld(..held, deferred_position: Some(position)),
+                )
+              Finish(
+                State(
+                  ..state,
+                  records: model.replace_record(state.records, deferred),
+                ),
+                [PocketTouched(publication.pocket_key)],
+                None,
+              )
+            }
+          }
       }
     },
   )

@@ -90,8 +90,9 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The specification says:** every rule that allots a position takes `next_position`
   and advances it. It gives no initial value.
 - **The double does:** a new queue's `next_position` is 0. Nothing in GD01 allots a
-  position; the rows that assert absolute positions are ported in GD02, GD03 and GD04,
-  and their notes, G16, G29 and G33, cite this one. GD01's ports of S003, S004 and S005 assert
+  position; the rows that assert absolute positions are ported in GD02, GD03, GD04 and
+  GD05, and their notes, G16, G29, G33 and G48, cite this one. GD01's ports of S003, S004
+  and S005 assert
   that an owner starts over an admitted config and holds no publisher and no consumer,
   and not the position it starts at. The two owner tests, which pin no catalog row,
   compare whole snapshots and so do pin the 0.
@@ -355,7 +356,7 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 ### G13: the equal-rank publish is the Publish table's refusal, `EqualRankRefused`
 
 - **Ticket:** GD02.
-- **Concerns:** the Publish comment, and scenario S017.
+- **Concerns:** the Publish comment, and scenarios S017, S046, S082 and S083.
 - **The specification says:** "Five rules share the trigger with disjoint guards." No
   rule covers a rank equal to the stored rank, "so that publish is rejected and changes
   nothing", whatever its payload. The rejection has no name. "The stored rank is
@@ -378,20 +379,31 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     only by a test.
   - The stored rank is `record.rank` whatever the record's status, as the comment says:
     `DropStalePublish`'s guard has no condition on the status. The test "Supersede takes
-    a held record only with a version deferred behind it" asserts that a rank below the
-    stored rank of a held record reaches `DropStalePublish`, with a version deferred and
-    with none, whether the record is unsettled, acked or nacked.
-  - GD02 lands four of the five rows: `PublishIntoNewPocket`, `PublishNewKey`,
-    `Supersede` and `DropStalePublish`. With those four, no guard holds for two inputs: a
+    a held record only with a version deferred behind it, and DeferBehindHeldVersion only
+    with none" asserts that a rank below the stored rank of a held record reaches
+    `DropStalePublish`, with a version deferred and with none, and that a rank equal to
+    it finds no rule, whether the record is unsettled, acked or nacked.
+  - GD02 landed four of the five rows: `PublishIntoNewPocket`, `PublishNewKey`,
+    `Supersede` and `DropStalePublish`. With those four, no guard held for two inputs: a
     rank equal to the stored rank, and a higher rank published onto a held record with
-    nothing deferred, which is `DeferBehindHeldVersion`'s.
-  - That second input is pending, and it meets `EqualRankRefused` until GD05 lands its
-    row. Shared rule 4 of the GD tickets says: "An input whose only matching rule is
-    still pending is itself pending. No test pins it as a refusal." None does. "Supersede
-    takes a held record only with a version deferred behind it" asserts only that
-    `Supersede`'s guard does not hold for it. GD03 lands the pull, so a publish through
-    the owner can now reach the input: a higher rank of a key that is held. No test
-    publishes through the owner onto a held record.
+    nothing deferred, which is `DeferBehindHeldVersion`'s. Until GD05 the second was
+    pending, and no test pinned it as a refusal, as shared rule 4 of the GD tickets
+    asks.
+  - GD05 lands `DeferBehindHeldVersion` as the table's fourth row, so the Publish table
+    holds all five rules and the equal rank is the one input it refuses. Three ports
+    publish the stored rank of a held record through the owner and are refused, each
+    through `harness.refused`, which compares the complete snapshot, the clock's read
+    count and the lease-id draws before and after:
+    - S046's "a stale check while held compares with the latest rank, not the held one":
+      the deferred version's rank;
+    - S082's "a publish onto a held record is judged alike whether it is unsettled,
+      acked or nacked: higher defers, a second higher sheds the deferred version, equal
+      is rejected, lower is stale": the rank of the version that superseded the deferred
+      one, for each mark;
+    - S083's "publishing again at the held rank is rejected while nothing is deferred
+      and stale once a newer version is": the held rank while nothing is deferred, which
+      is then the stored rank. Once a newer version is deferred, the same publish is
+      `DropStalePublish`'s, as the comment says.
 - **`N`-note:** agrees with N11.
 - **Question:** none on the behaviour, which the closure of open question 1 decided. The
   refusal's name is the double's.
@@ -420,6 +432,11 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     them at run time, because no such value exists.
   - In the checker `status = held` is the match on `RecordHeld`, and a queued record has
     no held field to compare. `EndedAfterGrant` matches the two ended variants.
+  - So `ensures: record.held_rank = null` and the four lines like it, in each rule that
+    queues a held record, are one change of variant: the record becomes `RecordQueued`,
+    and the five fields go with `RecordHeld`. `DeferBehindHeldVersion` sets
+    `deferred_position` inside the held variant and leaves its other four fields as they
+    were (G51).
   - Two fields are still an `Option` inside the held variant: `nacked_at` and
     `deferred_position`. The specification types them `Timestamp?` and `Integer?`, so
     each may be null while the record is held, and four invariants say when:
@@ -448,9 +465,9 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 ### G15: a publish answers nothing (the maintainer's ruling on N32)
 
 - **Ticket:** GD02.
-- **Concerns:** `PublishIntoNewPocket`, `PublishNewKey`, `Supersede` and
-  `DropStalePublish`; the `Publishing` surface; scenarios S011, S013, S014, S016, S017
-  and S018.
+- **Concerns:** `PublishIntoNewPocket`, `PublishNewKey`, `Supersede`,
+  `DeferBehindHeldVersion` and `DropStalePublish`; the `Publishing` surface; scenarios
+  S011, S013, S014, S016, S017 and S018, and, through G54, GD05's ports.
 - **The specification says:** the Publish rules ensure state, and three of the five emit
   `PocketTouched`. No rule answers the publisher, and the surface names no outcome.
 - **The double does:**
@@ -474,10 +491,13 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     the Rust does. A setup publish the Rust only unwraps is asserted by its reply alone.
   - `fired` shows an emitted event only through the rule that answers it. In GD02 the
     `PocketTouched` table had no row, so the event changed neither the rules that fired
-    nor the snapshot. The test "PublishNewKey and Supersede touch the pocket, and the
-    other two emit nothing" pins the events by walking each row's plan (G20). GD04 gives
-    the table `ReviveIdlePocket`, and a publish of a new key into an idle pocket replies
-    `Ok(Outcome(["PublishNewKey", "ReviveIdlePocket"], None))` (G45).
+    nor the snapshot. The test "PublishNewKey, Supersede and DeferBehindHeldVersion touch
+    the pocket, and the other two emit nothing" pins the events by walking each row's
+    plan (G20). GD04 gives the table `ReviveIdlePocket`, and a publish of a new key into
+    an idle pocket replies `Ok(Outcome(["PublishNewKey", "ReviveIdlePocket"], None))`
+    (G45).
+  - GD05's deferral answers nothing too, and its reply names `DeferBehindHeldVersion`
+    alone (G54).
 - **`N`-note:** agrees with N32 and follows its ruling. The owner's `fired` has no
   `N`-note.
 - **Question:** N32's, which the ruling leaves open. N32 records that decision 0020 fixes
@@ -635,6 +655,14 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     record a `Freed` rule removes leaves the others in the order they had. "a release
     frees the held records smallest position first, each by its mark, and stamps every
     entry from the lease's end" asserts both, which is `impl-choice` too (G38).
+  - GD05 keeps it. `DeferBehindHeldVersion` changes the record in its place.
+    `SupersedeUnsettledHeldVersion` adds its entry at the end of the superseded queue and
+    `DeadLetterNackedVersionQueueDeferred` its entry at the end of the dead-letter queue,
+    and each of the three rows that queue a deferred version changes the record in its
+    place, whatever position it is given. Two GD05 ports assert a shed queue with more
+    than one entry, in order, and each marks it `impl-choice`: S082's superseded queue,
+    `v3` then `v4`, for each mark, and S091's two shed queues, whose order is G38's and
+    G49's.
 - **`N`-note:** no `N`-note. The rulings on N31 and N38 treat the Rust's record order and
   its stored pocket order as its inspection shape, and their rows are ported in GD05 and
   GD06. PD07, which asks whether the inspection shape is part of the contract, is still
@@ -653,10 +681,11 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   changes no record and does not touch the pocket". The two revive rules answer the
   event "only when the pocket is idle or parked".
 - **The double does:**
-  - It follows the rules. The rows of `PublishNewKey` and `Supersede` finish with the
-    event, and the rows of `PublishIntoNewPocket` and `DropStalePublish` with none. The
-    test "PublishNewKey and Supersede touch the pocket, and the other two emit nothing"
-    asserts the events of each row.
+  - It follows the rules. The rows of `PublishNewKey`, `Supersede` and
+    `DeferBehindHeldVersion` finish with the event, and the rows of
+    `PublishIntoNewPocket` and `DropStalePublish` with none. The test "PublishNewKey,
+    Supersede and DeferBehindHeldVersion touch the pocket, and the other two emit
+    nothing" asserts the events of each row.
   - The comment and the rules agree: the comment says "into an existing pocket". GD02's
     ticket summarised it as "A publish that changes a record emits it", which is wider:
     a publish into a new pocket creates a record. The double takes the rule, not the
@@ -1061,12 +1090,12 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **Question:** as G08 and N17. Should the specification bound a rank, so that S019's
   values become the boundary for every implementation?
 
-### G31: the lease view lists the held records smallest position first (S036's, S085's and S090's order is `impl-choice`)
+### G31: the lease view lists the held records smallest position first (S036's, S037's, S085's and S090's order is `impl-choice`)
 
 - **Ticket:** GD03, rewritten in GD04 when the owner's `LeaseView` message replaced the
   test helper.
-- **Concerns:** the `Consuming` surface's `exposes` block; scenarios S033, S036, S085
-  and S090.
+- **Concerns:** the `Consuming` surface's `exposes` block; scenarios S033, S036, S037,
+  S085 and S090.
 - **The specification says:** for each active lease of the consumer the surface exposes
   `lease.pocket.key`, `lease.expires_at` and, for each record of
   `lease.pocket.held_records`, `record.key`, `record.held_rank`, `record.held_payload`
@@ -1089,12 +1118,17 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     them out in. It carries no lease id, as the surface exposes none.
   - S033's port, "a pull with no queued pocket returns NoPocketAvailable, not an error",
     asserts that a consumer told `NoPocketAvailable` has no lease view.
-  - Three ports assert the order, which is more than the surface states, and each marks
+  - Four ports assert the order, which is more than the surface states, and each marks
     it `impl-choice`:
     - S036's, "a pull under a lease extends the lease": its records' keys as the ordered
       lists `r0`, then `r0`, `r1`. Its records were published in key order, so position
       order, key order and the order of creation agree, and it cannot tell which the view
       keeps.
+    - S037's, "a held record is not handed out again under the same lease", from GD05:
+      it takes the view's first record to be `r0`, the smaller position, and asserts
+      its held rank 1, not the rank 2 deferred behind it. It rests on the order, though
+      `r1` is held at rank 1 too, so the assertion would also pass with the two in the
+      other order.
     - S090's, "the lease read shows every held record with its mark, smallest position
       first": `z`, `a` and `m`, published in that order, are shown in that order with
       their marks, and not in key order. This is the row N23 records.
@@ -1355,11 +1389,22 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The double does:**
   - `lease_end.end` emits `Freed` for the held records of the lease's pocket in order of
     their positions, smallest first, and the apply step answers them in that order. The
-    order decides the order in which the dead letters one end creates are added (G19),
-    and the order of the `Freed` rules in `fired`.
+    order decides the order in which the superseded records and the dead letters one end
+    creates are added (G19), and the order of the `Freed` rules in `fired`.
   - With nothing deferred, no catalog row can tell the order. S053's port asserts its
     two `Freed` rules in the order `a1`, `a2`, where position order, key order and the
     order of creation agree. S047's and S086's ends create one dead letter each.
+  - Two catalog rows ported in GD05 tell position order from key order, though neither
+    from the order of creation, which agrees with the positions in both:
+    - S091's port (G49). Its `z`, `y`, `b` and `a` are published in that order, so their
+      positions run the reverse of the key order. It asserts `z` then `b` in the
+      superseded queue, `y` then `a` in the dead letters, and the five rules its release
+      fires in that order. It is labelled `impl-choice` (N29).
+    - S044's port, "a version deferred behind an acked version is queued at its arrival
+      position". Its release fires `ConsumeAckedVersionQueueDeferred` for `k` and then
+      `RequeueUnsettledRecord` for `early` and for `between`, the order of their
+      positions, 1, 2 and 4, against a key order that is the reverse. It is labelled
+      `impl-choice` too.
   - Hand-built states pin it, each listing the records out of position order:
     "ending a lease sets its status and ended_at and sends Freed for each held record,
     smallest position first, and changes nothing else"; "a release frees the held
@@ -1367,9 +1412,9 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     lease's end", whose two dead letters are added smaller position first though the
     other is listed first. Both are labelled `impl-choice`.
   - `Freed.lease` is the lease's id (G10).
-- **`N`-note:** agrees with N25.
-- **Question:** N25's. Should the specification order the entries one lease end creates,
-  or say that their order is not observable?
+- **`N`-note:** agrees with N25, and with N29 for S091.
+- **Question:** N25's and N29's. Should the specification order the entries one lease end
+  creates, or say that their order is not observable?
 
 ### G39: the Release table's refusal past fencing is unreachable through the owner
 
@@ -1484,32 +1529,39 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 ### G43: a nacked record without `nacked_at` cannot become a dead letter
 
 - **Ticket:** GD04.
-- **Concerns:** `DeadLetterNackedRecord`, the `DeadLetter` entity, the `Record` entity's
-  `nacked_at`, and `NackedHasItsTime`.
+- **Concerns:** `DeadLetterNackedRecord` and `DeadLetterNackedVersionQueueDeferred`, the
+  `DeadLetter` entity, the `Record` entity's `nacked_at`, and `NackedHasItsTime`.
 - **The specification says:** `DeadLetterNackedRecord` has `let nacked_at =
-  record.nacked_at` and creates a `DeadLetter` with `nacked_at: nacked_at`. On a record
-  it is `nacked_at: Timestamp? when status = held`; on a `DeadLetter` it is
-  `nacked_at: Timestamp`, with no `?`. The rule has no `requires` on it.
+  record.nacked_at` and creates a `DeadLetter` with `nacked_at: nacked_at`, and
+  `DeadLetterNackedVersionQueueDeferred` has the same two lines. On a record it is
+  `nacked_at: Timestamp? when status = held`; on a `DeadLetter` it is
+  `nacked_at: Timestamp`, with no `?`. Neither rule has a `requires` on it.
   `NackedHasItsTime` is `status = held and mark = nacked implies nacked_at != null`.
 - **The double does:**
-  - The rule's guard is the specification's four `requires` and nothing more: the
-    record exists, it is held, its mark is `nacked`, and nothing is deferred behind it.
-    A held, nacked record with a deferred version fails the fourth and is left to the
-    deferred row GD05 lands. Its
-    effect reads the record's `nacked_at`. Where it is `None`, the effect answers a
-    defect, `Impossible`, naming the record, and no dead letter is made: an optional
-    time cannot fill a field that is not optional. Where it is `Some`, the dead letter
-    carries it.
+  - Each rule's guard is the specification's four `requires` and nothing more: the
+    record exists, it is held, its mark is `nacked`, and nothing is deferred behind it,
+    for `DeadLetterNackedRecord`, or a newer version is, for
+    `DeadLetterNackedVersionQueueDeferred`. GD05 lands the second. Each effect reads the
+    record's `nacked_at`, through one helper the two rows share. Where it is `None`, the
+    effect answers a defect, `Impossible`, naming the record, and no dead letter is
+    made: an optional time cannot fill a field that is not optional. Where it is `Some`,
+    the dead letter carries it. `DeadLetterNackedVersionQueueDeferred` reads the arrival
+    position first (G53), so a record without either is a defect for the arrival
+    position.
   - `NackedHasItsTime` is checked after every outcome, and `NackMarksRecord` is the only
     rule that nacks, with `nacked_at = now`. So no state the rules reach holds a nacked
     record without the time, and the defect is never met through the owner.
-  - "a Freed rule's effect without what its guard saw is a defect" shows the defect over
-    a state built by hand. "DeadLetterNackedRecord changes exactly what it ensures,
-    stamps the entry from ended_at and asks for no time" and S086's "a repeat nack keeps
-    the first nack's time" show the time carried over.
+  - "a Freed rule's effect without what its guard saw is a defect" shows the defect for
+    each of the two rules over a state built by hand. "DeadLetterNackedRecord changes
+    exactly what it ensures, stamps the entry from ended_at and asks for no time" and
+    S086's "a repeat nack keeps the first nack's time" show the time carried over, and so
+    do "DeadLetterNackedVersionQueueDeferred changes exactly what it ensures, stamps the
+    entry from ended_at and asks for no time" and S072's "a key nacked, then published
+    again within the same lease, waits until the lease ends; the dead letter appears
+    then".
 - **`N`-note:** no `N`-note.
-- **Question:** should the rule state `requires: record.nacked_at != null`, or is
-  `NackedHasItsTime` meant to carry it? As written the rule's `let` types a
+- **Question:** should each of the two rules state `requires: record.nacked_at != null`,
+  or is `NackedHasItsTime` meant to carry it? As written each rule's `let` types a
   `Timestamp?` into a `Timestamp`, and only the invariant makes that sound.
 
 ### G44: a dead letter's `held_rank` and the record's `rank` cannot be told apart in a state that holds the invariants
@@ -1527,7 +1579,15 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - The dead letter takes the held rank and the held payload, as written.
   - With nothing deferred the three invariants make `held_rank` equal `rank` and
     `held_payload` equal `payload`. So no state the rules reach shows which pair the rule
-    reads, and a double that took `rank` and `payload` would pass every other test.
+    reads, and a `DeadLetterNackedRecord` that took `rank` and `payload` would pass every
+    other test.
+  - From GD05 the two dead-letter rows build the entry through one helper, and
+    `DeadLetterNackedVersionQueueDeferred` meets the two pairs apart in states the rules
+    reach. S072's port, "a key nacked, then published again within the same lease, waits
+    until the lease ends; the dead letter appears then", asserts a dead letter at the
+    held rank 1 and payload `v1` while the record is queued at rank 2. A helper that
+    took `rank` and `payload` fails it; a change to `DeadLetterNackedRecord`'s row alone
+    still does not.
   - "a dead letter carries the held version, not a newer one the record has" runs the
     rule alone over a before-state built to tell them apart: the record's rank is 50 and
     its payload another, while its held version is at 43, with no arrival position. That
@@ -1574,8 +1634,8 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 
 - **Ticket:** GD04.
 - **Concerns:** the Renew and release comment, the Lease end comment and its table,
-  `Pocket.ending_records`, the two release rules, and the three `Freed` rules with
-  nothing deferred.
+  `Pocket.ending_records`, the two release rules, and the six `Freed` rules; scenario
+  S054.
 - **The specification says:**
   - Of a release: "The pocket is queued again when a record outlasts the lease and idle
     when none does: the records the lease's end removes are the pocket's
@@ -1599,20 +1659,26 @@ actor adds, which the Python double could not show, it says "no `N`-note".
       `pocket.records.count > pocket.ending_records.count`, which both release rules
       read and the lapse rules will;
     - `Freeing(lease, record_key, ended_at)`, the input of `Freed`, and `freed()`, its
-      table, with this ticket's three rows and a comment where each deferred row goes.
-      A `Freed` no row answers is a defect.
+      table. GD04 landed the three rows with nothing deferred, with a comment where each
+      deferred row would go. GD05 puts the three deferred rows in those places, so the
+      table holds the six in the specification's order. A `Freed` no row answers is a
+      defect.
+  - GD05 changed neither the interface nor the release callers. A held record with a
+    version deferred is not one of `ending_records`, so `outlasts` counts it as a record
+    that outlasts the lease. S054's port, "a release with only an acked record and its
+    deferred version requeues the pocket rather than idling it", shows a release then
+    fire `ReleaseRequeuesPocket`, not `ReleaseIdlesEmptyPocket`.
   - `Ending` decides the lease's status alone, and `Freeing` has no field for it. The
     interface does not stop a row from reading it: each row finds the whole lease by
     the event's id, `status` included, and a row could branch on it. None does. Once
-    the lease is found, the three rows read its `pocket` and `consumer` and nothing
-    else of it. "the
-    Freed rules read the mark and never how the lease ended" runs each row over a lease
-    ended either way and finds the same result.
+    the lease is found, the six rows read its `pocket` and `consumer` and nothing else
+    of it. "the Freed rules read the mark and never how the lease ended" runs each row
+    over a lease ended either way and finds the same result.
   - Each row finds the lease by the event's id whatever its status, and stamps any entry
     from the event's `ended_at`, never from a `now` of its own: no `Freed` row asks for
     the time. "DeadLetterNackedRecord changes exactly what it ensures, stamps the entry
     from ended_at and asks for no time" sends an `ended_at` unlike every time in the
-    state.
+    state, and so do the tests of the two deferred rows that create an entry (G50).
   - `ending_records` is computed in one place, `model.ending`, landed in GD02. The
     snapshot's derived sets read it there, for the checker's views, and so does
     `lease_end.outlasts`; the module does not repeat it.
@@ -1658,3 +1724,313 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **Question:** none on the behaviour, which the comment states for the lease's end. The
   comment names a pull and a lease's end; should it say the same of a publish and the
   revival it causes, whose part-way state also breaks an invariant?
+
+### G48: nine of GD05's rows assert absolute positions (`impl-choice`)
+
+- **Ticket:** GD05.
+- **Concerns:** `Queue.next_position`, G04, `DeferBehindHeldVersion`'s arrival position,
+  and scenarios S043, S044, S045, S046, S054, S071, S072, S082 and S083.
+- **The specification says:** no initial value for `next_position` (G04).
+  `DeferBehindHeldVersion` takes `let position = queue.next_position` and ensures
+  `record.deferred_position = position` and `queue.next_position = position + 1`. The
+  Position vocabulary entry: "The first version deferred behind a held one is given the
+  counter's value when it arrives, its arrival position; a version that supersedes it
+  while it waits inherits that position."
+- **The double does:** it ports the Rust tests' absolute positions, which hold only
+  because the double starts at 0 (G04): the pocket takes 0 and its first record 1, so
+  in a pocket of one record the first arrival position is 2. Each port marks them
+  `impl-choice`:
+  - S043, "a supersede while the key is held is deferred behind the held version": the
+    record at position 1. Its arrival position is asserted against the counter before
+    the publish, not as a number.
+  - S044, "a version deferred behind an acked version is queued at its arrival
+    position": the record at 1 while held, and the arrival position 3, at which it is
+    queued.
+  - S045, "two supersedes while held: only the deferred version is shed, and the held
+    version never is": the arrival position 2, kept by the second supersede and taken
+    when the lease ends.
+  - S046, "a stale check while held compares with the latest rank, not the held one":
+    the arrival position 2.
+  - S054, "a release with only an acked record and its deferred version requeues the
+    pocket rather than idling it": the arrival position 2, at which the record is
+    queued.
+  - S071, "a key acked, then published again within the same lease, waits behind the
+    held version until the lease ends", and S072, "a key nacked, then published again
+    within the same lease, waits until the lease ends; the dead letter appears then":
+    the arrival position 2, at which the record is queued.
+  - S082, "a publish onto a held record is judged alike whether it is unsettled, acked
+    or nacked: higher defers, a second higher sheds the deferred version, equal is
+    rejected, lower is stale": the arrival position 2, the counter at 3 and the record
+    at 1, for each mark.
+  - S083, "publishing again at the held rank is rejected while nothing is deferred and
+    stale once a newer version is": the arrival position 2.
+  - The relative facts these rows also assert are the specification's: the arrival
+    position is the counter's value when the first newer version arrives, the counter
+    advances by one, a supersede of the deferred version keeps it, a held record keeps
+    its position, and a row that queues the deferred version puts it at its arrival
+    position or, for an unsettled one, at the held version's.
+  - GD05's other three rows assert no absolute position. S021's port compares the
+    pocket's position with the one before the publish, S037's asserts none, and S091's
+    compares the kept positions with the ones before the release (G49).
+  - The double's own tests of the four GD05 rules, the ones named "… changes exactly
+    what it ensures …", assert each position against a counter or a position they set
+    by hand, and so do not rest on G04.
+- **`N`-note:** no `N`-note. N04 and N16 list the rows that assert an absolute position,
+  and none of these nine is among them. This note extends G16, G29 and G33 to them.
+- **Question:** as G04, G16, G29 and G33. Is the starting value meant to be
+  unspecified? If so, should these nine rows assert absolute positions?
+
+### G49: S091's kept positions are compared by key and against the state before (the maintainer's ruling on N31), and its order of entries is `impl-choice`
+
+- **Ticket:** GD05.
+- **Concerns:** the Record comment ("One record per key per pocket. Queued records are
+  ordered by position, smallest first."); `OldestSlotNewestPayload`;
+  `SupersedeUnsettledHeldVersion` and `DeadLetterNackedRecord`; the two release rules'
+  `for record in pocket.held_records: Freed(...)`; the inspection seam, which no surface
+  of the specification names; and scenario S091.
+- **The specification says:**
+  - A pocket's records are a set, and queued records are ordered by position. No rule
+    asks for them to be listed.
+  - `OldestSlotNewestPayload`: "A key no consumer has acked or nacked keeps the position
+    of its first publish however many times it is superseded, held or not; only its
+    rank and payload change." For an unsettled held version with a newer one deferred,
+    the Lease end table's last column reads "newer version queued at", wrapped onto "the
+    held version's position".
+  - The ending rule emits one `Freed` for each record of a set, and each entry is added
+    to a queue the specification lists in no order (G38).
+- **The double does:**
+  - It follows a ruling for the positions. On 2026-11-18 the maintainer accepted N31's
+    port, which compares S091's kept positions by key, "for now", and asked for further
+    investigation; PD07 takes it up.
+  - S091's port, "the entries one lease end creates come out smallest held position
+    first, the implementation's pinned order", publishes `z`, `y`, `b` and `a` into one
+    pocket, so that their positions run the reverse of the key order, and pulls all
+    four. At 10 ms `b` and `z` are published again and deferred; at 20 ms `a` and `y`
+    are nacked. At 50 ms the lease is released.
+  - The kept positions: the port lists the pocket's records as pairs of key and
+    position, sorted by key, and asserts that after the release they are the pairs `b`
+    and `z` had before it. That is the ruling's "by key", and N31's note text's
+    comparison with the state before, "never as the absolute values that rest on N04".
+    It also shows `y` and `a` gone. The Rust's literal list, `[("b", 3), ("z", 1)]`, is
+    not asserted. It is in the Rust's snapshot order; this double's snapshot lists
+    records in the order they were created (G19), `z` before `b`, so the list would fail
+    here as it did for the Python double.
+  - The entries: the superseded queue holds `z` then `b`, each at its held rank and
+    payload with `shed_at` the release's time (G50), and the dead letters `y` then `a`,
+    each with the nacks' time and `expires_at` from the release's time. The release
+    replies with `ReleaseRequeuesPocket` and then `SupersedeUnsettledHeldVersion`,
+    `DeadLetterNackedRecord`, `SupersedeUnsettledHeldVersion` and
+    `DeadLetterNackedRecord`, smallest held position first (G38). That order is more
+    than the specification states, and the port labels it `impl-choice` (N29).
+- **`N`-note:** agrees with N31 and follows its ruling, and agrees with N29 on the order.
+- **Question:** N31's and N29's, which the ruling leaves open. Is the order in which a
+  snapshot lists a pocket's records part of the inspection contract, and if so which
+  order? And should the specification order the entries one lease end creates, or say
+  that their order is not observable?
+
+### G50: a deferred version shed by a later publish takes the publish's `now`, and a held version shed at the lease's end takes `ended_at`
+
+- **Ticket:** GD05.
+- **Concerns:** `Supersede`'s held branch, `SupersedeUnsettledHeldVersion`, the Lease end
+  comment, and scenarios S045, S082 and S091.
+- **The specification says:**
+  - `Supersede` sheds the loser with `shed_at: now` and
+    `expires_at: now + config.superseded_ttl`, whether the record is queued or held with
+    a version deferred.
+  - `SupersedeUnsettledHeldVersion` sheds the held version with `shed_at: ended_at` and
+    `expires_at: ended_at + config.superseded_ttl`. The Lease end comment: "the three
+    rules that create an entry stamp it from that, not from their own now", and "a
+    superseded record made here has shed_at at the lease's end".
+- **The double does:**
+  - A deferred version that a still higher rank supersedes is shed with the publish's
+    `now`, the one time that outcome reads (G05). The lease has not ended, and the rule
+    reads no lease. S045's port, "two supersedes while held: only the deferred version
+    is shed, and the held version never is", sheds `v3` at 20 ms, the second publish's
+    time, though the lease ends at 30 ms. S082's port sheds `v3` at 30 ms, the second
+    publish's time, for each mark, with the lease still active.
+  - A held version shed at the lease's end takes `shed_at` and `expires_at` from the
+    `ended_at` that `Freed` carries, and `SupersedeUnsettledHeldVersion` asks for no
+    time at all (G46). "SupersedeUnsettledHeldVersion changes exactly what it ensures,
+    stamps the entry from ended_at and asks for no time" runs it over a state built by
+    hand with `ended_at` 777 and a `superseded_ttl` of 5000, unlike the
+    `dead_letter_ttl` of 7000, so that a rule that read the other TTL would show. The
+    step is done at once: the rule never asks for the time. S091's port sheds `z` and
+    `b` at the release's 50 ms, not at the 10 ms of the publishes that deferred their
+    newer versions.
+  - "the Freed rules read the mark and never how the lease ended" shows the same entry
+    whether the lease was released or expired.
+- **`N`-note:** agrees with N30.
+- **Question:** none on the stamps, which the rules state. N30's consequence stands: for
+  a held key, `shed_at` need not order its superseded versions by rank. A deferred
+  version is shed at its publish, and the held version, the lowest rank, only when the
+  lease ends, later. Should a reader of the superseded queue be told that `shed_at` does
+  not order a key's versions?
+
+### G51: the arrival position is allotted at the deferral, never at the lease's end, and the deferral changes only what it ensures
+
+- **Ticket:** GD05.
+- **Concerns:** `DeferBehindHeldVersion`; the Queue comment; the Position vocabulary
+  entry; `Supersede`'s comment; `ConsumeAckedVersionQueueDeferred` and
+  `DeadLetterNackedVersionQueueDeferred`; scenarios S043, S044, S045 and S082.
+- **The specification says:**
+  - `DeferBehindHeldVersion` takes `let position = queue.next_position` and ensures
+    `record.rank = rank`, `record.payload = payload`,
+    `record.deferred_position = position`, `queue.next_position = position + 1` and
+    `PocketTouched(pocket_key: pocket_key)`. It reads no `now`.
+  - Its comment: "The loser is the held version. It is not shed and nothing about it
+    changes: it stays in the held set, at held_rank and held_payload, whatever its mark,
+    until the lease ends".
+  - The Queue comment: "A deferred version's arrival position is allotted the same way
+    when it arrives, and the two rules that queue it there when the lease ends assign
+    that position without advancing the counter again." And above `Supersede`: "A
+    deferred version's arrival position stays with the record, as a queued record's
+    position does."
+- **The double does:**
+  - `DeferBehindHeldVersion`'s effect asks the apply step for one position, the only
+    place positions are allotted (G18), and sets it as `deferred_position` inside the
+    held variant (G14). It changes the record's rank and payload, and nothing else of
+    the record: its position, `held_rank`, `held_payload`, mark and `nacked_at` stay
+    (G21). It asks for no time.
+  - No `Freed` row asks for a position. `ConsumeAckedVersionQueueDeferred` and
+    `DeadLetterNackedVersionQueueDeferred` queue the record at the `deferred_position`
+    it holds, and `SupersedeUnsettledHeldVersion` at its own position (G52). Each
+    `Freed` row leaves the counter as it receives it. That need not be where the
+    deferral left it: a later publish may allot positions (G18), and
+    `ReleaseRequeuesPocket` allots the pocket's before the lease ends.
+  - The held branch of `Supersede` neither allots nor clears the arrival position: the
+    newer version takes the record's rank and payload, and `deferred_position` stays.
+  - The tests:
+    - "DeferBehindHeldVersion changes exactly what it ensures, reads no clock and draws
+      no lease id" runs the rule through the apply step over a state built by hand, once
+      for each mark. It compares the complete state: the counter from 6 to 7, the
+      arrival position 6, and every other field and entity as it was. The step reads no
+      clock and draws no lease id.
+    - S043's port asserts the arrival position against the counter before the publish,
+      and the counter one higher after it.
+    - S044's port shows the arrival is allotted when the newer version arrives: `k`
+      is deferred after `early` is published and before `between` is, and once the lease
+      ends the next pull hands out `early`, `k` and `between`, in that order.
+    - S045's and S082's ports show the second supersede keep the arrival position.
+    - The three "… changes exactly what it ensures …" tests of the deferred `Freed`
+      rows compare the complete state, the counter included.
+- **`N`-note:** no `N`-note. N32 records the same state a deferral leaves, the counter
+  advanced by one and the held version unchanged, and says nothing of when the arrival
+  position is allotted.
+- **Question:** none on the behaviour, which the Queue comment states.
+
+### G52: `SupersedeUnsettledHeldVersion` queues the record at its own position, which no `ensures` names
+
+- **Ticket:** GD05.
+- **Concerns:** `SupersedeUnsettledHeldVersion`, the Lease end table,
+  `OldestSlotNewestPayload`, and the three rules that queue a deferred version;
+  scenario S091.
+- **The specification says:** `SupersedeUnsettledHeldVersion` ensures the
+  `SupersededRecord`, `record.status = queued` and the five held fields null. It has no
+  `ensures` on `record.position`, where the two other rules that queue a deferred
+  version ensure `record.position = arrival_position`. The Lease end table's row puts the
+  newer version at the held version's position (G49), and `OldestSlotNewestPayload` says
+  a key no consumer has acked or nacked "keeps the position of its first publish". None
+  of the three rules names `record.rank` or `record.payload`.
+- **The double does:**
+  - It reads the rule as G21 reads every rule: a field no `ensures` names is unchanged.
+    The record is queued at the position it had while held, which is the held version's,
+    and keeps the rank and payload, which are the newer version's. The other two rules
+    queue the record at its arrival position, and keep its rank and payload too.
+  - "SupersedeUnsettledHeldVersion changes exactly what it ensures, stamps the entry
+    from ended_at and asks for no time" compares the complete state: the record queued
+    at 6, where it was held, with the newer version's rank and payload. S091's port
+    shows `b` and `z` keep their positions (G49).
+- **`N`-note:** no `N`-note.
+- **Question:** none on the behaviour, which the table and the guarantee state. Should
+  the rule ensure the position, or say that it keeps it, as the other two rules ensure
+  theirs?
+
+### G53: the arrival position the queue-deferred rows read is optional, and only their guard promises it
+
+- **Ticket:** GD05.
+- **Concerns:** `ConsumeAckedVersionQueueDeferred` and
+  `DeadLetterNackedVersionQueueDeferred`, the `Record` entity's `deferred_position`, and
+  `DeferBehindHeldVersion`'s effect.
+- **The specification says:** each of the two rules has
+  `requires: record.deferred_position != null`, then
+  `let arrival_position = record.deferred_position` and
+  `ensures: record.position = arrival_position`. The field is
+  `deferred_position: Integer? when status = held`, and a record's `position` is an
+  `Integer`.
+- **The double does:**
+  - Unlike `nacked_at` (G43), the guard promises the value: a row's effect runs only
+    once its guard has held. Each effect reads `deferred_position` again, through one
+    helper the two rows share. Where it is `None`, which only a wrong guard could bring
+    about, the effect answers a defect, `Impossible`, naming the record, and the record
+    is not queued. Where it is `Some`, the record is queued there.
+  - "a Freed rule's effect without what its guard saw is a defect" runs each of the two
+    rows under a guard that always holds, for a held record with nothing deferred, and
+    shows the defect.
+  - `DeferBehindHeldVersion`'s effect reads the record its guard saw in the same way.
+    Where there is no record, or the record is queued, it answers `Impossible`.
+    "DeferBehindHeldVersion's effect without its held record is a defect, and reads no
+    clock" shows both, over states built by hand. Through the owner none of these
+    defects is met.
+- **`N`-note:** no `N`-note.
+- **Question:** none. The guard makes the `let` sound, as the rules are written.
+
+### G54: a deferral answers nothing (the maintainer's ruling on N32)
+
+- **Ticket:** GD05.
+- **Concerns:** `DeferBehindHeldVersion`, `Supersede`'s held branch, the release rules
+  and the six `Freed` rules, the `Publishing` surface, decision 0020's publish table, and
+  scenarios S021, S037, S043, S044, S045, S046, S054, S071, S072, S082, S083 and S091.
+- **The specification says:** `DeferBehindHeldVersion` ensures state and
+  `PocketTouched`, and answers nothing; the surface names no outcome. Decision 0020's
+  publish table gives a deferral the answer `superseded`: "Nothing is shed; the
+  maintainer chose `superseded` for it at step 1."
+- **The double does:**
+  - It follows the ruling of 2026-11-19 on N32, as G15 does for the other four Publish
+    rules. A deferral replies `Ok(Outcome(["DeferBehindHeldVersion"], None))`. The
+    `PocketTouched` it emits finds the pocket leased, and no row of that table holds for
+    a leased pocket, so the reply names the one rule. A second higher rank replies
+    `Ok(Outcome(["Supersede"], None))`.
+  - Every deferral in the twelve ports is asserted to reply exactly that. Where the Rust
+    checks it for `Superseded`, the port asserts the state the deferral leaves through
+    the snapshot instead: the record's rank, payload and `deferred_position`, the held
+    version unchanged and, in S021, S043 and S082, the counter one higher. S021's port
+    compares the whole record with the one read just before the deferral, so its
+    position, mark and nack time are asserted unchanged too.
+  - A release with a deferred version replies with the rules it fired and no answer, as
+    in G37. S054's Rust release answers the pocket's fate `Queued`; the port asserts the
+    reply `ReleaseRequeuesPocket` then `ConsumeAckedVersionQueueDeferred`, and that the
+    pocket is queued.
+- **`N`-note:** agrees with N32 and follows its ruling.
+- **Question:** N32's, which the ruling leaves open. Decision 0020 fixes the Rust's
+  answer and the specification does not state it. Should the `Publishing` surface name
+  what a publish answers, so that a double or a second implementation can port it?
+
+### G55: each arrival-position invariant's premise is met in a state the rules reach
+
+- **Ticket:** GD05.
+- **Concerns:** `DeferredHasArrivalPosition`, `OnlyDeferredHasArrivalPosition`,
+  `DeferredArrivedAfterHeld`, `HeldCopiesAgree`, `ArrivalPositionUnoccupied`,
+  `UniqueArrivalPosition` and `ArrivalPositionsBelowNext`.
+- **The specification says:** each is an implication whose premise names a held record:
+  `held_rank < rank`, `held_rank = rank`, `deferred_position != null` or
+  `deferred_position = null`, and for `UniqueArrivalPosition` two distinct held records
+  each with a `deferred_position`.
+- **The double does:**
+  - GD02's checker holds all seven, and each has a positive control over a snapshot
+    built by hand. Before GD05 no state the rules reach met five of the premises,
+    since only `DeferBehindHeldVersion` sets `deferred_position`. The premises of
+    `OnlyDeferredHasArrivalPosition` and `HeldCopiesAgree` have been met since GD03 by
+    every held record with nothing deferred.
+  - "the premise of each arrival-position invariant is true in a state the checker sees
+    after a deferral" drives S091's setup through the owner, up to the last nack (G49),
+    and reads that snapshot's derived sets once, through `inspection.views`. `pk`'s held
+    records are `z` and `b`, each held at rank 1 with a newer version at rank 2
+    deferred, and `y` and `a`, nacked with nothing deferred. Over them it asserts each
+    premise: a held rank below the rank and one equal to it, a `deferred_position` and
+    its absence, and two records with one each. It then asserts that `invariants.check`
+    names nothing for the snapshot; the apply step had already run the checker over the
+    state after the last nack.
+  - The test shows each premise met and each conclusion holding there. That a broken
+    conclusion is named is the positive controls' work.
+- **`N`-note:** no `N`-note.
+- **Question:** none.

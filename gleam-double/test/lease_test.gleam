@@ -27,6 +27,15 @@
 ////
 //// S053 and S068 are `wire` rows: only the library half is ported.
 ////
+//// Then two catalog rows of the same file with a version deferred behind a
+//// held one, S054 and S091, ported the same way; each ends its lease by
+//// release, as its Rust test does. S054's absolute positions are
+//// `impl-choice` (spec note G04, and G48). S091's kept positions are
+//// compared by key, and against the positions before the release, never as
+//// absolute values (the ruling on N31). After them, one test reads the state
+//// S091's setup reaches and shows that each arrival-position invariant's
+//// premise holds there, so that none of the seven holds only vacuously.
+////
 //// Then the double's own tests, which pin no catalog row. For `Renew`: what
 //// it changes, the refusal of a consumer that never joined, the fencing of
 //// a renew that names another consumer's lease or no lease, and the rule's
@@ -38,17 +47,19 @@
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import harness.{type Double, Driven}
 import pachinko_double/config.{Settings}
 import pachinko_double/core
 import pachinko_double/domain.{NoPocketAvailable}
-import pachinko_double/inspection.{Snapshot}
+import pachinko_double/inspection.{type Snapshot, Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type LeaseStatus, type Mark, type PocketStatus, type Record, type State, Acked,
   Consumer, DeadLetter, Lease, LeaseActive, LeaseExpired, LeaseReleased, Nacked,
   Pocket, PocketIdle, PocketLeased, PocketParked, PocketQueued, Publisher, Queue,
-  Record, RecordHeld, RecordQueued, Stale, State, SupersededRecord, Unsettled,
+  Record, RecordHeld, RecordQueued, Stale, State, Superseded, SupersededRecord,
+  Unsettled,
 }
 import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/refusals.{LeaseFenced, ReleaseRefused, UnknownConsumer}
@@ -86,6 +97,11 @@ pub fn tests() -> List(Test) {
       [Scenario("S053")],
       release_requeues,
     ),
+    Test(
+      "a release with only an acked record and its deferred version requeues the pocket rather than idling it",
+      [Scenario("S054")],
+      release_with_deferred,
+    ),
     Test("a release idles an empty pocket", [Scenario("S055")], release_idles),
     Test(
       "a second release is rejected; a release at the grant instant is legal",
@@ -101,6 +117,16 @@ pub fn tests() -> List(Test) {
       "a consumer cannot act on another consumer's lease",
       [Scenario("S070")],
       another_consumers_lease,
+    ),
+    Test(
+      "the entries one lease end creates come out smallest held position first, the implementation's pinned order",
+      [Scenario("S091")],
+      entries_in_held_order,
+    ),
+    Test(
+      "the premise of each arrival-position invariant is true in a state the checker sees after a deferral",
+      [],
+      arrival_premises,
     ),
     Test(
       "Renew changes exactly what it ensures, reads the clock once and draws no lease id",
@@ -202,6 +228,12 @@ const idles = "ReleaseIdlesEmptyPocket"
 const requeue = "RequeueUnsettledRecord"
 
 const consume = "ConsumeAckedRecord"
+
+const dead_letter = "DeadLetterNackedRecord"
+
+const supersede_held = "SupersedeUnsettledHeldVersion"
+
+const consume_deferred = "ConsumeAckedVersionQueueDeferred"
 
 /// The Rust test file's `two_pockets`: pocket `a` with `a1` and `a2`, then
 /// pocket `b` with `b1`.
@@ -409,6 +441,35 @@ fn release_requeues() -> List(String) {
   harness.fired(double)
 }
 
+/// The Rust's publish is unwrapped and its release answers the fate
+/// `Queued`; here the publish answers nothing and is deferred (the ruling on
+/// N32), and the release's reply names `ReleaseRequeuesPocket`, whose effect
+/// queues the pocket. `impl-choice` (spec note G04, and G48): the arrival
+/// position 2.
+fn release_with_deferred() -> List(String) {
+  let #(double, lease) = short_lease()
+  assert harness.publish(double, "pk", "k", 2, "v2")
+    == fired("DeferBehindHeldVersion")
+  assert harness.ack(double, "c1", lease, "k") == fired(ack_marks_record)
+  // "Acked, with v2 deferred: not one of the ending records."
+  assert harness.record(double, "pk", "k").status
+    == RecordHeld(
+      held_rank: 1,
+      held_payload: <<"v":utf8>>,
+      mark: Acked,
+      nacked_at: None,
+      deferred_position: Some(2),
+    )
+  assert harness.release(double, "c1", lease)
+    == fired_all([requeues, consume_deferred])
+  assert harness.pocket(double, "pk").status == PocketQueued
+  let record = harness.record(double, "pk", "k")
+  assert #(record.status, record.rank, record.position) == #(RecordQueued, 2, 2)
+  // The Rust's `invariants::all`, by the checker.
+  assert invariants.check(harness.inspect(double)) == []
+  harness.fired(double)
+}
+
 /// The Rust's release answers the fate `Idle` and the ended lease; the port
 /// reads the pocket and the lease from the snapshot. The idle pocket keeps
 /// the position it had (N27).
@@ -522,6 +583,154 @@ fn another_consumers_lease() -> List(String) {
   assert harness.release(double, "c1", mine)
     == fired_all([requeues, requeue, requeue])
   by_c2()
+  harness.fired(double)
+}
+
+/// S091's setup, as its Rust test runs it: `pk` with `z`, `y`, `b` and `a`,
+/// published in that order, so that their positions run the reverse of the
+/// key order, all held by `c1` from `t0`. At 10 ms `b` and `z` are
+/// published again at rank 2 and deferred behind their held versions; at
+/// 20 ms `a` and `y` are nacked. It answers the lease's id and the time of
+/// the nacks.
+fn deferred_and_nacked() -> #(Double, String, Int) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "z", 1, "z")
+    == fired("PublishIntoNewPocket")
+  list.each(["y", "b", "a"], fn(key) {
+    assert harness.publish(double, "pk", key, 1, key) == fired("PublishNewKey")
+  })
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == [claims, hold, hold, hold, hold]
+  let _ = harness.at(double, 10)
+  list.each(["b", "z"], fn(key) {
+    assert harness.publish(double, "pk", key, 2, "newer")
+      == fired("DeferBehindHeldVersion")
+  })
+  // "Nothing is shed while held."
+  assert harness.inspect(double).superseded == []
+  let nacked = harness.at(double, 20)
+  list.each(["a", "y"], fn(key) {
+    assert harness.nack(double, "c1", batch.lease, key)
+      == fired("NackMarksRecord")
+  })
+  #(double, batch.lease, nacked)
+}
+
+/// A pocket's records as key and position, in key order.
+fn positions_by_key(
+  snapshot: Snapshot,
+  pocket_key: String,
+) -> List(#(String, Int)) {
+  model.records_of(snapshot.records, pocket_key)
+  |> list.map(fn(record) { #(record.key, record.position) })
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+}
+
+/// The release frees `z`, `y`, `b` and `a`, smallest held position first
+/// (spec note G38): the two unsettled versions with a newer one deferred
+/// are superseded at the lease's end, and the two nacked ones with nothing
+/// deferred become dead letters.
+///
+/// - `impl-choice` (N29, as spec note G38): the order of the entries one
+///   lease end creates, `z` then `b` in the superseded queue and `y` then
+///   `a` in the dead letters, against a key order that is the reverse.
+/// - The kept positions are compared by key, not in the snapshot's order of
+///   the records (the ruling on N31), and against the positions `b` and `z`
+///   held before the release, never as the absolute values the Rust lists,
+///   which rest on the queue's first position (spec note G04).
+fn entries_in_held_order() -> List(String) {
+  let #(double, lease, nacked) = deferred_and_nacked()
+  let before = harness.inspect(double)
+  let ended = harness.at(double, 50)
+  assert harness.release(double, "c1", lease)
+    == fired_all([
+      requeues,
+      supersede_held,
+      dead_letter,
+      supersede_held,
+      dead_letter,
+    ])
+  let snapshot = harness.inspect(double)
+  let shed = fn(key) {
+    SupersededRecord(
+      pocket: "pk",
+      key:,
+      rank: 1,
+      payload: <<key:utf8>>,
+      reason: Superseded,
+      shed_at: ended,
+      expires_at: ended + harness.fixture_settings().superseded_ttl,
+    )
+  }
+  assert snapshot.superseded == [shed("z"), shed("b")]
+  let letter = fn(key) {
+    DeadLetter(
+      pocket: "pk",
+      key:,
+      rank: 1,
+      payload: <<key:utf8>>,
+      nacked_by: "c1",
+      nacked_at: nacked,
+      expires_at: ended + harness.fixture_settings().dead_letter_ttl,
+    )
+  }
+  assert snapshot.dead_letters == [letter("y"), letter("a")]
+  // "Held positions kept."
+  assert positions_by_key(snapshot, "pk")
+    == list.filter(positions_by_key(before, "pk"), fn(entry) {
+      entry.0 == "b" || entry.0 == "z"
+    })
+  harness.fired(double)
+}
+
+/// The seven arrival-position invariants each hold for every record, or
+/// every pair, that meets a premise. `invariants_test`'s positive controls
+/// show that each names a state that breaks it; this test shows that each
+/// premise is met in a state the checker sees through the owner, so that
+/// no one of them holds only because nothing meets it.
+///
+/// The state is the one S091's setup leaves, read once through
+/// `inspection.views`: `pk`'s held records are `z` and `b`, each with a
+/// newer version deferred behind it, and `y` and `a`, nacked with nothing
+/// deferred. The checker ran over this state after the last nack, and finds
+/// nothing broken in it.
+fn arrival_premises() -> List(String) {
+  let #(double, _, _) = deferred_and_nacked()
+  let snapshot = harness.inspect(double)
+  let assert [view] =
+    list.filter(inspection.views(snapshot).pockets, fn(view) {
+      view.pocket.key == "pk"
+    })
+  let held = view.held_records
+  let held_rank_against = fn(compare: fn(Int, Int) -> Bool) {
+    list.any(held, fn(record) {
+      case record.status {
+        RecordHeld(held_rank:, ..) -> compare(held_rank, record.rank)
+        RecordQueued -> False
+      }
+    })
+  }
+  let arrivals =
+    list.filter_map(held, fn(record) {
+      case record.status {
+        RecordHeld(deferred_position: Some(arrival), ..) -> Ok(arrival)
+        _ -> Error(Nil)
+      }
+    })
+  // `DeferredHasArrivalPosition`: `status = held and held_rank < rank`.
+  assert held_rank_against(fn(held_rank, rank) { held_rank < rank })
+  // `OnlyDeferredHasArrivalPosition`: `status = held and held_rank = rank`.
+  assert held_rank_against(fn(held_rank, rank) { held_rank == rank })
+  // `DeferredArrivedAfterHeld`, `ArrivalPositionUnoccupied` and
+  // `ArrivalPositionsBelowNext`: `status = held and deferred_position !=
+  // null`, for one record or, for the second, one record against every one.
+  assert arrivals != []
+  // `HeldCopiesAgree`: `status = held and deferred_position = null`.
+  assert list.length(held) > list.length(arrivals)
+  // `UniqueArrivalPosition`: two records, both held, each with a
+  // `deferred_position`.
+  assert list.length(arrivals) >= 2
+  assert invariants.check(snapshot) == []
   harness.fired(double)
 }
 

@@ -11,6 +11,10 @@
 //// `lease_view` asks its queue; the port asks the owner, through
 //// `harness.lease_view`.
 ////
+//// S037, a row of the same file, publishes onto a held record between its
+//// pulls. Its port asserts that the publish answered nothing and names the
+//// rule it fired (the ruling on N32).
+////
 //// Then the double's own tests, which pin no catalog row: the refusal of a
 //// consumer that never joined, what each of the four rules changes, how
 //// often it reads the clock and whether it draws a lease id, the orders a
@@ -76,6 +80,11 @@ pub fn tests() -> List(Test) {
       "a pull under a lease extends the lease",
       [Scenario("S036")],
       extends_lease,
+    ),
+    Test(
+      "a held record is not handed out again under the same lease",
+      [Scenario("S037")],
+      not_handed_again,
     ),
     Test(
       "pockets are claimed in the order they entered",
@@ -331,6 +340,30 @@ fn extends_lease() -> List(String) {
   assert harness.marked_keys(after.records) == ["r0", "r1"]
   let assert [lease, ..] = harness.inspect(double).leases
   assert #(lease.granted_at, lease.expires_at) == #(harness.t0, extended)
+  harness.fired(double)
+}
+
+/// The Rust's publish of `r0` while it is held is unwrapped; it answers
+/// nothing, and is deferred behind the held version (the ruling on N32).
+/// `impl-choice` (spec note G31, as N23): the lease view's first record is
+/// `r0` because the view lists the held records smallest position first;
+/// the surface exposes them as a set.
+fn not_handed_again() -> List(String) {
+  let double = pocket_of(2)
+  let first = harness.batch(double, "c1", 1)
+  assert first.fired == [claims, hold]
+  assert harness.publish(double, "pk", "r0", 2, "r0-v2")
+    == published("DeferBehindHeldVersion")
+  let second = harness.batch(double, "c1", 10)
+  assert second.fired == [within, hold]
+  assert second.lease == first.lease
+  assert harness.keys(second.records) == ["r1"]
+  let third = harness.batch(double, "c1", 10)
+  assert third.fired == [within]
+  assert third.records == []
+  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert [first_held, ..] = view.records
+  assert first_held.held_rank == 1
   harness.fired(double)
 }
 

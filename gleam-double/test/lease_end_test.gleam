@@ -1,7 +1,8 @@
 //// The lease's end, `lease_end`: the shared end-of-lease steps, the
 //// comparison that decides the pocket's fate, and the specification's
-//// "Lease end" section as far as it has landed, the three `Freed` rules for
-//// a held record with nothing deferred behind it.
+//// "Lease end" section: the six `Freed` rules, three for a held record with
+//// nothing deferred behind it and three for one with a newer version
+//// deferred.
 ////
 //// These tests pin no catalog row. They run over states built by hand:
 //// `lease_end.end` and `lease_end.outlasts` are called directly, and each
@@ -19,7 +20,7 @@ import pachinko_double/model.{
   type LeaseStatus, type Mark, type Record, type State, Acked, Consumer,
   DeadLetter, Lease, LeaseActive, LeaseExpired, LeaseReleased, Nacked, Pocket,
   PocketIdle, PocketLeased, Publisher, Queue, Record, RecordHeld, RecordQueued,
-  Stale, State, SupersededRecord, Unsettled,
+  Stale, State, Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/rules.{
   Applied, Defect, Defective, Done, EffectFailed, NoRuleHeld, Row, Table,
@@ -64,12 +65,27 @@ pub fn tests() -> List(Test) {
       dead_letter_held_version,
     ),
     Test(
+      "SupersedeUnsettledHeldVersion changes exactly what it ensures, stamps the entry from ended_at and asks for no time",
+      [],
+      supersede_held_exactly,
+    ),
+    Test(
+      "ConsumeAckedVersionQueueDeferred changes exactly what it ensures and asks for no time",
+      [],
+      consume_deferred_exactly,
+    ),
+    Test(
+      "DeadLetterNackedVersionQueueDeferred changes exactly what it ensures, stamps the entry from ended_at and asks for no time",
+      [],
+      dead_letter_deferred_exactly,
+    ),
+    Test(
       "the Freed rules read the mark and never how the lease ended",
       [],
       however_the_lease_ended,
     ),
     Test(
-      "each Freed rule's guard holds only for a held record with its mark and nothing deferred behind it",
+      "each Freed rule's guard holds only for a held record with its mark, and with a newer version deferred behind it or with none",
       [],
       freed_guards,
     ),
@@ -87,6 +103,12 @@ const requeue = "RequeueUnsettledRecord"
 const consume = "ConsumeAckedRecord"
 
 const dead_letter = "DeadLetterNackedRecord"
+
+const supersede_held = "SupersedeUnsettledHeldVersion"
+
+const consume_deferred = "ConsumeAckedVersionQueueDeferred"
+
+const dead_letter_deferred = "DeadLetterNackedVersionQueueDeferred"
 
 /// A record held at its own rank and payload with this mark and this nack
 /// time, and nothing deferred behind it.
@@ -486,12 +508,182 @@ fn dead_letter_held_version() -> List(String) {
   applied.fired
 }
 
+/// `record`, held, with a newer version deferred behind its held one: the
+/// record's rank is 10 higher and its payload "newer", and the newer
+/// version arrived at `arrival`. The held version, the mark and the nack
+/// time stay.
+fn behind(record: Record, arrival: Int) -> Record {
+  case record.status {
+    RecordHeld(..) as status ->
+      Record(
+        ..record,
+        rank: record.rank + 10,
+        payload: <<"newer":utf8>>,
+        status: RecordHeld(..status, deferred_position: Some(arrival)),
+      )
+    RecordQueued -> record
+  }
+}
+
+/// `superseded_ttl` and `dead_letter_ttl`, unlike each other and unlike the
+/// lease's, so that a rule that reads the wrong one shows.
+const shed_ttl = 5000
+
+const letter_ttl = 7000
+
+/// `ending(ended)` with a newer version deferred behind three of `pk`'s held
+/// records: the unsettled `u`, at 6, arrived at 14; the acked `a`, at 3, at
+/// 15; and `n`, at 8 and nacked at 700, at 16. Each arrival position is
+/// above its record's position and below the counter, and no record stands
+/// at one. `m` has nothing deferred. `other`'s `n` and `a` are listed first,
+/// so that a lookup by key alone finds them. The config's two shed TTLs are
+/// `shed_ttl` and `letter_ttl`.
+fn deferred_ending(ended: LeaseStatus) -> State {
+  let assert Ok(distinct) =
+    config.new(
+      config.Settings(
+        ..config.defaults(),
+        superseded_ttl: shed_ttl,
+        dead_letter_ttl: letter_ttl,
+      ),
+    )
+  let state = ending(ended)
+  let assert [n, their_n, u, a, their_a, m, q] = state.records
+  State(..state, config: distinct, records: [
+    their_n,
+    their_a,
+    behind(n, 16),
+    behind(u, 14),
+    behind(a, 15),
+    m,
+    q,
+  ])
+}
+
+/// `Freed` for `pk`'s unsettled `u`, with `v` deferred behind it, and
+/// `ended_at` 777. The held version, rank 44 and payload "you", is added at
+/// the end of the superseded queue with `shed_at` 777 and `expires_at` 777
+/// plus `superseded_ttl`. The record is queued at the position it had, 6,
+/// with the newer version's rank and payload and none of the held fields.
+/// Nothing else in the complete state changes: the counter, the dead
+/// letters, the other deferred records and `other`'s. The step is done at
+/// once: the rule asked for no time.
+fn supersede_held_exactly() -> List(String) {
+  let state = deferred_ending(released)
+  let assert [their_n, their_a, n, _, a, m, q] = state.records
+  assert freed(state, "lease-1", "u")
+    == Done(
+      Ok(Applied(
+        State(
+          ..state,
+          records: [
+            their_n,
+            their_a,
+            n,
+            Record("pk", "u", 54, <<"newer":utf8>>, 6, RecordQueued),
+            a,
+            m,
+            q,
+          ],
+          superseded: list.append(state.superseded, [
+            SupersededRecord(
+              pocket: "pk",
+              key: "u",
+              rank: 44,
+              payload: <<"you":utf8>>,
+              reason: Superseded,
+              shed_at: ended_at,
+              expires_at: ended_at + shed_ttl,
+            ),
+          ]),
+        ),
+        [supersede_held],
+        None,
+      )),
+    )
+  [supersede_held]
+}
+
+/// `Freed` for `pk`'s acked `a`, with a newer version deferred behind it at
+/// 15. The acked version is consumed and recorded nowhere; the record is
+/// queued at its arrival position, 15, not at 3, with the newer version's
+/// rank and payload and none of the held fields. `other`'s `a`, listed
+/// first, is not touched, and nothing else in the complete state changes:
+/// neither shed queue gains an entry and the counter stays.
+fn consume_deferred_exactly() -> List(String) {
+  let state = deferred_ending(released)
+  let assert [their_n, their_a, n, u, _, m, q] = state.records
+  assert freed(state, "lease-1", "a")
+    == Done(
+      Ok(Applied(
+        State(..state, records: [
+          their_n,
+          their_a,
+          n,
+          u,
+          Record("pk", "a", 56, <<"newer":utf8>>, 15, RecordQueued),
+          m,
+          q,
+        ]),
+        [consume_deferred],
+        None,
+      )),
+    )
+  [consume_deferred]
+}
+
+/// `Freed` for `pk`'s `n`, nacked at 700, with a newer version deferred
+/// behind it at 16, and `ended_at` 777. The held version, rank 45 and
+/// payload "en", becomes a dead letter at the end of the queue, nacked by
+/// the lease's consumer at 700, expiring at 777 plus `dead_letter_ttl`. The
+/// record is queued at its arrival position, 16, with the newer version's
+/// rank and payload and none of the held fields. `other`'s `n`, nacked at
+/// 520 and listed first, is not touched. Nothing else in the complete state
+/// changes, and the rule asked for no time.
+fn dead_letter_deferred_exactly() -> List(String) {
+  let state = deferred_ending(released)
+  let assert [their_n, their_a, _, u, a, m, q] = state.records
+  assert freed(state, "lease-1", "n")
+    == Done(
+      Ok(Applied(
+        State(
+          ..state,
+          records: [
+            their_n,
+            their_a,
+            Record("pk", "n", 55, <<"newer":utf8>>, 16, RecordQueued),
+            u,
+            a,
+            m,
+            q,
+          ],
+          dead_letters: list.append(state.dead_letters, [
+            DeadLetter(
+              pocket: "pk",
+              key: "n",
+              rank: 45,
+              payload: <<"en":utf8>>,
+              nacked_by: "c1",
+              nacked_at: 700,
+              expires_at: ended_at + letter_ttl,
+            ),
+          ]),
+        ),
+        [dead_letter_deferred],
+        None,
+      )),
+    )
+  [dead_letter_deferred]
+}
+
 /// `Freed` names its lease only to reach `lease.pocket` and
 /// `lease.consumer`; no rule reads the lease's status. `lease-0` is `c2`'s
 /// lease over `pk`, already ended, by release or by expiry. A `Freed` that
 /// names it reaches `pk`'s records all the same, each by its mark, and the
 /// dead letter is nacked by that lease's consumer, `c2`, whichever way it
-/// ended.
+/// ended. The same holds for the three rules with a newer version deferred
+/// behind the held one: the superseded held version, the queued record and
+/// the dead letter are the same whichever way `lease-0` ended.
 fn however_the_lease_ended() -> List(String) {
   list.flat_map([released, LeaseExpired(150)], fn(ended) {
     let state = ending(ended)
@@ -511,7 +703,43 @@ fn however_the_lease_ended() -> List(String) {
         expires_at: ended_at + config.defaults().dead_letter_ttl,
       ))
     assert lettered.state.leases == state.leases
-    [requeue, consume, dead_letter]
+    let deferred = deferred_ending(ended)
+    let assert Done(Ok(superseded)) = freed(deferred, "lease-0", "u")
+    let assert Done(Ok(queued)) = freed(deferred, "lease-0", "a")
+    let assert Done(Ok(deferred_lettered)) = freed(deferred, "lease-0", "n")
+    assert #(superseded.fired, queued.fired, deferred_lettered.fired)
+      == #([supersede_held], [consume_deferred], [dead_letter_deferred])
+    assert list.last(superseded.state.superseded)
+      == Ok(SupersededRecord(
+        pocket: "pk",
+        key: "u",
+        rank: 44,
+        payload: <<"you":utf8>>,
+        reason: Superseded,
+        shed_at: ended_at,
+        expires_at: ended_at + shed_ttl,
+      ))
+    assert model.record(queued.state.records, pocket: "pk", key: "a")
+      == Ok(Record("pk", "a", 56, <<"newer":utf8>>, 15, RecordQueued))
+    assert list.last(deferred_lettered.state.dead_letters)
+      == Ok(DeadLetter(
+        pocket: "pk",
+        key: "n",
+        rank: 45,
+        payload: <<"en":utf8>>,
+        nacked_by: "c2",
+        nacked_at: 700,
+        expires_at: ended_at + letter_ttl,
+      ))
+    assert deferred_lettered.state.leases == deferred.leases
+    [
+      requeue,
+      consume,
+      dead_letter,
+      supersede_held,
+      consume_deferred,
+      dead_letter_deferred,
+    ]
   })
 }
 
@@ -523,15 +751,15 @@ fn guard_holds(rule: String, state: State, record_key: String) -> Bool {
   row.guard(state, Freeing(lease: "lease-1", record_key:, ended_at:))
 }
 
-/// Each rule's `requires: record.mark = ...` and `requires:
-/// record.deferred_position = null`, each shown to matter on its own. `pk`'s
-/// `u` is unsettled, `a` acked and `n` nacked. With nothing deferred each
-/// rule's guard holds for the record with its mark and for neither of the
-/// others. With a newer version deferred behind each held one, at a higher
-/// rank with an arrival position, no guard of the three holds for any of
-/// them: those events are for the three deferred rules, which have not
-/// landed. Only the three guards are asked; what the table then answers is
-/// not pinned here.
+/// Each rule's `requires: record.mark = ...` and its `requires:
+/// record.deferred_position = null` or `!= null`, each shown to matter on
+/// its own. `pk`'s `u` is unsettled, `a` acked and `n` nacked. With nothing
+/// deferred the guard of each of the three rules with nothing deferred holds
+/// for the record with its mark and for neither of the others, and no guard
+/// of the three deferred rules holds for any. With a newer version deferred
+/// behind each held one, at a higher rank with an arrival position, it is
+/// the other way about: each deferred rule's guard holds for the record with
+/// its mark alone. No guard holds for the queued `q` either way.
 fn freed_guards() -> List(String) {
   let state = ending(released)
   let behind =
@@ -556,22 +784,29 @@ fn freed_guards() -> List(String) {
         }
       }),
     )
-  list.each([#(requeue, "u"), #(consume, "a"), #(dead_letter, "n")], fn(own) {
-    let #(rule, own_key) = own
+  let rows = [
+    #(requeue, "u", False),
+    #(supersede_held, "u", True),
+    #(consume, "a", False),
+    #(consume_deferred, "a", True),
+    #(dead_letter, "n", False),
+    #(dead_letter_deferred, "n", True),
+  ]
+  list.each(rows, fn(own) {
+    let #(rule, own_key, deferred) = own
     list.each(["u", "a", "n"], fn(key) {
-      assert guard_holds(rule, state, key) == { key == own_key }
-      assert !guard_holds(rule, behind, key)
+      assert guard_holds(rule, state, key) == { key == own_key && !deferred }
+      assert guard_holds(rule, behind, key) == { key == own_key && deferred }
     })
     assert !guard_holds(rule, state, "q")
+    assert !guard_holds(rule, behind, "q")
   })
   []
 }
 
 /// A lease's end sends `Freed` only for a held record of its pocket. One
 /// for a queued record, for a key the lease's pocket does not have, or
-/// naming a lease id no lease has, finds no rule, which is a defect. A
-/// `Freed` for a held record with a version deferred behind it belongs to
-/// three rules that have not landed, and is not pinned here.
+/// naming a lease id no lease has, finds no rule, which is a defect.
 fn freed_defect() -> List(String) {
   let state = ending(released)
   let defect = Done(Error(Defect("Freed", NoRuleHeld)))
@@ -590,21 +825,27 @@ fn freed_defect() -> List(String) {
 /// a defect that names the rule: a value, not a crash. Each rule is run
 /// under a guard that always holds, for the queued `q`.
 ///
-/// `DeadLetterNackedRecord` also reads the record's `nacked_at`, which its
-/// guard does not name and `NackedHasItsTime` promises. A nacked record
-/// without one, which no rule leaves, cannot become a dead letter: that is
-/// a defect too.
+/// `DeadLetterNackedRecord` and `DeadLetterNackedVersionQueueDeferred` also
+/// read the record's `nacked_at`, which their guards do not name and
+/// `NackedHasItsTime` promises. A nacked record without one, which no rule
+/// leaves, cannot become a dead letter: that is a defect too.
+///
+/// `ConsumeAckedVersionQueueDeferred` and
+/// `DeadLetterNackedVersionQueueDeferred` queue the record at its arrival
+/// position, which their guards promise. Run without their guards for a
+/// record with nothing deferred, each is a defect.
 fn freed_without_record() -> List(String) {
   let state = ending(released)
+  let unguarded = fn(row: domain.Row(lease_end.Freeing)) {
+    Table(
+      "Freed",
+      [Row(row.name, fn(_state, _freeing) { True }, row.effect)],
+      Defective,
+    )
+  }
   list.each(lease_end.freed().rows, fn(row) {
-    let unguarded =
-      Table(
-        "Freed",
-        [Row(row.name, fn(_state, _freeing) { True }, row.effect)],
-        Defective,
-      )
     assert core.run(
-        unguarded,
+        unguarded(row),
         Freeing(lease: "lease-1", record_key: "q", ended_at:),
         state,
       )
@@ -635,5 +876,41 @@ fn freed_without_record() -> List(String) {
         EffectFailed(dead_letter, "nacked record m has no nacked_at"),
       )),
     )
+  let timeless_behind =
+    State(..timeless, records: [
+      n,
+      their_n,
+      u,
+      a,
+      their_a,
+      behind(held(plain_m, Nacked, None), 16),
+      q,
+    ])
+  assert freed(timeless_behind, "lease-1", "m")
+    == Done(
+      Error(Defect(
+        "Freed",
+        EffectFailed(dead_letter_deferred, "nacked record m has no nacked_at"),
+      )),
+    )
+  list.each([#(consume_deferred, "a"), #(dead_letter_deferred, "n")], fn(own) {
+    let #(rule, key) = own
+    let assert Ok(row) =
+      list.find(lease_end.freed().rows, fn(row) { row.name == rule })
+    assert core.run(
+        unguarded(row),
+        Freeing(lease: "lease-1", record_key: key, ended_at:),
+        state,
+      )
+      == Done(
+        Error(Defect(
+          "Freed",
+          EffectFailed(
+            rule,
+            "held record " <> key <> " has no deferred_position",
+          ),
+        )),
+      )
+  })
   []
 }
