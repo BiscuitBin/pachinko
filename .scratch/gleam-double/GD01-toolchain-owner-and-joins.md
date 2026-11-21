@@ -39,7 +39,8 @@ This ticket proves the toolchain on the thinnest real path and lays what every l
 ticket builds on:
 
 - decision 0021, which records the Gleam toolchain and the hex packages;
-- the `gleam` and `erlang` pins in `pyproject.toml`, and the relocked `pixi.lock`;
+- the `gleam` and `erlang` pins in `pyproject.toml`, in a `gleam` feature with its own
+  environment, and the relocked `pixi.lock`;
 - the package, with `gleam.toml` and the committed `manifest.toml`;
 - `just gleam-double` and `just gleam-double-deps`, with their rows in
   `docs/reference/commands.md`;
@@ -433,22 +434,34 @@ Decide and record in the spec notes or the hand-back:
 The two recipes, as proposed and not yet run:
 
 ```just
+gleam_bin := justfile_directory() / ".pixi" / "envs" / "gleam" / "bin"
+
 gleam-double-deps:
-    cd gleam-double && if test -f manifest.toml; then before=$(cksum < manifest.toml); else before=new; fi; gleam deps download; [ "$before" = new ] || [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+    pixi install --locked -e gleam
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; if test -f manifest.toml; then before=$(cksum < manifest.toml); else before=new; fi; gleam deps download; [ "$before" = new ] || [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
 
 gleam-double:
-    command -v gleam >/dev/null && command -v erl >/dev/null || { echo 'gleam-double: gleam or erl is missing; run just initialize' >&2; exit 2; }
-    test -f gleam-double/build/packages/packages.toml || { echo 'gleam-double: run just gleam-double-deps (needs network)' >&2; exit 2; }
-    gleam --version
-    erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
-    cd gleam-double && gleam format --check src test
-    cd gleam-double && before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam build --warnings-as-errors; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
-    cd gleam-double && before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam test; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+    test -x "{{ gleam_bin }}/gleam" && test -x "{{ gleam_bin }}/erl" || { echo 'gleam-double: the gleam environment is missing; run just gleam-double-deps (needs network)' >&2; exit 2; }
+    test -f gleam-double/build/packages/packages.toml || { echo 'gleam-double: the hex packages are missing; run just gleam-double-deps (needs network)' >&2; exit 2; }
+    export PATH="{{ gleam_bin }}:$PATH"; gleam --version
+    export PATH="{{ gleam_bin }}:$PATH"; erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; gleam format --check src test
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam build --warnings-as-errors; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
+    cd gleam-double && export PATH="{{ gleam_bin }}:$PATH"; before=$(cksum < manifest.toml); ERL_CRASH_DUMP_BYTES=0 gleam test; [ "$(cksum < manifest.toml)" = "$before" ] || { echo 'gleam rewrote gleam-double/manifest.toml; read the diff' >&2; exit 1; }
 ```
 
 Both recipes rely on the `Justfile`'s `set shell := ["sh", "-eu", "-c"]`: under `-e` a
 failing `gleam` command ends its line before the comparison runs, so the comparison's
 status cannot hide it. Step 6's probes prove that.
+
+`gleam` and `erlang` sit in their own pixi environment, `gleam`, not the default one, so
+the `Justfile`'s exported `PATH` does not hold them and stays as it is. Each recipe line
+is its own `sh`, so each line that runs `gleam` or `erl` puts `.pixi/envs/gleam/bin`
+first on its own `PATH`; `gleam` finds `erl`, `erlc` and `escript` there by name. The
+guard tests the two binaries at that path, not `command -v`, so that a `gleam` installed
+elsewhere on the machine cannot stand in for the pinned one. `just gleam-double-deps` is
+the double's one network recipe: it installs the `gleam` environment exactly as
+`pixi.lock` pins it, then fetches the hex packages under the `cksum` guard.
 
 knarr also runs a pre-check that compares `manifest.toml`'s `[requirements]` with
 `gleam.toml` before any `gleam` command, so that drift fails before the rewrite. The
@@ -462,8 +475,8 @@ pre-check too.
 | `docs/decisions/0021-gleam-double-toolchain.md` | new | Decision 0021: the Gleam toolchain and the hex packages |
 | `docs/decisions/README.md` | shared, own lines | Decision 0021's row |
 | `docs/manifest.yml` | shared, own lines | Decision 0021's entry |
-| `pyproject.toml` | shared, own lines | The `gleam` and `erlang` pins, with a comment naming decision 0021 |
-| `pixi.lock` | shared | Relocked by `just lock`, never by hand |
+| `pyproject.toml` | shared, own lines | A `gleam` feature holding the `gleam` and `erlang` pins, and a `gleam` environment with `no-default-feature = true`, with a comment naming decision 0021 |
+| `pixi.lock` | shared | Relocked by `just lock`, never by hand. It gains the `gleam` environment; the default environment's packages do not move |
 | `gleam-double/gleam.toml` | new | The package manifest |
 | `gleam-double/manifest.toml` | new | Written by `just gleam-double-deps` |
 | `gleam-double/src/` | new | The package, laid out as the design checkpoint settles |
@@ -503,9 +516,15 @@ pre-check too.
    then make the change it records. The record covers:
    - `gleam` and `erlang` from conda-forge through pixi, pinned exactly as decision 0011
      pins a tool, and why both are pinned;
-   - whether they join the default environment, the only one on the `Justfile`'s `PATH`,
-     or a feature with its own environment, as knarr keeps its cluster tools out of its
-     default one, and what either costs CI;
+   - that they sit in a feature, `gleam`, with its own environment and
+     `no-default-feature = true`, as the maintainer directed on 2026-11-20 and as knarr
+     keeps its cluster tools out of its default environment; that the default
+     environment, the only one on the `Justfile`'s `PATH` and the one CI installs, is
+     unchanged; and what the choice costs: a second environment in `pixi.lock`, whose
+     hash keys CI's pixi and prek caches, a `PATH` set by each recipe line, and one more
+     install step for anyone who runs the double. Confirm from
+     `.github/actions/setup/action.yml` that it names no environment, and say that
+     installing only the default one is then `setup-pixi`'s and `just sync`'s behaviour;
    - each hex package and what the double cannot do without it, which is the note
      decision 0007 asks of a crate, since that decision's own note is Cargo-specific;
    - ranges in `gleam.toml` with `manifest.toml` as the pin, the Gleam counterpart of
@@ -518,20 +537,27 @@ pre-check too.
    - what would reopen it.
 
    Add its row to `docs/decisions/README.md` and its entry to `docs/manifest.yml`. Add
-   the two pins to `pyproject.toml`. Run `just lock` (network, authorised by this step).
-   It also runs `cargo update --workspace` three times, so confirm with
-   `git status --short` that of the lockfiles only `pixi.lock` moved; if a `Cargo.lock`
-   moved, **stop**. Run `just initialize` (network, authorised by this step) to install
-   the relocked environment. Quote `gleam --version` and the OTP release `erl` reports.
-   Run `just lock-check` and `just check-docs`.
+   the `gleam` feature, with the two pins, and the `gleam` environment to
+   `pyproject.toml`. Run `just lock` (network, authorised by this step). It also runs
+   `cargo update --workspace` three times, so confirm with `git status --short` that of
+   the lockfiles only `pixi.lock` moved; if a `Cargo.lock` moved, **stop**. Confirm from
+   `pixi.lock`'s diff that the default environment's packages did not move, so the
+   installed default environment is still the locked one and `just initialize` is not
+   run. Run `just lock-check` and `just check-docs`. The `gleam` environment is installed
+   in step 4, by `just gleam-double-deps`.
 4. **The package and the first green run, red first.** Write `gleam.toml` by hand rather
    than with `gleam new`, whose skeleton is not this repository's. Add the `.gitignore`
-   lines and both recipes. Run `just gleam-double` before any package is fetched and
-   quote its refusal. Run `just gleam-double-deps` (network, authorised by this step),
-   which writes `manifest.toml`. Read it: it should pin the four packages and what they
-   bring, which is expected to be `filepath` alone. Put any other package to the
-   maintainer before going on. Write the smallest runner `main` with one test, and run
-   `just gleam-double` until it is green.
+   lines and both recipes. Run `just gleam-double` before the `gleam` environment is
+   installed and quote its refusal, which names the missing environment. Run
+   `just gleam-double-deps` (network, authorised by this step), which installs the
+   `gleam` environment and writes `manifest.toml`. Quote `gleam --version` and the OTP
+   release `erl` reports, both from `.pixi/envs/gleam/bin`. Read `manifest.toml`: it
+   should pin the four packages and what they bring, which is expected to be `filepath`
+   alone. Put any other package to the maintainer before going on. One recipe now
+   installs the environment and fetches the packages, so the second refusal, for missing
+   packages, has no natural red: prove it by moving `gleam-double/build/` aside into
+   `ai_tmp/`, quoting the refusal, and moving it back. Write the smallest runner `main`
+   with one test, and run `just gleam-double` until it is green.
    - If conda's `erlang` 29.1.2 does not run `gleam` 1.19.1, pin `gleam` 1.19.0, the pair
      knarr proves, relock, and amend decision 0021.
    - If that fails too, **stop** and put the remaining fallback to the maintainer: the
@@ -640,8 +666,9 @@ pre-check too.
   release and the number of tests run and passed.
 - Decision 0021 is registered in `docs/manifest.yml` and listed in
   `docs/decisions/README.md`, and it answers each point step 3 lists.
-- `pyproject.toml` pins `gleam` and `erlang` exactly, `just lock-check` passes, and of
-  the lockfiles only `pixi.lock` moved.
+- `pyproject.toml` pins `gleam` and `erlang` exactly, in the `gleam` feature;
+  `just lock-check` passes; of the lockfiles only `pixi.lock` moved; and the default
+  environment's locked packages did not move.
 - `gleam-double/manifest.toml` is committed and pins only the packages decision 0021
   records and what they bring.
 - Step 5's probes are quoted with their output and exit status: the offline run with its
@@ -706,7 +733,10 @@ Written at the end.
 - **The offline claim is unproved until step 5.** Gleam has no offline flag. knarr shows
   an offline gate on 1.19.0; step 5 shows it here.
 - **`AGENTS.md` gains one recipe name.** It lists the recipes that reach the network, and
-  `just gleam-double-deps` is a new one. The maintainer may prefer to leave `AGENTS.md`
-  alone, as the Python double did; that leaves its list incomplete.
-- **The default environment grows.** `gleam` and `erlang` in the default environment are
-  installed by every CI job that installs it. Decision 0021 weighs a separate feature.
+  `just gleam-double-deps` is a new one. The maintainer approved the addition on
+  2026-11-20.
+- **A separate pixi feature.** Settled by the maintainer on 2026-11-20, before step 1:
+  `gleam` and `erlang` sit in a `gleam` feature with its own environment, so the default
+  environment, and every CI job that installs it, is unchanged. Step 3, the recipe
+  sketches and Files touched were amended to say so. Decision 0021 records the choice and
+  what it costs.

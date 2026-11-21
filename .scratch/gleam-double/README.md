@@ -77,14 +77,16 @@ toolchain fact red first, on the thinnest real path, before GD02 builds on it.
   parsed with line prefixes and no regular-expression package, with `pending_scenarios`
   and `pending_rules` shrinking ticket by ticket.
 - **The toolchain.** `gleam` 1.19.1 and `erlang` 29.1.2 from conda-forge through pixi,
-  pinned exactly as decision 0011 pins a tool. The hex packages `gleam_stdlib`,
+  pinned exactly as decision 0011 pins a tool, in a `gleam` feature with its own
+  environment. The hex packages `gleam_stdlib`,
   `gleam_erlang`, `gleam_otp` and `simplifile`, as ranges in `gleam.toml`, pinned by a
   committed `manifest.toml`. Decision 0021, which GD01 writes, records all of it, since
   decision 0007's note is Cargo-specific.
 - **The recipes.** `just gleam-double` checks the format, builds with warnings as errors
   and runs the tests. It sits outside `just check`, like `just python-double`, and never
   reaches the network. Two steps do, each a named, authorised step in GD01: `just lock`
-  for the pixi pins, and `just gleam-double-deps` for the hex packages.
+  for the pixi pins, and `just gleam-double-deps` for the `gleam` environment and the hex
+  packages.
 - **Keeping `just check` green.** `gleam-double/build/packages/` will hold the
   dependencies' own TOML, Markdown and sources. `.gitignore` gains `/gleam-double/build/`
   and `erl_crash.dump`, which keeps the hook gate out, since it reads tracked files and
@@ -217,11 +219,14 @@ the series stacks on one branch.
   that the hook gate and the glob gates stay green beside it. GD01 carries each as a
   red-first probe with a stated fallback.
 - **`AGENTS.md`.** GD01 adds `just gleam-double-deps` to its list of recipes that reach
-  the network. The Python series left `AGENTS.md` alone; say so before GD01 starts if
-  this one should too.
-- **The default pixi environment.** GD01's decision 0021 weighs putting `gleam` and
-  `erlang` in the default environment, which every CI job installs, against a separate
-  feature.
+  the network. The Python series left `AGENTS.md` alone; the maintainer approved this
+  addition on 2026-11-20.
+- **A separate pixi feature.** Settled by the maintainer on 2026-11-20: `gleam` and
+  `erlang` sit in a `gleam` feature with its own environment, with
+  `no-default-feature = true`, so the default environment, which every CI job installs,
+  is unchanged. `just gleam-double-deps` installs that environment, and both recipes put
+  its `bin` on their own `PATH`. GD01 was amended before its step 1, and its decision
+  0021 records the choice.
 - **Renovate and the hex pins.** Decision 0021 must say whether Renovate reads
   `gleam-double/gleam.toml` once it reaches `main`, and whether anything audits a hex
   package.
