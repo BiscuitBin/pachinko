@@ -316,7 +316,7 @@ Test functions and helpers changed. None sits under a `# scenario:` tag, and
 | --- | --- | --- |
 | `test_pull.py` | `RecordingOutcome.__init__` | no `config` parameter, no `config` attribute |
 | `test_pull.py` | `run_pull` | no `config` parameter |
-| `test_pull.py` | `PullRowsOnHandBuiltStatesTest.scrambled` | an optional `config`, passed to `snapshot` |
+| `test_pull.py` | `PullRowsOnHandBuiltStatesTest.scrambled` | an optional `config_values`, passed to `snapshot` as its config |
 | `test_pull.py` | `test_the_claim_caps_the_batch_at_max_pull_batch` | `max_pull_batch=2` is in the snapshot |
 | `test_lease_end.py` | `state` | the two TTLs are in the snapshot's config |
 | `test_lease_end.py` | `freed` | the recorder takes no argument |
@@ -347,14 +347,14 @@ entry's `expires_at` twelve hours (43,200,000 ms) past `ENDED_AT` where the test
 the TTL it set:
 
 ```text
-FAIL: test_a_nacked_held_version_is_dead_lettered_from_ended_at_and_the_newer_one_queued_at_arrival (tests.test_lease_end.FreedDeferredRowsTest...)
-AssertionError: Lists differ: [('cr[105 chars]s_at=44200005)), ... != [('cr[105 chars]s_at=1007005)), ...
-FAIL: test_an_unsettled_held_version_is_shed_from_ended_at_and_the_newer_one_keeps_the_held_position (tests.test_lease_end.FreedDeferredRowsTest...)
-AssertionError: Lists differ: [('cr[140 chars]s_at=44200005)), ... != [('cr[140 chars]s_at=1005005)), ...
-FAIL: test_a_nacked_record_becomes_a_dead_letter_stamped_from_ended_at_not_now (tests.test_lease_end.FreedTableTest...)
-AssertionError: Lists differ: [('cr[106 chars]s_at=44200005)), ... != [('cr[106 chars]s_at=1007005)), ...
-FAIL: test_the_dead_letter_holds_the_held_version_not_the_records_newest (tests.test_lease_end.FreedTableTest...)
-AssertionError: Tuples differ: (... nacked_at=1000001, expires_at=44200005)) != (... nacked_at=1000001, expires_at=1007005))
+FAIL: test_a_nacked_held_version_is_dead_lettered_from_ended_at_and_the_newer_one_queued_at_arrival (tests.test_lease_end.FreedDeferredRowsTest.test_a_nacked_held_version_is_dead_lettered_from_ended_at_and_the_newer_one_queued_at_arrival)
+AssertionError: Lists differ: [('cr[105 chars]s_at=44200005)), ('replace', Record(pocket='p'[172 chars]ne))] != [('cr[105 chars]s_at=1007005)), ('replace', Record(pocket='p',[171 chars]ne))]
+FAIL: test_an_unsettled_held_version_is_shed_from_ended_at_and_the_newer_one_keeps_the_held_position (tests.test_lease_end.FreedDeferredRowsTest.test_an_unsettled_held_version_is_shed_from_ended_at_and_the_newer_one_keeps_the_held_position)
+AssertionError: Lists differ: [('cr[140 chars]s_at=44200005)), ('replace', Record(pocket='p'[171 chars]ne))] != [('cr[140 chars]s_at=1005005)), ('replace', Record(pocket='p',[170 chars]ne))]
+FAIL: test_a_nacked_record_becomes_a_dead_letter_stamped_from_ended_at_not_now (tests.test_lease_end.FreedTableTest.test_a_nacked_record_becomes_a_dead_letter_stamped_from_ended_at_not_now)
+AssertionError: Lists differ: [('cr[106 chars]s_at=44200005)), ('remove', Record(pocket='p',[190 chars]ne))] != [('cr[106 chars]s_at=1007005)), ('remove', Record(pocket='p', [189 chars]ne))]
+FAIL: test_the_dead_letter_holds_the_held_version_not_the_records_newest (tests.test_lease_end.FreedTableTest.test_the_dead_letter_holds_the_held_version_not_the_records_newest)
+AssertionError: Tuples differ: ('cre[56 chars]'held', nacked_by='c', nacked_at=1000001, expires_at=44200005)) != ('cre[56 chars]'held', nacked_by='c', nacked_at=1000001, expires_at=1007005))
 ```
 
 Step 2's test was still red in that run. After step 4 the suite ran 274 tests, `OK`.
@@ -401,7 +401,7 @@ with exactly eleven matches, all code, and that none of B1's three shapes occurs
 
 - PD08 landed on `build-python-double` in the series' worktree, with no new worktree, no
   `ticket/pd08-one-read-context` and no `just initialize` (section 1).
-- `scrambled` in `test_pull.py` gained an optional `config` argument. That is the smallest
+- `scrambled` in `test_pull.py` gained an optional `config_values` argument. That is the smallest
   way to put the cap in the snapshot the test builds, and it is the one helper change
   beyond removing the recorder's parameter.
 - `fixtures.config` is imported by name into `test_pull.py` and `test_lease_end.py`, as
