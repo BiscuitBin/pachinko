@@ -58,8 +58,10 @@ nack, Renew and release, and Lease end sections, and the `Consuming` surface):
     `Freed` for each held record;
   - the comparison that decides the pocket's fate, its record count against
     `ending_records`, which the release and lapse guards read;
-  - `ending_records`, written in full: held, marked acked or nacked, and
-    `deferred_position = null`;
+  - the one reading of `ending_records` among the rules. GD02 landed the derivation in
+    full as `model.ending` (held, marked acked or nacked, and
+    `deferred_position = null`), where the invariant checker's views read it too, so it
+    stays there and this module does not repeat it;
   - the `Freed` table, holding this ticket's three rows with their full guards;
   - the `ended_at` stamping, so that each entry a `Freed` row creates takes its time from
     `ended_at`.
@@ -408,6 +410,16 @@ at most, its scope guard and its record. The deltas below are shared by GD01 to 
      asserts its status and `ended_at`.
    - S090's order of the lease view, smallest position first, is more than the surface
      states. Port it as `impl-choice` (N23).
+   - `harness.lease_view`, GD03's stand-in over the snapshot (G31), has its body replaced
+     by the owner's `LeaseView` message, so S033's and S036's ports read the view through
+     the real seam. What they assert does not change.
+   - GD02's checkpoint (B6) and GD03's hand-back leave a witness owing: a test showing
+     that the checker runs after the whole chained outcome and not part-way. Two states
+     part-way through an outcome are candidates: a publish of a new key into an idle
+     pocket, before `ReviveIdlePocket` answers, and a release, before its `Freed` rows
+     answer. Write a test for each that passes through the owner, and show with a scratch
+     change that runs the checker before each chained event that both fail. If neither
+     state breaks an invariant, say so in the hand-back.
 
    Shrink `pending_scenarios` and `pending_rules` by exactly what landed.
 4. **Spec notes.** Add a note wherever marks, fencing or release forced an
@@ -437,7 +449,9 @@ at most, its scope guard and its record. The deltas below are shared by GD01 to 
 - Both release rows end the lease only through the lease-end module.
 - Every refusal this ticket lands has a test showing that the snapshot is unchanged, and
   S085's test shows that no clock was read.
-- The lease view is read through the owner's `LeaseView` message.
+- The lease view is read through the owner's `LeaseView` message, by S090's port and by
+  S033's and S036's.
+- The witness is quoted with its scratch change, its output and its exit status.
 - `gleam-double/SPEC-NOTES.md` holds this ticket's notes, including S090's `impl-choice`,
   each citing its `N`-note.
 - `just gleam-double` leaves nothing Git can see, and no `erl_crash.dump`.
