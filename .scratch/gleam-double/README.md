@@ -130,7 +130,7 @@ snapshot.
 | GD04 | Ack, nack, release and the lease's end | `GD04-ack-nack-release.md` | GD03 | done |
 | GD05 | Deferral behind the held version | `GD05-deferral.md` | GD04 | done |
 | GD06 | The clock, with Tick, lapse, parking and decay | `GD06-clock-tick-lapse-parking-decay.md` | GD05 | done |
-| GD07 | Close-out and the reader's guide | `GD07-close-out.md` | GD06 | todo |
+| GD07 | Close-out and the reader's guide | `GD07-close-out.md` | GD06 | done |
 
 ## Dependencies
 

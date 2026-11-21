@@ -1,7 +1,7 @@
 ---
 id: GD07
 title: "Gleam double: close-out and the reader's guide"
-status: todo
+status: done
 depends_on: [GD06]
 parallel_with: []
 branch: build-gleam-double
@@ -447,12 +447,741 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end.
+Evidence files are under `ai_tmp/gd/GD07/`, and the review record under
+`ai_tmp/review/GD07-1/`. None is committed. Each `ev-*.txt` begins `$ <command>` and ends
+`exit status: N`, except where the text says otherwise; `ev-notes-ids.txt` and
+`ev-guide-table.txt` do neither. In every quote below the recipe's
+echo of its own command lines is left out, and `...` marks other lines left out or a line
+cut short: a `FAIL` line is cut after the test's name. A failing run prints the runner's
+panic and the recipe's `error:` line between `coverage faults: N` and `exit status: 1`;
+those are left out too, with no mark. A quote that does not open with its `$` line starts
+part-way through the output. Times are UTC, read from the files' modification times.
+Where a fact the record should hold was never saved, the text says "not recorded". One
+read-only check was added for this record, `ev-handback-checks.txt` (parts 1 to 4, from
+`handback-checks.sh`), run at `25008d690be03314fdec7875325addac01da314e` on a clean tree.
+
+### 1. Base, branch and commits
+
+- Branch: `build-gleam-double`.
+- Base commit: `5bc619b08375872c685aca78cc95ddd4eee2b8a2`, GD06's record commit. It holds
+  GD06's work, `98107a03b5374ee243f1caeade773ce16087e755`.
+- Work commit: `bedb7af6b0873335ca0dfe51136bccfcad6508a7`, tree
+  `5760747f02ef1eafcf888df0e4fffb743ab13646`, committed at 10:45:23Z.
+- Review fix commit: `25008d690be03314fdec7875325addac01da314e`, tree
+  `20ccb54e8c726868e12a50db77aa022e6cb9036c`, committed at 10:52:18Z. It applies two of
+  the series code review's findings (section 7) and is the tree this record describes.
+- The commit after them holds this record (`ev-handback-checks.txt`, part 1, for the
+  trees and the files each commit touches).
+- At the maintainer's direction the whole GD01 to GD07 series lands on this one branch in
+  this one worktree. That departs from `AGENTS.md`'s one ticket per worktree (shared rule
+  6). GD07 has three commits, not two: the work, the review fix and the record.
+- Nothing was fetched. Step 1's `just initialize` and `just gleam-double-deps` were not
+  run; the baseline ran green without them.
+
+### 2. Baseline
+
+At `5bc619b08375872c685aca78cc95ddd4eee2b8a2`, on the untouched worktree, written at
+09:44:05Z (`baseline.log`, quoted whole; it records each status as `<name>-exit=N` and
+holds no `$` line, and its last line counts the lines `git status --short` printed):
+
+```text
+5bc619b08375872c685aca78cc95ddd4eee2b8a2
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+check-exit=0
+    Running pachinko_double_test.main
+296 tests run, 296 passed
+coverage faults: 0
+gleam-double-exit=0
+       0
+```
+
+### 3. The design as it stands at the series' end
+
+The design is section 3 of GD06's hand-back, and through it GD05's to GD01's. GD07 adds
+no behaviour. What changed since, in both commits (`ev-handback-checks.txt`, parts 1 and
+4):
+
+- **`src/`.** One change, in `core.gleam`: `core.tick`'s doc comment now says equal
+  `expires_at` lapse "in their creation order in `state.leases` (G57)", not "in the order
+  they were granted". It closes GD06's open point on that comment (GD06's C3). It is a doc
+  comment, not code, and not a review fix, which is all Files touched allows under
+  `src/`; the strict agent made it in step 2. No other file under `src/` changed in the
+  series' last two commits.
+- **`test/coverage.gleam`.** `pending_scenarios`, `pending_rules`, the `Inputs` fields
+  that held them and the branches that read them are gone. Every catalog id needs a
+  tagged test that passed; every rule must be a row of a registered table and fired by a
+  test that passed; every invariant needs a checker entry and a control that passed; and
+  the counts are still 93, 32 and 35.
+- **`test/coverage_test.gleam`.** The six tests of the pending mechanism are replaced by
+  four of the strict check: "a catalog id with no test is a fault", "a rule that is a row
+  of no table is a fault", "a fired name credits no rule that is not a row" and "a
+  registered rule that never fired is a fault" (`git diff` between the base and the work
+  commit).
+- **`test/guide_test.gleam`** (new), registered in `pachinko_double_test`'s `modules()`
+  after `parking_test`. It holds the guide's four walkthrough tests, tagged S078 to S081 beside
+  the ports in `lease_endings_test`; the drift check, "every gleam block of the guide is
+  verbatim in its source, and each scenario's section shows its whole session"; and six
+  controls of the drift check, four from step 3 and two from the review (B2, B3).
+- **`test/runner.gleam`.** `runner.run` adds `runner.runner_faults()` to the registry's
+  faults: two checks run outside the registry, through `run_one`, that a test that kills
+  itself and one that never returns each come back `Failed` (B1).
+- **`test/runner_test.gleam`.** Two controls, "a test that crashes fails" and "a test that
+  does not return in time fails" (B1).
+- **`test/owner_test.gleam`.** "a clock set back after a nack leaves the lease's end
+  before nacked_at, so the lapse and a release fail NackedBeforeExpiry" (B4, G59).
+- **`test/harness.gleam`**, in the review fix commit. `set_time` is a `process.call`: the
+  clock's `Set` message carries a reply, so a trigger sent after `set_time` reads the new
+  time. Before, `set_time` was a bare send, and the owner reads the clock from its own
+  process, so nothing ordered the two.
+- **`README.md`** (new) and **`SPEC-NOTES.md`**, regrouped: section 4.
+
+The run counted 296 tests at the base; 294 after step 2; 303 after step 3, which the
+findings run kept; 305, then 307 and 308 during the triage; and 308 at both commits.
+
+### 4. Steps 2 to 5
+
+Every output in this section ran uncommitted, on base
+`5bc619b08375872c685aca78cc95ddd4eee2b8a2`.
+
+Who did what, one writer at a time:
+
+- The lead wrote three briefs, `brief-strict.md`, `brief-guide.md` and
+  `brief-findings.md`. It ran the row-in-table probe itself, and updated the two
+  `SPEC-NOTES.md` descriptions in `docs/project/repository-map.md` to name the findings
+  (`ev-lead-docs.txt`: `just check-docs`, exit status 0).
+- The strict agent, from `brief-strict.md`: steps 2 and 5 and the `core.tick` comment.
+- The guide agent, from `brief-guide.md`: step 3.
+- The findings agent, from `brief-findings.md`: step 4.
+- The model of each subagent is not recorded.
+
+#### Step 2: strict coverage
+
+The two probes the strict agent ran. Neither file holds a `restored:` line, so each
+restore rests on the agent's word and on the green runs after it.
+
+`ev-probe-tag.txt`: S001's tag removed from `config_test`.
+
+```text
+$ sh -c git diff -- gleam-double/test/config_test.gleam; just gleam-double
+...
+-      [Scenario("S001")],
++      [],
+...
+    Running pachinko_double_test.main
+COVERAGE S001 has no test tagged Scenario("S001") that passed
+294 tests run, 294 passed
+coverage faults: 1
+exit status: 1
+```
+
+`ev-probe-row.txt`: the brief asked for one table row removed. The agent removed a whole
+table, `DeadLetterDecays`, from `core.registry()`.
+
+```text
+$ sh -c git diff -- gleam-double/src/pachinko_double/core.gleam | sed -n '/registry/,$p'; just gleam-double
+...
+-    entry(decay.dead_letter_decays()),
+...
+COVERAGE DeadLetterDecays is a row of no table
+294 tests run, 294 passed
+coverage faults: 1
+exit status: 1
+```
+
+**The lead's row-in-table probe, and why it was needed.** `DeadLetterDecays` is a table
+with one row, so the probe above shows that a table left out of the registry faults; it
+does not show that a row dropped from a table that stays registered faults. The lead ran
+that probe, `ev-probe-table-row.txt` (its first lines are the lead's header and a `diff`
+of `publish.gleam`, then the `$` line). `ReviveParkedPocket` is taken out of the
+`PocketTouched` table, and kept referenced through `list.drop(.., 1)` so that the build,
+with warnings as errors, stays clean:
+
+```text
+=== probe row-in-table: ReviveParkedPocket removed from the PocketTouched table
+315c315
+<     [revive_idle_pocket(), revive_parked_pocket()],
+---
+>     [revive_idle_pocket(), ..list.drop([revive_parked_pocket()], 1)],
+$ just gleam-double
+...
+FAIL expiry_test.ReviveParkedPocket changes exactly what it ensures and reads no clock: crashed: ...
+FAIL parking_test.three consecutive lapses park the pocket, and a publish revives it: crashed: ...
+FAIL parking_test.a supersede revives a parked pocket: crashed: ...
+FAIL parking_test.pockets and records form one strict, deterministic order: crashed: ...
+COVERAGE S024 has no test tagged Scenario("S024") that passed
+COVERAGE S062 has no test tagged Scenario("S062") that passed
+COVERAGE S075 has no test tagged Scenario("S075") that passed
+COVERAGE ReviveParkedPocket is a row of no table
+294 tests run, 290 passed
+coverage faults: 4
+exit status: 1
+restored: sha256 before 2fb1586e1d3e3b24f2f0877d493afa3b867036c319f540b93f1c7b5ac4d3d587 after 2fb1586e1d3e3b24f2f0877d493afa3b867036c319f540b93f1c7b5ac4d3d587
+```
+
+The strict agent's green run, `ev-strict-green.txt`: `294 tests run, 294 passed`,
+`coverage faults: 0`, exit status 0. "Strict coverage also means that every registered
+rule fired": no probe shows that half, or an invariant left uncovered. Both rest on
+`coverage_test`'s scratch-input tests, "a registered rule that never fired is a fault",
+"an invariant outside the registry is a fault" and "an invariant with no passed control
+is a fault", which pass in every green run.
+
+#### Step 3: the reader's guide
+
+`gleam-double/README.md` holds "How to run it"; "The specification's parts and where
+they live", with tables of the 8 entities, 32 rules and 35 invariants; "Time, identity
+and inspection"; "Reading a row: the Gleam you need", with a custom type, a row, a
+`Result` and a `case`, and `use`; "Walkthrough: Scenarios A to D", with the setting, the
+common start and one section per scenario; and "Keeping this page true". The guide agent
+wrote it from `README.template.md` with `build_readme.py`, both under `ai_tmp/gd/GD07/`;
+the triage kept the template in step with every README edit.
+
+**The table check.** `check_table.py` reads the README's tables and greps each name in
+the code and the specification. `ev-guide-table.txt`, at the README the guide agent
+wrote (SHA-256 `832076ae…`): `faults: 0`, exit status 0, then ten mutated copies, each
+`exit status: 1`. Two of them:
+
+```text
+== control rule-row-dropped: replace [| `Renew` | `Renew` | `Renew` | `renew()` | `src/pachinko_double/settle.gleam` |
+] with []
+entities 8, rules 32, invariants 35 in the specification
+FAULT rule Renew has 0 rows
+faults: 1
+exit status: 1
+...
+== control checker-entry-the-code-lacks: replace [`held_copies_agree`] with [`held_copies_match`]
+entities 8, rules 32, invariants 35 in the specification
+FAULT invariant HeldCopiesAgree: no Invariant("HeldCopiesAgree", held_copies_match) in src/pachinko_double/invariants.gleam
+FAULT invariant HeldCopiesAgree: no fn held_copies_match in src/pachinko_double/invariants.gleam
+faults: 2
+exit status: 1
+```
+
+The triage then changed the README (D1, D2). This record reran the plain check on the
+committed README (`ev-handback-checks.txt`, part 2, at
+`25008d690be03314fdec7875325addac01da314e`): SHA-256 `6f102043…`, `entities 8, rules 32,
+invariants 35 in the specification`, `faults: 0`, exit 0. Its ten controls were not
+rerun. The script lives under `ai_tmp/`, so it is no part of the gate (Open points).
+
+**The drift check.** "every gleam block of the guide is verbatim in its source, and each
+scenario's section shows its whole session" reads the README and `guide_test.gleam`
+through `simplifile`. Every fenced `gleam` block must appear verbatim in
+`guide_test.gleam`, and each scenario's section must hold at least one. After the review
+(B3) each scenario's blocks, joined by one blank line, must make up its test's body in
+order, less the final `harness.fired(double)`. The state after each step is an
+assertion inside the block, so the page prints only what its test asserts.
+
+**The departure (C1).** Four blocks fenced `gleam src/<path>`, the excerpts that "Reading
+a row" shows from `model.gleam`, `identity.gleam` and `publish.gleam`, are checked
+against the source file they name, not against `guide_test.gleam`
+(`ai_tmp/review/GD07-1/ev-C1-excerpts-absent.txt`). Step 3 says "every fenced `gleam`
+block ... appears verbatim in that file". The lead keeps the departure: a source excerpt
+checked against `src/` fails when `src/` changes, and a copy in the test file would be a
+second copy that can drift.
+
+**The break**, `ev-guide-break.txt`: in Scenario A's first block, the ack's fired rule
+`AckMarksRecord` changed to `AckRepeats`.
+
+```text
+$ just gleam-double
+...
+FAIL guide_test.every gleam block of the guide is verbatim in its source, and each scenario's section has one: crashed: ...
+303 tests run, 302 passed
+coverage faults: 0
+exit status: 1
+
+HEAD 5bc619b08375872c685aca78cc95ddd4eee2b8a2
+README sha256 before the break: 832076ae8f520498132ec23208a3d894ae184af9a7add7e8ca5f6dc4ab87270c
+$ diff -u ai_tmp/gd/GD07/README.before-break.md gleam-double/README.md
+...
+-  assert harness.ack(double, "c1", "lease-1", "k") == fired(["AckMarksRecord"])
++  assert harness.ack(double, "c1", "lease-1", "k") == fired(["AckRepeats"])
+...
+diff exit status: 1
+restored: cp ai_tmp/gd/GD07/README.before-break.md gleam-double/README.md; touch gleam-double/README.md
+README sha256 after the revert: 832076ae8f520498132ec23208a3d894ae184af9a7add7e8ca5f6dc4ab87270c
+sha256 matches: yes
+```
+
+The crash report in that run names the fault: `line 696: the gleam block is not verbatim
+in test/guide_test.gleam`. The drift check was renamed during the triage, after the
+review's last mutant runs, which still show the old name.
+
+Lint: two defects were planted in the README to show the hooks see it. In
+`ev-guide-lint-plant.txt` markdownlint reports `MD009/no-trailing-spaces` and
+`MD018/no-missing-space-atx` at `gleam-double/README.md:1220` and `:1221`, and the run
+exits 1. In `ev-guide-lint-plant-typos.txt` typos fails on line 1220, exit status 1: of the two
+misspellings planted, it names one, and only in the pass over untracked files. Then
+`ev-guide-lint.txt` (`just lint`) and `ev-guide-docs.txt` (`just check-docs`), each exit
+status 0, and `ev-guide-green.txt`, `303 tests run, 303 passed`, `coverage faults: 0`,
+exit status 0. The nine new tests are the four walkthroughs, the drift check and four
+controls.
+
+#### Step 4: the findings
+
+`gleam-double/SPEC-NOTES.md` now opens with "Findings": the rulings followed, how the
+notes are grouped, where the readings agree, where they depart, what no `N`-note holds,
+what the actor showed about the serialized stream, and the open questions left
+untouched. The header gained one sentence: agreement is weak evidence, since shared rule
+1 had this double take an `N`-note's reading wherever the specification did not
+contradict it.
+
+`ev-notes-ids.txt`, quoted in part:
+
+```text
+before (git HEAD 5bc619b08375872c685aca78cc95ddd4eee2b8a2): 67 ids G01 to G67
+after  (worktree gleam-double/SPEC-NOTES.md): 67 ids G01 to G67
+same set of ids: True
+...
+notes whose text changed: none
+...
+Where it departs from an `N`-note: 2: G14 G35; in id order: True
+...
+```
+
+The four groups hold 34, 2, 21 and 10 notes. A note that fits another heading is listed
+there from the findings section; G09, G17 and G26 against N18 are the departures listed
+that way. The check predates the triage's edits to G27 and G59. At the record, 67 note
+headings and 67 `N`-note lines (`ev-handback-checks.txt`, part 3).
+
+The serialized stream, seven findings:
+
+1. Competing pulls, in the orders that occurred: `competing_test`'s three tests, with
+   GD03's scratch owner that failed them (G32).
+2. Competing joins, in the one order that occurred: `owner_test`'s "the same join from
+   several processes succeeds exactly once" (G03).
+3. An action against a lapse: `branch_a_test`'s competing renew and tick, and S066's and
+   S067's halves in fixed orders (G63).
+4. No rule needed more than one message, and no process but the owner holds queue state:
+   a reading of `owner.gleam`, with `core_test`'s three witness tests (G47).
+5. A lapse ahead of an already-queued action: a single mailbox never does it. A reading
+   of `owner.gleam`; no test (G62).
+6. A failure part-way through a tick, set against finding 9: `core_test`, `expiry_test`
+   and the two `owner_test` tests (G59).
+7. Whether one owner made a question easier or harder: findings 6, 9 and 10, drawn from
+   the notes and items 5 and 6, with no test of its own.
+
+The four rulings are listed with the ticket that applied each (N32 in GD02, N24 in GD04,
+N31 in GD05, N38 in GD06). The six open questions are quoted, and S026 (`oq:7`) is the
+one `oq:N` row. Lint, `ev-findings-lint.txt`, exit status 0; `ev-findings-green.txt`,
+`303 tests run, 303 passed`, `coverage faults: 0`, exit status 0.
+
+#### Step 5: the handbook
+
+- `docs/project/repository-map.md`: the `gleam-double/` row names `README.md` as the
+  reader's guide, and the row and the tree line both say `SPEC-NOTES.md` holds the
+  findings first.
+- `docs/reference/commands.md`: the `just gleam-double` row describes the strict check and
+  no longer mentions pending lists.
+- `ev-check-docs.txt` (the strict agent) and `ev-lead-docs.txt` (the lead): `just
+  check-docs`, `Validated 49 pages and 50 canonical topics.`, exit status 0. No page was
+  added to `docs/manifest.yml`.
+
+### 5. Checkpoint record
+
+One checkpoint, step 6: conformance, breakage and design, over the whole of
+`gleam-double/` and this ticket's diff, before the final commit. The conformance lens filed C1 and C2, the breakage lens B1 to
+B4, and the design lens D1 and D2.
+
+- **`codex exec --help` on the day.** It was checked in GD04 and not rerun.
+  `ai_tmp/gd/GD04/ev-codex-help.txt` was last written at 2026-11-21T06:09:24Z, and the
+  three review logs at 10:26:31Z, 10:27:37Z and 10:29:43Z the same UTC day. It was the
+  previous day in local time.
+- **Harness and model.** Codex v0.169.1 with `gpt-6-astra`, `sandbox: read-only`,
+  reasoning effort `ultra`, one fresh process per lens, by the ticket's corrected
+  command; each `log-<lens>.txt` opens with those lines. Codex was on `PATH`, so no
+  fallback was needed.
+- **Recovery.** Each findings file opens `Source: last-message`, and below that line it
+  matches its `last-<lens>.md`: Codex's last message, since a read-only Codex writes no
+  file.
+- **What the reviewers ran.** Read-only commands. The breakage lens's B1 evidence is a
+  mutant applied in memory to the compiled Erlang. Its "Verification" item says "The
+  script was not run."
+- **Brief.** `head.txt`, then each lens's questions (`lens-<lens>.txt`). It names the
+  ticket, `tickets/CONVENTIONS.md`, the base, the whole of `gleam-double/` and the
+  series' diff, and gives seven known points not to report again: G35, G27, G59, the
+  equivalent mutants, GD06's rows written before their tests, the walkthrough tags beside
+  the ports, and the table check under `ai_tmp/`. It gives no hand-back conclusion.
+- **Reviewed tree.** `766b97f049e344609f85eec9888aa1afe00f953d`
+  (`tree-before-review.txt`, written at 10:22:03Z). Before any fix `just gleam-double`
+  ended `303 tests run, 303 passed`, `coverage faults: 0`, exit status 0
+  (`ev-baseline.txt`).
+- **Triage.** The verdicts are `verdicts.md`. Who triaged, how many subagents, their
+  model and their independence from the reviewers and the authors are not recorded.
+- **Rounds.** One. No finding was high, so no second round was owed.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | low | valid, handed back | The four `gleam src/<path>` excerpts are checked against their source, not `guide_test.gleam` | Kept by the lead as a departure (section 4) |
+| C2 | low | valid | The four walkthrough tests depend on the literal `lease-1`; G27 named only two exceptions to N15 | G27 lists them and says "It differs in six tests" |
+| B1 | medium | valid | A runner that took a crash or a timeout for a pass survived every test | `runner.runner_faults()`, outside the registry, and two `runner_test` controls |
+| B2 | medium | valid | A blockquoted `gleam` fence and a longer closing fence escaped the drift check | Fences parsed after spaces and `>` marks, closed as CommonMark closes them; one new control |
+| B3 | medium | valid | A repeated block passed | Each scenario's blocks must make up its test body, in order; one new control |
+| B4 | medium | valid, an open point | A clock set back after a nack makes the lapse and a release fail `NackedBeforeExpiry`; the rows follow the rules' text | A new `owner_test` test pins it; G59 and finding 6 name it and ask the question |
+| D1 | low | valid | Owner calls time out after 1,000 ms and crash the caller; the guide said they block and nothing panics | The guide's "Its mailbox" item and the dispatch paragraph corrected |
+| D2 | low | valid | Rules read `model.State`, the checker a `Snapshot`; the guide's table gave both `Snapshot` | The table row split |
+
+Applied by the triage to `runner.gleam`, `runner_test.gleam`, `guide_test.gleam`,
+`owner_test.gleam`, `README.md` and `SPEC-NOTES.md` (G27, G59 and finding 6), all in
+Files touched. Nothing under `src/` changed. B4's new test pins behaviour on an open
+point; the lead kept it, as the `oq:7` precedent keeps S026's port. C1 was handed back
+and kept. One limit is left: a fence inside a list item is not parsed (Open points).
+
+Each mutant ran through `scratch/mutant.sh`, GD06's script with its keep path moved and
+its filter widened to `FAULT` and `COVERAGE` lines. Each file ends with a `restored:`
+line whose two SHA-256 values match, then `exit status: 0`, which is the script's own
+status, not the recipe's. A run the mutant fails shows a `FAIL` or `FAULT` line and the
+recipe's `error: recipe gleam-double failed ... exit code 1`.
+
+| Mutant | Run | Result |
+| --- | --- | --- |
+| A crash taken for a pass (B1) | Before, `ev-B1-crash-passes-survives.txt` | `303 tests run, 303 passed`, no `error:` line |
+| The same | After, `ev-B1-crash-passes-killed.txt` | `FAULT the runner took a test that crashed for a pass`, `305 tests run, 305 passed`, the recipe fails |
+| A timeout taken for a pass (B1) | Before, `ev-B1-timeout-passes-survives.txt` | `303 tests run, 303 passed` |
+| The same | After, `ev-B1-timeout-passes-killed.txt` | `FAIL runner_test.a test that does not return in time fails`, `305 tests run, 304 passed` |
+| A blockquoted `gleam` block holding `assert False` (B2) | Before, `ev-B2-blockquote-survives.txt` | `305 tests run, 305 passed` |
+| The same | After, `ev-B2-blockquote-killed.txt` | `307 tests run, 306 passed`; the drift check fails |
+| An `sh` block closed by a longer fence, then a `gleam` block (B2) | Before, `ev-B2-long-close-survives.txt` | `305 tests run, 305 passed` |
+| The same | After, `ev-B2-long-close-killed.txt` | `307 tests run, 306 passed`; the drift check fails |
+| A repeated block in Scenario A (B3) | Before, `ev-B3-duplicate-survives.txt` | `305 tests run, 305 passed` |
+| The same | After, `ev-B3-duplicate-killed.txt` | `307 tests run, 306 passed`; the drift check fails |
+
+The crash mutant survived the two new `runner_test` controls as well, because the
+mutated runner also took the control's own failed assertion for a pass; that run, `305
+tests run, 305 passed`, was overwritten by the rerun and is not recorded. That is why
+`runner_faults()` runs outside the registry. `ev-B1-controls-green.txt`, `305 tests run,
+305 passed`. `ev-B2B3-firstrun.txt` failed four existing controls, `305 tests run, 301
+passed`, exit status 1, before they were adapted; `ev-B2B3-green.txt`, `307 tests run,
+307 passed`.
+
+B4's evidence: `ev-B4-spec-time.txt`, a `grep` of the specification for `monoton`, `goes
+back`, `backward`, `clock` and `Timestamp`, which finds field declarations and comments
+and no requirement that `now` advance; and `ev-B4-backward-clock.txt`, `308 tests run,
+308 passed`, exit status 0, with the new test.
+
+The re-run after the checkpoint, `ev-final.txt`, uncommitted, on base
+`5bc619b08375872c685aca78cc95ddd4eee2b8a2`, written at 10:44:48Z:
+
+```text
+$ just gleam-double
+...
+308 tests run, 308 passed
+coverage faults: 0
+exit status: 0
+```
+
+`ev-lint.txt` (`just lint`) and `ev-docs.txt` (`just check-docs`): exit status 0 each.
+The tree after the triage is not recorded; by the lead's account the work commit's tree,
+`5760747f02ef1eafcf888df0e4fffb743ab13646`, is that tree.
+
+### 6. Verification at the work commit
+
+The Verification block ran at `bedb7af6b0873335ca0dfe51136bccfcad6508a7` as one `sh`
+script under `set -eu` (`verification.sh`, the ticket's block word for word; output in
+`ev-verification.txt`, written at 10:45:53Z). It exited 0, so every `test` in it held:
+no pending list is left under `src/` or `test/`, `owner` is still the only importer of
+`gleam/erlang` and `gleam/otp` under `src/`, no `erl_crash.dump` was left, and `git
+status --short` printed nothing. The two lines `273 tests run: 273 passed, 0 skipped`
+inside `just check` are the Rust workspace's tests, not the double's.
+
+```text
+$ sh ai_tmp/gd/GD07/verification.sh
+bedb7af6b0873335ca0dfe51136bccfcad6508a7
+...
+gleam 1.19.1
+...
+OTP 29
+...
+308 tests run, 308 passed
+coverage faults: 0
+...
+Validated 49 pages and 50 canonical topics.
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+The offline run at the work commit, `ev-offline.txt` (its first line is the commit,
+before the `$` line):
+
+```text
+bedb7af6b0873335ca0dfe51136bccfcad6508a7
+$ sandbox-exec -p (version 1)(allow default)(deny network*) just gleam-double
+...
+308 tests run, 308 passed
+coverage faults: 0
+exit status: 0
+```
+
+Its negative control, `ev-offline-control.txt`, quoted whole, written at 10:46:01Z with
+`ev-offline.txt`; it names no commit:
+
+```text
+$ sandbox-exec -p (version 1)(allow default)(deny network*) curl -sS --max-time 10 -o /dev/null https://hex.pm
+curl: (6) Could not resolve host: hex.pm
+exit status: 6
+```
+
+This `curl` was a second control, beyond the plan's list, which authorised one, in GD01.
+It ran under the denial, failed to resolve the host and reached nothing. Nothing left the
+machine.
+
+### 7. The series code review, and Verification at the review fix commit
+
+`code-review.md` holds the result and the lead's triage.
+
+- **How it ran.** Once, after the work commit and before this record, over
+  `main...build-gleam-double`: the whole series. The plan asked for the default effort.
+  The lead passed no level, and the skill reused "high", the level typed last. **This
+  departs from the plan.** The lead sent the series' read limits as a message after
+  launch, and the skill reports that it kept to them. It ran no recipe.
+- **The result.** No blocking bug and six nits. The skill's full output is in the lead's
+  conversation, not in a file under `ai_tmp/`, so it is not recorded beyond
+  `code-review.md`'s summary.
+
+| Nit | Where | Triage |
+| --- | --- | --- |
+| 1 | `pull.gleam:173`: a repeated lease id fences the consumer out of its new lease | Open point: G27's question |
+| 2 | `harness.gleam:72`: `set_time` was asynchronous | Fixed in `25008d690be03314fdec7875325addac01da314e`: `Set` carries a reply and `set_time` waits on it |
+| 3 | `core.gleam:225`: `TickReport.lapsed` can name a still-active lease on a hand-built state | Open point: the owner cannot reach it, and a fix would change `src/` after the checkpoint |
+| 4 | `owner.gleam:90`: a clock that goes back | Already B4 and G59 |
+| 5 | `docs/decisions/README.md:67`: "The next decision is 0021." | Fixed in the same commit: it now says decision 0021 records the double's toolchain (GD01), and "The next decision is 0022." |
+| 6 | `.scratch/` holds committed tickets the project map does not list | Reported, not changed: the tickets arrived in `cca486f`, before this run, and `.scratch/python-double/` predates it |
+
+The fix to nit 5 edits `docs/decisions/README.md`. This ticket's Non-goals say "No change
+under ... `docs/decisions/`", and Files touched does not list the file; the series
+README dropped that non-goal for GD01 only. **This departs from the ticket**, to correct
+GD01's index line, which should have moved when decision 0021 landed. The fix to nit 2
+edits `harness.gleam`, under `gleam-double/test/`, which Files touched lists for this
+ticket's own lines. No review ran over the fix commit's diff.
+
+`ev-cr-green.txt` (`308 tests run, 308 passed`, `coverage faults: 0`), `ev-cr-lint.txt`
+and `ev-cr-docs.txt`, each exit status 0. `code-review.md` places them at the fix commit;
+they name no commit and were written at 10:52:02Z to 10:52:10Z, before that commit at
+10:52:18Z, so they ran on the fix uncommitted, on `bedb7af6b0873335ca0dfe51136bccfcad6508a7`.
+
+Verification at the review fix commit, the same script (`ev-verification-after-cr.txt`,
+written at 10:52:44Z):
+
+```text
+$ sh ai_tmp/gd/GD07/verification.sh
+25008d690be03314fdec7875325addac01da314e
+...
+gleam 1.19.1
+...
+OTP 29
+...
+308 tests run, 308 passed
+coverage faults: 0
+...
+Validated 49 pages and 50 canonical topics.
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+The offline run after it, `ev-offline-after-cr.txt`, under the same denial: `308 tests
+run, 308 passed`, `coverage faults: 0`, exit status 0. Unlike `ev-offline.txt` it does
+not name its commit; it was written at 10:52:45Z, one second after the Verification
+above, and `code-review.md` places it at the fix commit. No `curl` control ran with it.
+
+### 8. The acceptance criteria against the evidence
+
+1. `just gleam-double` exits 0 and shows the counts: `ev-verification.txt` and
+   `ev-verification-after-cr.txt`, `308 tests run, 308 passed`.
+2. No pending list: the Verification's `rg` over `src/` and `test/`, with its positive
+   control, in both runs. Step 2's two probes and the lead's third are quoted with their
+   output and exit status (section 4). The scenario and row halves are shown by probes;
+   the never-fired and invariant halves only by `coverage_test`'s scratch-input tests.
+3. The guide maps every entity, rule and invariant to a name that exists:
+   `ev-guide-table.txt`, with ten failing controls, on the page before the review, and
+   `ev-handback-checks.txt`, part 2, on the committed page, without controls. The
+   walkthrough runs as four tagged tests in every green run, and step 3's break is
+   quoted.
+4. `SPEC-NOTES.md` opens with the findings; every note sits under one heading
+   (`ev-notes-ids.txt`); 67 notes and 67 `N`-note lines (part 3); the rulings and the
+   open questions are listed (section 4). That each `N`-note line names a note or says it
+   has none was not checked by a script; the conformance lens was asked and filed no
+   finding on it.
+5. The findings say what the actor showed. Findings 1, 2, 3 and 6 name their tests, and
+   finding 4 names the witness tests beside its reading of `owner.gleam`. Findings 5 and
+   7 name no test: finding 5 says no test can show it, and finding 7 rests on the other
+   findings. **Not fully met** as the criterion is worded.
+6. `just gleam-double` leaves nothing Git can see and no `erl_crash.dump`: both
+   Verification runs test both under `set -eu` and exit 0.
+7. The checkpoint is recorded in section 5, with the `codex exec --help` check made the
+   same UTC day in GD04.
+8. `just check` ends with its line and `git status --short` prints nothing: both
+   Verification runs.
+
+### 9. Stops
+
+None fired. The conditions watched:
+
+- A ported scenario failing against rows that follow the specification, with no ruling
+  to cover it (shared rule 1). None did; GD07 ported none.
+- A `GuardOverlap` on a specification table (shared rule 4). None in any green run.
+- A count that moved: every green run asserts 93, 32 and 35 and ends `coverage faults:
+  0`.
+- A finding that needs a behaviour change. B4 would, if the maintainer rules that `now`
+  never goes back; it is an open point, and nothing under `src/` changed for it.
+- A reach for the network. No network recipe ran. The review called a model API, which
+  the checkpoint authorises. The code review was the plan's, and the ticket records no
+  authorisation for it. The second `curl` control ran under the denial (section 6).
+
+Step 7's stop stands: nothing was pushed and no pull request was opened.
+
+### 10. What was not run, and what was not recorded
+
+Not run:
+
+- Any push, pull request or issue.
+- `just initialize`, `just gleam-double-deps` and `just lock`.
+- A CI run.
+- A second review round. None was owed.
+- A review of the fix commit's diff, and a mutation pass in GD07 beyond the triage's ten
+  mutant runs.
+- §11's two named negative controls, `curl` to `static.rust-lang.org` and to `1.1.1.1`
+  with `--noproxy '*'`. The one control run was to `hex.pm`, at the work commit only.
+- The table check's ten controls on the committed README.
+
+Not recorded: the model of every subagent and how many triage subagents ran; the restores
+after the strict agent's two probes; the first run of the B1 crash mutant against the
+two new controls; the tree after the triage; the commit of `ev-offline-control.txt`
+and `ev-offline-after-cr.txt`, beyond their times; and the code review's full output.
+
+### 11. What the maintainer should read first
+
+In `gleam-double/SPEC-NOTES.md`, "Findings":
+
+- **The departures, G14 and G35** ("Where the second reading departs"). G14: is a
+  snapshot whose record carries the held fields on its held variant acceptable, or
+  should it show the flat record, with the five fields optional? G35, finding 5: is a
+  refusal's kind, and what it carries, the specification's to name at all?
+- **The serialized stream** ("What the actor showed about the serialized stream", items 1
+  to 7). G32: should the specification state that actions are applied one at a time,
+  each to the state the one before left? Item 4: does "one serialized stream" require
+  one owner of the state, or only ordered applications? G62: is a lapse overtaking a
+  queued action a freedom of the implementation, or something every implementation must
+  be able to show?
+- **G59 and B4, the clock going back** (item 6). Finding 9: is a tick atomic as a whole?
+  Should one outcome that cannot be applied hold back the outcomes due after it, at this
+  tick and every later one? And does the specification mean `now` never to go back? If
+  not, a lease that ends before a `nacked_at` stamped under it cannot end at all while the
+  clock stays there.
+- **G27, lease identity.** Should the specification declare a lease's identity, and if
+  it does, say that two leases never share one? The code review's nit 1 and the
+  `PartialTick` test both turn on it.
 
 ## Open points
 
-- PD07 is still todo. If the maintainer answers it before this ticket starts, the
-  findings say how each answer bears on the Gleam double's ports of S053, S066, S075,
-  S091 and S093.
-- Whether the Gleam double should then be used as an oracle, for the Rust or against the
-  Python double, is not decided here.
+Every point still standing from GD01's to GD07's hand-backs, merged where two tickets
+carried the same one, each naming the ticket where it began. Points a later ticket closed
+are left out: GD02's checker witness (GD04, G47), GD02's derived sets, the
+`EqualRankRefused` input (GD05), GD03's lease view and `LeaseFenced` (GD04),
+`PocketTouched` for a parked pocket and the lapse halves (GD06), GD04's release of a
+deferred record end to end (GD06's section 4, the by-release halves of S078 to S081),
+`core.tick`'s comment (GD07), and GD01's pins, offline claim, `AGENTS.md` line and pixi
+feature.
+
+1. **PD07 is still todo** (GD02; carried by GD04, GD05, GD06 and this ticket).
+   `.scratch/python-double/PD07-inspection-contract.md` asks whether the inspection shape
+   is part of the contract. The double follows the rulings as they stand (G37, G49, G67).
+   PD07 was not answered before this ticket started, so the findings say nothing of how
+   an answer bears on the ports of S053, S066, S075, S091 and S093; each answer may
+   change them.
+2. **Whether the Gleam double should then be used as an oracle**, for the Rust or against
+   the Python double, is not decided here (GD07).
+3. **`pixi.lock` was written by pixi 0.84.1, and CI pins v0.83.0** (GD01). Whether 0.83.0
+   accepts the file was not run; only a push can settle it.
+4. **Shared rule 6 says two things about a rewritten `manifest.toml`** (GD01, C1). The
+   recipe fails after the rewrite and leaves the file rewritten. The maintainer accepts
+   that or asks for the guarded lines that restore it. Whether `gleam` rewrites a drifted
+   manifest and exits 0 is knarr's finding, not shown here (GD01).
+5. **Shared rule 4 says `core` is the only place that allots from `next_position`**
+   (GD01). The interpreter in `rules.gleam` allots through two accessors `core` hands it.
+   The maintainer accepts the reading or rewords the rule in the seven tickets.
+6. **Whether Renovate reads the Gleam pins** in the `gleam` feature and `gleam.toml`, and
+   whether anything audits a hex package (GD01, C6; the series README). Decision 0021
+   says the pins move by hand until it is settled.
+7. **An injected clock or lease-id function that crashes kills the owner** (GD01, B1). It
+   is a contract on `owner.start`; the double ships no real clock.
+8. **What the runner's checks still miss** (GD01, round 2). A `main` that imports a test
+   module and drops its `tests()`, a string in `main` that holds an `import` line, and a
+   test whose linked helper crashes after the test returns all pass. GD07's
+   `runner_faults()` now catches a runner that takes a crash or a timeout for a pass (B1).
+9. **Two network reaches in GD01 were not treated as stops** (GD01, section 7 of its
+   hand-back). The maintainer judges whether the run should have paused.
+10. **The snapshot's record holds the held fields on its held variant (G14)** (GD02, C2).
+    It departs from N08 and from shared rule 4's "flat field names"; the maintainer
+    accepts it or asks for the flat form or five read functions.
+11. **`MarkConflict` carries no mark (G35)** (GD04). It departs from N21.
+12. **Two invariants are taken as written (G17, G18)** (GD02).
+    `OneActiveLeasePerConsumer` ranges over consumers, and the position invariants compare
+    within a kind.
+13. **No test shows that the checker runs only after every `Handed` is answered** (GD03).
+    GD04's witness tests (G47) cover the publish and release chains; no later hand-back
+    records one for a pull, where no state between the claim and its `HoldRecord`s breaks
+    an invariant.
+14. **No owner-driven test would see a pull or a renew empty the dead-letter queue**
+    (GD03, B1). Only hand-built states hold a dead letter in those tests; no later
+    hand-back records the seeding GD03 proposed.
+15. **The competing-callers tests sample the scheduler's orders** (GD03; GD06). They
+    cannot show a property holds in every interleaving. GD06's renew-and-tick test cannot
+    show both orders occurred, and the scratch run that counted ten of each was not saved.
+16. **A tick keeps what succeeded before a failure, and departs from shared rule 4 for a
+    tick as a whole (G59)** (GD06). Whether a tick should be atomic is finding 9 of
+    `double/SPEC-NOTES.md`. A failure that stays in the state stops every later tick at
+    the same outcome.
+17. **A clock set back after a nack leaves a lease unable to end (B4, G59)** (GD07, and
+    the code review's nit 4). The lapse and a release fail `NackedBeforeExpiry`, and the
+    owner keeps its state. The specification states no monotonic clock; the maintainer
+    decides whether it means one.
+18. **Two leases can share an id (G27)** (GD03; carried by GD04, GD05 and GD06; the code
+    review's nit 1, and C2). The double does not check that an id it is handed is new,
+    and a repeated id fences a consumer out of its new lease. The `PartialTick` test
+    depends on that, and six owner-driven tests depend on literal ids.
+19. **The questions the notes leave for the maintainer** (GD04, GD05 and GD06), now
+    gathered in the findings section of `gleam-double/SPEC-NOTES.md`: positions and
+    numeric domains (G04, G16, G29, G33, G48, G18, G45, G52); refusals and their order
+    (G34, G36); orders the specification does not state (G06, G19, G38, G49, G57, G64);
+    restated guards and comments (G39, G40, G41, G42, G43, G46, G47, G61); time (G05,
+    G56, G58, G60, G62, G63); `shed_at` (G50); what a publish answers (G54); open
+    question 7 (G65); and S075's Rust comment (G67).
+20. **Equivalent mutants survive** (GD04: D13 and L3e; GD06: T6, T15 and T16). Each rests
+    on an argument, not a test.
+21. **Four tests were never red, and no mutant fails them** (GD04: three; GD05: one).
+    Each pins a defect over a state built by hand.
+22. **`arrival_premises` has failed only in its setup** (GD05), and **one version ending
+    in both shed queues is caught by one test alone, DN12's** (GD05).
+23. **The mutation passes predate their checkpoints' fixes** (GD05, GD06). `src/` was
+    unchanged by those fixes, so no kill is lost, but no mutant ran against the new
+    assertions beyond the triages' own. GD07 ran no mutation pass beyond the triage's
+    ten runs.
+24. **Two reviewers ran nothing in GD05** (GD05). Their findings rest on static
+    inspection.
+25. **`core.tick`'s report on states the owner cannot reach** (GD06; the code review's
+    nit 3). `core.report`'s missing-lease branch has no test and no mutant, and
+    `TickReport.lapsed` can name a still-active lease on a hand-built state. A fix would
+    change `src/` after the checkpoint.
+26. **GD06's rows were written before their tests** (GD06). The red runs and mutants show
+    each test can fail; no evidence shows a test written first.
+27. **The guide's source excerpts are checked against `src/`, not `guide_test.gleam`
+    (C1)** (GD07). A departure from step 3's wording that the lead kept; the maintainer
+    accepts it or rewords the step.
+28. **The drift check does not parse a fence inside a list item** (GD07, B2). A `gleam`
+    block there in the setting or the common start would go unchecked.
+29. **The guide's table check is a script under `ai_tmp/`** (GD07). It is no part of
+    `just gleam-double` or the gate, so a later rename in `src/` can leave the table
+    wrong unnoticed.
+30. **`.scratch/` holds committed tickets that the project map does not list** (GD07, the
+    code review's nit 6). Reported, not changed.
+31. **The review fix commit touches `docs/decisions/README.md`**, which this ticket's
+    Non-goals exclude, and the work commit's one change under `src/` is a doc comment,
+    not a review fix (GD07, section 3 and section 7). The maintainer accepts both or asks
+    for them to move.
