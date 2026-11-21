@@ -125,7 +125,7 @@ snapshot.
 | Id | Title | File | Blocked by | Status |
 | --- | --- | --- | --- | --- |
 | GD01 | The toolchain, the owner actor and the joins | `GD01-toolchain-owner-and-joins.md` | none | done |
-| GD02 | The model, the invariant checker, coverage and publish | `GD02-model-checker-coverage-publish.md` | GD01 | todo |
+| GD02 | The model, the invariant checker, coverage and publish | `GD02-model-checker-coverage-publish.md` | GD01 | done |
 | GD03 | Pull and the lease | `GD03-pull-and-the-lease.md` | GD02 | todo |
 | GD04 | Ack, nack, release and the lease's end | `GD04-ack-nack-release.md` | GD03 | todo |
 | GD05 | Deferral behind the held version | `GD05-deferral.md` | GD04 | todo |
