@@ -12,7 +12,9 @@ import pachinko_double/domain.{type Answer, type Failure}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type State}
 import pachinko_double/publish.{type Publication}
+import pachinko_double/pull.{Pull}
 import pachinko_double/rules
+import pachinko_double/settle.{Renew}
 import pachinko_double/time.{type Timestamp}
 
 /// How long a caller waits for the owner's reply, in milliseconds. A caller
@@ -94,6 +96,22 @@ pub fn consumer_joins(owner: Subject(Message), consumer_id: String) -> Reply {
 /// `Publishing` surface. `publisher` is the publisher's id.
 pub fn publish(owner: Subject(Message), publication: Publication) -> Reply {
   act(owner, core.Publish(publication))
+}
+
+/// `Pull(consumer, limit)`, from the `Consuming` surface. `consumer` is the
+/// consumer's id.
+pub fn pull(owner: Subject(Message), consumer: String, limit: Int) -> Reply {
+  act(owner, core.Pull(Pull(consumer:, limit:)))
+}
+
+/// `Renew(consumer, lease)`, from the `Consuming` surface. `consumer` is the
+/// consumer's id and `lease` the lease's id.
+pub fn renew(
+  owner: Subject(Message),
+  consumer: String,
+  lease: String,
+) -> Reply {
+  act(owner, core.Renew(Renew(consumer:, lease:)))
 }
 
 /// The complete snapshot of the state, as it is when the owner reaches this

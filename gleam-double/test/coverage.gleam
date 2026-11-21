@@ -32,23 +32,20 @@ pub const expected_invariants = 35
 /// The scenarios no test pins yet, in the catalog's order. Each ticket
 /// takes off exactly what it lands.
 pub const pending_scenarios = [
-  "S001", "S002", "S006", "S007", "S008", "S012", "S015", "S019", "S020", "S021",
-  "S022", "S023", "S024", "S025", "S026", "S027", "S028", "S029", "S030", "S031",
-  "S032", "S033", "S034", "S035", "S036", "S037", "S038", "S039", "S040", "S041",
-  "S042", "S043", "S044", "S045", "S046", "S047", "S048", "S049", "S050", "S051",
-  "S052", "S053", "S054", "S055", "S056", "S057", "S058", "S059", "S060", "S061",
-  "S062", "S063", "S064", "S065", "S066", "S067", "S068", "S069", "S070", "S071",
-  "S072", "S073", "S074", "S075", "S076", "S077", "S078", "S079", "S080", "S081",
-  "S082", "S083", "S084", "S085", "S086", "S087", "S088", "S089", "S090", "S091",
-  "S092", "S093",
+  "S002", "S006", "S007", "S021", "S023", "S024", "S025", "S026", "S034", "S035",
+  "S037", "S040", "S041", "S042", "S043", "S044", "S045", "S046", "S047", "S048",
+  "S049", "S051", "S052", "S053", "S054", "S055", "S056", "S057", "S058", "S059",
+  "S060", "S061", "S062", "S063", "S064", "S065", "S066", "S067", "S068", "S069",
+  "S070", "S071", "S072", "S073", "S074", "S075", "S076", "S077", "S078", "S079",
+  "S080", "S081", "S082", "S083", "S084", "S085", "S086", "S087", "S088", "S089",
+  "S090", "S091", "S092", "S093",
 ]
 
 /// The rules no table holds yet, in the specification's order. A rule comes
 /// off the list when it becomes a row.
 pub const pending_rules = [
   "DeferBehindHeldVersion", "ReviveIdlePocket", "ReviveParkedPocket",
-  "PullWithinLease", "PullClaimsFrontPocket", "HoldRecord", "PullFindsNoPocket",
-  "AckMarksRecord", "AckRepeats", "NackMarksRecord", "NackRepeats", "Renew",
+  "AckMarksRecord", "AckRepeats", "NackMarksRecord", "NackRepeats",
   "ReleaseRequeuesPocket", "ReleaseIdlesEmptyPocket", "LeaseLapses",
   "LeaseExpiryParksPocket", "LeaseExpiryKeepsPocketAtFront",
   "LeaseExpiryIdlesEmptyPocket", "RequeueUnsettledRecord",

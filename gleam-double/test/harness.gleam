@@ -7,12 +7,17 @@ import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import pachinko_double/config.{type Config, type Settings, Settings}
+import pachinko_double/domain.{type BatchRecord, Batch}
 import pachinko_double/inspection.{type Snapshot}
-import pachinko_double/model.{type Pocket, type Record, PocketQueued}
-import pachinko_double/owner.{type Reply}
-import pachinko_double/publish.{Publication}
+import pachinko_double/model.{
+  type Mark, type Pocket, type Record, Consumer, PocketQueued, RecordHeld,
+  RecordQueued,
+}
+import pachinko_double/owner.{type Reply, Outcome}
+import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/time.{type Duration, type Timestamp}
 
 /// How long a call to a fake may take, in milliseconds.
@@ -179,7 +184,13 @@ pub fn fixture_settings() -> Settings {
 /// publisher `p` and consumers `c1`, `c2` and `c3`, all joined. Setting the
 /// time is not a counted read.
 pub fn fixture() -> Double {
-  let assert Ok(config) = config.new(fixture_settings())
+  fixture_with(fixture_settings())
+}
+
+/// The Rust fixture's `with_config`: the same starting point over other
+/// settings.
+pub fn fixture_with(settings: Settings) -> Double {
+  let assert Ok(config) = config.new(settings)
   let double = start(config)
   set_time(double.clock, t0)
   let assert Ok(_) = publisher_joins(double, "p")
@@ -232,15 +243,124 @@ pub fn publish_as(
   rank: Int,
   payload: String,
 ) -> Reply {
-  let publication =
+  publish_publication(
+    double,
     Publication(
       publisher:,
       pocket_key:,
       record_key:,
       rank:,
       payload: bit_array.from_string(payload),
-    )
+    ),
+  )
+}
+
+/// A publish of a publication made by hand, for a payload that is not text.
+pub fn publish_publication(double: Double, publication: Publication) -> Reply {
   logged(double, owner.publish(double.owner, publication))
+}
+
+/// A pull, as the Rust fixture's `try_pull`: whatever the owner replies.
+pub fn pull(double: Double, consumer: String, limit: Int) -> Reply {
+  logged(double, owner.pull(double.owner, consumer, limit))
+}
+
+/// A pulled batch, unpacked, as the Rust fixture's `Batch`, beside the names
+/// of the rules the pull fired. `lease` is the lease's id and `pocket_key`
+/// the pocket's key. It has no `expires_at`, which the Rust's has: the
+/// specification's `Batch` carries none, so a test reads the expiry from the
+/// snapshot's lease.
+pub type Pulled {
+  Pulled(
+    fired: List(String),
+    lease: String,
+    pocket_key: String,
+    records: List(BatchRecord),
+  )
+}
+
+/// A pull that must return a batch, as the Rust fixture's `pull`. The test
+/// fails on any other reply, and on a batch that names another consumer.
+pub fn batch(double: Double, consumer: String, limit: Int) -> Pulled {
+  let assert Ok(Outcome(
+    fired,
+    Some(Batch(consumer: named, lease:, pocket: pocket_key, records:)),
+  )) = pull(double, consumer, limit)
+  assert named == consumer
+  Pulled(fired:, lease:, pocket_key:, records:)
+}
+
+/// The records' keys, in order, as the Rust fixture's `keys`.
+pub fn keys(records: List(BatchRecord)) -> List(String) {
+  list.map(records, fn(record) { record.key })
+}
+
+pub fn renew(double: Double, consumer: String, lease: String) -> Reply {
+  logged(double, owner.renew(double.owner, consumer, lease))
+}
+
+/// What the `Consuming` surface exposes to a consumer of its active lease:
+/// the pocket's key, the lease's `expires_at`, and the pocket's held
+/// records.
+pub type LeaseView {
+  LeaseView(
+    pocket_key: String,
+    expires_at: Timestamp,
+    records: List(MarkedRecord),
+  )
+}
+
+/// One held record as the surface exposes it: its key, the rank and payload
+/// it was handed out with, and its mark.
+pub type MarkedRecord {
+  MarkedRecord(key: String, rank: Int, payload: BitArray, mark: Mark)
+}
+
+/// The Rust fixture's `lease_view`: the consumer's active lease, or `None`.
+/// The Rust asks its queue. This stands in for the `Consuming` surface's
+/// lease view until the owner has its `LeaseView` message, which will
+/// replace this body. Until then it reads the same facts from one
+/// snapshot's derived sets: the consumer's `active_leases`, and that
+/// lease's pocket's `held_records`, smallest position first. The test fails
+/// if the consumer never joined or holds more than one active lease.
+pub fn lease_view(double: Double, consumer: String) -> Option(LeaseView) {
+  let views = inspection.views(inspect(double))
+  let assert Ok(consumer_view) =
+    list.find(views.consumers, fn(view) { view.consumer == Consumer(consumer) })
+  case consumer_view.active_leases {
+    [] -> None
+    leases -> {
+      let assert [lease] = leases
+      let assert Ok(pocket_view) =
+        list.find(views.pockets, fn(view) { view.pocket.key == lease.pocket })
+      let records =
+        pocket_view.held_records
+        |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
+        |> list.filter_map(fn(record) {
+          case record.status {
+            RecordQueued -> Error(Nil)
+            RecordHeld(held_rank:, held_payload:, mark:, ..) ->
+              Ok(MarkedRecord(
+                key: record.key,
+                rank: held_rank,
+                payload: held_payload,
+                mark:,
+              ))
+          }
+        })
+      Some(LeaseView(
+        pocket_key: lease.pocket,
+        expires_at: lease.expires_at,
+        records:,
+      ))
+    }
+  }
+}
+
+/// The lease view's records' keys, in order, as the Rust fixture's
+/// `marked_keys`.
+pub fn marked_keys(records: List(MarkedRecord)) -> List(String) {
+  list.map(records, fn(record) { record.key })
 }
 
 pub fn inspect(double: Double) -> Snapshot {

@@ -90,11 +90,11 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The specification says:** every rule that allots a position takes `next_position`
   and advances it. It gives no initial value.
 - **The double does:** a new queue's `next_position` is 0. Nothing in GD01 allots a
-  position; the rows that assert absolute positions are ported in GD02, and their notes
-  cite this one. GD01's ports of S003, S004 and S005 assert that an owner starts over an
-  admitted config and holds no publisher and no consumer, and not the position it starts
-  at. The two owner tests, which pin no catalog row, compare whole snapshots and so do
-  pin the 0.
+  position; the rows that assert absolute positions are ported in GD02 and GD03, and
+  their notes, G16 and G29, cite this one. GD01's ports of S003, S004 and S005 assert
+  that an owner starts over an admitted config and holds no publisher and no consumer,
+  and not the position it starts at. The two owner tests, which pin no catalog row,
+  compare whole snapshots and so do pin the 0.
 - **`N`-note:** agrees with N04.
 - **Question:** is the starting value meant to be unspecified? Only order and uniqueness
   are observable through the rules, so any start satisfies them.
@@ -193,7 +193,7 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     -5, -1, 0 and then -2. It asserts that the publishes at -1 and 0 fire `Supersede`,
     that the one at -2 fires `DropStalePublish`, and that the record ends at rank 0.
   - No GD02 test publishes a very large rank. S019, the row N17 records for large ranks,
-    is still pending.
+    is ported in GD03 (G30).
 - **`N`-note:** agrees with N03.
 - **Question:** should the specification bound a rank? An implementation with a
   fixed-width integer refuses or wraps a rank the double accepts.
@@ -277,9 +277,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The double does:**
   - `Lease` has one more field, `id`, a `String`. It is how a caller names a lease, so
     two leases over the same pocket and consumer stay distinct.
-  - GD02 lands the field so that the model and the snapshot are complete. No rule creates
-    a lease yet: `PullClaimsFrontPocket`, the rule that draws an id through the request
-    G05 describes, is pending. The invariant controls write their ids by hand.
+  - GD02 lands the field so that the model and the snapshot are complete.
+    `PullClaimsFrontPocket`, the one rule that creates a lease, lands in GD03 and draws
+    the id through the request G05 describes (G27). The invariant controls write their
+    ids by hand.
   - No invariant reads `id`. The checker tells two leases apart by their place in the
     snapshot's list (G11), not by their ids, and it has no check that two ids differ,
     since the specification declares none.
@@ -380,8 +381,9 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     row. Shared rule 4 of the GD tickets says: "An input whose only matching rule is
     still pending is itself pending. No test pins it as a refusal." None does. "Supersede
     takes a held record only with a version deferred behind it" asserts only that
-    `Supersede`'s guard does not hold for it. No publish through the owner can reach the
-    input until a pull lands, since no record is held before then.
+    `Supersede`'s guard does not hold for it. GD03 lands the pull, so a publish through
+    the owner can now reach the input: a higher rank of a key that is held. No test
+    publishes through the owner onto a held record.
 - **`N`-note:** agrees with N11.
 - **Question:** none on the behaviour, which the closure of open question 1 decided. The
   refusal's name is the double's.
@@ -447,8 +449,9 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - It follows a ruling, not a reading of its own. On 2026-11-19 the maintainer ruled on
     N32 that a publish answers nothing, as the specification states, and that a ported
     row asserts that answer and does not port the Rust's outcome.
-  - A rule's answer is an `Option(Answer)`. `Answer` has no constructor in GD02, so the
-    answer of every rule landed so far can only be `None`.
+  - A rule's answer is an `Option(Answer)`. `Answer` had no constructor in GD02. GD03
+    gives it two, `Batch` and `NoPocketAvailable`, and only a Pull rule answers either
+    (G22), so the answer of every Publish rule is still `None`.
   - The owner's reply to a publish that succeeded is `Ok(Outcome(fired, None))`. `fired`
     is the names of the rules that fired, in order. A test returns it to the runner, and
     the coverage check reads it there. It is the double's report and not an answer of
@@ -530,7 +533,8 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     two counts every lease that names the id. The control "UniqueConsumerId: two
     consumers with one id" has one active lease naming the id, and breaks nothing else.
   - Only `PullClaimsFrontPocket` creates a lease, and no rule removes a `Consumer`. That
-    rule is pending.
+    rule lands in GD03, and a pull by a consumer that never joined is refused before any
+    rule runs (G26). So no pull through the owner creates a lease that names no consumer.
 - **`N`-note:** no `N`-note.
 - **Question:** is the invariant meant to bound the leases or the consumers? Written over
   pairs of `Leases`, as `OneActiveLeasePerPocket` is, it would not depend on the consumer
@@ -600,17 +604,22 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     value.
   - A stated order is what lets two snapshots compare with `==`, as every test that shows
     a refusal changing nothing does. No collection is a `Dict` in iteration order.
-  - No ported row asserts this order. S018's port reads the superseded queue, which
-    holds three entries by its end, by rank and by count. No other GD02 port asserts a
-    list with more than one member. S011's port asserts the pocket order, which it reads
-    from the positions.
+  - No row ported in GD02 asserts this order. S018's port reads the superseded queue,
+    which holds three entries by its end, by rank and by count. No other GD02 port
+    asserts a list with more than one member. S011's port asserts the pocket order, which
+    it reads from the positions. Two rows ported in GD03 do assert it: the ports of S015
+    and S019 each assert the superseded queue's entries in order, marked `impl-choice`.
   - The double's own tests of the four rules, the ones named "… changes exactly what it
     ensures …", compare the complete snapshot and so do assert it: a new pocket, a new
     record and a new shed entry at the end of its list, and a superseded record in its
     place. Those assertions are `impl-choice`. They hold because of this order, not
     because of anything the specification states.
   - No GD02 rule creates a lease or a dead letter. Their order is the one stated here,
-    for the tickets that land those rules to keep.
+    for the tickets that land those rules to keep. GD03 keeps it for the leases:
+    `PullClaimsFrontPocket` adds its lease at the end of the leases, and `PullWithinLease`
+    and `Renew` change a lease in its place. The test "PullClaimsFrontPocket changes
+    exactly what it ensures, reads the clock once and draws one lease id" and the three
+    competing-callers tests (G32) assert that order, which is `impl-choice`.
 - **`N`-note:** no `N`-note. The rulings on N31 and N38 treat the Rust's record order and
   its stored pocket order as its inspection shape, and their rows are ported in GD05 and
   GD06. PD07, which asks whether the inspection shape is part of the contract, is still
@@ -676,3 +685,464 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **Question:** is a field that no `ensures` names unchanged, for every rule? For
   `Supersede` the comments say so field by field. The specification states no general
   rule, and the double reads every rule this way.
+
+### G22: a batch names its lease by id and its pocket by key, and carries no expiry
+
+- **Ticket:** GD03.
+- **Concerns:** the `Batch` answer of `PullWithinLease` and `PullClaimsFrontPocket`, the
+  Batch vocabulary entry, the Pull comment and the `Renew` rule; scenarios S027, S036 and
+  S050.
+- **The specification says:**
+  - Both rules end with `Batch`, as in
+    `ensures: Batch(consumer: consumer, lease: lease, pocket: pocket, records: batch)`,
+    where `batch` is `oldest(pocket.queued_records, …)`. The vocabulary calls a batch
+    "what a pull hands back, the lease, the pocket key and zero or more records".
+  - `PullClaimsFrontPocket` names the lease as
+    `Lease{pocket: pocket, consumer: consumer, status: active}`. The Pull comment says:
+    "Batch names the lease the records were handed under; PullClaimsFrontPocket creates
+    that lease in the same rule, so its emission looks the lease up, which reads the
+    resulting state."
+  - "A pull emits Handed for each record of the batch and HoldRecord moves that record to
+    held; the whole pull is one outcome, the chain is how a per-record transition is
+    written."
+  - `Renew` ensures `lease.expires_at = now + config.lease_ttl` and nothing else. It
+    answers nothing.
+- **The double does:**
+  - `Batch` has four fields: the consumer's id, the lease's id (G10), the pocket's key
+    and `records`, a list of `BatchRecord(key, rank, payload)`, smallest position first.
+  - A `BatchRecord` is built from the record as the row read it, before any `Handed` is
+    answered, so it carries the rank and payload the record had then. `HoldRecord` copies
+    the same two into `held_rank` and `held_payload` within the same outcome. A
+    `BatchRecord` carries neither the record's position nor its status.
+  - `PullWithinLease` names the consumer's active lease. `PullClaimsFrontPocket` names
+    the lease it has just created, with no lookup. In the resulting state that is the one
+    lease the specification's lookup can find, by `OneActiveLeasePerPocket`.
+  - Neither `Batch` nor the reply to a renew carries an expiry. A renew that succeeds
+    replies `Ok(Outcome(["Renew"], None))`. N13 records that the Rust's batch and renew
+    both answer the lease's `expires_at`; the ports read it from the snapshot's lease
+    instead: S027's "a pull claims the front pocket, leases it and holds the batch",
+    S036's "a pull under a lease extends the lease" and S050's "a renew extends the lease
+    to now plus lease_ttl".
+  - A batch is an answer, not state, so a test asserts it through the owner's reply. The
+    lease's `granted_at` and `expires_at` and the held fields of each handed record are
+    asserted through the snapshot. "PullClaimsFrontPocket changes exactly what it
+    ensures, reads the clock once and draws one lease id" asserts both for one pull.
+  - The apply step answers each `Handed` in the batch's order and runs the checker once,
+    after the last. No test shows that the checker waits: no state between a pull's own
+    row and its `HoldRecord`s breaks an invariant, so a check part-way would pass too.
+- **`N`-note:** agrees with N13. It differs in one detail: N13's `records` are the
+  `Record` entities the rule read, which still carry their queued status, and a
+  `BatchRecord` holds the key, the rank and the payload alone.
+- **Question:** N13's. Should `Batch` carry the lease's `expires_at`? A consumer needs it
+  to know when to renew, and the `Consuming` surface exposes it only through the lease.
+  This double adds one: which fields of a record does a batch hand over? The rules say
+  `records: batch`, and the surface exposes a held record's key, `held_rank`,
+  `held_payload` and `mark`.
+
+### G23: the Pull table's refusal is unreachable through the owner
+
+- **Ticket:** GD03.
+- **Concerns:** `PullWithinLease`'s `requires: pocket.status = leased`,
+  `PullClaimsFrontPocket`'s `requires: pocket.status = queued`, `PullFindsNoPocket`, and
+  the invariant `UnleasedHasNoActiveLease`.
+- **The specification says:**
+  - `PullWithinLease` has `let lease = Lease{consumer: consumer, status: active}`,
+    `requires: exists lease`, `let pocket = lease.pocket` and
+    `requires: pocket.status = leased`.
+  - The other two rules have
+    `requires: not exists Lease{consumer: consumer, status: active}`. With
+    `let free = Pockets where status = queued`, one requires `free.count > 0` and the
+    other `free.count = 0`.
+  - `PullClaimsFrontPocket` also has `let pocket = min_by(free, p => p.position)` and
+    `requires: pocket.status = queued`.
+  - `UnleasedHasNoActiveLease` is `status != leased implies active_leases.count = 0`.
+  - It does not say what a pull that no rule covers does. For a publish and for a mark it
+    says that an input no rule covers "is rejected".
+- **The double does:**
+  - The Pull table has the three rows, and its answer when no guard holds is a refusal,
+    `PullRefused`, carrying the consumer's id. The name is N14's.
+  - In a state that holds `UnleasedHasNoActiveLease`, an active lease's pocket is leased,
+    so `PullWithinLease`'s second `requires` cannot fail once its first holds.
+    `PullClaimsFrontPocket`'s `requires: pocket.status = queued` cannot fail alone
+    either, since `pocket` is chosen from the queued pockets. So one of the three guards
+    holds in every state the rules reach, and no pull through the owner meets
+    `PullRefused`.
+  - Dispatch evaluates every guard of the table on every pull and returns `GuardOverlap`
+    if two hold (G13), so the three guards are shown disjoint on each pull and not by
+    one test.
+  - The test "no Pull rule holds for an active lease on a pocket that is not leased" is
+    `impl-choice` and carries no scenario tag. It builds by hand three states that break
+    the invariant: an active lease whose pocket is queued, idle or parked. In each,
+    dispatch finds no row, and the apply step answers `PullRefused` at once: it asks for
+    no clock and no lease id and hands back no state. The test runs the apply step, not
+    the owner.
+  - `PullWithinLease`'s guard also fails where the lease's pocket key names no pocket
+    (G09), and the pull is then refused in the same way. No test pulls over such a
+    state.
+  - A lease that has ended is not the consumer's active lease. "a consumer whose lease
+    has ended pulls as one with no lease" builds by hand a consumer with a released or an
+    expired lease: it claims the front pocket when one is queued, and is told
+    `NoPocketAvailable` when none is.
+- **`N`-note:** agrees with N14. N14's hand-built state is an active lease on a queued
+  pocket; this double's test covers an idle and a parked pocket as well.
+- **Question:** N14's. Are the two `requires` meant as guards, or as restatements of what
+  the invariants already give? If restatements, the specification could say so, or drop
+  them.
+
+### G24: a lookup that names one lease, and `min_by` over a tie, take the first in the snapshot's order
+
+- **Ticket:** GD03.
+- **Concerns:** `let lease = Lease{consumer: consumer, status: active}` in
+  `PullWithinLease`; `min_by(free, p => p.position)` in `PullClaimsFrontPocket`;
+  `oldest`; `OneActiveLeasePerConsumer`, `UniquePocketPosition` and
+  `UniqueRecordPosition`.
+- **The specification says:** the lookup names one lease. "min_by and min are black
+  boxes: the element with the smallest key, and the smaller of two integers." `oldest`
+  is "the n records with the smallest position, in that order". It does not say which
+  lease the lookup names when a consumer has two active leases, or which element
+  `min_by` and `oldest` put first when two have the same position.
+- **The double does:**
+  - The lookup answers the first active lease of the consumer in the state's list of
+    leases, which is the order they were created in (G19).
+  - `min_by` and `oldest` sort by position with the standard library's sort, which is
+    stable, and take from the front. Of two pockets or two records at one position, the
+    one listed first comes first.
+  - This extends G09, where `model.pocket` and `model.record` answer the first member
+    with the key. `model.lease`, which finds the lease an action names, answers the first
+    lease with the id (G27).
+  - For the consumer's active lease, `min_by` and `oldest` there is nothing to choose
+    between in any state the rules reach: `OneActiveLeasePerConsumer`,
+    `UniquePocketPosition` and `UniqueRecordPosition` are checked after every outcome.
+    Only a state built by hand holds two.
+  - That does not cover `model.lease`. No invariant compares two lease ids, and the
+    double does not check that the id it is handed is new, so a lease-id source that
+    repeated an id would leave two leases of one id in a state the rules reach (G27).
+  - No test runs a Pull rule over such a state. "a claim takes the queued pocket with
+    the smallest position, and a batch the queued records with the smallest" runs the
+    apply step over a hand-built state whose lists are not in position order, with no
+    two positions equal, and shows that the positions decide and the list order does
+    not.
+- **`N`-note:** no `N`-note.
+- **Question:** none for the consumer's active lease, `min_by` or `oldest` in a state
+  the rules reach. The three invariants make each of them name one entity, so the choice
+  matters only to a checker or a test that builds a state by hand. For a lease named by
+  its id, G27 asks whether two leases may share one.
+
+### G25: a pull whose limit is not positive still claims a pocket
+
+- **Ticket:** GD03.
+- **Concerns:** `PullClaimsFrontPocket`, `PullWithinLease`, the `OldestFirst` guarantee
+  and the Pull comment; scenarios S031 and S032.
+- **The specification says:**
+  - `PullClaimsFrontPocket` has no `requires` on `limit`. `oldest` returns "all of them
+    when n exceeds their count and none when n is not positive".
+  - `OldestFirst` says "a limit that is not positive yields an empty batch, not an
+    error".
+  - The Pull comment says "PullWithinLease extends the lease whatever the batch holds, an
+    empty batch included", and "No lease is granted on an empty pocket".
+  - The catalog row S031 is "A zero-limit pull claims a pocket and returns an empty
+    batch".
+- **The double does:**
+  - A pull with a limit of 0 or below, by a consumer with no lease, fires
+    `PullClaimsFrontPocket` alone. It creates a lease with
+    `expires_at = now + lease_ttl`, leases the front pocket and answers a batch with no
+    record. No `Handed` is emitted, so the pocket's records stay queued.
+  - S031's port, "a zero-limit pull claims a pocket and returns an empty batch", asserts
+    the empty batch, the leased pocket, one lease and a record still queued. S032's port,
+    "a negative limit behaves like zero", claims with a limit of -1, pulls within the
+    lease with the lowest 64-bit integer and is handed nothing, then pulls with 10 and is
+    handed both records.
+  - The pocket leaves the pocket order for the lease's life, though it holds queued
+    records. In "PullClaimsFrontPocket changes exactly what it ensures, reads the clock
+    once and draws one lease id", `c1` claims `y` with a limit of 0. Only the pocket's
+    status and the new lease change, and the next consumer to pull claims `z`, the
+    pocket behind `y`.
+  - Under a lease, a limit that is not positive extends the lease and hands nothing, as
+    the comment states. "PullWithinLease changes exactly what it ensures, on an empty
+    batch too, reads the clock once and draws no lease id" pins it with limits of 0 and
+    -1 and with a drained pocket: only the lease's `expires_at` changes.
+- **`N`-note:** agrees with N19.
+- **Question:** N19's. Is a claim that hands nothing intended? The comment above
+  `PullWithinLease` explains why an empty batch extends a held lease, but not why a limit
+  that is not positive claims a new one. A consumer probing with `limit = 0` takes a
+  pocket away from every other consumer until it releases it or the lease lapses.
+
+### G26: a pull or a renew by a consumer that never joined is refused (`impl-choice`)
+
+- **Ticket:** GD03.
+- **Concerns:** the `Pull(consumer, limit)` and `Renew(consumer, lease)` triggers, the
+  `Consuming` surface's `facing consumer: Consumer`, and `ConsumerJoins`.
+- **The specification says:** both triggers take a `Consumer` entity, and only
+  `ConsumerJoins` creates one. The Pull rules read the consumer only to look for its
+  active lease, and `Renew` only in `requires: lease.consumer = consumer`. Nothing says
+  what a pull or a renew naming an id that never joined does.
+- **The double does:**
+  - A pull and a renew carry the consumer's id. The apply step looks for a consumer with
+    that id before it runs the Pull or the Renew table, and answers the refusal
+    `UnknownConsumer`, carrying the id, when there is none. The name is N18's.
+  - The refusal comes before the outcome starts, as `UnknownPublisher` does (G12). No
+    table is consulted, no guard is evaluated, the clock is not read, no lease id is
+    drawn, the checker is not run, and the owner keeps the state it had.
+  - Without the check, such a pull would fire `PullClaimsFrontPocket` or
+    `PullFindsNoPocket`, since neither guard needs the consumer to exist. A claim would
+    create a lease that names a consumer the state does not hold, and the checker would
+    not report it (G09, G17). Such a renew would meet the Renew table's refusal instead
+    (G28).
+  - This is `impl-choice`, because the specification states no such refusal. No catalog
+    row names it, so the two tests carry no scenario tag.
+    - "a pull by a consumer that never joined is refused" pulls as `cx`, which never
+      joined, over an empty queue and over a queued pocket, with limits of 10 and 0, and
+      as `p`, which joined as a publisher only.
+    - "a renew by a consumer that never joined is refused" renews as `cx` and as `p`,
+      naming another consumer's active lease, and as `cx` naming a lease id never
+      issued. That last renew is answered `UnknownConsumer`: the consumer is looked for
+      before the lease.
+    - Each test compares the complete snapshot with the one taken before, and asserts
+      that the fake clock was not read and that no lease id was drawn.
+- **`N`-note:** agrees with N18, but not with its reason that "the snapshot refuses" such
+  a lease "as a dangling reference": this double's checker reports no dangling reference
+  (G09).
+- **Question:** N18's. Should the specification say that a pull and a renew require a
+  joined consumer, as G12 asks for a publish?
+
+### G27: a pull draws a lease id only when it creates a lease
+
+- **Ticket:** GD03.
+- **Concerns:** `PullClaimsFrontPocket`'s `Lease.created`, and G10's lease id; scenario
+  S027.
+- **The specification says:** `Lease` declares no id (G10). `PullClaimsFrontPocket` is
+  the one rule with `ensures: Lease.created(…)`.
+- **The double does:**
+  - `PullClaimsFrontPocket`'s effect asks for a lease id through the request G05
+    describes, after it has asked for `now`. An effect runs only once dispatch has chosen
+    its row, so only a pull that creates a lease draws an id. No other row asks for one.
+  - The tests count the fake source's draws.
+    - "PullClaimsFrontPocket changes exactly what it ensures, reads the clock once and
+      draws one lease id" counts one for each of two claims.
+    - "PullWithinLease changes exactly what it ensures, on an empty batch too, reads the
+      clock once and draws no lease id", "PullFindsNoPocket changes nothing, reads no
+      clock and draws no lease id" and "Renew changes exactly what it ensures, reads the
+      clock once and draws no lease id" count none.
+    - The two tests of a consumer that never joined (G26) count none.
+    - Each competing-callers test (G32) counts one draw for each lease granted.
+  - A pull the Pull table refuses draws none: "no Pull rule holds for an active lease on
+    a pocket that is not leased" shows the apply step done before it asks for anything
+    (G23).
+  - After the claim only `HoldRecord` and the checker run. A pull that has drawn an id
+    can therefore fail only on a defect or a broken invariant, never on a refusal. The
+    owner has called the source by then, and the id is not given back.
+  - The double does not check that an id it is handed is new, and no invariant compares
+    two ids (G10). A source that repeated an id would give two leases one id. Of two
+    such leases `model.lease` answers the first in the snapshot's order (G24), and
+    `model.replace_lease` replaces both. The fake hands out `lease-1`, `lease-2` and so
+    on, and never repeats, so no test reaches that state.
+  - S027's port asserts that the batch names `lease-1`. That is `impl-choice`: the id is
+    the fake source's first, and the port's comment says the Rust's `1` is its counting
+    source's. No other test that drives the owner asserts a literal id: each compares a
+    lease id only with another the owner handed it.
+- **`N`-note:** agrees with N15. It differs in one assertion: N15 says none of its tests
+  asserts a literal id, and S027's port here does.
+- **Question:** N15 leaves none, "unless the maintainer wants lease identity in the
+  specification". As G10: should the specification declare a lease's identity? If it
+  does, should it also say that two leases never share one?
+
+### G28: Renew's refusal is `LeaseFenced`, and an unknown lease id meets it
+
+- **Ticket:** GD03.
+- **Concerns:** the `Renew` rule, the comment above `AckMarksRecord` and the
+  `ActionsNameTheirLease` guarantee; scenario S050.
+- **The specification says:**
+  - `Renew` requires `lease.status = active` and `lease.consumer = consumer`. One rule
+    has the trigger.
+  - "Ack, nack, renew and release name the lease they act under and require it to be
+    active and the consumer's. An action meant for a lease that has ended is rejected".
+    `ActionsNameTheirLease` says "one naming an ended lease is rejected rather than
+    landing on a successor lease over the same pocket".
+  - Neither the rule, the comment nor the guarantee names the rejection. The trigger
+    takes a `Lease` entity, so nothing says what a renew naming a lease that was never
+    issued does.
+- **The double does:**
+  - The Renew table has one row. Its guard holds when a lease has the id the renew
+    carries, is active and names the renew's consumer.
+  - The table's answer when the guard does not hold is a refusal, `LeaseFenced`,
+    carrying the action's name, `"Renew"`, the consumer's id and the lease's id. The name
+    is N20's, and GD04's fencing can use it for ack, nack and release.
+  - A lease id that names no lease fails the same guard and meets the same refusal. It
+    is not refused before the outcome, as a consumer that never joined is (G26). N20's
+    reason is taken: a lease id, unlike a consumer id, is the double's own (G10).
+  - "Renew's guard holds only for an active lease of the consumer's" runs dispatch over
+    states built by hand. It finds the row for the consumer's active lease, and none for
+    that lease once released or expired, for another consumer's active lease, or for an
+    id that names no lease. It asserts only what dispatch finds, not what the table then
+    answers.
+  - No GD03 test pins `LeaseFenced`. Its catalog rows, S052 and S070, are GD04's. The one
+    GD03 test that renews with a lease id never issued sends it as a consumer that never
+    joined, and is answered `UnknownConsumer` (G26).
+  - The rule sets `expires_at` and nothing else (G21). "Renew changes exactly what it
+    ensures, reads the clock once and draws no lease id" compares the complete snapshot
+    after each of three renews, and S050's port asserts that `granted_at` stays. "Renew
+    leaves a retained version and a dead letter as they were" runs the rule over a state
+    built by hand that holds one of each, and compares the complete state.
+- **`N`-note:** agrees with N20. It differs in what is tested: N20 records a test that
+  pins `LeaseFenced` for a lease id never issued, and no GD03 test pins the refusal for
+  any input.
+- **Question:** N20 leaves none on the behaviour. The refusal's name is the double's.
+  Whether a lease that was never issued is a refusal of its own is left to GD04.
+
+### G29: S012, S015 and S022 assert absolute positions (`impl-choice`)
+
+- **Ticket:** GD03.
+- **Concerns:** `Queue.next_position`, G04 and G16, and scenarios S012, S015 and S022.
+- **The specification says:** no initial value for `next_position` (G04).
+- **The double does:** it ports the Rust tests' absolute positions, which hold only
+  because the double starts at 0 (G04). GD03 owns the three rows because each ends with
+  a pull.
+  - The absolute assertions, as N16 lists them, each marked `impl-choice` in its port:
+    - S012, "a publish of a new key appends to an existing pocket": the pocket at 0, the
+      new key's record at 2, and `next_position` 3;
+    - S015, "repeated supersede keeps the first slot and sheds every loser": the
+      superseded key's record at position 1;
+    - S022, "publishing into a queued pocket does not move it in the pocket order": the
+      pocket at 0.
+  - The relative facts these rows also assert are the specification's: a new key takes
+    the next position, a supersede keeps the record's position, and a publish into a
+    queued pocket leaves the pocket's position alone.
+  - The pulls assert no position. S012's and S015's are handed `a` then `b`, and S015's
+    `a` at rank 4, the last supersede's. S022's, with a limit of 0, claims the pocket
+    that was published into first.
+  - S015's port also asserts the superseded queue's order, which is `impl-choice` for
+    another reason (G19).
+- **`N`-note:** agrees with N16.
+- **Question:** as G04 and G16. Is the starting value meant to be unspecified? If so,
+  should S012, S015 and S022 assert absolute positions?
+
+### G30: S019's large ranks are a 64-bit integer's extremes, not the double's
+
+- **Ticket:** GD03.
+- **Concerns:** `Record.rank`, G08, and scenario S019.
+- **The specification says:** a rank is an `Integer`. It states no bound.
+- **The double does:**
+  - S019's port, "large ranks keep full precision across supersede and stale", publishes
+    one key at the Rust test's ranks: -(2^63), -(2^63) + 1, 2^63 - 2 and 2^63 - 1, and
+    then 2^63 - 2 again. It asserts that the second, third and fourth publishes fire
+    `Supersede` and the fifth `DropStalePublish`, that the record ends at 2^63 - 1, and
+    that a pull hands that rank out.
+  - A rank is an `Int`, which has no bound on the Erlang target (G08). These values are
+    not a boundary for the double: it would accept 2^63 as a rank and order it above
+    them. The port publishes no rank beyond them.
+  - S019 is a `wire` row, and only its library half is ported.
+  - Everything the port asserts of the ranks follows from the specification's `Integer`.
+    One assertion is `impl-choice` for another reason: the port lists the superseded
+    queue's ranks in order (G19).
+- **`N`-note:** agrees with N17, which says its row is not `impl-choice`. Here that holds
+  of the ranks, and not of the superseded queue's order.
+- **Question:** as G08 and N17. Should the specification bound a rank, so that S019's
+  values become the boundary for every implementation?
+
+### G31: the lease view is read from the snapshot for now (S036's record order is `impl-choice`)
+
+- **Ticket:** GD03.
+- **Concerns:** the `Consuming` surface's `exposes` block; scenarios S033 and S036.
+- **The specification says:** for each active lease of the consumer the surface exposes
+  `lease.pocket.key`, `lease.expires_at` and, for each record of
+  `lease.pocket.held_records`, `record.key`, `record.held_rank`, `record.held_payload`
+  and `record.mark`. Of the leases it says: "Zero or one lease by the invariant;
+  iterating avoids a null read." `held_records` is `records where status = held`, with
+  no order. The block exposes no lease identity.
+- **The double does:**
+  - The owner has no message for the lease view yet. Its `LeaseView` message lands in
+    GD04.
+  - Until then the two ports that read a lease view use a test helper,
+    `harness.lease_view`. It takes one snapshot and reads the consumer's `active_leases`
+    and that lease's pocket's `held_records` from the snapshot's derived sets. It answers
+    the pocket's key, the lease's `expires_at`, and each held record's key, held rank,
+    held payload and mark, or nothing when the consumer has no active lease.
+  - The helper lists the held records smallest position first. The view carries no lease
+    id, as the surface exposes none.
+  - S033's port, "a pull with no queued pocket returns NoPocketAvailable, not an error",
+    asserts that a consumer told `NoPocketAvailable` has no lease view.
+  - S036's port, "a pull under a lease extends the lease", asserts the view's pocket key
+    and `expires_at`, and its records' keys as the ordered lists `r0`, then `r0`, `r1`.
+    The order is `impl-choice`: it is more than the surface states.
+  - S036 cannot tell which order the helper keeps. Its records were published in key
+    order, so position order, key order and the order of creation agree. S090, the row
+    N23 records, is the one that separates them, and it is GD04's.
+- **`N`-note:** takes N23's reading, smallest position first. N23 is written for S090 and
+  for a lease view the queue answers; here the view is a test helper over the snapshot
+  until GD04.
+- **Question:** N23's. Should the surface state an order for the held records? And should
+  it expose the lease's identity, which every action it provides takes?
+
+### G32: what the competing callers show of "one serialized stream"
+
+- **Ticket:** GD03.
+- **Concerns:** the Lease expiry comment; `PullClaimsFrontPocket` and
+  `PullFindsNoPocket`; the `ExclusivePocket` and `OldestFirst` guarantees;
+  `OneActiveLeasePerPocket`, `OneActiveLeasePerConsumer`, `LeasedHasOneActiveLease` and
+  `UnleasedHasNoActiveLease`.
+- **The specification says:**
+  - "The lapse is handled in the same stream as the consumer's actions", and "The
+    implementation applies the lapse and every action from one serialized stream
+    (decision 0019), so the guards above decide in either order."
+  - `ExclusivePocket`: "While a lease is active no other consumer is handed a record from
+    its pocket."
+  - Every rule reads the state as the last outcome left it. The comment is the one place
+    that says actions are applied one at a time, and it says so of the lapse. No catalog
+    row has two callers that act at the same moment.
+- **The double does:**
+  - The owner's mailbox is the stream. Each `Pull` is one message, applied to the state
+    the message before it left.
+  - Three tests in `competing_test.gleam`, none with a scenario tag, start one owner and
+    a process for each consumer, and let every process pull once at the same moment:
+    - "eight consumers pull at once while one pocket is queued: one is handed its records
+      under a lease and seven are told there is none";
+    - "six consumers pull at once while six pockets are queued: each is handed a
+      different pocket, and the pockets are claimed front first";
+    - "nine consumers pull at once while four pockets are queued: four are handed a
+      pocket each and five are told there is none".
+  - Each asserts only what holds in every order the mailbox could take, and never which
+    consumer won or which pocket a consumer got.
+    - From the callers' answers: as many batches as the fewer of the consumers and the
+      queued pockets, and `NoPocketAvailable` for every other caller. No two batches name
+      one pocket, one lease or one consumer. The pockets named are the front ones. Each
+      batch is its own pocket's records, oldest first, up to the limit.
+    - From the snapshot afterwards: `invariants.check` names nothing. The leases are the
+      batches' leases, one for one, each active, and no two share a pocket or a
+      consumer. The pockets claimed are no longer queued. The held records are the ones
+      the batches handed out.
+    - From the fakes: one lease id drawn and one clock read for each lease granted.
+  - So the tests exercise `ExclusivePocket` and `OldestFirst` on what each caller was
+    handed, and the four invariants above on the state. `ExclusivePocket` is a statement
+    about what callers were handed, which no snapshot holds, so it is asserted from the
+    answers: every payload names its pocket, and a batch must be its own pocket's
+    records.
+  - Two assertions rest on an `impl-choice`, the order in which the snapshot lists a
+    collection (G19). One is that the snapshot lists the leases in the pocket order of
+    their pockets, which holds because it lists leases in the order they were created.
+    The other compares a pocket's held records, as the snapshot lists them, with the
+    keys of its batch, in the batch's order. That holds because the snapshot lists
+    records in the order they were created, which within one pocket here is the order
+    of their positions. A snapshot that listed the same records by key would fail it,
+    though every batch were right.
+  - Only these tests tell one scratch owner from the real one. It applied each `Pull` in
+    a process of its own, from the state the owner held when it read the message, and
+    took the new state back as a second message. All three competing-callers tests failed
+    against it and every other test passed. A second scratch owner, which answered a
+    `Pull` from the state held before the previous message, failed these three and other
+    tests as well.
+  - What the tests cannot show:
+    - That the properties hold in every interleaving. A run samples the mailbox orders
+      the scheduler produces, and the scheduler mostly lets the callers reach the mailbox
+      in the order they were started. Each test therefore runs once for each caller, with
+      that caller started first.
+    - Anything about the case the comment is written for, a lapse applied in the same
+      stream as a consumer's action. Only a `Pull` competes with a `Pull`. No publish,
+      renew, ack, nack, release or lapse competes with anything, and the clock stands
+      still throughout.
+    - That an action's `now` is the time the owner reached it (G05).
+  - G03 records the one earlier test with competing callers, of a join.
+- **`N`-note:** no `N`-note: the Python double has no callers that compete.
+- **Question:** should the specification state, as a guarantee of its own, that actions
+  are applied one at a time, each to the state the one before it left? Every rule
+  assumes it, and only the Lease expiry comment says it. Should the catalog hold a row
+  in which two consumers pull at the same moment?

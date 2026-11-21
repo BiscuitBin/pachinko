@@ -1,22 +1,27 @@
 //// The specification's Publish section.
 ////
-//// First the six catalog rows this ticket owns, S011, S013, S014, S016, S017
-//// and S018, each a port of its Rust test in
-//// `crates/libpachinko/tests/queue/publish.rs`, driving the owner. A port
+//// First the catalog rows of `crates/libpachinko/tests/queue/publish.rs`
+//// that need no more than a publish and a pull, S011 to S020 and S022, each
+//// a port of its Rust test, driving the owner. S012, S015, S019, S020 and
+//// S022 end with a pull, which shows what the publishes left to a consumer.
+//// A port
 //// asserts what its Rust test asserts, with one change: where the Rust
 //// checks a publish for an outcome, the port asserts that the publish
 //// answered nothing and names the rule it fired, and asserts the state that
 //// publish left through the snapshot (the maintainer's ruling on N32 in
 //// `double/SPEC-NOTES.md`). A setup publish the Rust unwraps is asserted by
 //// its reply alone. An absolute position is `impl-choice`: it holds only
-//// because the queue's first position is 0 (spec notes G04 and G16).
+//// because the queue's first position is 0 (spec notes G04, G16 and G29). The
+//// order of the superseded queue, where a port asserts it, is `impl-choice`
+//// too (spec note G19).
 ////
 //// Then the double's own tests, which pin no catalog row: the refusal of a
 //// publisher that never joined, what each of the four rules changes and how
 //// often it reads the clock, the events each emits, and the held branch of
 //// `Supersede`'s guard, which no publish through the owner reaches until a
-//// record can be held.
+//// version can be deferred behind a held record.
 
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double}
@@ -48,6 +53,11 @@ pub fn tests() -> List(Test) {
       new_pocket,
     ),
     Test(
+      "a publish of a new key appends to an existing pocket",
+      [Scenario("S012")],
+      new_key_appends,
+    ),
+    Test(
       "the same record key in two pockets is two records",
       [Scenario("S013")],
       same_key_in_two_pockets,
@@ -56,6 +66,11 @@ pub fn tests() -> List(Test) {
       "a supersede replaces rank and payload in place and sheds the loser",
       [Scenario("S014")],
       supersede_in_place,
+    ),
+    Test(
+      "repeated supersede keeps the first slot and sheds every loser",
+      [Scenario("S015")],
+      repeated_supersede,
     ),
     Test(
       "a stale publish is shed, not applied and not an error",
@@ -71,6 +86,21 @@ pub fn tests() -> List(Test) {
       "negative and zero ranks order like integers",
       [Scenario("S018")],
       negative_and_zero_ranks,
+    ),
+    Test(
+      "large ranks keep full precision across supersede and stale",
+      [Scenario("S019")],
+      large_ranks,
+    ),
+    Test(
+      "payload bytes and keys round-trip unchanged",
+      [Scenario("S020")],
+      bytes_and_keys_round_trip,
+    ),
+    Test(
+      "publishing into a queued pocket does not move it in the pocket order",
+      [Scenario("S022")],
+      queued_pocket_keeps_its_place,
     ),
     Test(
       "a publish by a publisher that never joined is refused",
@@ -178,6 +208,27 @@ fn new_pocket() -> List(String) {
   harness.fired(double)
 }
 
+fn new_key_appends() -> List(String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "a", 1, "x")
+    == answers_nothing("PublishIntoNewPocket")
+  assert harness.publish(double, "pk", "b", 7, "y")
+    == answers_nothing("PublishNewKey")
+  let snapshot = harness.inspect(double)
+  assert list.length(snapshot.pockets) == 1
+  // `impl-choice` (spec notes G04 and G29): the pocket's absolute position,
+  // the record's, and the counter. That the new key takes the next position
+  // and the pocket keeps its own is the specification's.
+  assert harness.pocket(double, "pk").position == 0
+  let record = harness.record(double, "pk", "b")
+  assert #(record.position, record.status) == #(2, RecordQueued)
+  assert snapshot.next_position == 3
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
+  assert harness.keys(batch.records) == ["a", "b"]
+  harness.fired(double)
+}
+
 fn same_key_in_two_pockets() -> List(String) {
   let double = harness.fixture()
   assert harness.publish(double, "one", "k", 1, "x")
@@ -217,6 +268,36 @@ fn supersede_in_place() -> List(String) {
   assert #(shed.shed_at, shed.expires_at) == #(now, now + superseded_ttl())
   // The Rust's `invariants::shed_before_expiry`, by the checker.
   assert !list.contains(invariants.check(snapshot), "ShedBeforeExpiry")
+  harness.fired(double)
+}
+
+/// The Rust checks each of the three supersedes for an outcome; the port
+/// asserts that each answered nothing and fired `Supersede` (the ruling on
+/// N32), and the state they leave is asserted below as the Rust asserts it.
+fn repeated_supersede() -> List(String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "a", 1, "v1")
+    == answers_nothing("PublishIntoNewPocket")
+  assert harness.publish(double, "pk", "b", 1, "b")
+    == answers_nothing("PublishNewKey")
+  list.each([#(2, "v2"), #(3, "v3"), #(4, "v4")], fn(version) {
+    assert harness.publish(double, "pk", "a", version.0, version.1)
+      == answers_nothing("Supersede")
+  })
+  // `impl-choice` (spec notes G04 and G29): the absolute position. That the
+  // record is where its first publish put it is the specification's.
+  assert harness.record(double, "pk", "a").position == 1
+  assert rank_and_payload(double, "pk", "a") == #(4, <<"v4":utf8>>)
+  // `impl-choice` (spec note G19): the order of the superseded queue.
+  assert list.map(harness.inspect(double).superseded, fn(shed) {
+      #(shed.rank, shed.payload)
+    })
+    == [#(1, <<"v1":utf8>>), #(2, <<"v2":utf8>>), #(3, <<"v3":utf8>>)]
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
+  assert harness.keys(batch.records) == ["a", "b"]
+  let assert [first, ..] = batch.records
+  assert first.rank == 4
   harness.fired(double)
 }
 
@@ -282,6 +363,97 @@ fn negative_and_zero_ranks() -> List(String) {
   assert shed_at_rank(double, -2) == [#(<<"m2":utf8>>, Stale)]
   assert shed_count(double) == 3
   assert rank_and_payload(double, "pk", "a") == #(0, <<"z":utf8>>)
+  harness.fired(double)
+}
+
+/// The Rust's ranks are a 64-bit integer's extremes: `i64::MIN`, the next
+/// above it, and `i64::MAX` with the one below it. A rank here is an `Int`,
+/// which has no bound on this target, so these are not its extremes; they
+/// order exactly all the same (spec note G08). The Rust checks the four
+/// publishes after the first for an outcome, three supersedes and a stale
+/// one; the port asserts that each answered nothing and the rule it fired
+/// (the ruling on N32).
+fn large_ranks() -> List(String) {
+  let lowest = -9_223_372_036_854_775_808
+  let highest = 9_223_372_036_854_775_807
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "a", lowest, "min")
+    == answers_nothing("PublishIntoNewPocket")
+  assert harness.publish(double, "pk", "a", lowest + 1, "min+1")
+    == answers_nothing("Supersede")
+  assert harness.publish(double, "pk", "a", highest - 1, "max-1")
+    == answers_nothing("Supersede")
+  assert harness.publish(double, "pk", "a", highest, "max")
+    == answers_nothing("Supersede")
+  assert harness.publish(double, "pk", "a", highest - 1, "late")
+    == answers_nothing("DropStalePublish")
+  assert rank_and_payload(double, "pk", "a") == #(highest, <<"max":utf8>>)
+  // `impl-choice` (spec note G19): the order of the superseded queue.
+  assert list.map(harness.inspect(double).superseded, fn(shed) { shed.rank })
+    == [lowest, lowest + 1, highest - 1, highest - 1]
+  let batch = harness.batch(double, "c1", 1)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  let assert [first, ..] = batch.records
+  assert first.rank == highest
+  harness.fired(double)
+}
+
+/// A payload of every byte value, 0 to 255 in order, which is not text, under
+/// a pocket key and a record key that hold accented, CJK and astral
+/// characters and a NUL. The batch names the pocket by the same key and hands
+/// back the same record key and the same bytes.
+fn bytes_and_keys_round_trip() -> List(String) {
+  let double = harness.fixture()
+  let every_byte =
+    int.range(from: 0, to: 256, with: <<>>, run: fn(bytes, byte) {
+      <<bytes:bits, byte>>
+    })
+  let pocket = "pocket-\u{e9}\u{4e2d}\u{1f600}"
+  let key = "key-\u{3b1}\u{3b2}\u{0}"
+  assert harness.publish_publication(
+      double,
+      Publication(
+        publisher: "p",
+        pocket_key: pocket,
+        record_key: key,
+        rank: 1,
+        payload: every_byte,
+      ),
+    )
+    == answers_nothing("PublishIntoNewPocket")
+  let batch = harness.batch(double, "c1", 1)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  assert batch.pocket_key == pocket
+  let assert [first, ..] = batch.records
+  assert first.key == key
+  assert first.payload == every_byte
+  harness.fired(double)
+}
+
+/// The Rust also calls `invariants::order_is_the_queued_pockets`, which
+/// compares its stored pocket order with the queued pockets. The double
+/// stores no pocket order: `harness.order` is the queued pockets by position,
+/// so that check has nothing of its own to compare here.
+fn queued_pocket_keeps_its_place() -> List(String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "first", "a", 1, "a")
+    == answers_nothing("PublishIntoNewPocket")
+  assert harness.publish(double, "second", "a", 1, "a")
+    == answers_nothing("PublishIntoNewPocket")
+  assert harness.publish(double, "first", "b", 1, "b")
+    == answers_nothing("PublishNewKey")
+  assert harness.publish(double, "first", "a", 2, "a2")
+    == answers_nothing("Supersede")
+  assert harness.publish(double, "first", "a", 0, "a0")
+    == answers_nothing("DropStalePublish")
+  // `impl-choice` (spec notes G04 and G29): the absolute position. That the
+  // pocket keeps the position it had is the specification's.
+  assert harness.pocket(double, "first").position == 0
+  assert harness.pocket(double, "first").status == PocketQueued
+  assert harness.order(double) == ["first", "second"]
+  let batch = harness.batch(double, "c1", 0)
+  assert batch.fired == ["PullClaimsFrontPocket"]
+  assert batch.pocket_key == "first"
   harness.fired(double)
 }
 
@@ -496,8 +668,9 @@ fn stale_exactly() -> List(String) {
 //
 // `PocketTouched`'s table has no row yet, so an emitted event shows neither
 // in the rules that fired nor in the snapshot; and no publish through the
-// owner meets a held record until a pull lands. These tests read the Publish
-// table directly.
+// owner meets a held record with a version deferred behind it until
+// `DeferBehindHeldVersion` lands. These tests read the Publish table
+// directly.
 
 fn publication(
   pocket_key: String,

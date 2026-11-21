@@ -10,10 +10,11 @@
 ////
 //// Not shown here: an outcome whose first row leaves an invariant broken
 //// and whose chained event mends it, which the checker must accept since
-//// it runs once, after the whole chain. The domain's one event is
-//// `PocketTouched`, `core` routes it to a table with no row yet, and a
-//// test cannot hand `core.run` another chain. The first revive rule makes
-//// that case writable.
+//// it runs once, after the whole chain. Of the domain's two events,
+//// `PocketTouched` goes to a table with no row yet, and `Handed` mends
+//// nothing: no state between a pull's own row and its `HoldRecord`s breaks
+//// an invariant. A test cannot hand `core.run` another chain. The first
+//// revive rule makes that case writable.
 
 import gleam/list
 import gleam/option.{None}

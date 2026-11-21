@@ -17,4 +17,13 @@ pub type Refusal {
   /// The publish carries the rank the record already has. No Publish rule
   /// covers that, whatever the payload (spec note G13).
   EqualRankRefused(pocket_key: String, record_key: String, rank: Int)
+  /// No consumer with this id has joined, so it can neither pull nor renew.
+  /// Refused before any rule runs.
+  UnknownConsumer(consumer_id: String)
+  /// No Pull rule's guard held. In a state that holds the invariants one of
+  /// the three always does, so no pull through the owner meets this.
+  PullRefused(consumer_id: String)
+  /// The action names a lease that is not active, is not the consumer's, or
+  /// was never issued. `action` is the trigger's name.
+  LeaseFenced(action: String, consumer_id: String, lease_id: String)
 }

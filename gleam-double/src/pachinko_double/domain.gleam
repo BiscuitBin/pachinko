@@ -11,11 +11,34 @@ import pachinko_double/rules
 pub type Event {
   /// A publish added or raised a record in this pocket.
   PocketTouched(pocket_key: String)
+  /// A pull handed this record of this pocket out: one for each record of
+  /// the batch, in the batch's order.
+  Handed(pocket_key: String, record_key: String)
 }
 
-/// What a rule answers its caller. No rule landed so far answers anything:
-/// a publish and a join answer nothing.
-pub type Answer
+/// What a rule answers its caller. A publish, a join and a renew answer
+/// nothing; a pull answers one of these.
+pub type Answer {
+  /// What a pull hands back. `consumer` is the consumer's id, `lease` the id
+  /// of the lease the records were handed under and `pocket` the pocket's
+  /// key. It carries no expiry: the specification's `Batch` has none.
+  /// `records` is the batch, smallest position first.
+  Batch(
+    consumer: String,
+    lease: String,
+    pocket: String,
+    records: List(BatchRecord),
+  )
+  /// The consumer holds no lease and no pocket is queued. An answer, not a
+  /// refusal.
+  NoPocketAvailable(consumer: String)
+}
+
+/// One version a pull handed out: the record's key, and the rank and payload
+/// it had when the batch was computed.
+pub type BatchRecord {
+  BatchRecord(key: String, rank: Int, payload: BitArray)
+}
 
 pub type Plan =
   rules.Plan(State, Event, Answer)

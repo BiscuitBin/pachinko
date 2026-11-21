@@ -1,10 +1,14 @@
 //// The specification's `config` block and its five invariants: S003, S004
 //// and S005. A refused configuration leaves no owner to inspect, so each
-//// test asserts the refusal itself (spec note G02).
+//// test asserts the refusal itself (spec note G02). Then two rows on the
+//// values a configuration holds: S001, the defaults an owner starts over,
+//// and S008, a `max_pull_batch` of one, which a pull shows.
 
+import gleam/option.{None}
 import gleam/result
 import harness
 import pachinko_double/config.{type Settings, Settings}
+import pachinko_double/owner.{Outcome}
 import pachinko_double/refusals.{ConfigRefused}
 import pachinko_double/time
 import runner.{type Test, Scenario, Test}
@@ -18,6 +22,16 @@ pub fn tests() -> List(Test) {
     ),
     Test("a zero pull batch is refused", [Scenario("S004")], zero_pull_batch),
     Test("a negative TTL is refused", [Scenario("S005")], negative_ttls),
+    Test(
+      "the default lease_ttl and max_pull_batch apply",
+      [Scenario("S001")],
+      default_lease_ttl_and_pull_batch,
+    ),
+    Test(
+      "a max_pull_batch of one caps every pull at one record",
+      [Scenario("S008")],
+      pull_batch_of_one,
+    ),
     Test("a negative limit is refused", [], negative_limits),
     Test("the defaults are the specification's and are admitted", [], defaults),
   ]
@@ -83,6 +97,41 @@ fn negative_ttls() -> List(String) {
     Settings(..defaults, lease_ttl: 0, superseded_ttl: 0, dead_letter_ttl: 0),
   )
   []
+}
+
+/// The Rust builds a queue from the default configuration and reads the two
+/// values back from it. Here an owner is started over the default
+/// configuration, and its snapshot holds them. No rule fires.
+fn default_lease_ttl_and_pull_batch() -> List(String) {
+  let snapshot = harness.inspect(harness.start(config.default()))
+  assert snapshot.config.lease_ttl == 5 * time.minute
+  assert snapshot.config.max_pull_batch == 100
+  []
+}
+
+/// Whatever the limit, 100, 2 or 1, each pull hands out one record: the
+/// batch size is `min(limit, config.max_pull_batch)`.
+fn pull_batch_of_one() -> List(String) {
+  let double =
+    harness.fixture_with(
+      Settings(..harness.fixture_settings(), max_pull_batch: 1),
+    )
+  assert harness.publish(double, "pk", "a", 1, "a")
+    == Ok(Outcome(["PublishIntoNewPocket"], None))
+  assert harness.publish(double, "pk", "b", 1, "b")
+    == Ok(Outcome(["PublishNewKey"], None))
+  assert harness.publish(double, "pk", "c", 1, "c")
+    == Ok(Outcome(["PublishNewKey"], None))
+  let first = harness.batch(double, "c1", 100)
+  assert first.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  assert harness.keys(first.records) == ["a"]
+  let second = harness.batch(double, "c1", 2)
+  assert second.fired == ["PullWithinLease", "HoldRecord"]
+  assert harness.keys(second.records) == ["b"]
+  let third = harness.batch(double, "c1", 1)
+  assert third.fired == ["PullWithinLease", "HoldRecord"]
+  assert harness.keys(third.records) == ["c"]
+  harness.fired(double)
 }
 
 /// The two limits are positive, not merely non-zero. No catalog row names a

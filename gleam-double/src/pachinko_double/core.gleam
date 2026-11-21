@@ -8,21 +8,25 @@ import gleam/list
 import gleam/option.{type Option}
 import pachinko_double/domain.{
   type Answer, type Cursor, type Event, type Step, type Table, type World,
-  PocketTouched,
+  Handed, PocketTouched,
 }
 import pachinko_double/identity
 import pachinko_double/inspection
 import pachinko_double/invariants
-import pachinko_double/model.{type State, Publisher, Queue, State}
+import pachinko_double/model.{type State, Consumer, Publisher, Queue, State}
 import pachinko_double/publish.{type Publication}
-import pachinko_double/refusals.{UnknownPublisher}
+import pachinko_double/pull.{type Pull, Handover}
+import pachinko_double/refusals.{UnknownConsumer, UnknownPublisher}
 import pachinko_double/rules.{BrokenInvariant, Refused, World}
+import pachinko_double/settle.{type Renew}
 
 /// The triggers a surface provides, one variant each.
 pub type Trigger {
   PublisherJoins(publisher_id: String)
   ConsumerJoins(consumer_id: String)
   Publish(publication: Publication)
+  Pull(pull: Pull)
+  Renew(renew: Renew)
 }
 
 /// Applies one trigger to a state. The state it was given is untouched
@@ -41,7 +45,25 @@ pub fn apply(state: State, trigger: Trigger) -> Step {
         True -> run(publish.publish(), publication, state)
         False -> rules.fail(Refused(UnknownPublisher(publication.publisher)))
       }
+    // A consumer that never joined can neither pull nor renew: both triggers
+    // take a `Consumer`, and only a join makes one. Each is refused before
+    // any rule runs, as the unknown publisher is.
+    Pull(request) ->
+      case joined(state, request.consumer) {
+        True -> run(pull.pull(), request, state)
+        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
+      }
+    Renew(request) ->
+      case joined(state, request.consumer) {
+        True -> run(settle.renew(), request, state)
+        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
+      }
   }
+}
+
+/// Whether a consumer with this id has joined.
+fn joined(state: State, consumer_id: String) -> Bool {
+  list.contains(state.consumers, Consumer(consumer_id))
 }
 
 /// Runs one table as a whole outcome over a state: the row whose guard
@@ -70,6 +92,9 @@ pub fn registry() -> List(#(String, List(String))) {
     entry(identity.consumer_joins()),
     entry(publish.publish()),
     entry(publish.pocket_touched()),
+    entry(pull.pull()),
+    entry(pull.handed()),
+    entry(settle.renew()),
   ]
 }
 
@@ -98,6 +123,14 @@ fn chain(event: Event, cursor: Cursor, then: fn(Cursor) -> Step) -> Step {
       rules.run(
         publish.pocket_touched(),
         pocket_key,
+        cursor,
+        world(),
+        fn(cursor, _answer) { then(cursor) },
+      )
+    Handed(pocket_key, record_key) ->
+      rules.run(
+        pull.handed(),
+        Handover(pocket_key:, record_key:),
         cursor,
         world(),
         fn(cursor, _answer) { then(cursor) },

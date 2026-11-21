@@ -191,6 +191,34 @@ pub fn replace_record(records: List(Record), record: Record) -> List(Record) {
   })
 }
 
+/// The pockets with `pocket` in the place of the one it replaces, the pocket
+/// of its key. No other pocket changes and none moves.
+pub fn replace_pocket(pockets: List(Pocket), pocket: Pocket) -> List(Pocket) {
+  list.map(pockets, fn(stored) {
+    case stored.key == pocket.key {
+      True -> pocket
+      False -> stored
+    }
+  })
+}
+
+/// The lease with this id. The id is the double's, and it is how an action
+/// names its lease (spec note G10).
+pub fn lease(leases: List(Lease), id: String) -> Result(Lease, Nil) {
+  list.find(leases, fn(lease) { lease.id == id })
+}
+
+/// The leases with `lease` in the place of the one it replaces, the lease of
+/// its id. No other lease changes and none moves.
+pub fn replace_lease(leases: List(Lease), lease: Lease) -> List(Lease) {
+  list.map(leases, fn(stored) {
+    case stored.id == lease.id {
+      True -> lease
+      False -> stored
+    }
+  })
+}
+
 /// A pocket's `records`: `Record with pocket = this`.
 pub fn records_of(records: List(Record), pocket_key: String) -> List(Record) {
   list.filter(records, fn(record) { record.pocket == pocket_key })
