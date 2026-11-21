@@ -1,7 +1,7 @@
 ---
 id: GD03
 title: "Gleam double: pull and the lease"
-status: todo
+status: done
 depends_on: [GD02]
 parallel_with: []
 branch: build-gleam-double
@@ -450,9 +450,667 @@ test -z "$status"
 
 ## Hand-back notes
 
-Written at the end.
+Evidence files are under `ai_tmp/gd/GD03/`, and the review record under
+`ai_tmp/review/GD03-1/`. None is committed. Each `ev-*.txt` begins `$ <command>` and ends
+`exit status: N`, except where the text says otherwise. In every quote below the recipe's
+echo of its own command lines is left out, and `...` marks other lines left out or a line
+cut short: a `FAIL` line is cut after the test's name, or keeps only the values its
+assertion compared. A failing run prints the runner's panic and the recipe's `error:`
+line between `coverage faults: N` and `exit status: 1`; those are left out too, with no
+mark. A quote that does not open with its `$` line starts part-way through the output.
+Where a fact the record should hold was never saved, the text says "not recorded".
+
+### 1. Base, branch and commits
+
+- Branch: `build-gleam-double`.
+- Base commit: `cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`, GD02's record commit, which
+  holds GD02.
+- Work commit: `8e6907e2c89b9291b0aeb96cbd6d1433b3e04985`. The commit after it holds this
+  record.
+- At the maintainer's direction the whole GD01 to GD07 series lands on this one branch in
+  this one worktree, two commits per ticket. That departs from `AGENTS.md`'s one ticket
+  per worktree (shared rule 6).
+- Nothing was fetched. `.pixi/`, `.tools/` and `gleam-double/build/packages/` were
+  present, so step 1's `just initialize` and `just gleam-double-deps` were not run.
+
+### 2. Baseline
+
+At `cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`, on the untouched worktree
+(`baseline.log`, which records each status as `<name>-exit=N` and holds no `$` line; its
+last line counts the lines `git status --short` printed):
+
+```text
+cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3
+...
+All checks passed and the worktree is unchanged.
+check-exit=0
+...
+122 tests run, 122 passed
+coverage faults: 0
+gleam-double-exit=0
+       0
+```
+
+### 3. The design as it stands after GD03
+
+This section adds to section 3 of GD02's hand-back, which a later ticket's author still
+reads first. Sources are under `gleam-double/src/pachinko_double/` and tests under
+`gleam-double/test/`. The work commit touches none of `rules.gleam`, `identity.gleam`,
+`config.gleam`, `time.gleam`, `publish.gleam`, `inspection.gleam`, `invariants.gleam` or
+`test/runner.gleam`: GD01's and GD02's sections still describe them.
+
+- **`domain.gleam`.**
+  - `Event` gains `Handed(pocket_key, record_key)`: one for each record of a batch, in
+    the batch's order.
+  - `Answer`, which had no constructor, has two.
+    - `Batch(consumer, lease, pocket, records: List(BatchRecord))`. `consumer` is the
+      consumer's id, `lease` the lease's id and `pocket` the pocket's key. It carries no
+      expiry (G22). `records` is smallest position first.
+    - `NoPocketAvailable(consumer)`.
+  - `BatchRecord(key, rank, payload: BitArray)`: a record's key, and the rank and payload
+    it had when the batch was computed.
+- **`refusals.gleam`.** Three more refusals.
+  - `UnknownConsumer(consumer_id)`.
+  - `PullRefused(consumer_id)`, the Pull table's refusal (G23).
+  - `LeaseFenced(action, consumer_id, lease_id)`. `action` is the trigger's name as a
+    `String`, `"Renew"` here, so GD04's fencing can use the same refusal for ack, nack
+    and release (G28).
+- **`pull.gleam`**, new.
+  - `Pull(consumer: String, limit: Int)` and `pull() -> Table(Pull)`. The table is named
+    `Pull`, its rows are `PullWithinLease`, `PullClaimsFrontPocket` and
+    `PullFindsNoPocket` in that order, and when no guard holds it refuses with
+    `PullRefused`.
+  - `Handover(pocket_key, record_key)` and `handed() -> Table(Handover)`. The table is
+    named `Handed`, its one row is `HoldRecord`, and when no guard holds it is
+    `Defective`.
+  - The lookups are private. The consumer's active lease is the first active lease of
+    that consumer in the state's order. The front pocket is the queued pocket with the
+    smallest position. The batch is the pocket's queued records sorted by position, cut
+    to `min(limit, max_pull_batch)`; a number that is not positive gives none.
+  - Both pulling rows compute the batch first, then ask for `now`. Only
+    `PullClaimsFrontPocket` then asks for a lease id; it appends the new lease at the end
+    of `leases` and replaces the pocket in place. `PullFindsNoPocket` asks for neither.
+  - A pull that hands out a batch finishes with one `Handed` for each record and the
+    `Batch` answer. The batch is fixed before any `Handed` is answered.
+- **`settle.gleam`**, new: "the actions a consumer takes under a lease it names". It
+  holds `Renew(consumer: String, lease: String)` and `renew() -> Table(Renew)`. The table
+  is named `Renew` and has one row, `Renew`. Its guard finds the lease by id with
+  `model.lease` and holds when that lease is active and its consumer is the caller. Its
+  effect asks for `now`, sets `expires_at` to `now + lease_ttl` with
+  `model.replace_lease`, emits nothing and answers nothing. When the guard does not hold
+  the table refuses with `LeaseFenced("Renew", consumer, lease)`: a lease that is not
+  active, not the consumer's, or was never issued.
+- **`core.gleam`.**
+  - `Trigger` gains `Pull(pull: Pull)` and `Renew(renew: Renew)`.
+  - `apply` refuses a pull or a renew by a consumer that never joined itself, with
+    `UnknownConsumer`, before any table runs (G26), as it does the unknown publisher.
+  - `chain` routes `Handed(pocket_key, record_key)` to `pull.handed()` as a `Handover`.
+  - `registry()` adds `pull.pull()`, `pull.handed()` and `settle.renew()` at the end.
+- **`owner.gleam`.** `pull(owner, consumer: String, limit: Int) -> Reply` and
+  `renew(owner, consumer: String, lease: String) -> Reply`. `Message` is unchanged: both
+  send the existing `Act` with the new trigger.
+  - A pull that claims replies `Ok(Outcome(["PullClaimsFrontPocket", "HoldRecord", ...],
+    Some(Batch(...))))`, with one `HoldRecord` for each record handed.
+  - A pull that finds nothing replies `Ok(Outcome(["PullFindsNoPocket"],
+    Some(NoPocketAvailable(consumer))))`.
+  - A renew replies `Ok(Outcome(["Renew"], None))`.
+- **`model.gleam`.** Three functions over plain lists.
+  - `replace_pocket(pockets, pocket)` replaces by key.
+  - `lease(leases, id) -> Result(Lease, Nil)` answers the first lease with that id (G24).
+  - `replace_lease(leases, lease)` replaces by id, so every lease with that id (G27).
+- **`test/harness.gleam`.**
+  - `fixture_with(settings)`; `fixture()` is now that over `fixture_settings()`.
+  - `publish_publication(double, publication)`, for a payload that is not text.
+    `publish_as` now goes through it.
+  - `pull(double, consumer, limit) -> Reply` and `renew(double, consumer, lease) ->
+    Reply`, both logged like `publish`.
+  - `batch(double, consumer, limit) -> Pulled`, with `Pulled(fired, lease, pocket_key,
+    records)`. It fails the test on any reply but a batch, and on a batch that names
+    another consumer.
+  - `keys(records)`, the batch's keys in order.
+  - `LeaseView(pocket_key, expires_at, records: List(MarkedRecord))`,
+    `MarkedRecord(key, rank, payload, mark)`, `lease_view(double, consumer) ->
+    Option(LeaseView)` and `marked_keys(records)`.
+  - `lease_view` is a stand-in (G31). It takes one snapshot and reads
+    `inspection.views`: the consumer's `active_leases`, and that lease's pocket's
+    `held_records` sorted by position. It fails the test if the consumer never joined or
+    holds more than one active lease. **GD04 replaces its body with the owner's
+    `LeaseView` message** and keeps its signature, so S033's and S036's ports do not
+    change.
+- **`test/coverage.gleam`.** `pending_scenarios` holds 64 ids and `pending_rules` 21
+  rules.
+- **Test modules.** `pull_test`, `lease_test` and `competing_test` are new and listed in
+  `main`; `competing_test` sits after `owner_test`, and the other two after
+  `publish_test`. The run has 155 tests.
+
+Changes to a GD01 or GD02 seam, or departures from the ticket's wording, and what each
+costs:
+
+| Before, or as the ticket words it | After GD03 | Cost |
+| --- | --- | --- |
+| `Answer` had no constructor, so every reply's answer was `None` | Two constructors; a pull's reply holds `Some(answer)` | None recorded |
+| `Event` had one constructor, routed to a table with no row | `Handed` is added, and `chain` routes it to the `Handed` table | `core_test`'s header comment was reworded. No state between a pull's row and its `HoldRecord`s breaks an invariant, so `Handed` still gives no witness for GD02's B6 (Open points) |
+| `Trigger` held the two joins and `Publish` | `Pull` and `Renew` are added, and `apply` refuses an unknown consumer itself, before any rule runs (G26) | That refusal reads no clock and draws no id, and no table is consulted |
+| "the owner's `Pull` and `Renew` messages" (Files touched) | Two functions, `owner.pull` and `owner.renew`, over the existing `Act` message | None: `owner.publish` took the same form in GD02 |
+| The lease view is "through the owner's `LeaseView` message", from GD04 (shared rule 4) | S033 and S036 read `harness.lease_view`, a helper over the snapshot | GD04 replaces the helper's body. S036's record order is `impl-choice` until S090 separates the orders (G31) |
+| `harness.fixture()` built its own config | It calls `fixture_with(fixture_settings())` | None recorded |
+| `pending_scenarios` held 82 ids and `pending_rules` 26 rules | 64 and 21 | None |
+
+### 4. Steps 2 to 5
+
+Every output in this section ran uncommitted, on base
+`cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`. Each subsection repeats its head.
+
+Who did what, one writer at a time but for the lapse in section 5:
+
+- The lead decided the seams and wrote them into the step-3 brief (`brief-step3.md`).
+- One subagent built the seams and step 3. A second wrote step 4 (`brief-step4.md`). A
+  third wrote the spec notes.
+- The lead read `pull.gleam` against the specification, and replaced four `G-new`
+  placeholders in test comments with their note ids: G31, G26, G23 and G26.
+- At the checkpoint one runner subagent per lens drove Codex, and one fresh triage
+  subagent checked the findings and applied the fixes.
+
+#### Step 2: the plan
+
+`plan-change` was loaded in GD01 and applied here. The step-3 author checked each owned
+scenario against its Rust test: none needed an operation this ticket does not land. So no
+scenario moved under shared rule 2, and no other ticket's ownership table changed. One
+thing falls short of a move: S033 and S036 read the consumer's lease view, whose owner
+message is GD04's, and read it through `harness.lease_view` for now (section 3).
+
+#### Step 3: the ports, red first
+
+Uncommitted, on base `cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`.
+
+The scenarios, by module, each under its `Scenario` tag:
+
+| Module | Scenarios |
+| --- | --- |
+| `config_test` | S001, S008 |
+| `publish_test` | S012, S015, S019, S020, S022 |
+| `pull_test` | S027, S028, S029, S030, S031, S032, S033, S036, S038, S039 |
+| `lease_test` | S050 |
+
+The `impl-choice` labels, each in its test's comment:
+
+- The absolute positions in S012, S015 and S022 (G04 and G29; N16).
+- The order of the superseded queue in S015 and S019 (G19).
+- S027's `"lease-1"`: the port's comment cites G10, and G27 records it.
+- The record order of S036's lease view (G31).
+- That a new lease is added at the end of the leases (G19).
+- The refusal of a consumer that never joined, for a pull and for a renew (G26, as N18).
+- The hand-built state that reaches the Pull table's refusal (G23, as N14).
+- In `competing_test`, the two assertions that rest on the snapshot's order (G19; G32).
+
+The Rust assertions not ported literally, each with its reason:
+
+- `batch.expires_at` in S027 and S036, and renew's returned expiry in S050, are read
+  from the snapshot's lease. A batch carries no expiry and `Renew` answers nothing (G22).
+- Publish outcomes are ported as the ruling on N32 says.
+- S022's `invariants::order_is_the_queued_pockets` has nothing to compare:
+  `harness.order` is that derivation.
+- S050's `granted_before_expiry` is `invariants.check` not naming `GrantedBeforeExpiry`.
+- S027's pairing of consumer and lease is the consumer view's `active_leases`.
+
+The first red, `ev-step3-red-first-no-rows.txt`, with the seams in and the three tables
+empty. Every pull met the Pull table's refusal, and 25 tests failed:
+
+```text
+...
+FAIL pull_test.a pull claims the front pocket, leases it and holds the batch: crashed: ... #(Value, Error(Refused(PullRefused("c1")))) ...
+...
+COVERAGE S001 is in pending_scenarios, and a test tagged Scenario("S001") passed
+150 tests run, 125 passed
+coverage faults: 1
+exit status: 1
+```
+
+The last red, `ev-step3-red-last-renew.txt`, before the Renew row. Three tests failed.
+What the pending lists held at that run is not recorded.
+
+```text
+FAIL lease_test.a renew extends the lease to now plus lease_ttl: crashed: ... #(Left, ... #(Value, Error(Refused(LeaseFenced("Renew", "c1", "lease-1")))) ...), #(Right, ... #(Value, Ok(Outcome(["Renew"], None))) ...
+FAIL lease_test.Renew changes exactly what it ensures, reads the clock once and draws no lease id: crashed: ...
+FAIL lease_test.Renew's guard holds only for an active lease of the consumer's: crashed: ...
+150 tests run, 147 passed
+coverage faults: 0
+exit status: 1
+```
+
+Never red, and why:
+
+- S001's port asserts the configuration only. It passed against the empty tables, as the
+  `COVERAGE` line above shows.
+- The pull by a consumer that never joined, and the hand-built `PullRefused` test: their
+  refusals were in the scaffold.
+- The renew by a consumer that never joined was red only through its setup pull.
+
+The mutants below cover the refusals: K1 and K2 for the two of a consumer that never
+joined, and W1 for the hand-built state. No mutant in the pass names S001's port.
+
+The mutation pass, after green (`ev-step3-mutants.txt`, which holds no `$` line; each
+mutant's whole output is `mutants/<id>.txt`). Its summary line:
+
+```text
+44 mutants, 44 killed by their named test in the last pass, every file restored to its SHA-256.
+```
+
+- The 44 are W1 to W7 on `PullWithinLease`, C1 to C14 on `PullClaimsFrontPocket`, H1 to
+  H6 on `HoldRecord`, F1 to F5 on `PullFindsNoPocket`, R1 to R7 on `Renew`, A1 to A3 on
+  the lookups the three Pull rules share, and K1 and K2 on `core.apply`'s refusal of a
+  consumer that never joined. Every line records exit status 1.
+- Each changes one line of `pull.gleam`, `settle.gleam` or `core.gleam`. Three add a
+  line, four delete one, and H3 carries a second edit, to an import its change left
+  unused.
+- A mutant counts as killed only if the run reached the tests, exited non-zero, and its
+  named test is among the `FAIL` lines.
+- One survived its first run. A1 deletes the `status: active` filter from the lookup of
+  the consumer's lease: `150 tests run, 150 passed`, exit status 0
+  (`mutants/A1-survived.txt`). No lease ends through the owner yet, and no hand-built
+  pull state held an ended lease. The test "a consumer whose lease has ended pulls as one
+  with no lease" was added, and kills A1 in the last pass.
+- Six mutants, C1, C14, F1, F3, A2 and A3, first left a variable unused. The
+  warnings-as-errors build stopped those runs before any test ran, which is no kill.
+  They were rewritten to keep the variable in use and run again.
+- Not mutated, as equivalent: either of `PullClaimsFrontPocket`'s two `requires` lines.
+  Not mutated, as not observable: the order in which one pull's `Handed` events are
+  answered.
+- The pass ran at 151 tests, before step 4 and before the checkpoint (section 10).
+
+The green run, `ev-step3-green.txt`:
+
+```text
+$ just gleam-double
+...
+151 tests run, 151 passed
+coverage faults: 0
+exit status: 0
+```
+
+No ported scenario failed against rows that follow the specification, and dispatch
+returned no `GuardOverlap` on the Pull, `Handed` or Renew table. On exit
+`pending_scenarios` holds 64 ids and `pending_rules` 21 rules.
+
+#### Step 4: the competing callers
+
+Uncommitted, on base `cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`.
+
+`test/competing_test.gleam` is new. Its three tests carry no tag and share one body:
+
+| Test | Callers | Queued pockets |
+| --- | --- | --- |
+| "eight consumers pull at once while one pocket is queued: one is handed its records under a lease and seven are told there is none" | 8 | 1 |
+| "six consumers pull at once while six pockets are queued: each is handed a different pocket, and the pockets are claimed front first" | 6 | 6 |
+| "nine consumers pull at once while four pockets are queued: four are handed a pocket each and five are told there is none" | 9 | 4 |
+
+What the body asserts, and nothing about which consumer won, which pocket a consumer got
+or the number in a lease id:
+
+- From the answers: as many batches as the fewer of the callers and the pockets, and
+  `NoPocketAvailable` for every other caller. No two batches name one pocket, one lease
+  or one consumer. The pockets named are the front ones. Each batch is its own pocket's
+  records, oldest first, up to the limit; every payload names its pocket.
+- From the snapshot afterwards: `invariants.check` names nothing. The leases are the
+  batches' leases, one for one, each active, and no two share a pocket or a consumer. The
+  pockets claimed are no longer queued. The held records are the ones handed out.
+- From the fakes: one lease id drawn and one clock read for each lease granted.
+
+Departures from the ticket's wording:
+
+- The callers do not simply "send at once". Each waits at a gate of its own until every
+  caller has been started, and only then is each let go.
+- Each test runs its body once for each caller, with that caller started first, on a new
+  owner each time. One starting order mostly gives one mailbox order.
+
+The scratch breaks. Each evidence file opens with the break's name, what it does and its
+diff, holds one `just gleam-double` run, and ends with a line that says the source was
+restored and its SHA-256 is the same. Each run has 154 tests.
+
+| Break | Scratch change | Evidence | Competing tests failing | Other tests failing | Passed | Coverage faults | Exit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `stale` | The owner applies a `Pull` to the state it held before the previous message | `ev-step4-stale.txt` | 3 | 14 | 137 | 11 | 1 |
+| `unleased` | `PullClaimsFrontPocket` creates the lease and leaves the pocket queued | `ev-step4-unleased.txt` | 3, at the reply: the apply step's checker refuses every claim | 24 | 127 | 21 | 1 |
+| `unleased-unchecked` | The same, with the apply step accepting a broken invariant | `ev-step4-unleased-unchecked.txt` | 3, on their own counts | 18 | 133 | 11 | 1 |
+| `notfront` | The claim takes the queued pocket with the largest position | `ev-step4-notfront.txt` | 2: the second and third fail on the grant order, which rests on G19. The first passes, since one pocket has no back | 8 | 144 | 3 | 1 |
+| `offstream` | The owner applies a `Pull` in a process of its own, from the state it held when it read the message, and takes the new state back as a second message | `ev-step4-offstream.txt` | 3 | 0 | 151 | 0 | 1 |
+
+`stale` is the scratch break the ticket asks for. The first test's assertion compared two
+batches with the one pocket there was to claim (`ev-step4-stale.txt`):
+
+```text
+FAIL competing_test.eight consumers pull at once while one pocket is queued: one is handed its records under a lease and seven are told there is none: crashed: ... #(Function, "compete"), #(Line, 263), #(Message, "Assertion failed.") ... #(Left, ... #(Value, 2) ...), #(Right, ... #(Value, 1) ...
+FAIL competing_test.six consumers pull at once while six pockets are queued: each is handed a different pocket, and the pockets are claimed front first: crashed: ...
+FAIL competing_test.nine consumers pull at once while four pockets are queued: four are handed a pocket each and five are told there is none: crashed: ...
+...
+154 tests run, 137 passed
+coverage faults: 11
+exit status: 1
+restored and touched: owner.gleam sha256 ... (same)
+```
+
+`stale` also fails 14 other tests, so it does not show that the competing tests earn
+their place. `offstream` does: it passes the 151 other tests and fails only these three
+(`ev-step4-offstream.txt`):
+
+```text
+FAIL competing_test.eight consumers pull at once while one pocket is queued: one is handed its records under a lease and seven are told there is none: crashed: ...
+FAIL competing_test.six consumers pull at once while six pockets are queued: each is handed a different pocket, and the pockets are claimed front first: crashed: ...
+FAIL competing_test.nine consumers pull at once while four pockets are queued: four are handed a pocket each and five are told there is none: crashed: ...
+154 tests run, 151 passed
+coverage faults: 0
+exit status: 1
+restored and touched: owner.gleam sha256 ... (same)
+```
+
+`step4-report.md` says `offstream` failed the three in each of eight runs, seven of them
+against the tests as they then stood. The evidence file holds the last run only; the
+output of the other seven is not recorded.
+
+The repeat (`ev-step4-repeat.txt`). A scratch edit added three tests, each running one
+test's function 25 more times, and printed each run's grant order. The run ended
+`157 tests run, 157 passed`, `coverage faults: 0`, exit status 0, and the edit was
+restored. It holds 598 runs of the body, none failing:
+
+| Callers, pockets | Runs | Different grant orders | Runs granted in another order than started |
+| --- | --- | --- | --- |
+| 8, 1 | 208 | 8 | 8 |
+| 6, 6 | 156 | 24 | 21 |
+| 9, 4 | 234 | 27 | 22 |
+
+The green runs: `ev-step4-green.txt`, and `ev-after-notes.txt` after the note ids were
+put into the four test comments. Each ends:
+
+```text
+154 tests run, 154 passed
+coverage faults: 0
+exit status: 0
+```
+
+#### Step 5: spec notes
+
+`gleam-double/SPEC-NOTES.md` gained G22 to G32. Each cites its `N`-note or says it has
+none.
+
+| Note | Title | `N`-note |
+| --- | --- | --- |
+| G22 | a batch names its lease by id and its pocket by key, and carries no expiry | Agrees with N13 |
+| G23 | the Pull table's refusal is unreachable through the owner | Agrees with N14 |
+| G24 | a lookup that names one lease, and `min_by` over a tie, take the first in the snapshot's order | No `N`-note |
+| G25 | a pull whose limit is not positive still claims a pocket | Agrees with N19 |
+| G26 | a pull or a renew by a consumer that never joined is refused (`impl-choice`) | Agrees with N18, but not with its reason |
+| G27 | a pull draws a lease id only when it creates a lease | Agrees with N15, and differs in one assertion |
+| G28 | Renew's refusal is `LeaseFenced`, and an unknown lease id meets it | Agrees with N20, and differs in what is tested |
+| G29 | S012, S015 and S022 assert absolute positions (`impl-choice`) | Agrees with N16 |
+| G30 | S019's large ranks are a 64-bit integer's extremes, not the double's | Agrees with N17 |
+| G31 | the lease view is read from the snapshot for now (S036's record order is `impl-choice`) | Takes N23's reading |
+| G32 | what the competing callers show of "one serialized stream" | No `N`-note |
+
+- Step 5's two candidates are G25 and G23, and its note on the competing callers is G32.
+  Step 3's point on S019 is G30.
+- Seven earlier notes were amended to stay true: G04, G08, G10, G13, G15, G17 and G19.
+- One finding comes from the code and has no test, in G27: the double never checks that
+  a lease id it is handed is new (Open points).
+- The checkpoint then reworded G24, G28 and G32 (section 6).
+
+### 5. A lapse in procedure
+
+The lead answered a question from the step-3 subagent after that subagent had already
+reported. The message woke it. It made comment-only edits to
+`gleam-double/test/harness.gleam` and `gleam-double/test/pull_test.gleam`, and ran
+`just gleam-double` once, while the step-4 subagent was meant to be the only writer. That
+run was green at 151 tests, and it re-recorded `ev-step3-green.txt`.
+
+By the file clock those edits landed at 20:38:39, before the step-4 subagent's first
+scratch mutant went live at about 20:46. The step-4 subagent was told. It ran every
+evidence run again as sole writer and re-recorded its final green run afterwards, and its
+results did not change.
+
+The three sources the step-3 sweep mutated kept their SHA-256, so `ev-step3-mutants.txt`
+stands: `pull.gleam`, `settle.gleam` and `core.gleam` at the work commit equal the copies
+the sweep restored from (`ev-handback-checks.txt`, a check the writer of this record
+ran). The two times above are the lead's; no evidence file holds them.
+
+### 6. Checkpoint record
+
+One checkpoint, at step 6: conformance and breakage, before the final commit.
+
+- **Harness and model.** Codex v0.169.1 with `gpt-6-astra`, `-s read-only`, one fresh
+  process per lens, by the ticket's corrected command. Each lens left `last-<lens>.md`
+  and `log-<lens>.txt`. Codex was on `PATH`, so no fallback to a Claude reviewer was
+  needed.
+- **Recovery.** Both findings files open `Source: last-message`: each is Codex's last
+  message, recovered because a read-only Codex writes no file.
+- **What the reviewers ran.** Nothing. Each says its evidence was read-only inspection.
+  The triage ran each claim.
+- **Triage.** One fresh subagent, neither a reviewer nor an author.
+- **Rounds.** One. No finding was rated high, by a reviewer or by the triage, so no
+  second round was owed.
+- **Not recorded.** The `codex exec --help` check on the day, and the model of the runner
+  and triage subagents.
+
+It ran uncommitted, on base `cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`, after step 5.
+`just gleam-double` ended `154 tests run, 154 passed` before any fix (`ev-baseline.txt`).
+The conformance lens filed C1 to C3 and the breakage lens B1 and B2. L1 is a point the
+lead raised.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | low | valid | `competing_test` compares a pocket's held records, in the snapshot's order, with the batch's order: a second G19 dependency that G32 did not name | G32 says two assertions rest on an `impl-choice` and names both. The assertion's comment is labelled `impl-choice` (G19). The assertion is unchanged |
+| C2 | low | valid | G24 said the invariants make every lookup name one entity, but no invariant compares lease ids, so `model.lease` is not covered, as G27 says | G24's claim is limited to the consumer's active lease, `min_by` and `oldest`, and points to G27 for `model.lease` |
+| C3 | low | valid | The ports of S012, S015 and S022 cited G16, which records S011, S014 and S016; G29 records these three | The three comments cite G04 and G29, and the module's header G04, G16 and G29 |
+| B1 | medium | valid, and wider than filed | A mutant that empties `superseded` at the start of each of the five effects passed all 154 tests. So did one that empties `dead_letters` | Tests only. The hand-built states of `pull_test` and `lease_test` hold a retained version and a dead letter. The owner-driven "changes exactly" tests publish one supersede first. One test is new, "Renew leaves a retained version and a dead letter as they were". G28 names it |
+| B2 | medium | valid | `expires_at = max(now + lease_ttl, old expires_at + 1)` in `PullWithinLease` passed all 154 tests: no pull within a lease was checked with the clock standing still | `within_lease_exactly` pulls a second time before the clock moves, and asserts the same complete snapshot and one more clock read |
+| L1 | low | invalid | G32 states no number of runs, so there is no "seven" to correct, and its sentence agrees with the evidence | Nothing |
+
+Five of the six were valid, and all five were applied. Nothing was handed back. The
+triage changed five files, all in this ticket's Files touched: `SPEC-NOTES.md` (G24, G28
+and G32), a comment in `competing_test.gleam`, four comments in `publish_test.gleam`,
+`pull_test.gleam` and `lease_test.gleam`. Nothing under `gleam-double/src/` changed, and
+no ported scenario's assertion changed.
+
+On the questions step 6 puts to the breakage lens, the reviewer lists what it examined
+with no further finding: the pocket and record order where storage order differs from
+position order, both batch caps, pocket exclusivity, and the competing callers'
+assertions as independent of the mailbox order.
+
+The eleven mutants B1 and B2 predict (`mutants.py`; one file for each run,
+`ev-mutant-before-<id>.txt` and `ev-mutant-after-<id>.txt`, with its diff):
+
+| Evidence | Tree | Result |
+| --- | --- | --- |
+| `ev-mutants-before.txt`, a summary with no `$` line | As reviewed | 11 of 11 survived, each `154 tests run, 154 passed`, exit 0 |
+| `ev-mutants-after.txt`, the same | After the triage | 11 of 11 killed, exit 1 each, of 155 tests. The file names the tests that fail |
+
+- Five mutants empty `superseded`, one for each rule. Each is now killed by at least one
+  owner-driven test and one hand-built one.
+- Five empty `dead_letters`. Each is killed by a hand-built test alone: no rule creates a
+  dead letter yet (Open points).
+- B2's mutant is killed by "PullWithinLease changes exactly what it ensures, on an empty
+  batch too, reads the clock once and draws no lease id".
+- Not covered, and not part of B2: `max(now + lease_ttl, old expires_at)` differs from
+  the rule only when the clock goes backwards, which no test does, for `PullWithinLease`
+  or for `Renew`.
+
+`ev-after-test-fixes.txt` is `just gleam-double` after the test fixes:
+`155 tests run, 155 passed`, exit status 0. `ev-after-mutants-green.txt` holds a second
+run with the same two lines; `verdicts.md` does not list it, and what it followed is not
+recorded.
+
+Tree ids: as reviewed and before the triage `0b060a9f9be39c8fd5d7c4610c86bb3cea64351d`
+(`tree-before-triage.txt`, and `tree-before-review-1.txt` beside the other evidence),
+after it `175f5d20c32486a9bc6b8db8c715d3fe3b4d17ac` (`tree-after-triage.txt`). The work
+commit's tree is that second id (`ev-handback-checks.txt`), so the re-run below and the
+eleven "after" runs ran on the tree that was committed.
+
+`verdicts.md` says `just lint` passed after the Markdown edits; no evidence file holds
+that run. `just check` did not run between the triage and the commit: it ran at the work
+commit (section 7).
+
+The re-run after the checkpoint (`ev-final.txt`), uncommitted, on base
+`cf1d96e21c2d40d62a9d8b9a19a0ab7e5343bcf3`:
+
+```text
+$ just gleam-double
+...
+155 tests run, 155 passed
+coverage faults: 0
+exit status: 0
+```
+
+### 7. Verification
+
+The Verification block ran at `8e6907e2c89b9291b0aeb96cbd6d1433b3e04985`, the work
+commit, as one `sh` script under `set -eu` (`verification.sh`, the ticket's block word
+for word; output in `ev-verification.txt`). It exited 0, so its last two lines held:
+`git status --short` printed nothing.
+
+```text
+$ sh ai_tmp/gd/GD03/verification.sh
+8e6907e2c89b9291b0aeb96cbd6d1433b3e04985
+gleam 1.19.1
+OTP 29
+...
+155 tests run, 155 passed
+coverage faults: 0
+...
+Validated 49 pages and 50 canonical topics.
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+The 155 tests are GD02's 122 and 33 more: 18 in `pull_test`, 5 in `lease_test`, 3 in
+`competing_test`, 2 in `config_test` and 5 in `publish_test`. Those counts are read from
+the modules' registries at the work commit; no evidence file holds them.
+
+### 8. The acceptance criteria against the evidence
+
+1. `just gleam-double` exits 0 and shows the counts: `ev-verification.txt`.
+2. The pending lists hold exactly the 64 ids and the 21 rules GD04 to GD06 own:
+   `ev-handback-checks.txt`, which compares the lists at the work commit with the three
+   tickets' ownership tables. `findings-conformance.md` says the same.
+3. Every owned scenario has a tagged test, and each of the five rules is a row that
+   fired: `coverage faults: 0` in `ev-verification.txt`, with none of the 18 ids or the 5
+   rules pending.
+4. The batch is asserted through the owner's answer, and the lease's two times and the
+   held fields through the snapshot: `ev-step3-mutants.txt`. C14 (the batch does not name
+   its lease), C5 and C6 (the lease's two times) and H1 to H5 (the five held fields) are
+   each killed, and S027's owner-driven port is among the tests that fail for C5, C6, C14
+   and H3 (`mutants/<id>.txt`).
+5. Only `PullClaimsFrontPocket` draws: `ev-step3-mutants.txt`, where W6 and R6, a draw by
+   `PullWithinLease` and by `Renew`, are killed, and the competing tests' count of one
+   draw for each lease granted. That `PullFindsNoPocket` and a refused pull draw none is
+   asserted by passing tests; no mutant shows those two assertions can fail.
+6. Step 4's tests pass, and its scratch break is quoted with its output and exit status:
+   `ev-step4-green.txt` and `ev-verification.txt`; `ev-step4-stale.txt`, in section 4.
+7. The spec notes are there, the unknown consumer's `impl-choice` among them (G26), each
+   with its `N`-note line: `ev-handback-checks.txt` counts eleven such lines from G22 on.
+8. `just gleam-double` leaves nothing Git can see and no `erl_crash.dump`:
+   `ev-verification.txt`. The script tests both under `set -eu` and exits 0.
+9. The checkpoint is recorded in section 6. One thing §14 asks for cannot be shown: the
+   `codex exec --help` check on the day is not recorded.
+10. `just check` ends with its line and `git status --short` prints nothing:
+    `ev-verification.txt`.
+
+### 9. Stops
+
+None fired. The conditions watched:
+
+- A ported scenario failing against rows that follow the specification, with no ruling
+  to cover it (shared rule 1). None did.
+- A `GuardOverlap` on a specification table (shared rule 4). Dispatch returned none on
+  the Pull, `Handed` or Renew table.
+- A scenario that needs an operation this ticket does not land (shared rule 2). None
+  moved.
+- A count that moved. The coverage check asserts 93, 32 and 35 on every run, and every
+  green run ends `coverage faults: 0`.
+- A reach for the network. Nothing was fetched and no network recipe ran. The review
+  checkpoint called a model API, which the checkpoint authorises.
+
+Step 7's stop stands: nothing was pushed and no pull request was opened.
+
+### 10. What was not run
+
+- Any push, pull request or issue.
+- `just initialize`, `just gleam-double-deps` and `just lock`.
+- A CI run.
+- A second review round. None was owed.
+- The step 3 sweep after step 4 or after the checkpoint. The 44 mutants ran at 151
+  tests. The three sources they change are the same at the work commit
+  (`ev-handback-checks.txt`), but the checkpoint rewrote several of the tests the sweep
+  names, and the sweep was not repeated at 155.
+- The step 4 breaks and the repeat after the checkpoint. They ran at 154 tests. The
+  checkpoint changed a comment in `competing_test.gleam` and nothing under
+  `gleam-double/src/`.
+- A witness that the checker runs only after every `Handed` has been answered (Open
+  points).
+- A test that pins `LeaseFenced` through the owner (Open points).
+- A test with a lease-id source that repeats an id (G27; Open points).
+- A test in which the clock goes backwards (checkpoint, B2).
+- `just check` between the triage and the commit (section 6).
+
+Not recorded: `codex exec --help` on the day; the model of the runner, triage and author
+subagents; the output of seven of `offstream`'s eight runs; an evidence file for the
+triage's `just lint`; what the pending lists held at the last red run; and an evidence
+file for the two times in section 5 or for the test count of each module.
+
+### 11. Working lessons for GD04 to GD07
+
+- A message to a subagent that has already reported resumes it, and it acts on the
+  message. Answer a question mid-task at once or not at all, and never send edit
+  instructions while another writer is live (section 5).
+- A brief can live in a file, and the spawn prompt can point at it.
+- Ask the concurrency author for a mutant that only its tests catch. `offstream` is what
+  shows that the competing tests earn their place; the ticket's own break, `stale`, fails
+  14 other tests too.
+- A "changes exactly what it ensures" test shows nothing for a list that is empty before
+  and after. Seed every list of the state the rule should leave alone: the checkpoint's
+  ten surviving mutants each emptied a queue that was already empty. Once a rule creates
+  a dead letter, the owner-driven tests can seed one as they now seed a retained version.
+- A mutant that leaves a variable or an import unused fails the warnings-as-errors build,
+  not a test. Write it so that a test fails.
 
 ## Open points
 
-- Should a batch carry its lease's `expires_at`? N13 already asks; this ticket takes
-  N13's reading and adds nothing to the answer.
+- **Should a batch carry its lease's `expires_at`? Still open.** N13 already asks. This
+  ticket takes N13's reading, in G22, and adds nothing to the answer: the ports read the
+  expiry from the snapshot's lease.
+- **The lease view in S033 and S036 is read from the snapshot (G31).**
+  `harness.lease_view` stands in for the `Consuming` surface's view. GD04 lands the
+  owner's `LeaseView` message and replaces the helper's body. S036's record order is
+  `impl-choice` until then, and S090, which GD04 owns, is the row that tells position
+  order from key order.
+- **No test shows that the checker runs only after every `Handed` has been answered.**
+  Step 3 asks for that order, and `core.conclude` gives it. But no state between a
+  pull's own row and its `HoldRecord`s breaks an invariant, so a checker call placed
+  part-way would pass every test. This is GD02's B6 again, and GD04 owes the witness
+  with `ReviveIdlePocket`. As GD04's ticket stands at this record, its step 5 asks the
+  breakage lens whether a test could pass "while the checker ran part-way through a
+  release", and no step asks for the witness test GD02's Open points describe.
+- **`LeaseFenced` is pinned by no test through the owner until GD04.** Renew's guard is
+  written in full and tested on hand-built states. Its two refusal rows, S052 and S070,
+  are GD04's.
+- **A lease-id source that repeated an id would give two leases one id (G27).** The
+  double does not check that an id it is handed is new, and no invariant compares two
+  ids. `model.lease` would answer the first such lease and `model.replace_lease` would
+  replace both. The fake never repeats. G10 and G27 ask whether the specification should
+  declare a lease's identity and say that two leases never share one.
+- **The competing-callers tests sample the scheduler's orders, and race only `Pull`
+  against `Pull` (G32).** They cannot show that the properties hold in every
+  interleaving, and they say nothing of the case the specification's sentence is written
+  for, a lapse in the same stream as a consumer's action. GD06 owns that race.
+- **Carried from GD02's hand-back: a higher rank published onto a held record with
+  nothing deferred meets `EqualRankRefused` until GD05 (G13).** GD02 recorded that no
+  publish through the owner could reach that input "until GD03 lands a pull". This ticket
+  lands the pull and changes nothing in `publish.gleam`, so by GD02's record the input
+  can now be reached through the owner. The input is `DeferBehindHeldVersion`'s, which is
+  pending, so no test pins it as a refusal. No test here publishes onto a held record,
+  and no evidence file shows the answer.
+- **No owner-driven test would see a pull or a renew empty the dead-letter queue
+  (checkpoint, B1).** Only hand-built states hold a dead letter. Once GD04 lands the rule
+  that creates one, the owner-driven "changes exactly" tests can seed it.
+- **PD07 is still todo, and is not a blocker.** The double follows the rulings as they
+  stand.
