@@ -4,9 +4,10 @@ Every method hands its trigger to the one apply step, `Queue._apply`, which
 makes the whole outcome of that trigger, in this order:
 
 - It reads the clock at most once, the first time a guard, a refusal or an
-  effect reads `now`; that one value is `now` for the whole outcome. An
-  outcome whose rules never read `now`, such as a refused mark, reads no
-  clock at all (S085).
+  effect reads `now` from its view; that one value is `now` for the whole
+  outcome, since every view of the outcome shares one reader. An outcome
+  whose rules never read `now`, such as a refused mark, reads no clock at
+  all (S085).
 - It dispatches the trigger through its table (rules.py), on a working copy
   of the state.
 - It dispatches each event an effect emitted, first in first out, through
@@ -141,23 +142,19 @@ class _Now:
 class Outcome:
     """What an effect writes through: the working state of one outcome.
 
-    Entities are frozen, so an effect changes one by `replace`-ing it with a
-    new value under the same key.
+    It only writes. An effect creates, replaces and removes entities, emits
+    events, allots a position, draws a lease id and gives the trigger's
+    answer through it, and reads the state, the config and `now` from its
+    `View`. Entities are frozen, so an effect changes one by `replace`-ing it
+    with a new value under the same key.
     """
 
-    def __init__(self, state: _State, now: Callable[[], Timestamp], config: Config, lease_ids: LeaseIds) -> None:
+    def __init__(self, state: _State, lease_ids: LeaseIds) -> None:
         self._state = state
         self._lease_ids = lease_ids
-        self._now = now
-        self.config = config
         self.events: deque[Any] = deque()
         self._answer: Any = None
         self._answered = False
-
-    @property
-    def now(self) -> Timestamp:
-        """The outcome's one timestamp; reading it may read the clock, once."""
-        return self._now()
 
     def answer(self, value: Any) -> None:
         """What the trigger hands back to its caller, such as Pull's `Batch`.
@@ -228,7 +225,6 @@ class Queue:
     """The deployment's one queue, driven one trigger at a time."""
 
     def __init__(self, config: Config = Config(), *, clock: Clock, lease_ids: LeaseIds) -> None:
-        self._config = config
         self._config_values = ConfigValues.of(config)
         self._clock = clock
         self._lease_ids = lease_ids
@@ -367,13 +363,13 @@ class Queue:
         """
         routes = EVENT_TABLES if event_tables is None else event_tables
         now = _Now(self._clock if clock is None else clock)
-        outcome = Outcome(self._state.copy(), now, self._config, self._lease_ids)
-        self._dispatch(table, trigger, outcome)
+        outcome = Outcome(self._state.copy(), self._lease_ids)
+        self._dispatch(table, trigger, outcome, now)
         while outcome.events:
             event = outcome.events.popleft()
             if type(event) not in routes:
                 raise Defect(f"no table answers the event {event!r}")
-            self._dispatch(routes[type(event)], event, outcome)
+            self._dispatch(routes[type(event)], event, outcome, now)
         after = outcome._state.snapshot(self._config_values)
         violations = check(after)
         if violations:
@@ -381,6 +377,6 @@ class Queue:
         self._state = outcome._state
         return outcome._answer
 
-    def _dispatch(self, table: Table, trigger: Any, outcome: Outcome) -> None:
-        view = View(outcome._state.snapshot(self._config_values), outcome._now)
+    def _dispatch(self, table: Table, trigger: Any, outcome: Outcome, now: _Now) -> None:
+        view = View(outcome._state.snapshot(self._config_values), now)
         dispatch(table, view, outcome, trigger)

@@ -33,16 +33,18 @@ invariant has no checker entry or control.
 | The specification | The double |
 | --- | --- |
 | Entities | Frozen dataclasses in `model.py`, with the specification's field names |
-| `config` | `Config` in `config.py`, with the five defaults |
+| `config` | `Config` in `config.py`, with the five defaults; a rule reads the snapshot's copy of it, `view.config` |
 | Each rule | A row `Rule(name, guard, effect)` of its trigger's table, named as the rule |
 | The rules that share a trigger | One `Table`, registered in `rules.SPECIFICATION` |
 | Invariants | One function each in `invariants.py`, registered in `REGISTRY` under the invariant's name |
 | The state the rules read | `Snapshot` in `inspection.py`, immutable and complete |
 | The surfaces' triggers | One method of `Queue` (`queue.py`) per trigger |
 
-A guard is the rule's `requires` clauses. It reads the snapshot and the trigger and
-changes nothing. An effect is the rule's `ensures`, and it writes through the outcome
-that the apply step hands it. The rule modules follow the specification's sections:
+A guard is the rule's `requires` clauses. It reads its view and the trigger and
+changes nothing. The view (`View` in `inspection.py`) holds the snapshot, the config
+and `now`, and it is the only place a guard or an effect reads any of them. An effect
+is the rule's `ensures`, and it writes through the outcome that the apply step hands
+it; the outcome only writes. The rule modules follow the specification's sections:
 
 | Section of the specification | Module |
 | --- | --- |

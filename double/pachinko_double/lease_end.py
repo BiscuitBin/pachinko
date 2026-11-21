@@ -200,7 +200,7 @@ def _supersede_unsettled_held_version(view: "View", outcome: "Outcome", event: F
             payload=record.held_payload,
             reason=ShedReason.SUPERSEDED,
             shed_at=event.ended_at,
-            expires_at=event.ended_at + outcome.config.superseded_ttl,
+            expires_at=event.ended_at + view.config.superseded_ttl,
         )
     )
     # The newer version is queued at the held version's position: a key
@@ -262,7 +262,7 @@ def _dead_letter_nacked_record(view: "View", outcome: "Outcome", event: Freed) -
             payload=record.held_payload,
             nacked_by=lease.consumer,
             nacked_at=record.nacked_at,
-            expires_at=event.ended_at + outcome.config.dead_letter_ttl,
+            expires_at=event.ended_at + view.config.dead_letter_ttl,
         )
     )
     # ensures: not exists record
@@ -294,7 +294,7 @@ def _dead_letter_nacked_version_queue_deferred(view: "View", outcome: "Outcome",
             payload=record.held_payload,
             nacked_by=lease.consumer,
             nacked_at=record.nacked_at,
-            expires_at=event.ended_at + outcome.config.dead_letter_ttl,
+            expires_at=event.ended_at + view.config.dead_letter_ttl,
         )
     )
     # The newer version is a new arrival and stands where it arrived.

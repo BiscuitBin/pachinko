@@ -140,7 +140,7 @@ class ApplyStepTest(unittest.TestCase):
             return True
 
         def open_seeing(view: View, outcome: Outcome, trigger: Open) -> None:
-            seen.append(outcome.now)
+            seen.append(view.now)
             open_pocket(view, outcome, trigger)
 
         def settle_seeing(view: View, outcome: Outcome, event: Settle) -> None:
@@ -163,6 +163,22 @@ class ApplyStepTest(unittest.TestCase):
         with self.assertRaises(ScratchRefused):
             queue._apply(REFUSE, Open("q", PocketStatus.QUEUED))
         self.assertEqual(clock.reads, 0)
+
+    def test_the_outcome_an_effect_is_handed_only_writes(self) -> None:
+        # A rule reads the config and now through its view alone, so the
+        # outcome the apply step makes offers neither.
+        captured: list[Outcome] = []
+
+        def capture(view: View, outcome: Outcome, trigger: Open) -> None:
+            captured.append(outcome)
+
+        captures = Table("Open", (Rule("Captures", lambda view, t: True, capture),), NoGuardHolds.NOTHING)
+        queue, _, _ = new_queue()
+        queue._apply(captures, Open("p", PocketStatus.IDLE))
+        (outcome,) = captured
+        for name in ("config", "now"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(outcome, name))
 
     def test_positions_come_from_next_position_in_allotment_order(self) -> None:
         queue, _, _ = new_queue()

@@ -18,7 +18,7 @@ import inspect
 import unittest
 
 from pachinko_double.config import Config
-from pachinko_double.inspection import Snapshot, View
+from pachinko_double.inspection import ConfigValues, Snapshot, View
 from pachinko_double.model import MINUTE, Consumer, Lease, LeaseStatus, Mark, PocketStatus, Record, RecordStatus
 from pachinko_double.pull import HANDED, PULL, Batch, Handed, NoPocketAvailable, Pull, oldest
 from pachinko_double.queue import Queue
@@ -26,10 +26,12 @@ from pachinko_double.refusals import PullRefused, UnknownConsumer
 from pachinko_double.rules import Defect, Registry, dispatch
 
 from .fixtures import (
+    DEFAULT_CONFIG,
     LEASE_TTL,
     PUBLISHER,
     T0,
     batch,
+    config,
     held,
     keys,
     lease,
@@ -300,8 +302,7 @@ class RecordingOutcome:
     """Stands in for the apply step's `Outcome` when a test runs one row
     on a hand-built snapshot: it records what the row writes and answers."""
 
-    def __init__(self, config: Config = Config()) -> None:
-        self.config = config
+    def __init__(self) -> None:
         self.writes: list[tuple[str, object]] = []
         self.answers: list[object] = []
         self.drawn = 0
@@ -331,10 +332,10 @@ class RecordingOutcome:
         self.answers.append(value)
 
 
-def run_pull(state: Snapshot, consumer: str, limit: int, config: Config = Config()) -> RecordingOutcome:
+def run_pull(state: Snapshot, consumer: str, limit: int) -> RecordingOutcome:
     """Dispatch one Pull through the registered Pull table on a hand-built
     state, against a private registry so the fired record is untouched."""
-    outcome = RecordingOutcome(config)
+    outcome = RecordingOutcome()
     dispatch(PULL, View(state, T0), outcome, Pull(consumer, limit), registry=Registry())
     return outcome
 
@@ -359,10 +360,11 @@ class PullRowsOnHandBuiltStatesTest(unittest.TestCase):
     """The Pull rows on states the scenarios cannot reach yet: pockets and
     records whose tuple order is not their position order."""
 
-    def scrambled(self) -> Snapshot:
+    def scrambled(self, config: ConfigValues = DEFAULT_CONFIG) -> Snapshot:
         # x and z are queued, x first in the tuple but z at the smaller
         # position; y is leased by c2 at the smallest position of all.
         return snapshot(
+            config=config,
             consumers=(Consumer("c1"), Consumer("c2")),
             pockets=(
                 pocket("x", position=7),
@@ -389,7 +391,7 @@ class PullRowsOnHandBuiltStatesTest(unittest.TestCase):
         self.assertEqual(handed, [Handed("z", "z1"), Handed("z", "z2"), Handed("z", "z3")])
 
     def test_the_claim_caps_the_batch_at_max_pull_batch(self) -> None:
-        outcome = run_pull(self.scrambled(), "c1", 10, Config(max_pull_batch=2))
+        outcome = run_pull(self.scrambled(config(max_pull_batch=2)), "c1", 10)
         (answer,) = outcome.answers
         assert isinstance(answer, Batch)
         self.assertEqual(keys(answer), ["z1", "z2"])

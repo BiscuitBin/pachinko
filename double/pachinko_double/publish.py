@@ -157,7 +157,7 @@ def _supersede(view: View, outcome: "Outcome", trigger: Publish) -> None:
             payload=record.payload,
             reason=ShedReason.SUPERSEDED,
             shed_at=view.now,
-            expires_at=view.now + outcome.config.superseded_ttl,
+            expires_at=view.now + view.config.superseded_ttl,
         )
     )
     # ensures: record.rank = rank
@@ -231,7 +231,7 @@ def _drop_stale_publish(view: View, outcome: "Outcome", trigger: Publish) -> Non
             payload=trigger.payload,
             reason=ShedReason.STALE,
             shed_at=view.now,
-            expires_at=view.now + outcome.config.superseded_ttl,
+            expires_at=view.now + view.config.superseded_ttl,
         )
     )
 
