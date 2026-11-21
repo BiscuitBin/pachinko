@@ -413,8 +413,8 @@ with exactly eleven matches, all code, and that none of B1's three shapes occurs
   notes. Verification below ran as the ticket writes it.
 - The triage subagent left four throwaway directories under the gitignored
   `ai_tmp/review/PD08-1/` (`triage-c1`, `triage-b1`, `triage-b1-probe`, `triage-b1-tests`).
-- The `/code-review` pass follows this ticket's record commit. Any fix it brings gets its
-  own commit.
+- The `/code-review` pass followed this ticket's record commit, and its fixes have their
+  own commit (section 8).
 
 ### 7. Verification
 
@@ -439,6 +439,25 @@ The worktree matches the check baseline.
 All checks passed and the worktree is unchanged.
 ```
 
+### 8. The code review, after the record commit
+
+After `db3ed1aafb869043f2bc7462669ec747c3cc7d50`, the `/code-review` pass ran at medium
+effort over `acd466f3f5c6609be2cde98298481d91a23f9b37..HEAD`. It found no correctness bug
+and five nits.
+
+| Nit | Outcome |
+| --- | --- |
+| `View`'s docstring said a rule "has no other route", which the code does not enforce | fixed: the docstring calls it the package's convention |
+| `scrambled`'s new `config` parameter shadowed the `config` fixture imported into the same module | fixed: the parameter is `config_values` |
+| The pin checks two attribute names on `Queue`'s `Outcome`, not its whole surface, and not the recorder | not changed: step 5 fixes the pin's form; added to Open points |
+| Section 7's quoted block holds one line no command printed, the elision | not changed: it follows PD06's hand-back; the line is marked with `…` |
+| PD08 landed on the series' branch, not its own | the maintainer's direction of 2026-11-20 (section 1) |
+
+The two fixes are commit `fe5cbc3e8bdabeb066895e0f713bdfb9ac1cf6f8`. The Verification
+block ran again there, as written, and exited 0: `Ran 275 tests`, `OK`, the four probes
+silent, and `All checks passed and the worktree is unchanged.`
+(`ai_tmp/pd/PD08/verify-review-fix.log`).
+
 ## Open points
 
 - **C1: Verification's count does not see `rg` fail.** Proposed, replacing the line that
@@ -458,6 +477,8 @@ All checks passed and the worktree is unchanged.
   patterns. It still does not catch `getattr` on an outcome; the pin in `test_queue.py`
   covers `Queue`'s own `Outcome` there, not the recorder. A syntax-aware check would need
   an exclusion list, which is the maintainer's choice.
-- The `/code-review` pass follows this ticket's record commit.
+- The pin names two attributes of `Queue`'s `Outcome`. A read route under another name, or
+  one on the tests' recorder, passes it. An allow-list of the outcome's write methods,
+  checked on both, would close that (the code review's nit, section 8).
 - Pushing the branch and opening a pull request both need the maintainer's authorisation
   (§11, "Separately authorised actions").
