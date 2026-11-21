@@ -1,12 +1,15 @@
 //// The runner's own tests.
 
+import gleam/erlang/process
 import gleam/list
 import gleam/string
-import runner.{type Test, Module, Passed, Test}
+import runner.{type Test, Failed, Module, Passed, Test}
 
 pub fn tests() -> List(Test) {
   [
     Test("a passing test hands back what it fired", [], passing_test_passes),
+    Test("a test that crashes fails", [], crashing_test_fails),
+    Test("a test that does not return in time fails", [], slow_test_fails),
     Test(
       "a test module that main does not import is a fault",
       [],
@@ -19,6 +22,38 @@ pub fn tests() -> List(Test) {
 fn passing_test_passes() -> List(String) {
   let inner = Test("inner", [], fn() { ["SomeRule"] })
   assert runner.run_one(inner, 1000) == Passed(["SomeRule"])
+  []
+}
+
+/// A test fails by crashing, so a crash must come back as `Failed`: were it
+/// `Passed`, a failed assertion would credit the test's tags and rules. The
+/// inner test kills its own process rather than panicking, which the runner
+/// sees the same way, through its monitor, and which prints no crash report.
+///
+/// This test pins the reason. It cannot catch a runner that takes a crash
+/// for a pass, since that runner would take this test's own failure for a
+/// pass too; `runner.runner_faults`, which `runner.run` adds to its faults
+/// outside the registry, catches that.
+fn crashing_test_fails() -> List(String) {
+  let inner =
+    Test("inner", [], fn() {
+      process.kill(process.self())
+      ["SomeRule"]
+    })
+  let assert Failed(reason) = runner.run_one(inner, 1000)
+  assert string.starts_with(reason, "crashed: ")
+  []
+}
+
+/// A test that never returns is killed at the timeout and fails. It waits on
+/// a subject no process sends to, so it can only time out.
+fn slow_test_fails() -> List(String) {
+  let inner =
+    Test("inner", [], fn() {
+      process.receive_forever(process.new_subject())
+      ["SomeRule"]
+    })
+  assert runner.run_one(inner, 50) == Failed("timed out after 50 ms")
   []
 }
 

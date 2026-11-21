@@ -21,14 +21,12 @@ pub fn tests() -> List(Test) {
     Test("each count is compared with what was parsed", [], counts),
     Test("an entry a source holds twice is a fault", [], repeated_entries),
     Test("a tag for an id the catalog lacks is a fault", [], unknown_scenario),
-    Test("a scenario neither covered nor pending is a fault", [], uncovered),
-    Test("a scenario both pending and covered is a fault", [], pending_covered),
+    Test("a catalog id with no test is a fault", [], uncovered),
     Test("a failed test credits neither its tag nor a rule", [], failed_test),
-    Test("a pending entry the sources lack is a fault", [], unknown_pending),
     Test("a row the specification lacks is a fault", [], unknown_row),
-    Test("a rule with no row and not pending is a fault", [], rule_without_row),
-    Test("a rule both pending and a row is a fault", [], pending_row),
-    Test("a row, not pending, that never fired is a fault", [], unfired_row),
+    Test("a rule that is a row of no table is a fault", [], rule_without_row),
+    Test("a fired name credits no rule that is not a row", [], fired_not_row),
+    Test("a registered rule that never fired is a fault", [], unfired_row),
     Test("a name that is a row twice is a fault", [], repeated_row),
     Test("a fired name that no table holds is no fault", [], scratch_fired),
     Test("a name the specification lacks is a fault", [], unknown_invariant),
@@ -82,31 +80,32 @@ fn invariant_lines() -> List(String) {
   []
 }
 
-/// The base every test below changes in one place: three scenarios, two
-/// covered and one pending; two rules, one a row that fired and one
-/// pending; three invariants, each in the checker's registry and each with
-/// a control that passed.
+/// The base every test below changes in one place: three scenarios, each
+/// with a tagged test that passed; two rules, each a row that fired; three
+/// invariants, each in the checker's registry and each with a control that
+/// passed.
 fn covered() -> Inputs {
   Inputs(
     catalog: Ok(catalog),
     specification: Ok(specification),
-    rules: [#("Happened", ["First"])],
+    rules: [#("Happened", ["First", "Second"])],
     invariants: ["Inner", "Deeper", "Outer"],
-    report: Report(
-      ran: [
-        passed("one", [Scenario("S001")], ["First"]),
-        passed("two", [Scenario("S002")], []),
-        passed("untagged", [], []),
-        ..controls()
-      ],
-      faults: [],
-    ),
-    pending_scenarios: ["S003"],
-    pending_rules: ["Second"],
+    report: Report(ran: list.append(scenarios(), controls()), faults: []),
     expected_scenarios: 3,
     expected_rules: 2,
     expected_invariants: 3,
   )
+}
+
+/// The base's tagged tests, one per scenario, each passed, which fire both
+/// rows between them, and one untagged.
+fn scenarios() -> List(Ran) {
+  [
+    passed("one", [Scenario("S001")], ["First"]),
+    passed("two", [Scenario("S002")], ["Second"]),
+    passed("three", [Scenario("S003")], []),
+    passed("untagged", [], []),
+  ]
 }
 
 /// The base's three controls, one per invariant, each passed.
@@ -188,59 +187,42 @@ fn unknown_scenario() -> List(String) {
   []
 }
 
+/// The base without its test for S003: the catalog still holds S003.
 fn uncovered() -> List(String) {
-  assert coverage.faults(Inputs(..covered(), pending_scenarios: []))
-    == [
-      "S003 is not in pending_scenarios, and no test tagged Scenario(\"S003\") passed",
-    ]
-  []
-}
-
-fn pending_covered() -> List(String) {
-  let inputs = Inputs(..covered(), pending_scenarios: ["S002", "S003"])
+  let inputs =
+    with_ran(covered(), [
+      passed("one", [Scenario("S001")], ["First"]),
+      passed("two", [Scenario("S002")], ["Second"]),
+      ..controls()
+    ])
   assert coverage.faults(inputs)
-    == [
-      "S002 is in pending_scenarios, and a test tagged Scenario(\"S002\") passed",
-    ]
+    == ["S003 has no test tagged Scenario(\"S003\") that passed"]
   []
 }
 
 /// `one` is the only test tagged for S001 and the only one that fired
-/// `First`. Once it fails, neither is covered. A failed test tagged for a
-/// pending id does not make that id covered either.
+/// `First`. Once it fails, neither is covered.
 fn failed_test() -> List(String) {
   let inputs =
     with_ran(covered(), [
       failed("one", [Scenario("S001")]),
-      passed("two", [Scenario("S002")], []),
-      failed("three", [Scenario("S003")]),
+      passed("two", [Scenario("S002")], ["Second"]),
+      passed("three", [Scenario("S003")], []),
       ..controls()
     ])
   assert coverage.faults(inputs)
     == [
-      "S001 is not in pending_scenarios, and no test tagged Scenario(\"S001\") passed",
-      "First is a row of the Happened table and not in pending_rules, and no test that passed fired it",
-    ]
-  []
-}
-
-fn unknown_pending() -> List(String) {
-  let inputs =
-    Inputs(..covered(), pending_scenarios: ["S003", "S004"], pending_rules: [
-      "Second",
-      "Third",
-    ])
-  assert coverage.faults(inputs)
-    == [
-      "pending_scenarios names S004, and the catalog holds no S004",
-      "pending_rules names Third, and the specification holds no rule Third",
+      "S001 has no test tagged Scenario(\"S001\") that passed",
+      "First is a row of the Happened table, and no test that passed fired it",
     ]
   []
 }
 
 fn unknown_row() -> List(String) {
   let inputs =
-    Inputs(..covered(), rules: [#("Happened", ["First", "NoSuchRule"])])
+    Inputs(..covered(), rules: [
+      #("Happened", ["First", "Second", "NoSuchRule"]),
+    ])
   assert coverage.faults(inputs)
     == [
       "the Happened table has a row named NoSuchRule, and the specification holds no rule NoSuchRule",
@@ -249,36 +231,32 @@ fn unknown_row() -> List(String) {
 }
 
 fn rule_without_row() -> List(String) {
-  assert coverage.faults(Inputs(..covered(), pending_rules: []))
-    == ["Second is not in pending_rules and is a row of no table"]
+  assert coverage.faults(Inputs(..covered(), rules: [#("Happened", ["First"])]))
+    == ["Second is a row of no table"]
   []
 }
 
-/// A rule counts as covered once it is a row, so a row still on the pending
-/// list is a fault whether it has fired or not, and the only one.
-fn pending_row() -> List(String) {
-  let fault = "Second is in pending_rules and is a row of the Other table"
+/// A rule is covered only as a row, so a test that fired its name does not
+/// cover a rule no table holds.
+fn fired_not_row() -> List(String) {
   let inputs =
-    Inputs(..covered(), rules: [
-      #("Happened", ["First"]),
-      #("Other", ["Second"]),
-    ])
-  assert coverage.faults(inputs) == [fault]
-  let fired = and_ran(inputs, [passed("three", [], ["Second"])])
-  assert coverage.faults(fired) == [fault]
+    Inputs(..covered(), rules: [#("Happened", ["First"])])
+    |> and_ran([passed("four", [], ["Second"])])
+  assert coverage.faults(inputs) == ["Second is a row of no table"]
   []
 }
 
 fn unfired_row() -> List(String) {
   let inputs =
-    Inputs(
-      ..covered(),
-      rules: [#("Happened", ["First", "Second"])],
-      pending_rules: [],
-    )
+    with_ran(covered(), [
+      passed("one", [Scenario("S001")], ["First"]),
+      passed("two", [Scenario("S002")], []),
+      passed("three", [Scenario("S003")], []),
+      ..controls()
+    ])
   assert coverage.faults(inputs)
     == [
-      "Second is a row of the Happened table and not in pending_rules, and no test that passed fired it",
+      "Second is a row of the Happened table, and no test that passed fired it",
     ]
   []
 }
@@ -288,12 +266,12 @@ fn unfired_row() -> List(String) {
 /// did. In both runs below `First` fired once, and nothing else is wrong.
 fn repeated_row() -> List(String) {
   let in_one_table =
-    Inputs(..covered(), rules: [#("Happened", ["First", "First"])])
+    Inputs(..covered(), rules: [#("Happened", ["First", "First", "Second"])])
   assert coverage.faults(in_one_table)
     == ["First is a row more than once: Happened, Happened"]
   let in_two_tables =
     Inputs(..covered(), rules: [
-      #("Happened", ["First"]),
+      #("Happened", ["First", "Second"]),
       #("Other", ["First"]),
     ])
   assert coverage.faults(in_two_tables)
@@ -344,10 +322,7 @@ fn uncontrolled() -> List(String) {
     <> name
     <> "\") that passed"
   }
-  let tagged = [
-    passed("one", [Scenario("S001")], ["First"]),
-    passed("two", [Scenario("S002")], []),
-  ]
+  let tagged = scenarios()
   let inputs =
     with_ran(
       covered(),
@@ -380,16 +355,21 @@ fn uncontrolled() -> List(String) {
 fn unreadable_source() -> List(String) {
   let no_catalog =
     Inputs(..covered(), catalog: Error("cannot read the catalog"))
-  assert coverage.faults(Inputs(..no_catalog, pending_rules: []))
-    == [
-      "cannot read the catalog",
-      "Second is not in pending_rules and is a row of no table",
-    ]
+  assert coverage.faults(
+      Inputs(..no_catalog, rules: [#("Happened", ["First"])]),
+    )
+    == ["cannot read the catalog", "Second is a row of no table"]
   let no_specification =
     Inputs(..covered(), specification: Error("cannot read the specification"))
-  assert coverage.faults(Inputs(..no_specification, pending_scenarios: []))
+  let without_three =
+    with_ran(no_specification, [
+      passed("one", [Scenario("S001")], ["First"]),
+      passed("two", [Scenario("S002")], ["Second"]),
+      ..controls()
+    ])
+  assert coverage.faults(without_three)
     == [
-      "S003 is not in pending_scenarios, and no test tagged Scenario(\"S003\") passed",
+      "S003 has no test tagged Scenario(\"S003\") that passed",
       "cannot read the specification",
     ]
   []

@@ -1,8 +1,11 @@
 //// The coverage check, which `main` runs after the last test. It parses
 //// three lists, the catalog's scenarios, the specification's rules and its
-//// invariants, and names a fault for each entry that is neither covered nor
-//// pending. `faults` is pure, so it is tested on inputs made by hand; `check`
-//// reads the two files and the registries and calls it.
+//// invariants, and names a fault for each entry that is not covered: a
+//// scenario with no tagged test that passed, a rule that is no row or a row
+//// that never fired, an invariant with no checker entry or no positive
+//// control. Nothing is ever pending. `faults` is pure, so it is tested on
+//// inputs made by hand; `check` reads the two files and the registries and
+//// calls it.
 
 import gleam/int
 import gleam/list
@@ -29,14 +32,6 @@ pub const expected_rules = 32
 
 pub const expected_invariants = 35
 
-/// The scenarios no test pins yet, in the catalog's order. Each ticket
-/// takes off exactly what it lands.
-pub const pending_scenarios = []
-
-/// The rules no table holds yet, in the specification's order. A rule comes
-/// off the list when it becomes a row.
-pub const pending_rules = []
-
 /// Everything the check reads. A file that could not be read is the `Error`
 /// of its text, holding the fault's message.
 pub type Inputs {
@@ -48,8 +43,6 @@ pub type Inputs {
     /// The names in the checker's registry.
     invariants: List(String),
     report: Report,
-    pending_scenarios: List(String),
-    pending_rules: List(String),
     expected_scenarios: Int,
     expected_rules: Int,
     expected_invariants: Int,
@@ -57,7 +50,7 @@ pub type Inputs {
 }
 
 /// The faults of a run against the real catalog, specification, tables and
-/// checker, and the pending lists above.
+/// checker.
 pub fn check(report: Report) -> List(String) {
   faults(Inputs(
     catalog: read(catalog_path),
@@ -65,8 +58,6 @@ pub fn check(report: Report) -> List(String) {
     rules: core.registry(),
     invariants: list.map(invariants.registry(), fn(invariant) { invariant.name }),
     report:,
-    pending_scenarios:,
-    pending_rules:,
     expected_scenarios:,
     expected_rules:,
     expected_invariants:,
@@ -102,7 +93,8 @@ pub fn faults(inputs: Inputs) -> List(String) {
 }
 
 /// The scenario half. A tag is checked against the catalog whatever its
-/// test did, and credits its id only where the test passed.
+/// test did, and credits its id only where the test passed. Every id the
+/// catalog holds must be credited.
 fn scenario_faults(inputs: Inputs, ids: List(String)) -> List(String) {
   let tags = tagged(inputs.report.ran, scenario_tag)
   let covered = credited(tags)
@@ -116,33 +108,9 @@ fn scenario_faults(inputs: Inputs, ids: List(String)) -> List(String) {
       <> tag.1
     })
   let uncovered =
-    list.filter_map(ids, fn(id) {
-      let tag = "Scenario(\"" <> id <> "\")"
-      case
-        list.contains(inputs.pending_scenarios, id),
-        list.contains(covered, id)
-      {
-        True, True ->
-          Ok(
-            id
-            <> " is in pending_scenarios, and a test tagged "
-            <> tag
-            <> " passed",
-          )
-        False, False ->
-          Ok(
-            id
-            <> " is not in pending_scenarios, and no test tagged "
-            <> tag
-            <> " passed",
-          )
-        _, _ -> Error(Nil)
-      }
-    })
-  let unknown_pending =
-    list.filter(inputs.pending_scenarios, fn(id) { !list.contains(ids, id) })
+    list.filter(ids, fn(id) { !list.contains(covered, id) })
     |> list.map(fn(id) {
-      "pending_scenarios names " <> id <> ", and the catalog holds no " <> id
+      id <> " has no test tagged Scenario(\"" <> id <> "\") that passed"
     })
   list.flatten([
     count_fault("the catalog", ids, "scenarios", inputs.expected_scenarios),
@@ -151,15 +119,13 @@ fn scenario_faults(inputs: Inputs, ids: List(String)) -> List(String) {
     }),
     unknown_tags,
     uncovered,
-    unknown_pending,
   ])
 }
 
-/// The rule half. The tables are the registry, so a rule counts as covered
-/// once it is a row, and a row that is not pending must have fired in a
-/// test that passed. A test reports a fired row by its name, so a name must
-/// be one row: were it two, in one table or in two, the one that fired
-/// would credit the other.
+/// The rule half. The tables are the registry: every rule must be a row,
+/// and every row must have fired in a test that passed. A test reports a
+/// fired row by its name, so a name must be one row: were it two, in one
+/// table or in two, the one that fired would credit the other.
 fn rule_faults(inputs: Inputs, names: List(String)) -> List(String) {
   let rows =
     list.flat_map(inputs.rules, fn(table) {
@@ -190,37 +156,17 @@ fn rule_faults(inputs: Inputs, names: List(String)) -> List(String) {
     })
   let uncovered =
     list.filter_map(names, fn(name) {
-      case
-        list.contains(inputs.pending_rules, name),
-        list.key_find(rows, name),
-        list.contains(fired, name)
-      {
-        True, Ok(table), _ ->
-          Ok(
-            name
-            <> " is in pending_rules and is a row of the "
-            <> table
-            <> " table",
-          )
-        False, Error(Nil), _ ->
-          Ok(name <> " is not in pending_rules and is a row of no table")
-        False, Ok(table), False ->
+      case list.key_find(rows, name), list.contains(fired, name) {
+        Error(Nil), _ -> Ok(name <> " is a row of no table")
+        Ok(table), False ->
           Ok(
             name
             <> " is a row of the "
             <> table
-            <> " table and not in pending_rules, and no test that passed fired it",
+            <> " table, and no test that passed fired it",
           )
-        _, _, _ -> Error(Nil)
+        Ok(_), True -> Error(Nil)
       }
-    })
-  let unknown_pending =
-    list.filter(inputs.pending_rules, fn(name) { !list.contains(names, name) })
-    |> list.map(fn(name) {
-      "pending_rules names "
-      <> name
-      <> ", and the specification holds no rule "
-      <> name
     })
   list.flatten([
     count_fault("the specification", names, "rules", inputs.expected_rules),
@@ -230,15 +176,13 @@ fn rule_faults(inputs: Inputs, names: List(String)) -> List(String) {
     unknown_rows,
     repeated_rows,
     uncovered,
-    unknown_pending,
   ])
 }
 
 /// The invariant half. The count must be the one expected, a control tag
 /// and a registry entry must each name an invariant the specification holds,
 /// and each invariant must be in the checker's registry and have a positive
-/// control, tagged `InvariantControl`, that passed. It has no pending list
-/// and no switch: no invariant is ever pending.
+/// control, tagged `InvariantControl`, that passed.
 fn invariant_faults(inputs: Inputs, names: List(String)) -> List(String) {
   let tags = tagged(inputs.report.ran, control_tag)
   let controlled = credited(tags)

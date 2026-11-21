@@ -201,12 +201,13 @@ pub type Ticked {
 
 /// Everything the clock has made due at `now`, applied. First the due
 /// lapses: each active lease whose `expires_at <= now`, smallest
-/// `expires_at` first and equal ones in the order they were granted, each
-/// its own outcome. Then, only if no lapse failed, the decays due in the
-/// state the lapses left: the superseded records, then the dead letters,
-/// each whose `expires_at <= now`, each queue oldest first, each its own
-/// outcome. Every outcome runs with `now` in hand and is checked at its end,
-/// and an entry a lapse creates with a zero TTL is due in the same tick.
+/// `expires_at` first and equal ones in their creation order in
+/// `state.leases` (G57), each its own outcome. Then, only if no lapse
+/// failed, the decays due in the state the lapses left: the superseded
+/// records, then the dead letters, each whose `expires_at <= now`, each
+/// queue oldest first, each its own outcome. Every outcome runs with `now`
+/// in hand and is checked at its end, and an entry a lapse creates with a
+/// zero TTL is due in the same tick.
 pub fn tick(state: State, now: Timestamp) -> Ticked {
   let due =
     state.leases

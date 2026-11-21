@@ -49,7 +49,8 @@ pub const test_timeout = 5000
 /// The entry module, whose `main` is the runner and holds no test.
 const entry_module = "pachinko_double_test"
 
-/// Runs every test of every module, in the order given.
+/// Runs every test of every module, in the order given. The faults are the
+/// registry's and then the runner's own, from `runner_faults`.
 pub fn run(modules: List(Module), test_directory: String) -> Report {
   let ran =
     list.flat_map(modules, fn(module) {
@@ -57,7 +58,41 @@ pub fn run(modules: List(Module), test_directory: String) -> Report {
         Ran(module.name, t.name, t.tags, run_one(t, test_timeout))
       })
     })
-  Report(ran:, faults: registry_faults(modules, test_directory))
+  Report(
+    ran:,
+    faults: list.append(
+      registry_faults(modules, test_directory),
+      runner_faults(),
+    ),
+  )
+}
+
+/// The runner's controls on itself: a test that crashes and a test that
+/// never returns must each come back `Failed`. They run here, outside the
+/// registry, because a registered test cannot show it: a runner that took a
+/// crash for a pass would take that test's own failed assertion for a pass
+/// too, and the run would stay green.
+pub fn runner_faults() -> List(String) {
+  let crashes =
+    Test("crashes", [], fn() {
+      process.kill(process.self())
+      []
+    })
+  let hangs =
+    Test("hangs", [], fn() {
+      process.receive_forever(process.new_subject())
+      []
+    })
+  list.flatten([
+    case run_one(crashes, test_timeout) {
+      Failed(_) -> []
+      Passed(_) -> ["the runner took a test that crashed for a pass"]
+    },
+    case run_one(hangs, 50) {
+      Failed(_) -> []
+      Passed(_) -> ["the runner took a test that timed out for a pass"]
+    },
+  ])
 }
 
 /// Runs one test in its own process. The child waits at a gate until the

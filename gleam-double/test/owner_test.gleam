@@ -6,7 +6,9 @@ import gleam/list
 import gleam/option.{None}
 import harness
 import pachinko_double/config.{Settings}
+import pachinko_double/core.{TickReport}
 import pachinko_double/inspection.{type Snapshot, Snapshot}
+import pachinko_double/invariants
 import pachinko_double/model.{
   LeaseActive, LeaseExpired, PocketLeased, PocketQueued, Publisher,
 }
@@ -32,6 +34,11 @@ pub fn tests() -> List(Test) {
       "a tick whose outcome fails is answered PartialTick, and the owner keeps what the outcomes before it did",
       [],
       partial_tick_keeps_what_ran,
+    ),
+    Test(
+      "a clock set back after a nack leaves the lease's end before nacked_at, so the lapse and a release fail NackedBeforeExpiry",
+      [],
+      clock_set_back_after_a_nack,
     ),
   ]
 }
@@ -88,7 +95,7 @@ fn competing_joins() -> List(String) {
   harness.fired(double)
 }
 
-/// The one way a tick through the owner can fail with the specification's
+/// One way a tick through the owner can fail with the specification's
 /// tables: a lease-id source that hands out an id twice. Its third draw
 /// repeats its second, so pockets `b` and `c` are leased under two leases
 /// both named `lease-2`. A tick that lapses `lease-1` and then the first
@@ -157,4 +164,40 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   assert again.lapsed == []
   assert owner.inspect(queue) == after
   []
+}
+
+/// Another way, with unique lease ids: a clock that goes back. The double
+/// does not clamp the injected clock (G57). `c1` nacks `k` at 100 and then,
+/// with the clock set back, renews at 1, so the lease expires at 11. Ended
+/// at 11, the lease's `Freed` makes a dead letter with `nacked_at` 100 and
+/// `expires_at` 11 + `dead_letter_ttl`, which is 11, as
+/// `DeadLetterNackedRecord` states, and `NackedBeforeExpiry` is broken. So
+/// the due lapse fails, and so does a release, and the owner keeps the state
+/// it had. This pins what the double does; whether the specification means
+/// the clock never to go back is the maintainer's question (G59).
+fn clock_set_back_after_a_nack() -> List(String) {
+  let assert Ok(config) =
+    config.new(Settings(..config.defaults(), lease_ttl: 10, dead_letter_ttl: 0))
+  let double = harness.start(config)
+  let assert Ok(_) = harness.publisher_joins(double, "p")
+  let assert Ok(_) = harness.consumer_joins(double, "c1")
+  let assert Ok(_) = harness.publish(double, "pk", "k", 1, "v1")
+  let lease = harness.batch(double, "c1", 1).lease
+  harness.set_time(double.clock, 100)
+  assert harness.nack(double, "c1", lease, "k")
+    == Ok(Outcome(["NackMarksRecord"], None))
+  harness.set_time(double.clock, 1)
+  assert harness.renew(double, "c1", lease) == Ok(Outcome(["Renew"], None))
+  harness.set_time(double.clock, 11)
+  let before = harness.inspect(double)
+  assert invariants.check(before) == []
+  let assert Error(PartialTick(report, BrokenInvariant(broken))) =
+    harness.tick(double)
+  assert broken == ["NackedBeforeExpiry"]
+  assert report == TickReport([], [], [], [])
+  assert harness.inspect(double) == before
+  assert harness.release(double, "c1", lease)
+    == Error(BrokenInvariant(["NackedBeforeExpiry"]))
+  assert harness.inspect(double) == before
+  harness.fired(double)
 }
