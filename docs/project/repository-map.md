@@ -63,6 +63,11 @@ library and the library never on the service.
 │   ├── Cargo.toml
 │   ├── Cargo.lock          The pin for the load generator's separate graph
 │   └── src/                main.rs, client.rs, workloads.rs, probe.rs and report.rs
+├── double/                 The Python double of the specification, outside the workspace
+│   ├── README.md           The reader's guide: the specification mapped to the code, and a walkthrough
+│   ├── pachinko_double/    The package: the queue, its rule tables and the invariant checker
+│   ├── tests/              Its unittest suite, which just python-double runs
+│   └── SPEC-NOTES.md       The findings for the maintainer, then every note on the specification
 ├── tests/fixtures/
 │   └── effects-violation/  The effects probe's fixture: breaks every ban once
 ├── docs/                   This handbook, plus specs/ and decisions/
@@ -101,6 +106,7 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `crates/libpachinko/benches/` | Benchmarks. `version.rs` is a divan smoke benchmark of `version()`, and `workloads.rs` times the queue's workloads W1 to W5 at three pocket counts; both run by hand through `just bench` and never in CI or the gate, because its timings measure the machine. |
 | `fuzz/` | The fuzz crate, `libpachinko-fuzz`, outside the workspace and pinned by its own `fuzz/Cargo.lock`. Its one target, `fuzz_targets/smoke.rs`, smoke-tests the harness until the specifications supply real targets; `just fuzz` runs it, and so does the weekly `fuzz` workflow. |
 | `loadgen/` | The load generator, `pachinko-loadgen`, outside the workspace and pinned by its own `loadgen/Cargo.lock`. It names no workspace crate and speaks HTTP to a running `pachinko serve`: closed-loop publish, batch, consume and mix workloads and the lapse probe. `just loadgen` runs it and `just test-loadgen` runs its unit tests, by hand and never in CI or the gate, because its timings measure the machine. |
+| `double/` | A minimal Python implementation of the domain, derived from `docs/specs/pachinko.allium` alone, for a reader who judges the specification in Python rather than Rust. `README.md` is that reader's guide: it maps each entity, rule and invariant of the specification to the class, table or checker entry that holds it, and walks Scenarios A to D through the double's API as doctests the suite runs. `pachinko_double/` holds the package, standard library only: `Queue` with its one apply step, a rule table per trigger, and a checker of all 35 invariants over an immutable snapshot. `tests/` holds its `unittest` suite, and `SPEC-NOTES.md` the findings the specification's maintainer reads first, then every note behind them. `just python-double` runs it, outside `just check` and CI. It is no part of either crate and no test oracle for the Rust. |
 | `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one module, `pachinko.allium`, the root, which declares the queue's entities, rules, surfaces and invariants. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. A record's folder, `docs/decisions/<n>/`, holds the SVGs it embeds and the `diagrams.py` that draws them, which `just diagrams` redraws and `just check-docs` checks. |
 | `scripts/` | `initialize.sh`, the first-run script, and `check-effects.sh`, the effects gate `just effects` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
