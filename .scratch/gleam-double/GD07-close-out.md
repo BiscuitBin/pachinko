@@ -948,13 +948,14 @@ machine.
 | 2 | `harness.gleam:72`: `set_time` was asynchronous | Fixed in `25008d690be03314fdec7875325addac01da314e`: `Set` carries a reply and `set_time` waits on it |
 | 3 | `core.gleam:225`: `TickReport.lapsed` can name a still-active lease on a hand-built state | Open point: the owner cannot reach it, and a fix would change `src/` after the checkpoint |
 | 4 | `owner.gleam:90`: a clock that goes back | Already B4 and G59 |
-| 5 | `docs/decisions/README.md:67`: "The next decision is 0021." | Fixed in the same commit: it now says decision 0021 records the double's toolchain (GD01), and "The next decision is 0022." |
+| 5 | `docs/decisions/README.md:67`: "The next decision is 0021." | Fixed in `25008d6`, then reverted in the commit after this record's first version, because this ticket's Non-goals exclude `docs/decisions/`. Left as an open point (31) |
 | 6 | `.scratch/` holds committed tickets the project map does not list | Reported, not changed: the tickets arrived in `cca486f`, before this run, and `.scratch/python-double/` predates it |
 
-The fix to nit 5 edits `docs/decisions/README.md`. This ticket's Non-goals say "No change
-under ... `docs/decisions/`", and Files touched does not list the file; the series
-README dropped that non-goal for GD01 only. **This departs from the ticket**, to correct
-GD01's index line, which should have moved when decision 0021 landed. The fix to nit 2
+The fix to nit 5 edited `docs/decisions/README.md`. This ticket's Non-goals say "No
+change under ... `docs/decisions/`", and Files touched does not list the file; the series
+README dropped that non-goal for GD01 only. So the lead reverted that hunk in a later
+commit, and the sentence stays as GD01 left it, an open point (31). The tree at the end
+of the series has no change under `docs/decisions/` from GD07. The fix to nit 2
 edits `harness.gleam`, under `gleam-double/test/`, which Files touched lists for this
 ticket's own lines. No review ran over the fix commit's diff.
 
@@ -1181,7 +1182,9 @@ feature.
     wrong unnoticed.
 30. **`.scratch/` holds committed tickets that the project map does not list** (GD07, the
     code review's nit 6). Reported, not changed.
-31. **The review fix commit touches `docs/decisions/README.md`**, which this ticket's
-    Non-goals exclude, and the work commit's one change under `src/` is a doc comment,
-    not a review fix (GD07, section 3 and section 7). The maintainer accepts both or asks
-    for them to move.
+31. **`docs/decisions/README.md:67` still says "The next decision is 0021."**, though
+    decision 0021 exists (GD01; the code review's nit 5). GD07 may not change
+    `docs/decisions/`, so its fix was reverted. The one-line fix: "Decision 0021 records
+    the Gleam double's toolchain (GD01). The next decision is 0022." Also, the work
+    commit's one change under `src/` is a doc comment, not a review fix (GD07, sections 3
+    and 7).
