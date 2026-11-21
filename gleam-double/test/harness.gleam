@@ -28,7 +28,7 @@ const call_timeout = 1000
 
 type ClockMessage {
   Read(reply: Subject(Timestamp))
-  Set(time: Timestamp)
+  Set(time: Timestamp, reply: Subject(Nil))
   Reads(reply: Subject(Int))
 }
 
@@ -51,7 +51,10 @@ pub fn start_clock() -> Clock {
           process.send(reply, state.time)
           actor.continue(ClockState(..state, reads: state.reads + 1))
         }
-        Set(time) -> actor.continue(ClockState(..state, time:))
+        Set(time, reply) -> {
+          process.send(reply, Nil)
+          actor.continue(ClockState(..state, time:))
+        }
         Reads(reply) -> {
           process.send(reply, state.reads)
           actor.continue(state)
@@ -67,9 +70,12 @@ pub fn clock(clock: Clock) -> fn() -> Timestamp {
   fn() { process.call(clock.subject, call_timeout, Read) }
 }
 
-/// Sets the time. It is not a read.
+/// Sets the time. It is not a read. It waits until the clock holds the new
+/// time, so a trigger sent afterwards reads it: the owner reads the clock
+/// from its own process, and Erlang orders messages only between one sender
+/// and one receiver.
 pub fn set_time(clock: Clock, time: Timestamp) -> Nil {
-  process.send(clock.subject, Set(time))
+  process.call(clock.subject, call_timeout, Set(time, _))
 }
 
 /// Moves the time on by a duration, and returns the new time. It is not a

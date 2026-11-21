@@ -64,7 +64,8 @@ for the container image (T13), 0016 for the release process (T14), 0017 for muta
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
 Renovate (T17). Each added its file, its manifest entry and its row above. Decision
 0020 is about what the queue does, which the specification already states; the
-maintainer asked for a record of why (T35). The next decision is 0021.
+maintainer asked for a record of why (T35). Decision 0021 records the Gleam double's
+toolchain (GD01). The next decision is 0022.
 
 ## Writing a new one
 
