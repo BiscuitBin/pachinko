@@ -140,7 +140,8 @@ class Snapshot:
 @dataclass(frozen=True)
 class View:
     """What a guard and an effect read: the state before the rule, the config
-    that state holds, and `now`. A rule has no other route to any of the three.
+    that state holds, and `now`. By the package's convention a rule reads each
+    of the three here and nowhere else.
 
     `now` is the outcome's one timestamp. The apply step gives every view of
     one outcome the same reader, which reads the clock the first time a rule

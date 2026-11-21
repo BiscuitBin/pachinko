@@ -360,11 +360,11 @@ class PullRowsOnHandBuiltStatesTest(unittest.TestCase):
     """The Pull rows on states the scenarios cannot reach yet: pockets and
     records whose tuple order is not their position order."""
 
-    def scrambled(self, config: ConfigValues = DEFAULT_CONFIG) -> Snapshot:
+    def scrambled(self, config_values: ConfigValues = DEFAULT_CONFIG) -> Snapshot:
         # x and z are queued, x first in the tuple but z at the smaller
         # position; y is leased by c2 at the smallest position of all.
         return snapshot(
-            config=config,
+            config=config_values,
             consumers=(Consumer("c1"), Consumer("c2")),
             pockets=(
                 pocket("x", position=7),
