@@ -8,20 +8,30 @@
 //// state after `Error(BrokenInvariant(..))` is the one the caller passed
 //// in.
 ////
-//// Not shown here: an outcome whose first row leaves an invariant broken
-//// and whose chained event mends it, which the checker must accept since
-//// it runs once, after the whole chain. Of the domain's two events,
-//// `PocketTouched` goes to a table with no row yet, and `Handed` mends
-//// nothing: no state between a pull's own row and its `HoldRecord`s breaks
-//// an invariant. A test cannot hand `core.run` another chain. The first
-//// revive rule makes that case writable.
+//// The last three tests are the witness that the checker runs once, after
+//// the whole chain, and never part-way: an outcome whose first row leaves
+//// an invariant broken and whose chained event mends it, which the checker
+//// must accept. A test cannot hand `core.run` another chain, so the case
+//// needs the specification's own rules, and these tests drive the owner.
+//// `Handed` mends nothing: no state between a pull's own row and its
+//// `HoldRecord`s breaks an invariant. Two outcomes do pass through such a
+//// state: a publish of a new key into an idle pocket, before
+//// `ReviveIdlePocket` answers its `PocketTouched`, and a release, before
+//// the `Freed` rules answer. A checker that also ran before each chained
+//// event's table would fail each of these outcomes with `BrokenInvariant`,
+//// naming the invariant each test's comment names.
 
 import gleam/list
 import gleam/option.{None}
+import harness.{type Double}
 import pachinko_double/config
 import pachinko_double/core
 import pachinko_double/domain.{type Step, type Table, PocketTouched}
-import pachinko_double/model.{type State, Consumer, Publisher, State}
+import pachinko_double/invariants
+import pachinko_double/model.{
+  type State, Consumer, PocketIdle, PocketQueued, Publisher, State,
+}
+import pachinko_double/owner.{Outcome}
 import pachinko_double/rules.{
   Applied, BrokenInvariant, Finish, NothingHappens, Row, Table,
 }
@@ -48,6 +58,21 @@ pub fn tests() -> List(Test) {
       "a publisher join through the apply step still succeeds",
       [],
       join_still_succeeds,
+    ),
+    Test(
+      "a publish of a new key into an idle pocket stands, though the pocket is idle with a record until the revival answers",
+      [],
+      revival_mends_the_publish,
+    ),
+    Test(
+      "a release that requeues its pocket stands, though the pocket is queued with a held record until Freed is answered",
+      [],
+      freed_mends_the_requeue,
+    ),
+    Test(
+      "a release that idles its pocket stands, though the pocket is idle with a held record until Freed is answered",
+      [],
+      freed_mends_the_idling,
     ),
   ]
 }
@@ -137,4 +162,71 @@ fn join_still_succeeds() -> List(String) {
   assert applied
     == Applied(with_publisher(joined(), "q"), ["PublisherJoins"], None)
   applied.fired
+}
+
+// The witness: the checker runs after the whole chained outcome ----------
+
+/// The fixture with pocket `pk` holding `k`, pulled by `c1`, and that
+/// lease's id.
+fn held() -> #(Double, String) {
+  let double = harness.fixture()
+  assert harness.publish(double, "pk", "k", 1, "v")
+    == Ok(Outcome(["PublishIntoNewPocket"], None))
+  let batch = harness.batch(double, "c1", 10)
+  assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
+  #(double, batch.lease)
+}
+
+/// `pk`, with its one record acked, released by `c1`: the pocket is idle
+/// and holds no record.
+fn idle() -> Double {
+  let #(double, lease) = held()
+  assert harness.ack(double, "c1", lease, "k")
+    == Ok(Outcome(["AckMarksRecord"], None))
+  assert harness.release(double, "c1", lease)
+    == Ok(Outcome(["ReleaseIdlesEmptyPocket", "ConsumeAckedRecord"], None))
+  assert harness.pocket(double, "pk").status == PocketIdle
+  double
+}
+
+/// A publish of a new key into the idle `pk`. Once `PublishNewKey` has
+/// added the record, and before `ReviveIdlePocket` answers the
+/// `PocketTouched` it emitted, the pocket is idle and has a record, which
+/// breaks `IdleHasNoRecords`. The revival queues the pocket, and the whole
+/// outcome holds every invariant: the publish stands.
+fn revival_mends_the_publish() -> List(String) {
+  let double = idle()
+  assert harness.publish(double, "pk", "k2", 1, "v2")
+    == Ok(Outcome(["PublishNewKey", "ReviveIdlePocket"], None))
+  assert harness.pocket(double, "pk").status == PocketQueued
+  assert invariants.check(harness.inspect(double)) == []
+  harness.fired(double)
+}
+
+/// A release of `pk` with its one record held and unsettled. Once
+/// `ReleaseRequeuesPocket` has queued the pocket, and before
+/// `RequeueUnsettledRecord` answers the `Freed` it emitted, the record is
+/// held in a pocket that is not leased, which breaks
+/// `OutstandingOnlyWhileLeased`. The `Freed` rule queues the record, and the
+/// whole outcome holds every invariant: the release stands.
+fn freed_mends_the_requeue() -> List(String) {
+  let #(double, lease) = held()
+  assert harness.release(double, "c1", lease)
+    == Ok(Outcome(["ReleaseRequeuesPocket", "RequeueUnsettledRecord"], None))
+  assert harness.pocket(double, "pk").status == PocketQueued
+  assert invariants.check(harness.inspect(double)) == []
+  harness.fired(double)
+}
+
+/// A release of `pk` with its one record held and acked, the setup of the
+/// first of these three tests, as a test of its own. Once
+/// `ReleaseIdlesEmptyPocket` has idled the pocket, and before
+/// `ConsumeAckedRecord` answers the `Freed` it emitted, the pocket is idle
+/// and has a record, and that record is held in a pocket that is not
+/// leased: `IdleHasNoRecords` and `OutstandingOnlyWhileLeased` are both
+/// broken. The `Freed` rule removes the record, and the release stands.
+fn freed_mends_the_idling() -> List(String) {
+  let double = idle()
+  assert invariants.check(harness.inspect(double)) == []
+  harness.fired(double)
 }

@@ -8,8 +8,8 @@
 //// fired, in order. The Rust's batch carries its lease's `expires_at` and
 //// the specification's does not, so a port reads the expiry from the
 //// snapshot's lease (N13 in `double/SPEC-NOTES.md`). The Rust's
-//// `lease_view` asks its queue; the port reads the same facts from the
-//// snapshot, through `harness.lease_view`.
+//// `lease_view` asks its queue; the port asks the owner, through
+//// `harness.lease_view`.
 ////
 //// Then the double's own tests, which pin no catalog row: the refusal of a
 //// consumer that never joined, what each of the four rules changes, how
@@ -303,35 +303,31 @@ fn no_queued_pocket() -> List(String) {
   assert harness.batch(double, "c1", 10).fired == [claims, hold]
   assert harness.pull(double, "c2", 10)
     == Ok(Outcome([finds_none], Some(NoPocketAvailable("c2"))))
-  // The lease view is read from the snapshot for now: the owner has no
-  // `LeaseView` message yet.
-  assert harness.lease_view(double, "c2") == None
+  assert harness.lease_view(double, "c2") == Ok(None)
   harness.fired(double)
 }
 
 fn extends_lease() -> List(String) {
   let double = pocket_of(3)
-  // The lease view, here and below, is read from the snapshot for now: the
-  // owner has no `LeaseView` message yet.
-  assert harness.lease_view(double, "c1") == None
+  assert harness.lease_view(double, "c1") == Ok(None)
   let first = harness.batch(double, "c1", 1)
   assert first.fired == [claims, hold]
-  let assert Some(before) = harness.lease_view(double, "c1")
+  let assert Ok(Some(before)) = harness.lease_view(double, "c1")
   assert before.expires_at == harness.t0 + lease_ttl()
   assert before.pocket_key == "pk"
   assert harness.marked_keys(before.records) == ["r0"]
   let now = harness.advance(double.clock, harness.t0, 400)
   let second = harness.batch(double, "c1", 1)
   assert second.fired == [within, hold]
-  let assert Some(after) = harness.lease_view(double, "c1")
+  let assert Ok(Some(after)) = harness.lease_view(double, "c1")
   let extended = now + lease_ttl()
   // The Rust asserts the second batch's `expires_at` too; the lease's is the
   // same fact (N13).
   assert after.expires_at == extended
   assert second.lease == first.lease
-  // `impl-choice` (spec note G31): the order. The surface exposes the held
-  // records as a set, and `harness.lease_view` lists them smallest position
-  // first.
+  // `impl-choice` (spec note G31, as N23): the order. The surface exposes
+  // the held records as a set, and the lease view lists them smallest
+  // position first.
   assert harness.marked_keys(after.records) == ["r0", "r1"]
   let assert [lease, ..] = harness.inspect(double).leases
   assert #(lease.granted_at, lease.expires_at) == #(harness.t0, extended)
@@ -622,9 +618,8 @@ const granted = 500
 /// Each record's rank and payload are unlike its position. `late` holds the
 /// key `k8`, as `taken` does. The superseded queue holds an earlier version
 /// of `early`'s `k1`, and the dead-letter queue a record `c2` once nacked
-/// out of `taken`. No pull through the owner can meet a dead letter yet, and
-/// each test that compares a complete state over this one shows that its
-/// rule left both queues as they were.
+/// out of `taken`. Each test that compares a complete state over this one
+/// shows that its rule left both queues as they were.
 fn disordered() -> State {
   State(
     ..model.new(config.default()),
@@ -842,8 +837,8 @@ fn rule(state: State, request: Pull) -> Option(String) {
   option.map(row, fn(row) { row.name })
 }
 
-/// All three rules read `Lease{consumer: consumer, status: active}`, and no
-/// lease ends through the owner yet, so the state is built by hand. `c1`
+/// All three rules read `Lease{consumer: consumer, status: active}`. No
+/// lease expires through the owner, so the state is built by hand. `c1`
 /// once held `taken` under a lease that has since been released or has
 /// expired, and `c2` holds it now. That ended lease is not `c1`'s active
 /// lease: with a pocket queued `c1` claims the front one, `early`, and is

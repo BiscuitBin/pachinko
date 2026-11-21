@@ -5,6 +5,7 @@
 import pachinko_double/model.{type State}
 import pachinko_double/refusals.{type Refusal}
 import pachinko_double/rules
+import pachinko_double/time.{type Timestamp}
 
 /// The events a rule emits for another table to answer within the same
 /// outcome.
@@ -14,10 +15,14 @@ pub type Event {
   /// A pull handed this record of this pocket out: one for each record of
   /// the batch, in the batch's order.
   Handed(pocket_key: String, record_key: String)
+  /// A lease ended while this record of its pocket was held: one for each
+  /// record of the held set. `lease` is the lease's id, and `ended_at` the
+  /// time the rule that ended the lease wrote to its `ended_at`.
+  Freed(lease: String, record_key: String, ended_at: Timestamp)
 }
 
-/// What a rule answers its caller. A publish, a join and a renew answer
-/// nothing; a pull answers one of these.
+/// What a rule answers its caller. A pull answers one of these; every other
+/// trigger answers nothing, an ack, a nack and a release included.
 pub type Answer {
   /// What a pull hands back. `consumer` is the consumer's id, `lease` the id
   /// of the lease the records were handed under and `pocket` the pocket's

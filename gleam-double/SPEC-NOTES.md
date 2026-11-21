@@ -90,8 +90,8 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The specification says:** every rule that allots a position takes `next_position`
   and advances it. It gives no initial value.
 - **The double does:** a new queue's `next_position` is 0. Nothing in GD01 allots a
-  position; the rows that assert absolute positions are ported in GD02 and GD03, and
-  their notes, G16 and G29, cite this one. GD01's ports of S003, S004 and S005 assert
+  position; the rows that assert absolute positions are ported in GD02, GD03 and GD04,
+  and their notes, G16, G29 and G33, cite this one. GD01's ports of S003, S004 and S005 assert
   that an owner starts over an admitted config and holds no publisher and no consumer,
   and not the position it starts at. The two owner tests, which pin no catalog row,
   compare whole snapshots and so do pin the 0.
@@ -122,6 +122,14 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - The owner is the only process that calls either function, between taking a message
     from its mailbox and replying to it. The time an action is processed at is therefore
     the time the owner reached it, not the time its caller sent it.
+  - S085, ported in GD04, is the one catalog row that says a refusal "reads no clock".
+    Its port, "a changed mark is refused as a mark conflict and changes nothing, not
+    even the lease's expiry, and reads no clock", shows it twice. The fake clock's read
+    count is the same after both refusals and the lease read as before them. And, as
+    the Rust shows it, a renew at an earlier time than the refusals extends the lease
+    from that earlier time, which it would not if a refusal's time had been kept. Every
+    other refusal from GD04 on goes through `harness.refused`, which compares the read
+    count before and after as well.
 - **`N`-note:** agrees with N28 (a refused action reads no clock) and N15 (a lease id is
   drawn only when a lease is created), and with N05 in giving a lease an id. Where the
   Python double's queue reads its clock inside a method call, this one's core never
@@ -464,10 +472,12 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     such publishes: the version the record stores, and the one version that publish
     shed, with its reason. S013's port asserts both of its publishes after the second, as
     the Rust does. A setup publish the Rust only unwraps is asserted by its reply alone.
-  - `fired` does not show an emitted `PocketTouched`. Its table has no row until GD04,
-    so the event changes neither the rules that fired nor the snapshot. The test
-    "PublishNewKey and Supersede touch the pocket, and the other two emit nothing" pins
-    the events by walking each row's plan (G20).
+  - `fired` shows an emitted event only through the rule that answers it. In GD02 the
+    `PocketTouched` table had no row, so the event changed neither the rules that fired
+    nor the snapshot. The test "PublishNewKey and Supersede touch the pocket, and the
+    other two emit nothing" pins the events by walking each row's plan (G20). GD04 gives
+    the table `ReviveIdlePocket`, and a publish of a new key into an idle pocket replies
+    `Ok(Outcome(["PublishNewKey", "ReviveIdlePocket"], None))` (G45).
 - **`N`-note:** agrees with N32 and follows its ruling. The owner's `fired` has no
   `N`-note.
 - **Question:** N32's, which the ruling leaves open. N32 records that decision 0020 fixes
@@ -619,7 +629,12 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     `PullClaimsFrontPocket` adds its lease at the end of the leases, and `PullWithinLease`
     and `Renew` change a lease in its place. The test "PullClaimsFrontPocket changes
     exactly what it ensures, reads the clock once and draws one lease id" and the three
-    competing-callers tests (G32) assert that order, which is `impl-choice`.
+    competing-callers tests (G32) assert that order, which is `impl-choice`. GD04 keeps
+    it for the dead letters and the records: `DeadLetterNackedRecord` adds its entry at
+    the end of the dead-letter queue, a lease that ends changes in its place, and a
+    record a `Freed` rule removes leaves the others in the order they had. "a release
+    frees the held records smallest position first, each by its mark, and stamps every
+    entry from the lease's end" asserts both, which is `impl-choice` too (G38).
 - **`N`-note:** no `N`-note. The rulings on N31 and N38 treat the Rust's record order and
   its stored pocket order as its inspection shape, and their rows are ported in GD05 and
   GD06. PD07, which asks whether the inspection shape is part of the contract, is still
@@ -728,8 +743,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     asserted through the snapshot. "PullClaimsFrontPocket changes exactly what it
     ensures, reads the clock once and draws one lease id" asserts both for one pull.
   - The apply step answers each `Handed` in the batch's order and runs the checker once,
-    after the last. No test shows that the checker waits: no state between a pull's own
+    after the last. No pull shows that the checker waits: no state between a pull's own
     row and its `HoldRecord`s breaks an invariant, so a check part-way would pass too.
+    A publish into an idle pocket and a release do pass through such states, and the
+    witness is theirs (G47).
 - **`N`-note:** agrees with N13. It differs in one detail: N13's `records` are the
   `Record` entities the rule read, which still carry their queued status, and a
   `BatchRecord` holds the key, the rank and the payload alone.
@@ -978,6 +995,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - No GD03 test pins `LeaseFenced`. Its catalog rows, S052 and S070, are GD04's. The one
     GD03 test that renews with a lease id never issued sends it as a consumer that never
     joined, and is answered `UnknownConsumer` (G26).
+  - GD04 ports S052 and S070, and uses the refusal for an ack, a nack and a release as
+    well (G34). A lease id never issued is fenced for each of the four: "a renew that
+    names another consumer's lease or no lease is fenced", "a release that names
+    another consumer's lease or no lease is fenced", and the ports of S042 and S049.
   - The rule sets `expires_at` and nothing else (G21). "Renew changes exactly what it
     ensures, reads the clock once and draws no lease id" compares the complete snapshot
     after each of three renews, and S050's port asserts that `granted_at` stays. "Renew
@@ -985,9 +1006,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     built by hand that holds one of each, and compares the complete state.
 - **`N`-note:** agrees with N20. It differs in what is tested: N20 records a test that
   pins `LeaseFenced` for a lease id never issued, and no GD03 test pins the refusal for
-  any input.
-- **Question:** N20 leaves none on the behaviour. The refusal's name is the double's.
-  Whether a lease that was never issued is a refusal of its own is left to GD04.
+  any input. From GD04 the tests pin it, a lease id never issued included.
+- **Question:** N20 leaves none on the behaviour. The refusal's name is the double's. A
+  lease that was never issued is not a refusal of its own: GD04 keeps it `LeaseFenced`
+  for every action under a lease (G34).
 
 ### G29: S012, S015 and S022 assert absolute positions (`impl-choice`)
 
@@ -1039,10 +1061,12 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **Question:** as G08 and N17. Should the specification bound a rank, so that S019's
   values become the boundary for every implementation?
 
-### G31: the lease view is read from the snapshot for now (S036's record order is `impl-choice`)
+### G31: the lease view lists the held records smallest position first (S036's, S085's and S090's order is `impl-choice`)
 
-- **Ticket:** GD03.
-- **Concerns:** the `Consuming` surface's `exposes` block; scenarios S033 and S036.
+- **Ticket:** GD03, rewritten in GD04 when the owner's `LeaseView` message replaced the
+  test helper.
+- **Concerns:** the `Consuming` surface's `exposes` block; scenarios S033, S036, S085
+  and S090.
 - **The specification says:** for each active lease of the consumer the surface exposes
   `lease.pocket.key`, `lease.expires_at` and, for each record of
   `lease.pocket.held_records`, `record.key`, `record.held_rank`, `record.held_payload`
@@ -1050,26 +1074,37 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   iterating avoids a null read." `held_records` is `records where status = held`, with
   no order. The block exposes no lease identity.
 - **The double does:**
-  - The owner has no message for the lease view yet. Its `LeaseView` message lands in
-    GD04.
-  - Until then the two ports that read a lease view use a test helper,
-    `harness.lease_view`. It takes one snapshot and reads the consumer's `active_leases`
-    and that lease's pocket's `held_records` from the snapshot's derived sets. It answers
-    the pocket's key, the lease's `expires_at`, and each held record's key, held rank,
-    held payload and mark, or nothing when the consumer has no active lease.
-  - The helper lists the held records smallest position first. The view carries no lease
-    id, as the surface exposes none.
+  - The owner's `LeaseView` message, from GD04, answers the view. The owner hands it to
+    `core.lease_view`, which refuses a consumer that never joined (G36) and otherwise
+    calls `consuming.lease_view`. That reads the consumer's `active_leases` and that
+    lease's pocket's `held_records` from the snapshot's derived sets, and answers the
+    pocket's key, the lease's `expires_at`, and each held record's key, held rank, held
+    payload and mark, or `None` when the consumer has no active lease. The read goes
+    through no table, reads no clock and changes nothing: "a lease read through the
+    owner changes nothing and reads no clock".
+  - In GD03 a test helper, `harness.lease_view`, built the same view from one snapshot.
+    Its body is now a call to the owner, so S033's and S036's ports read the view
+    through the real seam. What they assert did not change.
+  - The view lists the held records smallest position first, the order a pull handed
+    them out in. It carries no lease id, as the surface exposes none.
   - S033's port, "a pull with no queued pocket returns NoPocketAvailable, not an error",
     asserts that a consumer told `NoPocketAvailable` has no lease view.
-  - S036's port, "a pull under a lease extends the lease", asserts the view's pocket key
-    and `expires_at`, and its records' keys as the ordered lists `r0`, then `r0`, `r1`.
-    The order is `impl-choice`: it is more than the surface states.
-  - S036 cannot tell which order the helper keeps. Its records were published in key
-    order, so position order, key order and the order of creation agree. S090, the row
-    N23 records, is the one that separates them, and it is GD04's.
-- **`N`-note:** takes N23's reading, smallest position first. N23 is written for S090 and
-  for a lease view the queue answers; here the view is a test helper over the snapshot
-  until GD04.
+  - Three ports assert the order, which is more than the surface states, and each marks
+    it `impl-choice`:
+    - S036's, "a pull under a lease extends the lease": its records' keys as the ordered
+      lists `r0`, then `r0`, `r1`. Its records were published in key order, so position
+      order, key order and the order of creation agree, and it cannot tell which the view
+      keeps.
+    - S090's, "the lease read shows every held record with its mark, smallest position
+      first": `z`, `a` and `m`, published in that order, are shown in that order with
+      their marks, and not in key order. This is the row N23 records.
+    - S085's, "a changed mark is refused as a mark conflict and changes nothing, not
+      even the lease's expiry, and reads no clock": `k1` then `k2`.
+  - "the lease view shows the pocket of the consumer's active lease, its expiry, and
+    each held record at its held version, smallest position first" builds a state by
+    hand whose records are listed out of position order and whose smaller position has
+    the later key, and shows that the position decides.
+- **`N`-note:** agrees with N23.
 - **Question:** N23's. Should the surface state an order for the held records? And should
   it expose the lease's identity, which every action it provides takes?
 
@@ -1146,3 +1181,480 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   are applied one at a time, each to the state the one before it left? Every rule
   assumes it, and only the Lease expiry comment says it. Should the catalog hold a row
   in which two consumers pull at the same moment?
+
+### G33: S040 asserts an absolute position (`impl-choice`)
+
+- **Ticket:** GD04.
+- **Concerns:** `Queue.next_position`, G04, and scenario S040.
+- **The specification says:** no initial value for `next_position` (G04).
+  `AckMarksRecord` ensures `record.mark = acked` and names no position.
+- **The double does:**
+  - S040's port, "an ack marks a held record and removes nothing", asserts that the
+    acked record is at position 1, as its Rust test does. That holds only because the
+    double starts at 0 (G04): the pocket takes 0 and its first record 1. The port marks
+    the assertion `impl-choice`.
+  - The facts the row also asserts are the specification's: the record is acked, the
+    pocket still holds both its keys, and neither shed queue has an entry.
+- **`N`-note:** no `N`-note. N04 and N16 list the rows that assert an absolute position,
+  and S040 is not among them. This note extends G16 and G29 to it.
+- **Question:** as G04, G16 and G29. Is the starting value meant to be unspecified? If
+  so, should S040 assert an absolute position?
+
+### G34: the refusals of a mark are `LeaseFenced`, `RecordNotHeld` and `MarkConflict`, the lease checked first
+
+- **Ticket:** GD04.
+- **Concerns:** `AckMarksRecord`, `AckRepeats`, `NackMarksRecord` and `NackRepeats`; the
+  Ack and nack comment; the `ActionsNameTheirLease` guarantee; scenarios S042, S049,
+  S068, S070 and S085.
+- **The specification says:**
+  - Each of the four mark rules requires `lease.status = active` and
+    `lease.consumer = consumer`, then, with
+    `let record = Record{pocket: pocket, key: record_key}`, `exists record`,
+    `record.status = held` and the mark the rule names.
+  - "no rule covers an ack of a nacked record or a nack of an acked one, so that action
+    is rejected". And: "An action meant for a lease that has ended is rejected, even
+    when the same consumer holds the same pocket again under a new lease and the same
+    key at a newer rank."
+  - It names no rejection, and does not say which applies when more than one `requires`
+    fails.
+- **The double does:**
+  - The Ack and Nack tables have two rows each. Their answer when no guard holds is a
+    refusal that names the first `requires` that fails, in the order the rules state
+    them. To find it the refusal reads the state it is handed, as a guard does, and
+    changes nothing. These two and the Release table's (G39) are the first refusals that
+    read the state. Every earlier table's refusal reads the trigger alone: the joins',
+    `EqualRankRefused` (G13), `PullRefused` (G23) and Renew's `LeaseFenced` (G28).
+  - The lease first. A lease that is not active, is not the consumer's, or whose id
+    names no lease is `LeaseFenced`, carrying the action's name, the consumer's id and
+    the lease's id, whatever key the action names. That is G28's refusal, now used for
+    all four actions under a lease. The Rust's `LeaseNotActive` and `LeaseNotYours` are
+    both `LeaseFenced`: the specification draws no line between the two `requires`.
+  - Then the record. With the lease good, a key the lease's pocket does not hold as a
+    held record is `RecordNotHeld`, carrying the action's name, the lease's id and the
+    key. That covers a key the pocket does not have, a key held only in another pocket,
+    since the lookup is `Record{pocket: lease.pocket, ...}`, and a queued record of the
+    leased pocket. The queued record passes `exists record` and fails
+    `record.status = held`; the double gives it the same refusal as an absent key.
+  - Then the mark: the record is held with the other mark, and the action is
+    `MarkConflict` (G35).
+  - S070's ack by `c3`, under `c1`'s lease, names a key that lease's pocket does not
+    have, and is fenced, not "not held".
+  - Every refusal through the owner goes through `harness.refused`, which compares the
+    complete snapshot, the clock's read count and the lease-id draws before and after.
+    The tests:
+    - S042's "rejected acks change nothing, not even the lease's expiry; a repeat ack is
+      not a refusal" and S049's "rejected nacks change nothing and create no dead
+      letter": `LeaseFenced` for another consumer's lease and for an id no lease has,
+      and `RecordNotHeld` for an absent key, a queued one and a key held in another
+      pocket;
+    - S068's "a consumer that re-claims the same pocket cannot use its old lease", and
+      "an ack, a nack and a release that name a lease that has ended are fenced": an
+      ended lease;
+    - S070's "a consumer cannot act on another consumer's lease": the order;
+    - "a refused mark names the first requirement that fails, the lease first, and asks
+      for no time", over a state built by hand through the apply step: every case above,
+      a lease ended by expiry included.
+  - Each name and shape, and the order, is `impl-choice`, and each port says so.
+- **`N`-note:** agrees with N21, but for one field of `MarkConflict` (G35).
+- **Question:** N21's. Is a refusal's kind the specification's to name at all? If so,
+  should it name these three, and the order in which they are checked? This double adds
+  one: is an ack of a queued record of the leased pocket meant to be refused as a key not
+  held, or as a refusal of its own?
+
+### G35: `MarkConflict` carries no mark
+
+- **Ticket:** GD04.
+- **Concerns:** the Ack and nack comment; scenario S085.
+- **The specification says:** "The first mark stands: a repeat of it succeeds and
+  changes nothing but the lease's expires_at, and no rule covers an ack of a nacked
+  record or a nack of an acked one, so that action is rejected."
+- **The double does:**
+  - An ack of a nacked record, or a nack of an acked one, is refused
+    `MarkConflict(action, lease_id, record_key)`. It carries no mark: the action says
+    which mark stands. `Ack` is refused because the record is nacked, and `Nack` because
+    it is acked.
+  - The reason is the double's module graph, not the specification. `Mark` is defined in
+    `model`, `model` imports `config`, and `config` imports `refusals`, so `refusals`
+    cannot import `model` without a cycle, and a refusal cannot carry a `Mark`.
+  - S085's port, "a changed mark is refused as a mark conflict and changes nothing, not
+    even the lease's expiry, and reads no clock", refuses both, and the lease view then
+    shows both first marks. "a refused mark names the first requirement that fails, the
+    lease first, and asks for no time" refuses both over a state built by hand.
+- **`N`-note:** departs from N21, whose `MarkConflict` carries the mark that stands. A
+  caller learns the same from either, since the action leaves one mark possible.
+- **Question:** as G34. The field is the double's, and the specification names no
+  refusal.
+
+### G36: an ack, nack, release or lease read by a consumer that never joined is refused (`impl-choice`)
+
+- **Ticket:** GD04.
+- **Concerns:** the `Ack`, `Nack` and `Release` triggers, the `Consuming` surface's
+  `facing consumer: Consumer` and its `exposes` block, G26, and scenarios S042 and S049.
+- **The specification says:** each trigger takes a `Consumer` entity, which only
+  `ConsumerJoins` creates. The surface faces a `Consumer` too. Nothing says what an
+  action or a read naming an id that never joined does.
+- **The double does:**
+  - As G26 does for a pull and a renew. The apply step looks for the consumer before it
+    runs the Ack, Nack or Release table, and answers `UnknownConsumer`, carrying the id,
+    when there is none. No table is consulted, no clock is read, no lease id is drawn,
+    and the owner keeps the state it had. The consumer is looked for before the lease,
+    so a release by `cx` naming a lease never issued is `UnknownConsumer` too.
+  - The lease read is not a trigger and goes through no table. The owner's `LeaseView`
+    message calls `core.lease_view`, which holds the same check beside the apply step's
+    and answers `Error(Refused(UnknownConsumer(id)))`, or the view (G31).
+  - The tests: S042's and S049's ports, whose Rust tests act as `"nobody"`; "a release
+    by a consumer that never joined is refused"; "a lease read by a consumer that never
+    joined is refused"; and "a refused mark names the first requirement that fails, the
+    lease first, and asks for no time". Each acts as `cx`, which never joined, or as
+    `p`, which joined as a publisher only, and each shows the snapshot, the clock's read
+    count and the lease-id draws unchanged. Each is labelled `impl-choice`.
+- **`N`-note:** agrees with N22.
+- **Question:** N22's, which is N18's. Should the specification say that each action and
+  the lease read require a joined consumer, as G12 and G26 ask for a publish, a pull and
+  a renew?
+
+### G37: an ended lease stays in the state, and a mark and a release answer nothing (the maintainer's ruling on N24)
+
+- **Ticket:** GD04.
+- **Concerns:** the `Lease` entity's `terminal: released, expired`,
+  `ReleaseRequeuesPocket`, `ReleaseIdlesEmptyPocket`, the four mark rules, and scenarios
+  S053, S055 and S057.
+- **The specification says:** a lease ends `released` or `expired`, both terminal, with
+  `ended_at: Timestamp when status = released | expired`. No rule removes a lease. The
+  release and mark rules ensure no answer to the caller.
+- **The double does:**
+  - It follows a ruling, not a reading of its own. On 2026-11-18 the maintainer ruled on
+    N24 that S053's empty lease registry is the Rust's inspection shape, and that the
+    double keeps the ended lease.
+  - A release ends the lease in its place in the state's list of leases, as
+    `LeaseReleased(ended_at)`, and nothing removes it. Fencing reads it: an action that
+    names it is `LeaseFenced` (G34).
+  - S053's port, "a release requeues the pocket at the back and its unsettled records in
+    place, and consumes the acked ones", asserts the specification's facts in place of
+    the Rust's empty registry: the lease is in the snapshot, released, with its
+    `ended_at`, no lease is active, and no consumer has a lease view. S055's and S057's
+    ports read the ended lease from the snapshot where the Rust reads the lease its
+    release returned.
+  - An ack, a nack and a release that succeed reply `Ok(Outcome(fired, None))`, with no
+    answer, where the Rust's marks answer `SettleOutcome` and its release the pocket's
+    fate and the ended lease. Every port of a mark or a release asserts that reply.
+- **`N`-note:** agrees with N24 and follows its ruling.
+- **Question:** none on the behaviour. N24's stays open: if the specification means an
+  ended lease to be forgotten it does not say so, and fencing by lease needs the ended
+  lease's identity kept somewhere. PD07 takes it up.
+
+### G38: one lease end sends `Freed` smallest held position first (`impl-choice` where a test asserts it)
+
+- **Ticket:** GD04.
+- **Concerns:** the `Freed(lease, record_key, ended_at)` event; the two release rules'
+  `for record in pocket.held_records: Freed(...)`; the Lease end comment.
+- **The specification says:** the ending rule emits one `Freed` for each record of
+  `pocket.held_records`, which is a set. The Lease end comment says the rule that ends a
+  lease and the rules that answer its `Freed` "are one outcome". Nothing orders the
+  events.
+- **The double does:**
+  - `lease_end.end` emits `Freed` for the held records of the lease's pocket in order of
+    their positions, smallest first, and the apply step answers them in that order. The
+    order decides the order in which the dead letters one end creates are added (G19),
+    and the order of the `Freed` rules in `fired`.
+  - With nothing deferred, no catalog row can tell the order. S053's port asserts its
+    two `Freed` rules in the order `a1`, `a2`, where position order, key order and the
+    order of creation agree. S047's and S086's ends create one dead letter each.
+  - Hand-built states pin it, each listing the records out of position order:
+    "ending a lease sets its status and ended_at and sends Freed for each held record,
+    smallest position first, and changes nothing else"; "a release frees the held
+    records smallest position first, each by its mark, and stamps every entry from the
+    lease's end", whose two dead letters are added smaller position first though the
+    other is listed first. Both are labelled `impl-choice`.
+  - `Freed.lease` is the lease's id (G10).
+- **`N`-note:** agrees with N25.
+- **Question:** N25's. Should the specification order the entries one lease end creates,
+  or say that their order is not observable?
+
+### G39: the Release table's refusal past fencing is unreachable through the owner
+
+- **Ticket:** GD04.
+- **Concerns:** `ReleaseRequeuesPocket`'s and `ReleaseIdlesEmptyPocket`'s
+  `requires: pocket.status = leased`, and the invariant `UnleasedHasNoActiveLease`.
+- **The specification says:** both release rules require `lease.status = active`,
+  `lease.consumer = consumer` and `pocket.status = leased`. Between them,
+  `pocket.records.count > pocket.ending_records.count` and
+  `pocket.records.count = pocket.ending_records.count` cover every pocket, since the
+  ending records are some of its records.
+- **The double does:**
+  - A release whose lease is not active, is not the consumer's or was never issued is
+    `LeaseFenced` (G34): "a second release is rejected; a release at the grant instant
+    is legal", "a release that names another consumer's lease or no lease is fenced"
+    and "an ack, a nack and a release that name a lease that has ended are fenced".
+  - Once the lease is good, `UnleasedHasNoActiveLease` makes its pocket leased in every
+    state the rules reach, so one of the two rows holds. What the table answers past
+    fencing, `ReleaseRefused`, carrying the consumer's id and the lease's, is never met
+    through the owner, as `PullRefused` is not (G23).
+  - "no Release rule holds for an active lease on a pocket that is not leased" is
+    `impl-choice` and carries no scenario tag. It builds by hand three states that break
+    the invariant, with the lease's pocket queued, idle or parked. In each, dispatch
+    finds no row, and the apply step answers `ReleaseRefused` at once: it asks for no
+    clock and no lease id and hands back no state. The test runs the apply step, not
+    the owner.
+- **`N`-note:** agrees with N26.
+- **Question:** N26's, as G23's for a pull. Is `requires: pocket.status = leased` a guard,
+  or a restatement of `UnleasedHasNoActiveLease`?
+
+### G40: an idle pocket keeps its position
+
+- **Ticket:** GD04.
+- **Concerns:** `ReleaseIdlesEmptyPocket`, `ReviveIdlePocket`, the Pocket comment,
+  `UniquePocketPosition`, `PocketPositionsBelowNext` and scenario S055.
+- **The specification says:** `ReleaseIdlesEmptyPocket` ensures `pocket.status = idle`
+  and `pocket.consecutive_expiries = 0`, and names no position. `ReleaseRequeuesPocket`
+  and `ReviveIdlePocket` each ensure `pocket.position = position`, a fresh one. "Queued
+  pockets are ordered by position, smallest first. That order is the pocket order;
+  nothing else positions a pocket." The two position invariants range over every
+  pocket, an idle one included.
+- **The double does:**
+  - An idle pocket keeps the position it had when its lease was claimed, and the release
+    allots none (G21). S055's port, "a release idles an empty pocket", asserts the
+    position kept, and that the pocket order is then `b` alone; it does not read the
+    counter. "ReleaseIdlesEmptyPocket changes exactly what it ensures, reads the clock
+    once and draws no lease id" compares the complete state, so it asserts both the
+    position and the counter unchanged.
+  - Whether the kept position matters: no rule reads an idle pocket's position, the
+    pocket order holds only queued pockets, and a revival replaces the position before
+    the pocket is queued again (G45). So the stale value is never used to order
+    anything. It does still count for the two invariants, which hold: no other pocket
+    was given it, and it is below `next_position`.
+- **`N`-note:** agrees with N27.
+- **Question:** N27's. Does an idle pocket's position mean anything? If not, the
+  specification might say so, so that no reader orders idle pockets by it.
+
+### G41: `ReleaseIdlesEmptyPocket` holds for a leased pocket with no record
+
+- **Ticket:** GD04.
+- **Concerns:** `ReleaseIdlesEmptyPocket`'s
+  `requires: pocket.records.count = pocket.ending_records.count`, and the comments above
+  it and above `LeaseExpiryIdlesEmptyPocket`.
+- **The specification says:** the comment above the rule: "Empty once the lease has
+  ended: every record the pocket has is held, acked or nacked, with no newer version
+  deferred behind it, and the Freed each one is sent removes it." The comment above
+  `LeaseExpiryIdlesEmptyPocket`: "No lease is granted on an empty pocket, and a pocket
+  loses records only when a lease ends (see PullWithinLease), so such a pocket still has
+  a record".
+- **The double does:**
+  - The guard is taken as written, so a leased pocket with no record at all satisfies
+    it, `0 = 0`. Its release ends the lease, sends no `Freed` and idles the pocket with
+    its count reset.
+  - No state the rules reach has such a pocket, by the comment's reasoning. Only a state
+    built by hand does. "ReleaseIdlesEmptyPocket changes exactly what it ensures, reads
+    the clock once and draws no lease id" uses one, a pocket that has seen two expiries,
+    to show the reset on its own; and "each release rule's guard holds only for the
+    consumer's active lease on a leased pocket, by whether a record outlasts it" sends
+    that release to `ReleaseIdlesEmptyPocket`.
+- **`N`-note:** no `N`-note.
+- **Question:** none on the behaviour: the comment's "every record the pocket has" holds
+  of no records. Should the comment say that a pocket with none idles too, so that the
+  guard and the words agree outright?
+
+### G42: the mark rules require nothing of `lease.pocket`
+
+- **Ticket:** GD04.
+- **Concerns:** `AckMarksRecord`, `AckRepeats`, `NackMarksRecord` and `NackRepeats`; the
+  release rules' `requires: pocket.status = leased`; `UnleasedHasNoActiveLease`.
+- **The specification says:** each mark rule has `let pocket = lease.pocket`, and reads
+  the pocket only through `Record{pocket: pocket, key: record_key}` and, in the two
+  marking rules, `ensures: pocket.consecutive_expiries = 0`. The two release rules have
+  the same `let` and then `requires: pocket.status = leased`. No mark rule requires
+  anything of the pocket.
+- **The double does:**
+  - The mark guards read no pocket. Each looks up the record by the lease's pocket key
+    alone (G09), so a mark's guard holds whatever the pocket's status, and whether or not
+    a pocket has the key.
+  - The reset sets `consecutive_expiries` to 0 on every pocket with that key (G09), and
+    on no other. "AckMarksRecord changes exactly what it ensures, reads the clock once
+    and draws no lease id" and "NackMarksRecord changes exactly what it ensures, reads
+    the clock once and draws no lease id" show that only the lease's pocket's count
+    changes, over a state built by hand whose idle pocket has a count of its own.
+  - In every state the rules reach the difference cannot show:
+    `UnleasedHasNoActiveLease` makes an active lease's pocket leased. No test marks
+    under an active lease whose pocket is not leased.
+- **`N`-note:** no `N`-note.
+- **Question:** are the release rules' `requires: pocket.status = leased` and the mark
+  rules' silence meant to differ? Either the mark rules could state it, or the release
+  rules could drop it as a restatement of the invariant (G39).
+
+### G43: a nacked record without `nacked_at` cannot become a dead letter
+
+- **Ticket:** GD04.
+- **Concerns:** `DeadLetterNackedRecord`, the `DeadLetter` entity, the `Record` entity's
+  `nacked_at`, and `NackedHasItsTime`.
+- **The specification says:** `DeadLetterNackedRecord` has `let nacked_at =
+  record.nacked_at` and creates a `DeadLetter` with `nacked_at: nacked_at`. On a record
+  it is `nacked_at: Timestamp? when status = held`; on a `DeadLetter` it is
+  `nacked_at: Timestamp`, with no `?`. The rule has no `requires` on it.
+  `NackedHasItsTime` is `status = held and mark = nacked implies nacked_at != null`.
+- **The double does:**
+  - The rule's guard is the specification's four `requires` and nothing more: the
+    record exists, it is held, its mark is `nacked`, and nothing is deferred behind it.
+    A held, nacked record with a deferred version fails the fourth and is left to the
+    deferred row GD05 lands. Its
+    effect reads the record's `nacked_at`. Where it is `None`, the effect answers a
+    defect, `Impossible`, naming the record, and no dead letter is made: an optional
+    time cannot fill a field that is not optional. Where it is `Some`, the dead letter
+    carries it.
+  - `NackedHasItsTime` is checked after every outcome, and `NackMarksRecord` is the only
+    rule that nacks, with `nacked_at = now`. So no state the rules reach holds a nacked
+    record without the time, and the defect is never met through the owner.
+  - "a Freed rule's effect without what its guard saw is a defect" shows the defect over
+    a state built by hand. "DeadLetterNackedRecord changes exactly what it ensures,
+    stamps the entry from ended_at and asks for no time" and S086's "a repeat nack keeps
+    the first nack's time" show the time carried over.
+- **`N`-note:** no `N`-note.
+- **Question:** should the rule state `requires: record.nacked_at != null`, or is
+  `NackedHasItsTime` meant to carry it? As written the rule's `let` types a
+  `Timestamp?` into a `Timestamp`, and only the invariant makes that sound.
+
+### G44: a dead letter's `held_rank` and the record's `rank` cannot be told apart in a state that holds the invariants
+
+- **Ticket:** GD04.
+- **Concerns:** `DeadLetterNackedRecord`'s `rank: held_rank` and `payload: held_payload`;
+  `HeldVersionNotNewer`, `DeferredHasArrivalPosition` and `HeldCopiesAgree`.
+- **The specification says:** the rule creates the `DeadLetter` with
+  `rank: held_rank` and `payload: held_payload`, from `let held_rank = record.held_rank`
+  and `let held_payload = record.held_payload`, and requires
+  `record.deferred_position = null`. The invariants: `held_rank <= rank`;
+  `held_rank < rank implies deferred_position != null`; and, of `HeldCopiesAgree`, "With
+  nothing deferred, the held version is the record's version, and its two copies agree."
+- **The double does:**
+  - The dead letter takes the held rank and the held payload, as written.
+  - With nothing deferred the three invariants make `held_rank` equal `rank` and
+    `held_payload` equal `payload`. So no state the rules reach shows which pair the rule
+    reads, and a double that took `rank` and `payload` would pass every other test.
+  - "a dead letter carries the held version, not a newer one the record has" runs the
+    rule alone over a before-state built to tell them apart: the record's rank is 50 and
+    its payload another, while its held version is at 43, with no arrival position. That
+    state breaks `DeferredHasArrivalPosition` and `HeldCopiesAgree` before the rule runs.
+    The rule removes the record, so the state it leaves holds every invariant, and the
+    dead letter carries the held version.
+- **`N`-note:** no `N`-note.
+- **Question:** none on the behaviour. The rule's `held_rank` and `held_payload` are the
+  version the consumer was handed, which the Record comment names; only a deferred
+  version, in `DeadLetterNackedVersionQueueDeferred`, makes the two pairs differ.
+
+### G45: a revived pocket's position is above its new record's
+
+- **Ticket:** GD04.
+- **Concerns:** `ReviveIdlePocket`, `PublishNewKey`, `PublishIntoNewPocket`, the
+  `PocketTouched` event, and scenario S023.
+- **The specification says:**
+  - `PublishNewKey` takes `let position = queue.next_position`, creates the record
+    there, ensures `queue.next_position = position + 1` and
+    `PocketTouched(pocket_key: pocket_key)`.
+  - `ReviveIdlePocket` answers `PocketTouched`, requires `pocket.status = idle`, takes
+    `let position = queue.next_position`, and ensures `pocket.position = position` and
+    `queue.next_position = position + 1`.
+  - `PublishIntoNewPocket` gives the pocket `queue.next_position` and its record
+    `queue.next_position + 1`.
+- **The double does:**
+  - The revival is a row of the `PocketTouched` table and runs after `PublishNewKey`'s
+    row in the same outcome, over the state that row left. So it reads the counter the
+    publish advanced: the record takes the counter's value and the pocket the next. A
+    revived pocket's position is therefore above its new record's, the reverse of a new
+    pocket's, whose position is below its first record's.
+  - S023's port, "a publish revives an idle pocket at the back", asserts both
+    positions against the counter, as its Rust test does: the record at `next`, the
+    pocket at `next + 1`, and the pocket at the back of the pocket order.
+  - No invariant compares a pocket's position with a record's (G18), so either order
+    holds them all.
+- **`N`-note:** no `N`-note. N27 says only that a revival gives the pocket a fresh
+  position.
+- **Question:** is the difference intended? It follows from the event being answered
+  after the rule that emits it, which the rules imply and the specification does not
+  state as a rule of its own.
+
+### G46: one module owns the lease's end, and `ending_records` stays in `model`
+
+- **Ticket:** GD04.
+- **Concerns:** the Renew and release comment, the Lease end comment and its table,
+  `Pocket.ending_records`, the two release rules, and the three `Freed` rules with
+  nothing deferred.
+- **The specification says:**
+  - Of a release: "The pocket is queued again when a record outlasts the lease and idle
+    when none does: the records the lease's end removes are the pocket's
+    ending_records."
+  - `ending_records` is `records where status = held and mark != unsettled and
+    deferred_position = null`. The four rules that end a lease and decide the pocket's
+    fate compare `pocket.records.count` with `pocket.ending_records.count`.
+  - "The rules read the mark and never how the lease ended, so a lapse keeps every ack
+    and nack." And: "Freed carries ended_at, the timestamp the rule that ended the lease
+    wrote to lease.ended_at, and the three rules that create an entry stamp it from that,
+    not from their own now".
+- **The double does:**
+  - `lease_end.gleam` owns the lease's end. Its interface, which GD05 and GD06 add to
+    without changing:
+    - `Ending`, `Release` or `Lapse`, how the lease ended;
+    - `end(state, lease, ending, at)`, the steps the five ending rules share: the lease
+      takes `LeaseReleased(at)` or `LeaseExpired(at)`, and the caller is handed one
+      `Freed` to emit for each held record of its pocket (G38). It leaves the pocket to
+      the calling rule;
+    - `outlasts(state, pocket_key)`, the comparison
+      `pocket.records.count > pocket.ending_records.count`, which both release rules
+      read and the lapse rules will;
+    - `Freeing(lease, record_key, ended_at)`, the input of `Freed`, and `freed()`, its
+      table, with this ticket's three rows and a comment where each deferred row goes.
+      A `Freed` no row answers is a defect.
+  - `Ending` decides the lease's status alone, and `Freeing` has no field for it. The
+    interface does not stop a row from reading it: each row finds the whole lease by
+    the event's id, `status` included, and a row could branch on it. None does. Once
+    the lease is found, the three rows read its `pocket` and `consumer` and nothing
+    else of it. "the
+    Freed rules read the mark and never how the lease ended" runs each row over a lease
+    ended either way and finds the same result.
+  - Each row finds the lease by the event's id whatever its status, and stamps any entry
+    from the event's `ended_at`, never from a `now` of its own: no `Freed` row asks for
+    the time. "DeadLetterNackedRecord changes exactly what it ensures, stamps the entry
+    from ended_at and asks for no time" sends an `ended_at` unlike every time in the
+    state.
+  - `ending_records` is computed in one place, `model.ending`, landed in GD02. The
+    snapshot's derived sets read it there, for the checker's views, and so does
+    `lease_end.outlasts`; the module does not repeat it.
+- **`N`-note:** no `N`-note. N25 names the Python double's `lease_end.end_lease`, and
+  says nothing of the module's interface.
+- **Question:** none on the behaviour. The specification writes the comparison out in
+  each of the four rules that split on it; is it meant to be the same comparison in
+  each, as it reads?
+
+### G47: the witness that the checker runs once, after the whole chained outcome
+
+- **Ticket:** GD04.
+- **Concerns:** the Lease end comment's "one outcome, as a pull and its HoldRecord are,
+  so the invariants hold after the whole of it"; `ReviveIdlePocket`; the two release
+  rules and the `Freed` rules; `IdleHasNoRecords` and `OutstandingOnlyWhileLeased`.
+- **The specification says:** "The rule that ends a lease and the rules that answer its
+  Freed are one outcome, as a pull and its HoldRecord are, so the invariants hold after
+  the whole of it." It says nothing of the state part-way through.
+- **The double does:**
+  - The apply step runs the checker once, over the state the whole chain left. GD02's
+    review and GD03's hand-back left a witness owing: an outcome whose state part-way
+    breaks an invariant that the end mends. A pull has none (G22). GD04 has three, each
+    a test in `core_test.gleam` with no scenario tag, each driving the owner:
+    - "a publish of a new key into an idle pocket stands, though the pocket is idle
+      with a record until the revival answers": after `PublishNewKey`, before
+      `ReviveIdlePocket`, the pocket is idle with a queued record, which breaks
+      `IdleHasNoRecords`;
+    - "a release that requeues its pocket stands, though the pocket is queued with a
+      held record until Freed is answered": after `ReleaseRequeuesPocket`, before
+      `RequeueUnsettledRecord`, the record is held in a queued pocket, which breaks
+      `OutstandingOnlyWhileLeased`;
+    - "a release that idles its pocket stands, though the pocket is idle with a held
+      record until Freed is answered": after `ReleaseIdlesEmptyPocket`, before
+      `ConsumeAckedRecord`, the pocket is idle with a held record, which breaks both.
+  - Two scratch changes to `core.gleam` show that the tests tell the checker's place.
+    The file was restored afterwards with the SHA-256 it had before.
+    - one that ran the checker before every chained event's table failed all three.
+      The two release tests failed with the invariants above. The publish test failed in
+      its setup, the idling release, naming both of that release's invariants;
+    - one that ran it before `PocketTouched`'s table alone failed the publish test at
+      the publish, naming `IdleHasNoRecords` alone, and passed the two release tests.
+- **`N`-note:** no `N`-note.
+- **Question:** none on the behaviour, which the comment states for the lease's end. The
+  comment names a pull and a lease's end; should it say the same of a publish and the
+  revival it causes, whose part-way state also breaks an invariant?

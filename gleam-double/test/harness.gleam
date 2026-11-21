@@ -7,17 +7,19 @@ import gleam/bit_array
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option, Some}
 import gleam/otp/actor
 import pachinko_double/config.{type Config, type Settings, Settings}
-import pachinko_double/domain.{type BatchRecord, Batch}
-import pachinko_double/inspection.{type Snapshot}
-import pachinko_double/model.{
-  type Mark, type Pocket, type Record, Consumer, PocketQueued, RecordHeld,
-  RecordQueued,
+import pachinko_double/consuming.{type HeldView, type LeaseView}
+import pachinko_double/domain.{
+  type Applied, type BatchRecord, type Failure, type Step, Batch,
 }
+import pachinko_double/inspection.{type Snapshot}
+import pachinko_double/model.{type Pocket, type Record, PocketQueued}
 import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/publish.{type Publication, Publication}
+import pachinko_double/refusals.{type Refusal}
+import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, Refused}
 import pachinko_double/time.{type Duration, type Timestamp}
 
 /// How long a call to a fake may take, in milliseconds.
@@ -299,68 +301,106 @@ pub fn renew(double: Double, consumer: String, lease: String) -> Reply {
   logged(double, owner.renew(double.owner, consumer, lease))
 }
 
-/// What the `Consuming` surface exposes to a consumer of its active lease:
-/// the pocket's key, the lease's `expires_at`, and the pocket's held
-/// records.
-pub type LeaseView {
-  LeaseView(
-    pocket_key: String,
-    expires_at: Timestamp,
-    records: List(MarkedRecord),
-  )
+/// An ack, as the Rust fixture's `ack`: whatever the owner replies.
+pub fn ack(
+  double: Double,
+  consumer: String,
+  lease: String,
+  record_key: String,
+) -> Reply {
+  logged(double, owner.ack(double.owner, consumer, lease, record_key))
 }
 
-/// One held record as the surface exposes it: its key, the rank and payload
-/// it was handed out with, and its mark.
-pub type MarkedRecord {
-  MarkedRecord(key: String, rank: Int, payload: BitArray, mark: Mark)
+/// A nack, as the Rust fixture's `nack`: whatever the owner replies.
+pub fn nack(
+  double: Double,
+  consumer: String,
+  lease: String,
+  record_key: String,
+) -> Reply {
+  logged(double, owner.nack(double.owner, consumer, lease, record_key))
 }
 
-/// The Rust fixture's `lease_view`: the consumer's active lease, or `None`.
-/// The Rust asks its queue. This stands in for the `Consuming` surface's
-/// lease view until the owner has its `LeaseView` message, which will
-/// replace this body. Until then it reads the same facts from one
-/// snapshot's derived sets: the consumer's `active_leases`, and that
-/// lease's pocket's `held_records`, smallest position first. The test fails
-/// if the consumer never joined or holds more than one active lease.
-pub fn lease_view(double: Double, consumer: String) -> Option(LeaseView) {
-  let views = inspection.views(inspect(double))
-  let assert Ok(consumer_view) =
-    list.find(views.consumers, fn(view) { view.consumer == Consumer(consumer) })
-  case consumer_view.active_leases {
-    [] -> None
-    leases -> {
-      let assert [lease] = leases
-      let assert Ok(pocket_view) =
-        list.find(views.pockets, fn(view) { view.pocket.key == lease.pocket })
-      let records =
-        pocket_view.held_records
-        |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
-        |> list.filter_map(fn(record) {
-          case record.status {
-            RecordQueued -> Error(Nil)
-            RecordHeld(held_rank:, held_payload:, mark:, ..) ->
-              Ok(MarkedRecord(
-                key: record.key,
-                rank: held_rank,
-                payload: held_payload,
-                mark:,
-              ))
-          }
-        })
-      Some(LeaseView(
-        pocket_key: lease.pocket,
-        expires_at: lease.expires_at,
-        records:,
-      ))
-    }
-  }
+/// A release, as the Rust fixture's `release`: whatever the owner replies.
+pub fn release(double: Double, consumer: String, lease: String) -> Reply {
+  logged(double, owner.release(double.owner, consumer, lease))
+}
+
+/// The Rust fixture's `refused`: runs `action`, which must be refused with
+/// `expected`, and checks that the complete snapshot is the same after as
+/// before. It checks two things more than the Rust's: that the refusal read
+/// no clock and drew no lease id.
+pub fn refused(
+  double: Double,
+  expected: Refusal,
+  action: fn() -> Reply,
+) -> Nil {
+  let before = inspect(double)
+  let reads = clock_reads(double.clock)
+  let draws = lease_id_draws(double.lease_ids)
+  assert action() == Error(Refused(expected))
+  assert inspect(double) == before
+  assert clock_reads(double.clock) == reads
+  assert lease_id_draws(double.lease_ids) == draws
+  Nil
+}
+
+/// The Rust fixture's `at`: sets the clock to `millis` after `t0`, and
+/// returns that time. It is not a counted read.
+pub fn at(double: Double, millis: Duration) -> Timestamp {
+  set_time(double.clock, t0 + millis)
+  t0 + millis
+}
+
+/// The Rust fixture's `lease_view`: what the `Consuming` surface exposes to
+/// this consumer, read through the owner's `LeaseView` message. `Ok(None)`
+/// says the consumer has no active lease. Where the Rust's unwraps, this
+/// hands back the owner's reply whole, so that a test can read a refusal.
+pub fn lease_view(
+  double: Double,
+  consumer: String,
+) -> Result(Option(LeaseView), Failure) {
+  owner.lease_view(double.owner, consumer)
 }
 
 /// The lease view's records' keys, in order, as the Rust fixture's
 /// `marked_keys`.
-pub fn marked_keys(records: List(MarkedRecord)) -> List(String) {
+pub fn marked_keys(records: List(HeldView)) -> List(String) {
   list.map(records, fn(record) { record.key })
+}
+
+/// What a step came to when driven with one time and one lease id, and how
+/// often it asked for each.
+pub type Driven {
+  Driven(
+    result: Result(Applied, Failure),
+    clock_reads: Int,
+    lease_id_draws: Int,
+  )
+}
+
+/// Drives a step of the pure apply step to its end, as `rules.drive` does,
+/// answering every request for the time with `now` and every request for a
+/// lease id with `lease_id`, and counting both. For a test over a state
+/// built by hand, where no owner and no fake is involved.
+pub fn drive(step: Step, now: Timestamp, lease_id: String) -> Driven {
+  drive_on(step, now, lease_id, 0, 0)
+}
+
+fn drive_on(
+  step: Step,
+  now: Timestamp,
+  lease_id: String,
+  clock_reads: Int,
+  lease_id_draws: Int,
+) -> Driven {
+  case step {
+    Done(result) -> Driven(result:, clock_reads:, lease_id_draws:)
+    NeedsNow(next) ->
+      drive_on(next(now), now, lease_id, clock_reads + 1, lease_id_draws)
+    NeedsLeaseId(next) ->
+      drive_on(next(lease_id), now, lease_id, clock_reads, lease_id_draws + 1)
+  }
 }
 
 pub fn inspect(double: Double) -> Snapshot {

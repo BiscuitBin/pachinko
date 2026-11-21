@@ -17,24 +17,25 @@
 ////
 //// Then the double's own tests, which pin no catalog row: the refusal of a
 //// publisher that never joined, what each of the four rules changes and how
-//// often it reads the clock, the events each emits, and the held branch of
+//// often it reads the clock, the events each emits, the held branch of
 //// `Supersede`'s guard, which no publish through the owner reaches until a
-//// version can be deferred behind a held record.
+//// version can be deferred behind a held record, and what `ReviveIdlePocket`
+//// changes when it answers `PocketTouched`.
 
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import harness.{type Double}
+import harness.{type Double, Driven}
 import pachinko_double/config
 import pachinko_double/core
 import pachinko_double/domain.{type Event, type Plan, PocketTouched}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
-  type Mark, type Reason, type Record, type State, Acked, Consumer, Lease,
-  LeaseActive, Nacked, Pocket, PocketLeased, PocketQueued, Publisher, Queue,
-  Record, RecordHeld, RecordQueued, Stale, State, Superseded, SupersededRecord,
-  Unsettled,
+  type Mark, type Reason, type Record, type State, Acked, Consumer, DeadLetter,
+  Lease, LeaseActive, Nacked, Pocket, PocketIdle, PocketLeased, PocketParked,
+  PocketQueued, Publisher, Queue, Record, RecordHeld, RecordQueued, Stale, State,
+  Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/publish.{type Publication, Publication}
@@ -146,6 +147,26 @@ pub fn tests() -> List(Test) {
       "Supersede's effect without its record is a defect, and reads no clock",
       [],
       supersede_without_record,
+    ),
+    Test(
+      "ReviveIdlePocket changes exactly what it ensures and reads no clock",
+      [],
+      revive_idle_exactly,
+    ),
+    Test(
+      "a touched pocket that is queued or leased, and a key no pocket has, are left as they were",
+      [],
+      touched_and_not_idle,
+    ),
+    Test(
+      "ReviveIdlePocket's guard does not hold for a parked pocket",
+      [],
+      revive_guard_not_parked,
+    ),
+    Test(
+      "ReviveIdlePocket's effect without its pocket is a defect",
+      [],
+      revive_without_pocket,
     ),
   ]
 }
@@ -666,11 +687,11 @@ fn stale_exactly() -> List(String) {
 
 // The rows themselves, over states built by hand -------------
 //
-// `PocketTouched`'s table has no row yet, so an emitted event shows neither
-// in the rules that fired nor in the snapshot; and no publish through the
-// owner meets a held record with a version deferred behind it until
-// `DeferBehindHeldVersion` lands. These tests read the Publish table
-// directly.
+// No publish through the owner meets a held record with a version deferred
+// behind it until `DeferBehindHeldVersion` lands, and through the owner a
+// pocket that goes idle has seen no expiry. These tests read the Publish
+// table and the `PocketTouched` table directly, or run the apply step over
+// a state built by hand.
 
 fn publication(
   pocket_key: String,
@@ -898,6 +919,182 @@ fn supersede_without_record() -> List(String) {
       Error(Defect(
         "Publish",
         EffectFailed("Supersede", "no record a in pocket pk"),
+      )),
+    )
+  []
+}
+
+/// Publisher `p` and consumer `c1` joined, and the counter stands at 9.
+/// `idle` is idle: it holds no record, kept the position it had when it
+/// was claimed, and has seen two expiries. `pk` and `other` are queued,
+/// with a record each. The superseded queue holds an earlier version of
+/// `pk`'s record, and the dead-letter queue a record `c1` once nacked out
+/// of `idle`.
+fn with_idle() -> State {
+  State(
+    ..joined(),
+    queue: Queue(next_position: 9),
+    pockets: [
+      Pocket("pk", PocketQueued, 6, 0),
+      Pocket("idle", PocketIdle, 0, 2),
+      Pocket("other", PocketQueued, 2, 0),
+    ],
+    records: [
+      Record("pk", "a", 5, <<"x":utf8>>, 7, RecordQueued),
+      Record("other", "b", 5, <<"x":utf8>>, 3, RecordQueued),
+    ],
+    superseded: [
+      SupersededRecord(
+        pocket: "pk",
+        key: "a",
+        rank: 4,
+        payload: <<"older":utf8>>,
+        reason: Superseded,
+        shed_at: 300,
+        expires_at: 300 + config.defaults().superseded_ttl,
+      ),
+    ],
+    dead_letters: [
+      DeadLetter(
+        pocket: "idle",
+        key: "gone",
+        rank: 3,
+        payload: <<"dead":utf8>>,
+        nacked_by: "c1",
+        nacked_at: 350,
+        expires_at: 400 + config.defaults().dead_letter_ttl,
+      ),
+    ],
+  )
+}
+
+/// `PocketTouched` for the idle pocket, as its own outcome: the pocket is
+/// queued at the counter's value, 9, with its count 0, and the counter is
+/// 10. Nothing else in the complete state changes, and the step is done at
+/// once, so the rule asked for no time.
+///
+/// Then a publish of a new key into the idle pocket, through the apply
+/// step. `PublishNewKey` allots the record's position first, 9, and the
+/// revival the pocket's after it, 10, so the pocket goes to the back of the
+/// pocket order, behind `pk` at 6, and the counter is 11. The outcome reads
+/// no clock and draws no lease id.
+fn revive_idle_exactly() -> List(String) {
+  let state = with_idle()
+  let assert [pk, idle, other] = state.pockets
+  let revive = "ReviveIdlePocket"
+  assert core.run(publish.pocket_touched(), "idle", state)
+    == Done(
+      Ok(Applied(
+        State(..state, queue: Queue(next_position: 10), pockets: [
+          pk,
+          Pocket(
+            ..idle,
+            status: PocketQueued,
+            position: 9,
+            consecutive_expiries: 0,
+          ),
+          other,
+        ]),
+        [revive],
+        None,
+      )),
+    )
+  let fired = ["PublishNewKey", revive]
+  assert harness.drive(
+      core.apply(state, core.Publish(publication("idle", "k", 1, "v"))),
+      harness.t0,
+      "unused",
+    )
+    == Driven(
+      Ok(Applied(
+        State(
+          ..state,
+          queue: Queue(next_position: 11),
+          pockets: [
+            pk,
+            Pocket(
+              ..idle,
+              status: PocketQueued,
+              position: 10,
+              consecutive_expiries: 0,
+            ),
+            other,
+          ],
+          records: list.append(state.records, [
+            Record("idle", "k", 1, <<"v":utf8>>, 9, RecordQueued),
+          ]),
+        ),
+        fired,
+        None,
+      )),
+      clock_reads: 0,
+      lease_id_draws: 0,
+    )
+  [revive, ..fired]
+}
+
+/// `PocketTouched` is answered only for an idle or a parked pocket. For a
+/// queued pocket, a leased one, and a key no pocket has, nothing happens:
+/// no rule fires and the complete state is as it was, the pocket's position
+/// included. A parked pocket's revival is a rule that has not landed, and
+/// is not pinned here.
+fn touched_and_not_idle() -> List(String) {
+  let state = with_idle()
+  let untouched = fn(state, pocket_key) {
+    assert core.run(publish.pocket_touched(), pocket_key, state)
+      == Done(Ok(Applied(state, [], None)))
+  }
+  untouched(state, "pk")
+  untouched(state, "other")
+  untouched(state, "nowhere")
+  untouched(leased(False, Unsettled), "pk")
+  []
+}
+
+/// `requires: pocket.status = idle`. The idle pocket of `with_idle` holds
+/// the guard, and the same pocket parked does not. Only the row's guard is
+/// asserted: what `PocketTouched` does for a parked pocket is
+/// `ReviveParkedPocket`'s, a rule that has not landed.
+fn revive_guard_not_parked() -> List(String) {
+  let assert Ok(revive) =
+    list.find(publish.pocket_touched().rows, fn(row) {
+      row.name == "ReviveIdlePocket"
+    })
+  let state = with_idle()
+  let parked =
+    State(
+      ..state,
+      pockets: list.map(state.pockets, fn(pocket) {
+        case pocket.key == "idle" {
+          True -> Pocket(..pocket, status: PocketParked)
+          False -> pocket
+        }
+      }),
+    )
+  assert revive.guard(state, "idle")
+  assert !revive.guard(parked, "idle")
+  []
+}
+
+/// `ReviveIdlePocket`'s effect reads the pocket its guard saw. Where there
+/// is none, which only a wrong guard could bring about, the outcome is a
+/// defect that names the rule: a value, not a crash.
+fn revive_without_pocket() -> List(String) {
+  let assert Ok(revive) =
+    list.find(publish.pocket_touched().rows, fn(row) {
+      row.name == "ReviveIdlePocket"
+    })
+  let unguarded =
+    Table(
+      "PocketTouched",
+      [Row(revive.name, fn(_state, _pocket_key) { True }, revive.effect)],
+      NothingHappens,
+    )
+  assert core.run(unguarded, "nowhere", with_idle())
+    == Done(
+      Error(Defect(
+        "PocketTouched",
+        EffectFailed("ReviveIdlePocket", "no pocket nowhere"),
       )),
     )
   []

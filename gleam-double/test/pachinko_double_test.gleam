@@ -5,6 +5,7 @@
 
 import competing_test
 import config_test
+import consuming_test
 import core_test
 import coverage
 import coverage_test
@@ -14,6 +15,7 @@ import gleam/list
 import identity_test
 import inspection_test
 import invariants_test
+import lease_end_test
 import lease_test
 import owner_test
 import publish_test
@@ -21,6 +23,7 @@ import pull_test
 import rules_test
 import runner.{type Module, Module}
 import runner_test
+import settle_test
 
 fn modules() -> List(Module) {
   [
@@ -34,6 +37,9 @@ fn modules() -> List(Module) {
     Module("publish_test", publish_test.tests()),
     Module("pull_test", pull_test.tests()),
     Module("lease_test", lease_test.tests()),
+    Module("settle_test", settle_test.tests()),
+    Module("lease_end_test", lease_end_test.tests()),
+    Module("consuming_test", consuming_test.tests()),
     Module("coverage_test", coverage_test.tests()),
     Module("inspection_test", inspection_test.tests()),
     Module("invariants_test", invariants_test.tests()),

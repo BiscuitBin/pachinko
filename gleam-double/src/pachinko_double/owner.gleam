@@ -7,6 +7,7 @@ import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option}
 import gleam/otp/actor
 import pachinko_double/config.{type Config}
+import pachinko_double/consuming.{type LeaseView}
 import pachinko_double/core.{type Trigger}
 import pachinko_double/domain.{type Answer, type Failure}
 import pachinko_double/inspection.{type Snapshot}
@@ -14,7 +15,7 @@ import pachinko_double/model.{type State}
 import pachinko_double/publish.{type Publication}
 import pachinko_double/pull.{Pull}
 import pachinko_double/rules
-import pachinko_double/settle.{Renew}
+import pachinko_double/settle.{Ack, Nack, Release, Renew}
 import pachinko_double/time.{type Timestamp}
 
 /// How long a caller waits for the owner's reply, in milliseconds. A caller
@@ -34,10 +35,16 @@ pub type Reply =
 
 /// The owner's mailbox. `Act` carries any one trigger a surface provides,
 /// so each trigger sent is one message and `core.Trigger` holds the variant
-/// per trigger; `Inspect` is the other message.
+/// per trigger. The other two are reads, which change nothing: `Inspect`,
+/// the complete snapshot, and `LeaseView`, what the `Consuming` surface
+/// exposes to one consumer.
 pub opaque type Message {
   Act(trigger: Trigger, reply: Subject(Reply))
   Inspect(reply: Subject(Snapshot))
+  LeaseView(
+    consumer: String,
+    reply: Subject(Result(Option(LeaseView), Failure)),
+  )
 }
 
 type Owner {
@@ -64,6 +71,10 @@ fn handle(owner: Owner, message: Message) -> actor.Next(Owner, Message) {
   case message {
     Inspect(reply) -> {
       process.send(reply, inspection.snapshot(owner.state))
+      actor.continue(owner)
+    }
+    LeaseView(consumer, reply) -> {
+      process.send(reply, core.lease_view(owner.state, consumer))
       actor.continue(owner)
     }
     Act(trigger, reply) ->
@@ -112,6 +123,49 @@ pub fn renew(
   lease: String,
 ) -> Reply {
   act(owner, core.Renew(Renew(consumer:, lease:)))
+}
+
+/// `Ack(consumer, lease, record_key)`, from the `Consuming` surface.
+/// `consumer` is the consumer's id and `lease` the lease's id.
+pub fn ack(
+  owner: Subject(Message),
+  consumer: String,
+  lease: String,
+  record_key: String,
+) -> Reply {
+  act(owner, core.Ack(Ack(consumer:, lease:, record_key:)))
+}
+
+/// `Nack(consumer, lease, record_key)`, from the `Consuming` surface.
+/// `consumer` is the consumer's id and `lease` the lease's id.
+pub fn nack(
+  owner: Subject(Message),
+  consumer: String,
+  lease: String,
+  record_key: String,
+) -> Reply {
+  act(owner, core.Nack(Nack(consumer:, lease:, record_key:)))
+}
+
+/// `Release(consumer, lease)`, from the `Consuming` surface. `consumer` is
+/// the consumer's id and `lease` the lease's id.
+pub fn release(
+  owner: Subject(Message),
+  consumer: String,
+  lease: String,
+) -> Reply {
+  act(owner, core.Release(Release(consumer:, lease:)))
+}
+
+/// What the `Consuming` surface exposes to this consumer, as the state is
+/// when the owner reaches this message: the view of its active lease, or
+/// `None` when it has none. A read: no rule fires, no clock is read and
+/// nothing changes. `consumer` is the consumer's id.
+pub fn lease_view(
+  owner: Subject(Message),
+  consumer: String,
+) -> Result(Option(LeaseView), Failure) {
+  process.call(owner, call_timeout, LeaseView(consumer, _))
 }
 
 /// The complete snapshot of the state, as it is when the owner reaches this

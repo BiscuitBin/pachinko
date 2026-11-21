@@ -7,8 +7,9 @@ import gleam/result
 import pachinko_double/config
 import pachinko_double/domain.{type Row, type Table, PocketTouched}
 import pachinko_double/model.{
-  type Pocket, type Reason, type Record, type State, Pocket, PocketQueued,
-  Record, RecordHeld, RecordQueued, Stale, State, Superseded, SupersededRecord,
+  type Pocket, type Reason, type Record, type State, Pocket, PocketIdle,
+  PocketQueued, Record, RecordHeld, RecordQueued, Stale, State, Superseded,
+  SupersededRecord,
 }
 import pachinko_double/refusals.{EqualRankRefused}
 import pachinko_double/rules.{
@@ -242,7 +243,44 @@ fn drop_stale_publish() -> Row(Publication) {
 }
 
 /// `PocketTouched(pocket_key)`. The two revive rules answer it only when
-/// the pocket is idle or parked; otherwise nothing happens.
+/// the pocket is idle or parked; otherwise nothing happens. The one for an
+/// idle pocket is here.
 pub fn pocket_touched() -> Table(String) {
-  Table("PocketTouched", [], NothingHappens)
+  Table("PocketTouched", [revive_idle_pocket()], NothingHappens)
+}
+
+/// `ReviveIdlePocket`. A publish left a record in an idle pocket: the
+/// pocket is queued again, at a fresh position at the back of the pocket
+/// order, with its count of consecutive expiries reset. The position is
+/// allotted after the one the publish gave its record.
+fn revive_idle_pocket() -> Row(String) {
+  Row(
+    "ReviveIdlePocket",
+    fn(state: State, pocket_key: String) {
+      case model.pocket(state.pockets, pocket_key) {
+        Error(Nil) -> False
+        Ok(pocket) -> pocket.status == PocketIdle
+      }
+    },
+    fn(state, pocket_key) {
+      case model.pocket(state.pockets, pocket_key) {
+        Error(Nil) -> Impossible("no pocket " <> pocket_key)
+        Ok(pocket) -> {
+          use position <- Position
+          let queued =
+            Pocket(
+              ..pocket,
+              status: PocketQueued,
+              position:,
+              consecutive_expiries: 0,
+            )
+          Finish(
+            State(..state, pockets: model.replace_pocket(state.pockets, queued)),
+            [],
+            None,
+          )
+        }
+      }
+    },
+  )
 }
