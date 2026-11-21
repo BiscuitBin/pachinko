@@ -90,12 +90,11 @@ actor adds, which the Python double could not show, it says "no `N`-note".
 - **The specification says:** every rule that allots a position takes `next_position`
   and advances it. It gives no initial value.
 - **The double does:** a new queue's `next_position` is 0. Nothing in GD01 allots a
-  position; the rows that assert absolute positions are ported in GD02, GD03, GD04 and
-  GD05, and their notes, G16, G29, G33 and G48, cite this one. GD01's ports of S003, S004
-  and S005 assert
-  that an owner starts over an admitted config and holds no publisher and no consumer,
-  and not the position it starts at. The two owner tests, which pin no catalog row,
-  compare whole snapshots and so do pin the 0.
+  position; the rows that assert absolute positions are ported in GD02 to GD06, and their
+  notes, G16, G29, G33 and G48, cite this one; G48 holds GD05's and GD06's. GD01's ports
+  of S003, S004 and S005 assert that an owner starts over an admitted config and holds
+  no publisher and no consumer, and not the position it starts at. The two owner tests,
+  which pin no catalog row, compare whole snapshots and so do pin the 0.
 - **`N`-note:** agrees with N04.
 - **Question:** is the starting value meant to be unspecified? Only order and uniqueness
   are observable through the rules, so any start satisfies them.
@@ -120,6 +119,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     `now`, shared by the rule the trigger reached and the rules its events reach.
   - A lease id is a `String`, drawn from the owner's injected lease-id function once for
     each request, and only a rule that creates a lease requests one.
+  - A `Tick`, from GD06, is the one message that reads the clock before any rule asks:
+    once, even when nothing is due. Each outcome it runs has that `now` in hand, so a
+    row that asks for the time reads no clock, and a clock trigger's guard reads `now`
+    from the trigger's input (G56, G60).
   - The owner is the only process that calls either function, between taking a message
     from its mailbox and replying to it. The time an action is processed at is therefore
     the time the owner reached it, not the time its caller sent it.
@@ -663,6 +666,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     than one entry, in order, and each marks it `impl-choice`: S082's superseded queue,
     `v3` then `v4`, for each mark, and S091's two shed queues, whose order is G38's and
     G49's.
+  - GD06 keeps it. A lapse ends its lease in its place, as a release does, and its
+    `Freed` rows add entries as G38 says. A decay removes one entry and keeps every
+    other in its order (G64). The order in which one tick takes its due leases and
+    entries is G57's, and rests on this one.
 - **`N`-note:** no `N`-note. The rulings on N31 and N38 treat the Rust's record order and
   its stored pocket order as its inspection shape, and their rows are ported in GD05 and
   GD06. PD07, which asks whether the inspection shape is part of the contract, is still
@@ -862,7 +869,8 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     Only a state built by hand holds two.
   - That does not cover `model.lease`. No invariant compares two lease ids, and the
     double does not check that the id it is handed is new, so a lease-id source that
-    repeated an id would leave two leases of one id in a state the rules reach (G27).
+    repeated an id would leave two leases of one id in a state the rules reach. GD06's
+    `owner_test` builds one (G27).
   - No test runs a Pull rule over such a state. "a claim takes the queued pocket with
     the smallest position, and a batch the queued records with the smallest" runs the
     apply step over a hand-built state whose lists are not in position order, with no
@@ -980,14 +988,24 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - The double does not check that an id it is handed is new, and no invariant compares
     two ids (G10). A source that repeated an id would give two leases one id. Of two
     such leases `model.lease` answers the first in the snapshot's order (G24), and
-    `model.replace_lease` replaces both. The fake hands out `lease-1`, `lease-2` and so
-    on, and never repeats, so no test reaches that state.
+    `model.replace_lease` replaces every lease with that id. The fake hands out
+    `lease-1`, `lease-2` and so on, and never repeats.
+  - One test, from GD06, reaches that state on purpose. `owner_test`'s "a tick whose
+    outcome fails is answered PartialTick, and the owner keeps what the outcomes before
+    it did" wraps the fake so that its third draw repeats its second, and two active
+    leases are named `lease-2`. The tick's lapse of the first ends both, because
+    `model.replace_lease` replaces each lease with the id, and that leaves a leased
+    pocket with no active lease, which the checker names (G59). The test depends on that
+    replacement. Were only the first lease replaced, the second would stay active and,
+    by this double's reading, the lapse would not fail there; no test runs that.
   - S027's port asserts that the batch names `lease-1`. That is `impl-choice`: the id is
     the fake source's first, and the port's comment says the Rust's `1` is its counting
-    source's. No other test that drives the owner asserts a literal id: each compares a
-    lease id only with another the owner handed it.
-- **`N`-note:** agrees with N15. It differs in one assertion: N15 says none of its tests
-  asserts a literal id, and S027's port here does.
+    source's. One other test that drives the owner depends on literal ids: the
+    `owner_test` test above, whose wrapper repeats `lease-2` in place of `lease-3` and
+    which reads `lease-2` and `lease-1` from the snapshot. Every other test that drives
+    the owner compares a lease id only with another the owner handed it.
+- **`N`-note:** agrees with N15. It differs in two tests: N15 says none of its tests
+  asserts a literal id, and S027's port and that `owner_test` test here do.
 - **Question:** N15 leaves none, "unless the maintainer wants lease identity in the
   specification". As G10: should the specification declare a lease's identity? If it
   does, should it also say that two leases never share one?
@@ -1205,9 +1223,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
       in the order they were started. Each test therefore runs once for each caller, with
       that caller started first.
     - Anything about the case the comment is written for, a lapse applied in the same
-      stream as a consumer's action. Only a `Pull` competes with a `Pull`. No publish,
-      renew, ack, nack, release or lapse competes with anything, and the clock stands
-      still throughout.
+      stream as a consumer's action. In these three tests only a `Pull` competes with a
+      `Pull`, and the clock stands still throughout. GD06 adds the case: a renew
+      competes with a `Tick` in `branch_a_test` (G63), and what the double's one mailbox
+      does not do of it is G62's.
     - That an action's `now` is the time the owner reached it (G05).
   - G03 records the one earlier test with competing callers, of a join.
 - **`N`-note:** no `N`-note: the Python double has no callers that compete.
@@ -1411,6 +1430,13 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     records smallest position first, each by its mark, and stamps every entry from the
     lease's end", whose two dead letters are added smaller position first though the
     other is listed first. Both are labelled `impl-choice`.
+  - A lapse ends its lease through the same `lease_end.end`, so its `Freed` go in the
+    same order (G46). Nine GD06 ports assert, as `impl-choice`, the order of `Freed`
+    rules of different kinds in a fired list, or of the entries one end creates, and
+    the comment of each test or of its module says so: S048, S064, S075 and S077 in
+    `parking_test`; S007 and S074 in `decay_test`; and S087, S088 and S089 in
+    `lease_endings_test`, S087 and S088 in both halves (G66). Where two lapses in one
+    tick create entries, their order between the lapses is G57's.
   - `Freed.lease` is the lease's id (G10).
 - **`N`-note:** agrees with N25, and with N29 for S091.
 - **Question:** N25's and N29's. Should the specification order the entries one lease end
@@ -1468,6 +1494,12 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     the pocket is queued again (G45). So the stale value is never used to order
     anything. It does still count for the two invariants, which hold: no other pocket
     was given it, and it is below `next_position`.
+  - From GD06, `LeaseExpiryIdlesEmptyPocket` and `LeaseExpiryParksPocket` name no
+    position either, and an idle or a parked pocket a lapse leaves keeps the position it
+    had. "LeaseExpiryParksPocket changes exactly what it ensures and reads no clock" and
+    "LeaseExpiryIdlesEmptyPocket changes exactly what it ensures and reads no clock"
+    compare the complete state, so they assert it. `ReviveParkedPocket` replaces the
+    position, as `ReviveIdlePocket` does (G45).
 - **`N`-note:** agrees with N27.
 - **Question:** N27's. Does an idle pocket's position mean anything? If not, the
   specification might say so, so that no reader orders idle pockets by it.
@@ -1624,6 +1656,10 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     pocket at `next + 1`, and the pocket at the back of the pocket order.
   - No invariant compares a pocket's position with a record's (G18), so either order
     holds them all.
+  - GD06's `ReviveParkedPocket` is the same row with `parked` in place of `idle`, and
+    a revived parked pocket's position is above its new record's in the same way. S062's
+    port, "three consecutive lapses park the pocket, and a publish revives it", asserts
+    the pocket at the back after the new key's position.
 - **`N`-note:** no `N`-note. N27 says only that a revival gives the pocket a fresh
   position.
 - **Question:** is the difference intended? It follows from the event being answered
@@ -1648,8 +1684,8 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     wrote to lease.ended_at, and the three rules that create an entry stamp it from that,
     not from their own now".
 - **The double does:**
-  - `lease_end.gleam` owns the lease's end. Its interface, which GD05 and GD06 add to
-    without changing:
+  - `lease_end.gleam` owns the lease's end. Its interface, which GD05 added to without
+    changing and GD06 uses as it stands:
     - `Ending`, `Release` or `Lapse`, how the lease ended;
     - `end(state, lease, ending, at)`, the steps the five ending rules share: the lease
       takes `LeaseReleased(at)` or `LeaseExpired(at)`, and the caller is handed one
@@ -1657,7 +1693,7 @@ actor adds, which the Python double could not show, it says "no `N`-note".
       the calling rule;
     - `outlasts(state, pocket_key)`, the comparison
       `pocket.records.count > pocket.ending_records.count`, which both release rules
-      read and the lapse rules will;
+      and the two expiry rules below the parking threshold read;
     - `Freeing(lease, record_key, ended_at)`, the input of `Freed`, and `freed()`, its
       table. GD04 landed the three rows with nothing deferred, with a comment where each
       deferred row would go. GD05 puts the three deferred rows in those places, so the
@@ -1668,6 +1704,13 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     that outlasts the lease. S054's port, "a release with only an acked record and its
     deferred version requeues the pocket rather than idling it", shows a release then
     fire `ReleaseRequeuesPocket`, not `ReleaseIdlesEmptyPocket`.
+  - GD06 left `lease_end.gleam` unchanged. Each of its three expiry rows calls
+    `end(state, lease, Lapse, now)` with the tick's `now` and sets the pocket's status
+    and count itself; `LeaseExpiryKeepsPocketAtFront` and `LeaseExpiryIdlesEmptyPocket`
+    split on `outlasts`, and `LeaseExpiryParksPocket` reads neither. No expiry row adds
+    a `Freed` row or repeats a step of the end. The six ports that end a lease either
+    way (G66) show the same `Freed` rules by lapse as by release, and each entry
+    stamped from its own end's `ended_at`.
   - `Ending` decides the lease's status alone, and `Freeing` has no field for it. The
     interface does not stop a row from reading it: each row finds the whole lease by
     the event's id, `status` included, and a row could branch on it. None does. Once
@@ -1720,16 +1763,27 @@ actor adds, which the Python double could not show, it says "no `N`-note".
       its setup, the idling release, naming both of that release's invariants;
     - one that ran it before `PocketTouched`'s table alone failed the publish test at
       the publish, naming `IdleHasNoRecords` alone, and passed the two release tests.
+  - GD06's lapse is the third caller of the lease's end, and its outcome passes through
+    the same part-way states: after `LeaseExpiryKeepsPocketAtFront`, before
+    `RequeueUnsettledRecord`, a held record stands in a queued pocket. A tick runs each
+    lapse through `core.run_at`, which ends in the same `conclude` as every outcome, so
+    the checker runs once at the end of each lapse and never between `LeaseLapses`, its
+    expiry rule and the `Freed` rows. No GD06 test is a witness of its own for the
+    lapse, and the two scratch changes were not run again. `core_test`'s "a run of due
+    outcomes keeps each outcome that succeeded before a failure, stops at the failure,
+    and checks each outcome at its end" shows the other side: the checker runs at the
+    end of each of a tick's outcomes, not once at the end of the tick (G59).
 - **`N`-note:** no `N`-note.
 - **Question:** none on the behaviour, which the comment states for the lease's end. The
   comment names a pull and a lease's end; should it say the same of a publish and the
   revival it causes, whose part-way state also breaks an invariant?
 
-### G48: nine of GD05's rows assert absolute positions (`impl-choice`)
+### G48: nine of GD05's rows and seven of GD06's assert absolute positions (`impl-choice`)
 
-- **Ticket:** GD05.
+- **Ticket:** GD05, extended in GD06 when seven more ports rested on G04.
 - **Concerns:** `Queue.next_position`, G04, `DeferBehindHeldVersion`'s arrival position,
-  and scenarios S043, S044, S045, S046, S054, S071, S072, S082 and S083.
+  and scenarios S043, S044, S045, S046, S054, S071, S072, S082 and S083, and from GD06
+  S048, S078, S079, S080, S081, S088 and S093.
 - **The specification says:** no initial value for `next_position` (G04).
   `DeferBehindHeldVersion` takes `let position = queue.next_position` and ensures
   `record.deferred_position = position` and `queue.next_position = position + 1`. The
@@ -1775,10 +1829,26 @@ actor adds, which the Python double could not show, it says "no `N`-note".
   - The double's own tests of the four GD05 rules, the ones named "… changes exactly
     what it ensures …", assert each position against a counter or a position they set
     by hand, and so do not rest on G04.
-- **`N`-note:** no `N`-note. N04 and N16 list the rows that assert an absolute position,
-  and none of these nine is among them. This note extends G16, G29 and G33 to them.
+  - GD06's seven, each marked `impl-choice` in its port. Each port also reads the
+    position from the state before the step and compares it with that, which is the
+    specification's fact:
+    - S048, "a version deferred behind a nacked one is queued at its arrival position by
+      the lapse": the held record at 1 and the arrival position 5;
+    - S078, S079, S080 and S081, Scenarios A to D, in both halves (G66): the arrival
+      position 3, asserted in the setup the four share;
+    - S081 also asserts `k`'s own position 1;
+    - S088, "a pocket whose records were all acked, one with a deferred version, is
+      queued", in both halves: the arrival position 5;
+    - S093, "at an expiry limit of one a marked version with a deferred one parks with it
+      queued": `early` at 2 and the arrival position 5, for each mark.
+- **`N`-note:** no `N`-note for GD05's nine: N04 and N16 list the rows that assert an
+  absolute position, and none of them is among them. This note extends G16, G29 and G33
+  to them. For GD06's seven it departs from N38, whose ports of S048, S078 to S081 and
+  S088 compare positions with the state before the step, "not as the Rust's absolute
+  values". These ports compare them so too, and keep the Rust's absolute values beside
+  that comparison.
 - **Question:** as G04, G16, G29 and G33. Is the starting value meant to be
-  unspecified? If so, should these nine rows assert absolute positions?
+  unspecified? If so, should these sixteen rows assert absolute positions?
 
 ### G49: S091's kept positions are compared by key and against the state before (the maintainer's ruling on N31), and its order of entries is `impl-choice`
 
@@ -2034,3 +2104,457 @@ actor adds, which the Python double could not show, it says "no `N`-note".
     conclusion is named is the positive controls' work.
 - **`N`-note:** no `N`-note.
 - **Question:** none.
+
+### G56: a tick is the double's only clock, and it reports what it did
+
+- **Ticket:** GD06.
+- **Concerns:** the three clock triggers, `lease: Lease.expires_at <= now`,
+  `shed: SupersededRecord.expires_at <= now` and `letter: DeadLetter.expires_at <= now`,
+  and their rules `LeaseLapses`, `SupersededRecordDecays` and `DeadLetterDecays`; the
+  Lease expiry comment ("The clock emits LeaseLapsed once per active lease whose
+  expires_at has passed"); G05; scenarios S006, S059 and S065.
+- **The specification says:** each of the three rules fires when its entity's
+  `expires_at <= now`. It names no process that notices this, and no surface reports a
+  lapse or a decay.
+- **The double does:**
+  - It has no background time and no timer. The owner's `Tick` message is the clock:
+    `owner.tick` sends it, and the owner takes it in mailbox order like any action.
+    `core.Trigger`, the type of every other message that changes state, holds only the
+    triggers a surface provides, so no `Act` carries a clock trigger, and only
+    `core.tick`, which the `Tick` message calls, reaches the four temporal tables. The
+    ticket's Verification checks that nothing under `src/` arms a timer, sleeps or reads
+    a wall clock.
+  - The owner reads the injected clock once per tick, before any outcome and even when
+    nothing is due, and `core.tick` hands that one `now` to every outcome. Each due
+    lapse is its own outcome, run through `core.run_at`: `LeaseLapses`, the expiry rule
+    that answers its `LeaseLapsed`, and each `Freed`, checked once at its end (G47).
+    Each due decay is its own outcome, checked once. "a tick reads the clock exactly
+    once, with nothing due and with several things due" counts the reads, and that no
+    lease id is drawn.
+  - A lease lapses once. A lease a tick lapsed is expired, and the next tick offers it
+    nothing: "a lease lapses once: a second tick at the same instant lapses nothing and
+    changes nothing". S065's port, "a lapse fires once per lease", ticks again at the
+    lapse's instant and at two later times.
+  - A tick answers `TickReport(fired, lapsed, superseded, dead_letters)`: the names of
+    the rules every outcome fired, in order; the leases it lapsed, in the order they
+    lapsed, as the state keeps them once ended; and the superseded records and dead
+    letters that decayed, as they stood. A due input whose outcome fired no rule is not
+    reported. Where an outcome fails, the owner answers `PartialTick(report, failure)`
+    instead (G59).
+  - The four tables are named `LeaseLapses`, `LeaseLapsed`, `SupersededRecordDecays`
+    and `DeadLetterDecays`. Three of those are the double's own: the specification
+    names no temporal trigger, so each clock trigger's table takes the name of its one
+    rule. `LeaseLapsed` is the event's name.
+  - Every other trigger reads the clock lazily, at most once and only when a rule asks
+    (G05).
+- **`N`-note:** agrees with N33. It departs in the report's shape: N33's `TickReport`
+  has the lapsed leases and the decayed entries, and this one also has `fired`, which
+  the coverage check reads, as it reads the owner's reply to an action (G15). Neither
+  is the Rust's, which has the lapsed leases and two counts.
+- **Question:** N33's. Should the specification, or a surface, name how the temporal
+  triggers are processed and what that processing reports?
+
+### G57: one tick lapses in `expires_at` order, then decays in queue order (`impl-choice` where a test asserts it)
+
+- **Ticket:** GD06.
+- **Concerns:** `LeaseLapses`, `SupersededRecordDecays` and `DeadLetterDecays`; the
+  `Lease` entity's `granted_at`; G19, G24 and G38.
+- **The specification says:** every trigger due at `now` fires. It gives no order among
+  several due at once.
+- **The double does:**
+  - First the lapses: the active leases whose `expires_at <= now`, sorted by
+    `expires_at` with the standard library's sort, which is stable. Equal `expires_at`
+    keep the order of the state's list of leases, which is the order they were created
+    in (G19). Then, over the state the lapses left, the superseded records and then the
+    dead letters whose `expires_at <= now`, each queue oldest entry first.
+  - A tie goes by creation order, not by `granted_at`. Only `PullClaimsFrontPocket`
+    creates a lease, at its own `now`, and adds it at the end of the list, so the two
+    agree while the clock does not go back. Two leases granted at one instant have
+    equal `granted_at` and are ordered by creation. The injected clock may go back,
+    and the double does not clamp it, and then the two can disagree. "a tie in
+    expires_at lapses in creation order, even against granted_at after the clock
+    stepped back" builds that state through the owner: `c1`'s lease granted at
+    t0 + 10, `c2`'s at t0 after the clock is set back, `c2`'s renewed at t0 + 10, both
+    expiring at t0 + 20. The tick lapses `c1`'s first, by creation, where `granted_at`
+    would put `c2`'s first. A scratch sort that broke ties by `granted_at` failed that
+    test alone (`ai_tmp/review/GD06-1/ev-C3-tie-by-granted-killed.txt`).
+  - "a tick lapses in expires_at order, with equal expires_at in grant order" grants
+    `lease-1` to `lease-3` at t0 and `lease-4` at t0 + 3, renews `lease-1` at t0 + 5,
+    and ticks at t0 + 20. The report lists `lease-2`, `lease-3`, `lease-4`, `lease-1`.
+    The tied pair were granted at the same instant, so the test pins creation order
+    against a tie in `granted_at` too. Their consumers, `c3` then `c2`, are not in id
+    order, so a tie broken by consumer would show.
+  - "two distinct superseded entries due in one tick decay in queue order" leaves S073's
+    two entries until both are overdue; one tick decays and reports the one shed first,
+    then the other. S074's port, "dead letters decay at the lease's end plus
+    dead_letter_ttl", already fails if the due dead letters are reversed
+    (`ai_tmp/review/GD06-1/ev-B2-letters-reverse-killed.txt`).
+  - "a tick lapses in expires_at order, with equal expires_at in grant order", "a tie
+    in expires_at lapses in creation order, even against granted_at after the clock
+    stepped back" and "two distinct superseded entries due in one tick decay in queue
+    order" are `impl-choice`: the specification orders none of what they assert, and
+    each test's comment says so.
+  - No expiry rule allots a position, and one active lease per pocket keeps two lapses
+    apart. So the order changes no pocket and no record. It shows in the order of the
+    report and of `fired`, and in the order in which two lapses' `Freed` rows add
+    entries to the shed queues, as G38 says of one end's entries.
+  - The decays run only if every lapse succeeded (G59).
+- **`N`-note:** agrees with N34, whose ties go "in the order the leases were granted".
+  This double states the tie within one instant, which N34 does not.
+- **Question:** N34's, as N29's: should the specification order what several lapses in
+  one tick create, or say that the order is not observable?
+
+### G58: an entry a lapse creates with a zero TTL decays in the same tick (S007)
+
+- **Ticket:** GD06.
+- **Concerns:** `SupersedeUnsettledHeldVersion`, `DeadLetterNackedRecord`,
+  `DeadLetterNackedVersionQueueDeferred`, the two decays, `SupersededTtlNonNegative`,
+  `DeadLetterTtlNonNegative`, and scenario S007.
+- **The specification says:** a zero TTL is admitted, and then `expires_at` equals the
+  timestamp it is measured from. An entry a lapse creates at `now` therefore has
+  `expires_at = now`, and `expires_at <= now` holds at once.
+- **The double does:**
+  - `core.tick` finds the due decays in the state its lapses left, at the same `now`.
+    So an entry a lapse creates with a zero TTL decays in the tick whose lapse made it,
+    and once a tick returns `Ok` nothing is due at its `now`. A tick answered
+    `PartialTick` stopped at a failed outcome, and what was due after it, a decay
+    included, is still due (G59).
+  - "an entry a lapse creates with a zero TTL decays in the same tick" lapses a lease
+    over a nacked record and an unsettled one with a newer version deferred. The one
+    tick fires `LeaseLapses`, `LeaseExpiryKeepsPocketAtFront`,
+    `DeadLetterNackedRecord`, `SupersedeUnsettledHeldVersion`, `SupersededRecordDecays`
+    and `DeadLetterDecays`, reports both entries with `expires_at` the tick's `now`,
+    leaves both queues empty, and a second tick at the same instant reports nothing.
+  - S007's port, "zero superseded and dead-letter TTLs decay at once, the dead letter at
+    its lease's end", makes its entries by a supersede and a release, and one tick at
+    the same instant decays both.
+- **`N`-note:** agrees with N35.
+- **Question:** N35's. Is "nothing is due once a tick succeeds" intended? The other
+  reading, that an entry made in a tick waits for the next one, also satisfies every
+  rule.
+
+### G59: a tick keeps each outcome that succeeded before a failure, and does not roll back
+
+- **Ticket:** GD06.
+- **Concerns:** the three clock triggers; the Lease expiry and Lease end comments; the
+  checker; shared rule 4 of the GD tickets ("On an `Error` the owner replies with it and
+  keeps the state it had"); finding 9 of `double/SPEC-NOTES.md`.
+- **The specification says:** each due trigger fires, and the invariants hold after each
+  outcome. It does not group the outcomes of one instant, and so says nothing of one
+  that fails among several.
+- **The double does:**
+  - A tick is one message and several outcomes. `core.run_due` runs them in order, each
+    over the state the one before left, each to its end and through the checker. At the
+    first that fails it stops. The outcomes before it stand, the failed outcome leaves
+    no state, and the outcomes after it never run. If a lapse fails, no decay runs.
+  - The owner keeps the state the last outcome that succeeded left and answers
+    `Error(PartialTick(report, failure))`, where `report` is what the outcomes before
+    the failure did. Nothing is rolled back to the state before the `Tick`.
+  - **This departs from shared rule 4 for a tick as a whole.** Each outcome holds to
+    it: an outcome that fails changes nothing. The `Tick` message does not: the owner
+    answers an `Error` and keeps a state the message changed. The ticket's step 5 asked
+    for that choice to be made, and this is the one made.
+  - An outcome a tick runs must ask for nothing. `run_at` hands it the tick's `now`, so
+    a row that asks for the time is answered without a read; one that asks for a lease
+    id, or one run without `now` in hand that asks for the time, stops the run as a
+    defect. No temporal row asks for a lease id.
+  - The tests:
+    - `core_test`'s "a run of due outcomes keeps each outcome that succeeded before a
+      failure, stops at the failure, and checks each outcome at its end", on scratch
+      tables: three outcomes add the publishers `q`, `p` and `r`, and `p` is taken. The
+      run keeps `q`, fails with `BrokenInvariant(["UniquePublisherId"])`, and never
+      adds `r`. A checker run once at the end of the run would not have stopped it.
+    - `core_test`'s "a due outcome that asks for a lease id or for the time is a defect
+      of the tick".
+    - `expiry_test`'s "a tick whose second lapse fails keeps the first, stops there, and
+      decays nothing", through the real tables over a state built by hand: the second
+      lapse parks a pocket that has already seen the limit, the checker names
+      `ExpiriesWithinLimit`, and the due superseded record stays in its queue.
+      `core.tick` is pure and is called directly.
+    - `owner_test`'s "a tick whose outcome fails is answered PartialTick, and the owner
+      keeps what the outcomes before it did", through the owner. A lease-id source that
+      repeats an id leaves two active leases named `lease-2` (G27). The tick lapses
+      `lease-1`; its second lapse ends both `lease-2` leases, which leaves pocket `c`
+      leased with no active lease, and the checker names `LeasedHasOneActiveLease`. The
+      owner answers `PartialTick` with `lease-1`'s lapse, keeps that state, and reads the
+      clock once. Its comment calls this the one way a tick through the owner can fail
+      with the specification's tables; nothing proves that.
+  - A failure that stays in the state stops every later tick at the same place. The
+    `owner_test` test ticks a second time, meets the same failure, and changes nothing,
+    so nothing after the failing outcome, such as a decay, is ever applied.
+- **`N`-note:** agrees with N33 and finding 9, which record that the Python double
+  commits each lapse and each decay as it goes. `PartialTick` has no `N`-note.
+- **Question:** finding 9's: should a tick be atomic as a whole? This double adds one:
+  should one outcome that cannot be applied hold back the outcomes due after it, at
+  this tick and at every later one?
+
+### G60: a clock trigger's `expires_at <= now` is the tick's filter, and the trigger carries the tick's `now`
+
+- **Ticket:** GD06.
+- **Concerns:** `LeaseLapses`'s `when: lease: Lease.expires_at <= now`, the two decays'
+  `when` clauses, the `LeaseLapsed(lease)` event, the three expiry rules'
+  `requires: lease.expires_at <= now`, and G05.
+- **The specification says:** a clock trigger binds an entity whose `expires_at <= now`.
+  `LeaseLapses` ensures `LeaseLapsed(lease: lease)`, which carries no time, and each
+  expiry rule that answers it requires `lease.expires_at <= now` again.
+- **The double does:**
+  - The comparison in each `when` is `core.tick`'s filter: it offers `LeaseLapses` only
+    the active leases whose `expires_at <= now`, and each decay only the entries whose
+    `expires_at <= now`. `LeaseLapses`'s guard is its `requires: lease.status = active`
+    alone, and the decays' guards hold while the entry is in its queue (G64).
+  - A guard cannot read the clock (G05), so a `requires` that reads `now` reads it from
+    the trigger's input. `LeaseLapses`'s input is `Lapse(lease, now)`, the lease's id
+    and the tick's `now`. Its effect asks for `now`, which `run_at` answers with the
+    same value, and emits `LeaseLapsed(lease, now)`. The expiry rules' guards compare
+    `expires_at` with the `now` the event carries.
+  - So the double's `LeaseLapsed` carries a time the specification's does not. It is the
+    `now` of the outcome that emitted it. The double reads one outcome as having one
+    `now`, shared by the rule a trigger reached and the rules its events reach (G05);
+    the specification does not say so, and the event's field makes that reading hold for
+    the expiry guards, which cannot ask for the time.
+  - "LeaseLapses changes nothing, emits LeaseLapsed with the tick's now, and holds only
+    for an active lease" pins the event. "the LeaseLapsed rows hold only for an active
+    lease past expires_at at the event's now on a leased pocket, and otherwise nothing
+    happens" sends the event a millisecond before `expires_at`, and no row holds.
+- **`N`-note:** agrees with N37 that the `<= now` is the tick's filter. The time the
+  event carries has no `N`-note.
+- **Question:** should the specification say that a rule answering an event reads the
+  `now` of the outcome that emitted it, so that an event need carry no time? As
+  written, `requires: lease.expires_at <= now` in an expiry rule assumes it.
+
+### G61: the expiry rules' answer when no guard holds is unreachable through the owner
+
+- **Ticket:** GD06.
+- **Concerns:** `LeaseLapses`; the three expiry rules' `requires: lease.status = active`,
+  `requires: lease.expires_at <= now` and `requires: pocket.status = leased`; the two
+  decays; the Lease expiry comment; G23 and G39.
+- **The specification says:** "the lapse stops at its guards unless that new expires_at
+  has also passed by the time the lapse is processed". It does not say whether a lapse
+  that reaches the expiry rules can find none of their guards holding.
+- **The double does:**
+  - Each of the four temporal tables answers that nothing happens when no guard holds,
+    as shared rule 4 of the GD tickets states for the lapse and the two decays. Two of
+    those answers are told apart here.
+  - The `LeaseLapses` table's. A tick offers only active leases, and while no two leases
+    share an id one lapse ends only its own lease, so the guard holds for every lease
+    offered. Two leases of one id are G27's case, and G59's `owner_test` test meets
+    it. The test "a lease lapses once: a second tick at the same instant lapses nothing
+    and changes nothing" shows that an expired lease is not offered again, not that the
+    table refuses it. One mutant from the mutation pass offered each due lease twice
+    and survived as equivalent: the second offer stops at this guard, and nothing
+    happens.
+  - The `LeaseLapsed` table's. `LeaseLapses` and its expiry rule are one outcome, so
+    the expiry rules read the state the tick filtered, and their restated guards hold.
+    Under branch A a late action's effect shows at the filter, never at those guards:
+    a renewed lease is due only once its new `expires_at` has passed, at once when
+    `lease_ttl` is 0 (S006, S066, S067), and then the guards hold; a released one is
+    not active (G63). So through
+    the owner the answer is not reached. "the LeaseLapsed rows hold only for an active
+    lease past expires_at at the event's now on a leased pocket, and otherwise nothing
+    happens" reaches it through `core.run_at`, over a state built by hand: the event a
+    millisecond before `expires_at`, the lease released or expired, the pocket queued,
+    idle or parked, and an id that names no lease.
+  - Dispatch evaluates all three expiry guards on every lapse and returns
+    `GuardOverlap` if two hold, so each lapse through the owner shows that exactly one
+    answers.
+- **`N`-note:** agrees with N37. N37's hand-built cases are a renewed, a released and
+  an expired lease and a pocket that is not leased; this double's add an id that names
+  no lease.
+- **Question:** N37's, as N14's and N26's: are the expiry rules' `lease.status = active`
+  and `lease.expires_at <= now` guards in their own right, or restatements of what
+  `LeaseLapses` already established in the same chain?
+
+### G62: what "the owner may apply a lapse ahead of an already-queued action" permits that the double does not do
+
+- **Ticket:** GD06.
+- **Concerns:** the Lease expiry comment; the `ExpiryRecoversWithinTtl` guarantee;
+  decision 0019's closure of open question 8; G32.
+- **The specification says:** "A pull, ack, nack, renew or release that the
+  implementation processes after expires_at but before the lapse therefore succeeds, as
+  long as its other guards hold; arrival order does not decide, since the owner may
+  apply a lapse ahead of an already-queued action." `ExpiryRecoversWithinTtl` says a
+  silent consumer loses its lease "lease_ttl after the last of them, plus the delay
+  before the lapse is processed". Decision 0019 gives the reason: "The tick lane is
+  polled first, so a ready tick can apply a lapse ahead of an action queued earlier,
+  which the owner then applies as if it came after the lapse".
+- **The double does:**
+  - One mailbox, and no second lane. A lapse happens only inside a `Tick`, and the owner
+    takes a `Tick` in its turn among the messages. So a lapse is never applied ahead of
+    a message that reached the mailbox before its `Tick`, and an action sent before a
+    `Tick` from the same process is always applied first.
+  - No lapse happens without a `Tick`. A lease whose `expires_at` has passed stays
+    active until a `Tick` reaches it, and every action that names it meanwhile is a late
+    action and succeeds. The "delay before the lapse is processed" is however long the
+    caller waits to send a `Tick`; nothing bounds it.
+  - What the sentence permits and the double never does, then: a lapse that overtakes an
+    action already queued, and a lapse that comes about with no tick sent. Each order the
+    double can produce is one the sentence allows, and both orders the guards must
+    decide are produced by choosing which message to send first (G63).
+  - Decision 0019 also says "A tick samples now once, so a lease that expires during a
+    long tick waits for the next one". The double's tick reads the clock once too (G56).
+    Its fake clock does not move during a tick.
+- **`N`-note:** no `N`-note. N33 records branch A, and not the mailbox's order.
+- **Question:** is a lapse overtaking a queued action meant to be a freedom of the
+  implementation only, or something every implementation must be able to show? A double
+  that never shows it still satisfies every rule, since the guards decide in either
+  order.
+
+### G63: branch A in both orders, competing callers, and the break that lapses a lease from an action
+
+- **Ticket:** GD06.
+- **Concerns:** the Lease expiry comment; decision 0019's branch A; `Renew`,
+  `ReleaseRequeuesPocket`, `AckMarksRecord` and `PullWithinLease`; `LeaseLapses`;
+  scenarios S066 and S067; G32.
+- **The specification says:** a renewal, ack, nack or pull processed first "moves
+  expires_at to now + lease_ttl", and a release processed first ends the lease; "the
+  guards above decide in either order".
+- **The double does:**
+  - S066 and S067 have two halves each, in four Rust tests, and each half is its own
+    registered test carrying the scenario's tag: S066's "a renew after expires_at but
+    before the lapse succeeds (branch A)" and "a release after expires_at but before the
+    lapse succeeds (branch A)", and S067's "an ack after expires_at but before the
+    lapse succeeds (branch A)" and "a pull after expires_at but before the lapse extends
+    the lease (branch A)".
+  - The Rust has no late nack. "a nack after expires_at but before the lapse succeeds
+    and extends the lease from its own time (branch A)", with no scenario tag, runs the
+    same two orders for a nack, and asserts the lease extended to t0 + 21, from the
+    nack's time. A scratch nack that extended from the passed `expires_at` survived
+    every test before it and fails it
+    (`ai_tmp/review/GD06-1/ev-B1-nack-min-survives.txt`, `ev-B1-nack-min-killed.txt`).
+  - The Rust forks one queue into two. The double cannot fork an owner, so each half
+    builds the same setup on two owners, asserts their snapshots equal, and drives both
+    from the one test process, whose messages each owner takes in the order they were
+    sent. On the first the `Tick` goes first: it lapses the lease, and the action behind
+    it is fenced, or for the pull claims the pocket under a new lease. On the second the
+    action goes first: it succeeds and moves `expires_at` on, or for the release ends
+    the lease, and the `Tick` behind it lapses nothing.
+  - An action never lapses a lease: no action's row emits `LeaseLapsed`. That is a
+    property of the rows, not of a type: `LeaseLapsed` is an `Event`, and the apply
+    step answers it from whichever row emits it.
+  - The break the ticket's step 4 asks for is recorded in
+    `ai_tmp/gd/GD06/ev-a-break.txt`. A scratch change to `settle.gleam` made `Renew`
+    emit `LeaseLapsed` for a lease past its `expires_at`, so the renew lapsed its own
+    lease. `just gleam-double` exited with status 1, `253 tests run, 251 passed`: S066's
+    renew half failed, its renew answering `Renew`, `LeaseExpiryKeepsPocketAtFront` and
+    `RequeueUnsettledRecord`, and so did the competing-callers test. The file was
+    restored and its SHA-256 matched.
+  - "a renew and a tick sent at once by two callers agree whichever the owner takes
+    first", with no scenario tag, starts a process that renews and one that ticks and
+    lets both go at once from gates. It runs twenty times, ten with each started first.
+    Each run asserts an empty `check` and one of two consistent results: the renew
+    succeeded, the tick lapsed nothing and the lease is active, expiring at t0 + 21; or
+    the tick lapsed the lease, the renew was fenced, and the pocket and its record are
+    queued. It never asserts which came first, and it cannot show that both orders
+    occurred. A scratch print showed both, but its output was not saved.
+- **`N`-note:** agrees with N33 that an action never lapses a lease, and with N38's
+  ruling for S066's release half (G67). The competing callers have no `N`-note.
+- **Question:** none on the behaviour, which decision 0019 closed. As G32: should the
+  catalog hold a row in which an action and a lapse compete?
+
+### G64: a decay names its entry by value and removes one occurrence (the first is `impl-choice`)
+
+- **Ticket:** GD06.
+- **Concerns:** `SupersededRecordDecays` (`when: shed: SupersededRecord.expires_at <=
+  now`, `ensures: not exists shed`), `DeadLetterDecays`, and G11.
+- **The specification says:** each decay's trigger binds one entry, and the rule removes
+  that entry. It declares no identity for an entry and does not say what tells two equal
+  entries apart (G11).
+- **The double does:**
+  - An entry is a value, with no identity apart from its fields (G11). The trigger's
+    input is the entry itself. Its guard holds while an equal entry is in the queue, and
+    its effect removes the first equal one and keeps every other entry in its order.
+  - Two entries can be equal: two stale publishes of one key at one rank at one instant
+    shed two identical `SupersededRecord`s. A tick offers both, each its own outcome,
+    and each removes one. "two identical stale versions both decay in one tick, and the
+    report names both" shows it through the owner. "a decay of one of two equal entries
+    removes the first and keeps the other" shows over a state built by hand that one
+    decay removes one occurrence, the first. That it is the first is `impl-choice`, and
+    the test's comment says so: the specification cannot tell equal entries apart, and
+    removing the last would leave the other entries in another order.
+  - Which of two equal entries goes cannot be told from the values, only from their
+    places in the list.
+  - "SupersededRecordDecays removes exactly the entry it is given and reads no clock"
+    and "DeadLetterDecays removes exactly the entry it is given and reads no clock"
+    compare the complete state.
+- **`N`-note:** no `N`-note.
+- **Question:** none on the behaviour. If PD07 or open question 2 makes an entry
+  something a reader names, should an entry have an identity, as G10 asks of a lease?
+
+### G65: only a publish revives a parked pocket, as the rules stand (`oq:7`)
+
+- **Ticket:** GD06.
+- **Concerns:** `ReviveParkedPocket`, open question 7 ("Can anything other than a
+  publish revive a parked pocket, such as an operator action or a cooldown?"), the
+  comment above `PublishNewKey`, and scenarios S024, S025, S026, S034, S062 and S092.
+- **The specification says:** `ReviveParkedPocket` answers `PocketTouched`, which only
+  `PublishNewKey`, `Supersede` and `DeferBehindHeldVersion` emit. A stale publish and a
+  publish at the stored rank emit nothing.
+- **The double does:**
+  - `ReviveParkedPocket` is the second row of the `PocketTouched` table, beside
+    `ReviveIdlePocket`; the two share one helper and differ in the status they require.
+    Nothing but those three Publish rules emits `PocketTouched`.
+  - S062's and S024's ports revive a parked pocket by a new key and by a supersede.
+    S025's and S092's show that a refused equal-rank publish and a stale publish leave
+    it parked with its count. S034's shows a parked pocket never claimed.
+  - S026's port, "only a publish revives a parked pocket (oq:7)", is labelled `oq:7` in
+    its comment and its name. Ticks at 1,000 ms and at 1,000,000 ms, and another
+    pocket's lease, publish and release, leave `a` parked with its count of 3.
+  - "ReviveParkedPocket changes exactly what it ensures and reads no clock" compares the
+    complete state.
+  - The double adds no cooldown and no operator action. The question stays open.
+- **`N`-note:** agrees with N36.
+- **Question:** open question 7 itself. If anything else may revive a parked pocket, it
+  needs a rule, and S026 changes with it.
+
+### G66: a port of a test that loops over `ENDINGS` is two registered tests, one per ending
+
+- **Ticket:** GD06.
+- **Concerns:** the Lease end comment ("A lease ends by release or by lapse"), its table
+  and the six `Freed` rules; scenarios S078, S079, S080, S081, S087 and S088.
+- **The specification says:** "The rules read the mark and never how the lease ended, so
+  a lapse keeps every ack and nack."
+- **The double does:**
+  - Six Rust tests loop over `ENDINGS`, ending the lease by a release at 50 ms or by a
+    tick at 2,000 ms. Each port is two registered tests carrying the same tag, named
+    ", by release" and ", by lapse", so the runner's count shows that both ran and the
+    coverage check sees the tag on each. That is twelve tests for six scenarios.
+  - The lapse half moves the clock past `expires_at` and ticks; nothing else ends the
+    lease. It asserts that the tick lapsed that lease alone, the rules it fired, and an
+    empty `check`, and then what the release half asserts, with the count of
+    consecutive expiries the lapse leaves and the lapse's `ended_at` in each entry.
+  - S089's Rust test has a lapse half only, and so has its port. S093's loops over the
+    two marks, not the endings: one test runs each mark on an owner of its own.
+  - S066 and S067 are two halves each in separate Rust tests (G63).
+- **`N`-note:** no `N`-note.
+- **Question:** none.
+
+### G67: S066's release half, S093 and S075 are ported as the Rust's inspection shape (the maintainer's ruling on N38)
+
+- **Ticket:** GD06.
+- **Concerns:** for S066's release half, `ReleaseRequeuesPocket` and the `Lease`
+  entity's `terminal: released, expired`; for S093, the Record comment and
+  `OldestSlotNewestPayload`; for S075, the Pocket comment ("Queued pockets are ordered
+  by position, smallest first. That order is the pocket order; nothing else positions a
+  pocket."), `UniquePocketPosition`, `UniqueRecordPosition`, `PocketPositionsBelowNext`
+  and `RecordPositionsBelowNext`; the inspection seam.
+- **The specification says:** nothing of the Rust's snapshot shape.
+- **The double does:**
+  - It follows a ruling, not a reading of its own. On 2026-11-19 the maintainer accepted
+    the Python double's ports of these three rows as the Rust's inspection shape and
+    added them to PD07's scope.
+  - S066's release half asserts that the released lease stays in the state, released
+    with its `ended_at`, and that no lease is active, where the Rust asserts an empty
+    registry (G37).
+  - S093's port compares the pocket's records by key, where the Rust lists them in its
+    snapshot order (G49).
+  - S075's port asserts, at each step, the pocket positions distinct and below
+    `next_position`, the record positions distinct within each pocket and over all of
+    them and below `next_position`, and an empty `check`. The Rust also checks its
+    stored pocket order, which the double does not store.
+  - S075's Rust comment says that `a` lapses three times and parks. Traced through the
+    rules, `b` keeps the front after its first lapse, so the loop lapses `b` twice more,
+    which parks it, and then `a` once. The port asserts the rules each step fired, as
+    they trace, where the Rust asserts no fate.
+- **`N`-note:** agrees with N38 and follows its ruling.
+- **Question:** none on the behaviour. N38's stay open in PD07, which may change these
+  ports. Should S075's comment in the Rust say which pocket parks?

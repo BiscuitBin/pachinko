@@ -19,6 +19,11 @@ pub type Event {
   /// record of the held set. `lease` is the lease's id, and `ended_at` the
   /// time the rule that ended the lease wrote to its `ended_at`.
   Freed(lease: String, record_key: String, ended_at: Timestamp)
+  /// The clock found this lease active with its `expires_at` passed. `lease`
+  /// is the lease's id. The specification's `LeaseLapsed(lease)` carries no
+  /// time; `now` is the instant of the outcome that emitted it, the `now`
+  /// its `Tick` read, which the expiry rules' guards compare against.
+  LeaseLapsed(lease: String, now: Timestamp)
 }
 
 /// What a rule answers its caller. A pull answers one of these; every other

@@ -22,7 +22,7 @@
 //// naming the invariant each test's comment names.
 
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import harness.{type Double}
 import pachinko_double/config
 import pachinko_double/core
@@ -33,7 +33,8 @@ import pachinko_double/model.{
 }
 import pachinko_double/owner.{Outcome}
 import pachinko_double/rules.{
-  Applied, BrokenInvariant, Finish, NothingHappens, Row, Table,
+  Applied, BrokenInvariant, Defect, EffectFailed, Finish, LeaseId,
+  NothingHappens, Now, Row, Table,
 }
 import runner.{type Test, Test}
 
@@ -58,6 +59,16 @@ pub fn tests() -> List(Test) {
       "a publisher join through the apply step still succeeds",
       [],
       join_still_succeeds,
+    ),
+    Test(
+      "a run of due outcomes keeps each outcome that succeeded before a failure, stops at the failure, and checks each outcome at its end",
+      [],
+      run_due_keeps_what_succeeded,
+    ),
+    Test(
+      "a due outcome that asks for a lease id or for the time is a defect of the tick",
+      [],
+      run_due_asks_nothing,
     ),
     Test(
       "a publish of a new key into an idle pocket stands, though the pocket is idle with a record until the revival answers",
@@ -162,6 +173,91 @@ fn join_still_succeeds() -> List(String) {
   assert applied
     == Applied(with_publisher(joined(), "q"), ["PublisherJoins"], None)
   applied.fired
+}
+
+// A tick's due outcomes, run one after another --------------
+
+/// Step 5's choice, on scratch tables. Three outcomes, each a whole outcome
+/// through `core.run`: the first adds `q`, which stands; the second adds
+/// `p`, which is taken, so the checker fails that outcome with
+/// `BrokenInvariant`; the third would add `r`. The run keeps the first
+/// outcome's state, reports only its rules, never runs the third, and names
+/// the broken invariant. Were the checker run once at the end of the run
+/// instead, the second outcome would not stop it. The tick keeps what
+/// succeeded and does not roll back to the state before it.
+fn run_due_keeps_what_succeeded() -> List(String) {
+  let table = adds_publisher([])
+  let outcomes =
+    list.map(["q", "p", "r"], fn(id) {
+      fn(state) { core.run(table, id, state) }
+    })
+  assert core.run_due(joined(), outcomes)
+    == core.Ran(
+      state: with_publisher(joined(), "q"),
+      fired: [["AddsPublisher"]],
+      failure: Some(BrokenInvariant(["UniquePublisherId"])),
+    )
+  // With no failure every outcome runs, each over the state the one before
+  // left.
+  assert core.run_due(joined(), [
+      fn(state) { core.run(table, "q", state) },
+      fn(state) { core.run(table, "r", state) },
+    ])
+    == core.Ran(
+      state: joined() |> with_publisher("q") |> with_publisher("r"),
+      fired: [["AddsPublisher"], ["AddsPublisher"]],
+      failure: None,
+    )
+  ["AddsPublisher"]
+}
+
+/// An outcome a tick runs must be done without asking for anything. One
+/// whose row asks for a lease id, or one not run with the tick's `now` in
+/// hand whose row asks for the time, stops the run as a defect, keeping
+/// what came before.
+fn run_due_asks_nothing() -> List(String) {
+  let asks = fn(plan) {
+    Table(
+      "Scratch",
+      [Row("Asks", fn(_state, _id) { True }, fn(state, _id) { plan(state) })],
+      NothingHappens,
+    )
+  }
+  let id_table =
+    asks(fn(state) { LeaseId(fn(_id) { Finish(state, [], None) }) })
+  let now_table = asks(fn(state) { Now(fn(_now) { Finish(state, [], None) }) })
+  let first = fn(state) { core.run(adds_publisher([]), "q", state) }
+  assert core.run_due(joined(), [
+      first,
+      fn(state) { core.run(id_table, "x", state) },
+      fn(state) { core.run(adds_publisher([]), "r", state) },
+    ])
+    == core.Ran(
+      state: with_publisher(joined(), "q"),
+      fired: [["AddsPublisher"]],
+      failure: Some(Defect(
+        "Tick",
+        EffectFailed("Tick", "an outcome of a tick asked for a lease id"),
+      )),
+    )
+  assert core.run_due(joined(), [
+      first,
+      fn(state) { core.run(now_table, "x", state) },
+    ])
+    == core.Ran(
+      state: with_publisher(joined(), "q"),
+      fired: [["AddsPublisher"]],
+      failure: Some(Defect(
+        "Tick",
+        EffectFailed("Tick", "an outcome of a tick asked for the time"),
+      )),
+    )
+  // The same row run with a `now` in hand asks nothing of the outside.
+  assert core.run_due(joined(), [
+      fn(state) { core.run_at(now_table, "x", state, 5) },
+    ])
+    == core.Ran(state: joined(), fired: [["Asks"]], failure: None)
+  []
 }
 
 // The witness: the checker runs after the whole chained outcome ----------

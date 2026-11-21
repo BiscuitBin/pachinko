@@ -1433,8 +1433,8 @@ fn revive_idle_exactly() -> List(String) {
 /// `PocketTouched` is answered only for an idle or a parked pocket. For a
 /// queued pocket, a leased one, and a key no pocket has, nothing happens:
 /// no rule fires and the complete state is as it was, the pocket's position
-/// included. A parked pocket's revival is a rule that has not landed, and
-/// is not pinned here.
+/// included. A parked pocket's revival is `ReviveParkedPocket`'s, pinned in
+/// `expiry_test`.
 fn touched_and_not_idle() -> List(String) {
   let state = with_idle()
   let untouched = fn(state, pocket_key) {
@@ -1451,7 +1451,7 @@ fn touched_and_not_idle() -> List(String) {
 /// `requires: pocket.status = idle`. The idle pocket of `with_idle` holds
 /// the guard, and the same pocket parked does not. Only the row's guard is
 /// asserted: what `PocketTouched` does for a parked pocket is
-/// `ReviveParkedPocket`'s, a rule that has not landed.
+/// `ReviveParkedPocket`'s, pinned in `expiry_test`.
 fn revive_guard_not_parked() -> List(String) {
   let assert Ok(revive) =
     list.find(publish.pocket_touched().rows, fn(row) {

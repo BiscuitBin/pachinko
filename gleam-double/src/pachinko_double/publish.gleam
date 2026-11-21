@@ -7,9 +7,9 @@ import gleam/result
 import pachinko_double/config
 import pachinko_double/domain.{type Row, type Table, PocketTouched}
 import pachinko_double/model.{
-  type Pocket, type Reason, type Record, type State, Pocket, PocketIdle,
-  PocketQueued, Record, RecordHeld, RecordQueued, Stale, State, Superseded,
-  SupersededRecord,
+  type Pocket, type PocketStatus, type Reason, type Record, type State, Pocket,
+  PocketIdle, PocketParked, PocketQueued, Record, RecordHeld, RecordQueued,
+  Stale, State, Superseded, SupersededRecord,
 }
 import pachinko_double/refusals.{EqualRankRefused}
 import pachinko_double/rules.{
@@ -308,10 +308,13 @@ fn drop_stale_publish() -> Row(Publication) {
 }
 
 /// `PocketTouched(pocket_key)`. The two revive rules answer it only when
-/// the pocket is idle or parked; otherwise nothing happens. The one for an
-/// idle pocket is here.
+/// the pocket is idle or parked; otherwise nothing happens.
 pub fn pocket_touched() -> Table(String) {
-  Table("PocketTouched", [revive_idle_pocket()], NothingHappens)
+  Table(
+    "PocketTouched",
+    [revive_idle_pocket(), revive_parked_pocket()],
+    NothingHappens,
+  )
 }
 
 /// `ReviveIdlePocket`. A publish left a record in an idle pocket: the
@@ -319,12 +322,36 @@ pub fn pocket_touched() -> Table(String) {
 /// order, with its count of consecutive expiries reset. The position is
 /// allotted after the one the publish gave its record.
 fn revive_idle_pocket() -> Row(String) {
+  revive("ReviveIdlePocket", PocketIdle)
+}
+
+/// `ReviveParkedPocket`. A publish added or raised a record in a parked
+/// pocket: the pocket is queued again as an idle one is, at a fresh
+/// position at the back, with its count of consecutive expiries reset. Only
+/// a publish touches a pocket, so nothing else revives a parked one, as the
+/// rules stand (open question 7).
+fn revive_parked_pocket() -> Row(String) {
+  revive("ReviveParkedPocket", PocketParked)
+}
+
+/// The two revive rules, which differ in the status they require:
+///
+/// ```text
+/// requires: exists pocket
+/// requires: pocket.status = idle        -- or parked
+/// let position = queue.next_position
+/// ensures: pocket.status = queued
+/// ensures: pocket.position = position
+/// ensures: pocket.consecutive_expiries = 0
+/// ensures: queue.next_position = position + 1
+/// ```
+fn revive(name: String, from: PocketStatus) -> Row(String) {
   Row(
-    "ReviveIdlePocket",
+    name,
     fn(state: State, pocket_key: String) {
       case model.pocket(state.pockets, pocket_key) {
         Error(Nil) -> False
-        Ok(pocket) -> pocket.status == PocketIdle
+        Ok(pocket) -> pocket.status == from
       }
     },
     fn(state, pocket_key) {

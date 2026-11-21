@@ -3,12 +3,15 @@
 //// prints each failure and each coverage fault on its own line, then the
 //// counts, and crashes, which exits non-zero, on any of them.
 
+import branch_a_test
 import competing_test
 import config_test
 import consuming_test
 import core_test
 import coverage
 import coverage_test
+import decay_test
+import expiry_test
 import gleam/int
 import gleam/io
 import gleam/list
@@ -16,8 +19,10 @@ import identity_test
 import inspection_test
 import invariants_test
 import lease_end_test
+import lease_endings_test
 import lease_test
 import owner_test
+import parking_test
 import publish_test
 import pull_test
 import rules_test
@@ -39,7 +44,12 @@ fn modules() -> List(Module) {
     Module("lease_test", lease_test.tests()),
     Module("settle_test", settle_test.tests()),
     Module("lease_end_test", lease_end_test.tests()),
+    Module("lease_endings_test", lease_endings_test.tests()),
     Module("consuming_test", consuming_test.tests()),
+    Module("expiry_test", expiry_test.tests()),
+    Module("decay_test", decay_test.tests()),
+    Module("branch_a_test", branch_a_test.tests()),
+    Module("parking_test", parking_test.tests()),
     Module("coverage_test", coverage_test.tests()),
     Module("inspection_test", inspection_test.tests()),
     Module("invariants_test", invariants_test.tests()),

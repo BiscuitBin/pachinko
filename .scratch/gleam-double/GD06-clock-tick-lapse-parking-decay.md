@@ -473,9 +473,9 @@ probe=$(printf 'import gleam/erlang/process\nimport gleam/otp/actor\n' | rg -c "
 test "$probe" -eq 2
 importers=$(rg -l "$pattern" gleam-double/src)
 test "$importers" = "gleam-double/src/pachinko_double/owner.gleam"
-clock='send_after|process\.sleep|system_time|monotonic_time|import gleam/time|@external'
-probe=$(printf 'process.send_after(s, 5, Tick)\nprocess.sleep(5)\nos.system_time()\nerlang.monotonic_time()\nimport gleam/time/timestamp\n@external(erlang, "os", "timestamp")\n' | rg -c "$clock")
-test "$probe" -eq 6
+clock='send_after|\bsleep|system_time|monotonic_time|import gleam/time|@external'
+probe=$(printf 'process.send_after(s, 5, Tick)\nprocess.sleep(5)\nsleep(5)\nsleep_forever()\nos.system_time()\nerlang.monotonic_time()\nimport gleam/time/timestamp\n@external(erlang, "os", "timestamp")\n' | rg -c "$clock")
+test "$probe" -eq 8
 if rg -n "$clock" gleam-double/src; then exit 1; else test "$?" -eq 1; fi
 just check
 status=$(git status --short)

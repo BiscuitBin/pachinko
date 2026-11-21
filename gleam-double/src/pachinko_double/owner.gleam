@@ -4,11 +4,11 @@
 //// and the lease-id source are functions it is started with.
 
 import gleam/erlang/process.{type Subject}
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import pachinko_double/config.{type Config}
 import pachinko_double/consuming.{type LeaseView}
-import pachinko_double/core.{type Trigger}
+import pachinko_double/core.{type TickReport, type Trigger}
 import pachinko_double/domain.{type Answer, type Failure}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type State}
@@ -33,13 +33,22 @@ pub type Outcome {
 pub type Reply =
   Result(Outcome, Failure)
 
+/// What a tick answers when one of its outcomes failed: what the outcomes
+/// before it did, which the owner keeps, and the failure that stopped it.
+/// The outcomes after it never ran.
+pub type PartialTick {
+  PartialTick(report: TickReport, failure: Failure)
+}
+
 /// The owner's mailbox. `Act` carries any one trigger a surface provides,
 /// so each trigger sent is one message and `core.Trigger` holds the variant
-/// per trigger. The other two are reads, which change nothing: `Inspect`,
-/// the complete snapshot, and `LeaseView`, what the `Consuming` surface
-/// exposes to one consumer.
+/// per trigger. `Tick` is the clock: it reads `now` once and applies
+/// everything due, and nothing else makes time pass. The other two are
+/// reads, which change nothing: `Inspect`, the complete snapshot, and
+/// `LeaseView`, what the `Consuming` surface exposes to one consumer.
 pub opaque type Message {
   Act(trigger: Trigger, reply: Subject(Reply))
+  Tick(reply: Subject(Result(TickReport, PartialTick)))
   Inspect(reply: Subject(Snapshot))
   LeaseView(
     consumer: String,
@@ -76,6 +85,14 @@ fn handle(owner: Owner, message: Message) -> actor.Next(Owner, Message) {
     LeaseView(consumer, reply) -> {
       process.send(reply, core.lease_view(owner.state, consumer))
       actor.continue(owner)
+    }
+    Tick(reply) -> {
+      let ticked = core.tick(owner.state, owner.now())
+      process.send(reply, case ticked.failure {
+        None -> Ok(ticked.report)
+        Some(failure) -> Error(PartialTick(ticked.report, failure))
+      })
+      actor.continue(Owner(..owner, state: ticked.state))
     }
     Act(trigger, reply) ->
       case
@@ -166,6 +183,14 @@ pub fn lease_view(
   consumer: String,
 ) -> Result(Option(LeaseView), Failure) {
   process.call(owner, call_timeout, LeaseView(consumer, _))
+}
+
+/// The clock's trigger. The owner reads the clock once, whatever is due,
+/// and applies every lapse and every decay due at that `now`, each its own
+/// outcome, checked at its end. It keeps every outcome that succeeded: where
+/// one fails it stops there and answers `PartialTick`.
+pub fn tick(owner: Subject(Message)) -> Result(TickReport, PartialTick) {
+  process.call(owner, call_timeout, Tick)
 }
 
 /// The complete snapshot of the state, as it is when the owner reaches this

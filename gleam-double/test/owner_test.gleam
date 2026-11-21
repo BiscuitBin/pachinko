@@ -5,12 +5,15 @@ import gleam/erlang/process
 import gleam/list
 import gleam/option.{None}
 import harness
-import pachinko_double/config
-import pachinko_double/inspection.{Snapshot}
-import pachinko_double/model.{Publisher}
-import pachinko_double/owner.{Outcome}
+import pachinko_double/config.{Settings}
+import pachinko_double/inspection.{type Snapshot, Snapshot}
+import pachinko_double/model.{
+  LeaseActive, LeaseExpired, PocketLeased, PocketQueued, Publisher,
+}
+import pachinko_double/owner.{Outcome, PartialTick}
+import pachinko_double/publish.{Publication}
 import pachinko_double/refusals.{PublisherAlreadyJoined}
-import pachinko_double/rules.{Refused}
+import pachinko_double/rules.{BrokenInvariant, Refused}
 import runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
@@ -24,6 +27,11 @@ pub fn tests() -> List(Test) {
       "the same join from several processes succeeds exactly once",
       [],
       competing_joins,
+    ),
+    Test(
+      "a tick whose outcome fails is answered PartialTick, and the owner keeps what the outcomes before it did",
+      [],
+      partial_tick_keeps_what_ran,
     ),
   ]
 }
@@ -78,4 +86,75 @@ fn competing_joins() -> List(String) {
       Publisher("q"),
     ])
   harness.fired(double)
+}
+
+/// The one way a tick through the owner can fail with the specification's
+/// tables: a lease-id source that hands out an id twice. Its third draw
+/// repeats its second, so pockets `b` and `c` are leased under two leases
+/// both named `lease-2`. A tick that lapses `lease-1` and then the first
+/// `lease-2` ends both leases of that id, which leaves `c` leased with no
+/// active lease, and the checker fails that second outcome. The owner
+/// answers `PartialTick` with what the first outcome did, keeps the state it
+/// left, and reads the clock once.
+fn partial_tick_keeps_what_ran() -> List(String) {
+  let clock = harness.start_clock()
+  let ids = harness.start_lease_ids()
+  let draw = harness.lease_ids(ids)
+  let lease_id = fn() {
+    case draw() {
+      "lease-3" -> "lease-2"
+      id -> id
+    }
+  }
+  let assert Ok(config) =
+    config.new(Settings(..config.defaults(), lease_ttl: 10))
+  let assert Ok(started) = owner.start(config, harness.clock(clock), lease_id)
+  let queue = started.data
+  let assert Ok(_) = owner.publisher_joins(queue, "p")
+  list.each(["c1", "c2", "c3"], fn(consumer) {
+    let assert Ok(_) = owner.consumer_joins(queue, consumer)
+    Nil
+  })
+  list.each(["a", "b", "c"], fn(key) {
+    let assert Ok(_) =
+      owner.publish(queue, Publication("p", key, key <> "1", 1, <<key:utf8>>))
+    Nil
+  })
+  let assert Ok(_) = owner.pull(queue, "c1", 1)
+  harness.set_time(clock, 5)
+  let assert Ok(_) = owner.pull(queue, "c2", 1)
+  let assert Ok(_) = owner.pull(queue, "c3", 1)
+  let before = owner.inspect(queue)
+  let twins = fn(snapshot: Snapshot) {
+    list.filter(snapshot.leases, fn(lease) { lease.id == "lease-2" })
+  }
+  assert list.map(twins(before), fn(lease) { #(lease.pocket, lease.status) })
+    == [#("b", LeaseActive), #("c", LeaseActive)]
+  harness.set_time(clock, 15)
+  let reads = harness.clock_reads(clock)
+  let assert Error(PartialTick(report, BrokenInvariant(broken))) =
+    owner.tick(queue)
+  assert harness.clock_reads(clock) == reads + 1
+  assert list.contains(broken, "LeasedHasOneActiveLease")
+  let after = owner.inspect(queue)
+  let assert Ok(first) = model.lease(after.leases, "lease-1")
+  assert first.status == LeaseExpired(ended_at: 15)
+  assert report.lapsed == [first]
+  assert report.fired
+    == [
+      "LeaseLapses",
+      "LeaseExpiryKeepsPocketAtFront",
+      "RequeueUnsettledRecord",
+    ]
+  assert report.superseded == [] && report.dead_letters == []
+  // The second outcome left nothing: both leases named `lease-2` stand as
+  // they were, and their pockets are still leased.
+  assert twins(after) == twins(before)
+  assert list.map(after.pockets, fn(pocket) { #(pocket.key, pocket.status) })
+    == [#("a", PocketQueued), #("b", PocketLeased), #("c", PocketLeased)]
+  // A second tick meets the same failure and changes nothing more.
+  let assert Error(PartialTick(again, BrokenInvariant(_))) = owner.tick(queue)
+  assert again.lapsed == []
+  assert owner.inspect(queue) == after
+  []
 }

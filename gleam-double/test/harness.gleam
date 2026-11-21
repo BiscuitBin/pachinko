@@ -11,12 +11,13 @@ import gleam/option.{type Option, Some}
 import gleam/otp/actor
 import pachinko_double/config.{type Config, type Settings, Settings}
 import pachinko_double/consuming.{type HeldView, type LeaseView}
+import pachinko_double/core.{type TickReport}
 import pachinko_double/domain.{
   type Applied, type BatchRecord, type Failure, type Step, Batch,
 }
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type Pocket, type Record, PocketQueued}
-import pachinko_double/owner.{type Reply, Outcome}
+import pachinko_double/owner.{type PartialTick, type Reply, Outcome}
 import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{type Refusal}
 import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, Refused}
@@ -260,6 +261,18 @@ pub fn publish_as(
 /// A publish of a publication made by hand, for a payload that is not text.
 pub fn publish_publication(double: Double, publication: Publication) -> Reply {
   logged(double, owner.publish(double.owner, publication))
+}
+
+/// A tick, as the Rust fixture's `tick` without its check: the owner reads
+/// the clock once and applies everything due. A tick that succeeded is
+/// logged like any trigger.
+pub fn tick(double: Double) -> Result(TickReport, PartialTick) {
+  let reply = owner.tick(double.owner)
+  case reply {
+    Ok(report) -> process.send(double.log, Fired(report.fired))
+    Error(_) -> Nil
+  }
+  reply
 }
 
 /// A pull, as the Rust fixture's `try_pull`: whatever the owner replies.
