@@ -70,6 +70,21 @@ guards are disjoint. When no guard holds, the table's own answer applies:
 | `PocketTouched`, `LeaseLapsed`, `Lease.expires_at`, `SupersededRecord.expires_at`, `DeadLetter.expires_at` | Nothing happens |
 | `Handed`, `Freed` | `Defect`: some guard always holds |
 
+The package shows three interfaces, each in its own namespace, and the entities beside
+them. `tests/test_interface.py` pins each namespace's list of names.
+
+| Namespace | What it is for | Names |
+| --- | --- | --- |
+| `pachinko_double` | What a reader drives: the queue, its config and what it answers | `Queue`, `Config`, `Batch`, `NoPocketAvailable`, `TickReport`, `LeaseView`, `HeldRecordView`, `Snapshot` |
+| `pachinko_double.harness` | What a test builds a queue with and checks its state by | `Clock`, `LeaseIds`, `FakeClock`, `SequentialLeaseIds`, `check`, `Violation`, `ConfigValues` |
+| `pachinko_double.exceptions` | What the specification refuses, which a caller is meant to catch | `Refusal`, `ConfigRefused`, `PublisherAlreadyJoined`, `ConsumerAlreadyJoined`, `UnknownPublisher`, `UnknownConsumer`, `EqualRankRefused`, `PullRefused`, `LeaseFenced`, `RecordNotHeld`, `MarkConflict`, `ReleaseRefused` |
+| `pachinko_double.exceptions` | What means the double itself is wrong | `Defect`, `GuardOverlap`, `InvariantsBroken` |
+| `pachinko_double.model` | The entities, their enums and the durations | `Pocket`, `Record`, `Lease`, `Mark`, `MINUTE` and the rest of `model.py` |
+
+A namespace only re-exports: each name is defined in its own module, such as
+`refusals.py` or `effects.py`, and the tests import it from there. The rule modules are not listed at the top level;
+each is imported as `pachinko_double.<module>`.
+
 ### Entities
 
 | Entity | Held by | File |
@@ -237,7 +252,8 @@ field in the specification's names, leaving out fields that are null.
 
 ```pycon
 >>> from dataclasses import fields
->>> from pachinko_double import Config, FakeClock, Queue, SequentialLeaseIds, check
+>>> from pachinko_double import Config, Queue
+>>> from pachinko_double.harness import FakeClock, SequentialLeaseIds, check
 
 >>> def setting():
 ...     clock = FakeClock(0)
