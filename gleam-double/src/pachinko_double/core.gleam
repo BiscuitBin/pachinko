@@ -20,7 +20,7 @@ import pachinko_double/invariants
 import pachinko_double/lease_end.{Freeing}
 import pachinko_double/model.{
   type DeadLetter, type Lease, type State, type SupersededRecord, Consumer,
-  LeaseActive, Publisher, Queue, State,
+  Publisher, Queue, State,
 }
 import pachinko_double/publish.{type Publication}
 import pachinko_double/pull.{type Pull, Handover}
@@ -65,31 +65,26 @@ pub fn apply(state: State, trigger: Trigger) -> Step {
     // A consumer that never joined can neither pull, ack, nack, renew nor
     // release: each trigger takes a `Consumer`, and only a join makes one.
     // Each is refused before any rule runs, as the unknown publisher is.
-    Pull(request) ->
-      case joined(state, request.consumer) {
-        True -> run(pull.pull(), request, state)
-        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
-      }
-    Renew(request) ->
-      case joined(state, request.consumer) {
-        True -> run(settle.renew(), request, state)
-        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
-      }
-    Ack(request) ->
-      case joined(state, request.consumer) {
-        True -> run(settle.ack(), request, state)
-        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
-      }
-    Nack(request) ->
-      case joined(state, request.consumer) {
-        True -> run(settle.nack(), request, state)
-        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
-      }
-    Release(request) ->
-      case joined(state, request.consumer) {
-        True -> run(settle.release(), request, state)
-        False -> rules.fail(Refused(UnknownConsumer(request.consumer)))
-      }
+    Pull(request) -> {
+      use <- as_consumer(state, request.consumer)
+      run(pull.pull(), request, state)
+    }
+    Renew(request) -> {
+      use <- as_consumer(state, request.consumer)
+      run(settle.renew(), request, state)
+    }
+    Ack(request) -> {
+      use <- as_consumer(state, request.consumer)
+      run(settle.ack(), request, state)
+    }
+    Nack(request) -> {
+      use <- as_consumer(state, request.consumer)
+      run(settle.nack(), request, state)
+    }
+    Release(request) -> {
+      use <- as_consumer(state, request.consumer)
+      run(settle.release(), request, state)
+    }
   }
 }
 
@@ -104,6 +99,15 @@ pub fn lease_view(
   case joined(state, consumer_id) {
     True -> Ok(consuming.lease_view(state, consumer_id))
     False -> Error(Refused(UnknownConsumer(consumer_id)))
+  }
+}
+
+/// A consumer's trigger, run only where a consumer with this id has joined;
+/// otherwise the refusal.
+fn as_consumer(state: State, consumer_id: String, run: fn() -> Step) -> Step {
+  case joined(state, consumer_id) {
+    True -> run()
+    False -> rules.fail(Refused(UnknownConsumer(consumer_id)))
   }
 }
 
@@ -211,45 +215,45 @@ pub type Ticked {
 pub fn tick(state: State, now: Timestamp) -> Ticked {
   let due =
     state.leases
-    |> list.filter(fn(lease) {
-      lease.status == LeaseActive && lease.expires_at <= now
-    })
+    |> model.active
+    |> list.filter(fn(lease) { lease.expires_at <= now })
     |> list.sort(fn(a, b) { int.compare(a.expires_at, b.expires_at) })
-  let lapses =
-    run_due(
-      state,
-      list.map(due, fn(lease) {
-        run_at(expiry.lease_lapses(), Lapse(lease: lease.id, now:), _, now)
-      }),
-    )
-  let lapsed = applied(due, lapses.fired)
-  case lapses.failure {
-    Some(_) -> report(lapses, lapsed, [], [], lapses.fired)
+  let #(lapses, lapsed) =
+    sweep(Ran(state:, fired: [], failure: None), due, fn(lease) {
+      run_at(expiry.lease_lapses(), Lapse(lease: lease.id, now:), _, now)
+    })
+  let shed =
+    list.filter(lapses.state.superseded, fn(shed) { shed.expires_at <= now })
+  let letters =
+    list.filter(lapses.state.dead_letters, fn(letter) {
+      letter.expires_at <= now
+    })
+  let #(sheds, superseded) =
+    sweep(lapses, shed, fn(shed) {
+      run_at(decay.superseded_record_decays(), shed, _, now)
+    })
+  let #(decays, dead_letters) =
+    sweep(sheds, letters, fn(letter) {
+      run_at(decay.dead_letter_decays(), letter, _, now)
+    })
+  report(decays, lapsed, superseded, dead_letters)
+}
+
+/// One stage of a tick: the due inputs' outcomes, run from where the stages
+/// before left off, with the inputs whose outcome fired a rule. A stage
+/// after a failure does not run, so it reports nothing.
+fn sweep(
+  from: Ran,
+  due: List(a),
+  outcome: fn(a) -> fn(State) -> Step,
+) -> #(Ran, List(a)) {
+  case from.failure {
+    Some(_) -> #(from, [])
     None -> {
-      let shed =
-        list.filter(lapses.state.superseded, fn(shed) { shed.expires_at <= now })
-      let letters =
-        list.filter(lapses.state.dead_letters, fn(letter) {
-          letter.expires_at <= now
-        })
-      let decays =
-        run_due(
-          lapses.state,
-          list.append(
-            list.map(shed, fn(shed) {
-              run_at(decay.superseded_record_decays(), shed, _, now)
-            }),
-            list.map(letters, fn(letter) {
-              run_at(decay.dead_letter_decays(), letter, _, now)
-            }),
-          ),
-        )
-      report(
-        decays,
-        lapsed,
-        applied(shed, decays.fired),
-        applied(letters, list.drop(decays.fired, list.length(shed))),
-        list.append(lapses.fired, decays.fired),
+      let ran = run_due(from.state, list.map(due, outcome))
+      #(
+        Ran(..ran, fired: list.append(from.fired, ran.fired)),
+        applied(due, ran.fired),
       )
     }
   }
@@ -276,7 +280,6 @@ fn report(
   lapsed: List(Lease),
   superseded: List(SupersededRecord),
   dead_letters: List(DeadLetter),
-  fired: List(List(String)),
 ) -> Ticked {
   let found =
     list.map(lapsed, fn(lease) {
@@ -298,7 +301,7 @@ fn report(
   Ticked(
     state: ran.state,
     report: TickReport(
-      fired: list.flatten(fired),
+      fired: list.flatten(ran.fired),
       lapsed: list.filter_map(found, fn(found) { found.1 }),
       superseded:,
       dead_letters:,
@@ -362,36 +365,28 @@ fn world() -> World {
 fn chain(event: Event, cursor: Cursor, then: fn(Cursor) -> Step) -> Step {
   case event {
     PocketTouched(pocket_key) ->
-      rules.run(
-        publish.pocket_touched(),
-        pocket_key,
-        cursor,
-        world(),
-        fn(cursor, _answer) { then(cursor) },
-      )
+      answer(publish.pocket_touched(), pocket_key, cursor, then)
     Handed(pocket_key, record_key) ->
-      rules.run(
-        pull.handed(),
-        Handover(pocket_key:, record_key:),
-        cursor,
-        world(),
-        fn(cursor, _answer) { then(cursor) },
-      )
+      answer(pull.handed(), Handover(pocket_key:, record_key:), cursor, then)
     Freed(lease, record_key, ended_at) ->
-      rules.run(
+      answer(
         lease_end.freed(),
         Freeing(lease:, record_key:, ended_at:),
         cursor,
-        world(),
-        fn(cursor, _answer) { then(cursor) },
+        then,
       )
     LeaseLapsed(lease, now) ->
-      rules.run(
-        expiry.lease_lapsed(),
-        Lapse(lease:, now:),
-        cursor,
-        world(),
-        fn(cursor, _answer) { then(cursor) },
-      )
+      answer(expiry.lease_lapsed(), Lapse(lease:, now:), cursor, then)
   }
+}
+
+/// Runs an event's table within the outcome that emitted it, then goes on.
+/// An event's table answers nothing to the caller, so its answer is dropped.
+fn answer(
+  table: Table(input),
+  input: input,
+  cursor: Cursor,
+  then: fn(Cursor) -> Step,
+) -> Step {
+  rules.run(table, input, cursor, world(), fn(cursor, _answer) { then(cursor) })
 }

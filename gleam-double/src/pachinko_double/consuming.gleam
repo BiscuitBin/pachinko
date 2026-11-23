@@ -2,7 +2,6 @@
 //// read, not a trigger: it goes through no table, reads no clock and
 //// changes nothing.
 
-import gleam/int
 import gleam/list
 import gleam/option.{type Option}
 import pachinko_double/inspection
@@ -42,7 +41,7 @@ pub fn lease_view(state: State, consumer: String) -> Option(LeaseView) {
       views.pockets
       |> list.filter(fn(view) { view.pocket.key == lease.pocket })
       |> list.flat_map(fn(view) { view.held_records })
-      |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
+      |> model.oldest_first
       |> list.filter_map(fn(record) {
         case record.status {
           RecordQueued -> Error(Nil)

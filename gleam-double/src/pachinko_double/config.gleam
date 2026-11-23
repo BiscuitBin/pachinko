@@ -49,7 +49,7 @@ pub fn new(settings: Settings) -> Result(Config, Refusal) {
 }
 
 /// The names of the config invariants the settings break.
-pub fn broken(settings: Settings) -> List(String) {
+fn broken(settings: Settings) -> List(String) {
   [
     #("ExpiryLimitPositive", settings.max_consecutive_expiries >= 1),
     #("PullBatchPositive", settings.max_pull_batch >= 1),

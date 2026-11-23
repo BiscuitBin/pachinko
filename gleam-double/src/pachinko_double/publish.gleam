@@ -5,7 +5,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
-import pachinko_double/domain.{type Row, type Table, PocketTouched}
+import pachinko_double/domain.{type Plan, type Row, type Table, PocketTouched}
 import pachinko_double/model.{
   type Pocket, type PocketStatus, type Reason, type Record, type State, Pocket,
   PocketIdle, PocketParked, PocketQueued, Record, RecordHeld, RecordQueued,
@@ -63,6 +63,25 @@ fn pocket(state: State, publication: Publication) -> Result(Pocket, Nil) {
 fn record(state: State, publication: Publication) -> Result(Record, Nil) {
   use pocket <- result.try(pocket(state, publication))
   model.record(state.records, pocket: pocket.key, key: publication.record_key)
+}
+
+/// A rule's effect over the record its guard saw. Where that is missing,
+/// which only a wrong guard could bring about, the outcome is a defect.
+fn stored(
+  state: State,
+  publication: Publication,
+  effect: fn(Record) -> Plan,
+) -> Plan {
+  case record(state, publication) {
+    Error(Nil) ->
+      Impossible(
+        "no record "
+        <> publication.record_key
+        <> " in pocket "
+        <> publication.pocket_key,
+      )
+    Ok(record) -> effect(record)
+  }
 }
 
 /// `SupersededRecord.created(...)` for one version of the publication's key:
@@ -178,38 +197,17 @@ fn supersede() -> Row(Publication) {
       }
     },
     fn(state, publication) {
-      case record(state, publication) {
-        Error(Nil) ->
-          Impossible(
-            "no record "
-            <> publication.record_key
-            <> " in pocket "
-            <> publication.pocket_key,
-          )
-        Ok(record) -> {
-          use now <- Now
-          let state =
-            shed(
-              state,
-              publication,
-              record.rank,
-              record.payload,
-              Superseded,
-              now,
-            )
-          let raised =
-            Record(
-              ..record,
-              rank: publication.rank,
-              payload: publication.payload,
-            )
-          Finish(
-            State(..state, records: model.replace_record(state.records, raised)),
-            [PocketTouched(publication.pocket_key)],
-            None,
-          )
-        }
-      }
+      use record <- stored(state, publication)
+      use now <- Now
+      let state =
+        shed(state, publication, record.rank, record.payload, Superseded, now)
+      let raised =
+        Record(..record, rank: publication.rank, payload: publication.payload)
+      Finish(
+        State(..state, records: model.replace_record(state.records, raised)),
+        [PocketTouched(publication.pocket_key)],
+        None,
+      )
     },
   )
 }
@@ -235,43 +233,34 @@ fn defer_behind_held_version() -> Row(Publication) {
       }
     },
     fn(state, publication) {
-      case record(state, publication) {
-        Error(Nil) ->
+      use record <- stored(state, publication)
+      case record.status {
+        RecordQueued ->
           Impossible(
-            "no record "
+            "record "
             <> publication.record_key
             <> " in pocket "
-            <> publication.pocket_key,
+            <> publication.pocket_key
+            <> " is not held",
           )
-        Ok(record) ->
-          case record.status {
-            RecordQueued ->
-              Impossible(
-                "record "
-                <> publication.record_key
-                <> " in pocket "
-                <> publication.pocket_key
-                <> " is not held",
-              )
-            RecordHeld(..) as held -> {
-              use position <- Position
-              let deferred =
-                Record(
-                  ..record,
-                  rank: publication.rank,
-                  payload: publication.payload,
-                  status: RecordHeld(..held, deferred_position: Some(position)),
-                )
-              Finish(
-                State(
-                  ..state,
-                  records: model.replace_record(state.records, deferred),
-                ),
-                [PocketTouched(publication.pocket_key)],
-                None,
-              )
-            }
-          }
+        RecordHeld(..) as held -> {
+          use position <- Position
+          let deferred =
+            Record(
+              ..record,
+              rank: publication.rank,
+              payload: publication.payload,
+              status: RecordHeld(..held, deferred_position: Some(position)),
+            )
+          Finish(
+            State(
+              ..state,
+              records: model.replace_record(state.records, deferred),
+            ),
+            [PocketTouched(publication.pocket_key)],
+            None,
+          )
+        }
       }
     },
   )

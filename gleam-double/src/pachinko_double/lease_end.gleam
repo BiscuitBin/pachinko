@@ -10,16 +10,15 @@
 //// carries, the time the ending rule wrote to the lease, so no rule here
 //// asks for the time.
 
-import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
 import pachinko_double/domain.{type Event, type Row, type Table, Freed}
 import pachinko_double/model.{
-  type DeadLetter, type Lease, type Mark, type Record, type State, Acked,
-  DeadLetter, Lease, LeaseExpired, LeaseReleased, Nacked, Record, RecordHeld,
-  RecordQueued, State, Superseded, SupersededRecord, Unsettled,
+  type DeadLetter, type HeldRecord, type Lease, type Record, type State, Acked,
+  DeadLetter, Lease, LeaseExpired, LeaseReleased, Nacked, Record, RecordQueued,
+  State, Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/rules.{Defective, Finish, Impossible, Row, Table}
 import pachinko_double/time.{type Timestamp}
@@ -63,7 +62,7 @@ pub fn end(
     state.records
     |> model.records_of(lease.pocket)
     |> model.held
-    |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
+    |> model.oldest_first
     |> list.map(fn(record) {
       Freed(lease: lease.id, record_key: record.key, ended_at: at)
     })
@@ -109,42 +108,13 @@ pub fn freed() -> Table(Freeing) {
 
 /// What a `Freed` rule reads: the lease the event names, for `lease.pocket`
 /// and `lease.consumer`, and the held record `Record{pocket: lease.pocket,
-/// key: record_key}` with the five fields only a held record has.
-type Held {
-  Held(
-    lease: Lease,
-    record: Record,
-    held_rank: Int,
-    held_payload: BitArray,
-    mark: Mark,
-    nacked_at: Option(Timestamp),
-    deferred_position: Option(Int),
-  )
-}
-
-/// The record a `Freed` names, where it `exists` in the lease's pocket and
-/// `record.status = held`. The lease is the one with the id the event
-/// carries, whatever its status: the rule that ended it has already run.
-fn held(state: State, freeing: Freeing) -> Result(Held, Nil) {
+/// key: record_key}`. It is the record a `Freed` names, where it `exists` in
+/// the lease's pocket and `record.status = held`. The lease is the one with
+/// the id the event carries, whatever its status: the rule that ended it has
+/// already run.
+fn held(state: State, freeing: Freeing) -> Result(HeldRecord, Nil) {
   use lease <- result.try(model.lease(state.leases, freeing.lease))
-  use record <- result.try(model.record(
-    state.records,
-    pocket: lease.pocket,
-    key: freeing.record_key,
-  ))
-  case record.status {
-    RecordQueued -> Error(Nil)
-    RecordHeld(held_rank:, held_payload:, mark:, nacked_at:, deferred_position:) ->
-      Ok(Held(
-        lease:,
-        record:,
-        held_rank:,
-        held_payload:,
-        mark:,
-        nacked_at:,
-        deferred_position:,
-      ))
-  }
+  model.held_under(state.records, lease, freeing.record_key)
 }
 
 /// A `Freed` rule's effect over what its guard saw. Where that is missing,
@@ -152,7 +122,7 @@ fn held(state: State, freeing: Freeing) -> Result(Held, Nil) {
 fn free(
   state: State,
   freeing: Freeing,
-  effect: fn(Held) -> domain.Plan,
+  effect: fn(HeldRecord) -> domain.Plan,
 ) -> domain.Plan {
   case held(state, freeing) {
     Error(Nil) ->
@@ -180,15 +150,11 @@ fn without(state: State, record: Record) -> State {
 /// `let arrival_position = record.deferred_position`: the arrival position
 /// the guard promised, for `effect`. Where there is none, which only a
 /// wrong guard could bring about, the outcome is a defect.
-fn arrival(
-  held: Held,
-  freeing: Freeing,
-  effect: fn(Int) -> domain.Plan,
-) -> domain.Plan {
+fn arrival(held: HeldRecord, effect: fn(Int) -> domain.Plan) -> domain.Plan {
   case held.deferred_position {
     None ->
       Impossible(
-        "held record " <> freeing.record_key <> " has no deferred_position",
+        "held record " <> held.record.key <> " has no deferred_position",
       )
     Some(arrival_position) -> effect(arrival_position)
   }
@@ -197,13 +163,12 @@ fn arrival(
 /// `let nacked_at = record.nacked_at`, for `effect`. `NackedHasItsTime`
 /// promises the time, and a dead letter cannot be made without one.
 fn nack_time(
-  held: Held,
-  freeing: Freeing,
+  held: HeldRecord,
   effect: fn(Timestamp) -> domain.Plan,
 ) -> domain.Plan {
   case held.nacked_at {
     None ->
-      Impossible("nacked record " <> freeing.record_key <> " has no nacked_at")
+      Impossible("nacked record " <> held.record.key <> " has no nacked_at")
     Some(nacked_at) -> effect(nacked_at)
   }
 }
@@ -213,7 +178,7 @@ fn nack_time(
 /// `expires_at` stamped from the event's `ended_at`.
 fn letter(
   state: State,
-  held: Held,
+  held: HeldRecord,
   freeing: Freeing,
   nacked_at: Timestamp,
 ) -> DeadLetter {
@@ -251,12 +216,7 @@ fn requeue_unsettled_record() -> Row(Freeing) {
     },
     fn(state, freeing) {
       use held <- free(state, freeing)
-      let queued = Record(..held.record, status: RecordQueued)
-      Finish(
-        State(..state, records: model.replace_record(state.records, queued)),
-        [],
-        None,
-      )
+      Finish(queue_at(state, held.record, held.record.position), [], None)
     },
   )
 }
@@ -331,7 +291,7 @@ fn consume_acked_version_queue_deferred() -> Row(Freeing) {
     },
     fn(state, freeing) {
       use held <- free(state, freeing)
-      use arrival_position <- arrival(held, freeing)
+      use arrival_position <- arrival(held)
       Finish(queue_at(state, held.record, arrival_position), [], None)
     },
   )
@@ -354,7 +314,7 @@ fn dead_letter_nacked_record() -> Row(Freeing) {
     },
     fn(state, freeing) {
       use held <- free(state, freeing)
-      use nacked_at <- nack_time(held, freeing)
+      use nacked_at <- nack_time(held)
       let letter = letter(state, held, freeing, nacked_at)
       let state = without(state, held.record)
       Finish(
@@ -382,8 +342,8 @@ fn dead_letter_nacked_version_queue_deferred() -> Row(Freeing) {
     },
     fn(state, freeing) {
       use held <- free(state, freeing)
-      use arrival_position <- arrival(held, freeing)
-      use nacked_at <- nack_time(held, freeing)
+      use arrival_position <- arrival(held)
+      use nacked_at <- nack_time(held)
       let letter = letter(state, held, freeing, nacked_at)
       let state = queue_at(state, held.record, arrival_position)
       Finish(

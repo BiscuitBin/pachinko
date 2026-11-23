@@ -11,9 +11,9 @@ import pachinko_double/config
 import pachinko_double/domain.{type Plan, type Row, type Table}
 import pachinko_double/lease_end
 import pachinko_double/model.{
-  type Lease, type Mark, type Pocket, type Record, type State, Acked, Lease,
+  type HeldRecord, type Lease, type Mark, type Pocket, type State, Acked, Lease,
   LeaseActive, Nacked, Pocket, PocketIdle, PocketLeased, PocketQueued, Record,
-  RecordHeld, RecordQueued, State, Unsettled,
+  RecordHeld, State, Unsettled,
 }
 import pachinko_double/refusals.{
   type Refusal, LeaseFenced, MarkConflict, RecordNotHeld, ReleaseRefused,
@@ -71,47 +71,17 @@ fn extend(state: State, lease: Lease, now: Timestamp) -> State {
 }
 
 /// What a mark reads: the consumer's active lease, and the held record
-/// `Record{pocket: lease.pocket, key: record_key}` with the five fields only
-/// a held record has.
-type Held {
-  Held(
-    lease: Lease,
-    record: Record,
-    held_rank: Int,
-    held_payload: BitArray,
-    mark: Mark,
-    nacked_at: Option(Timestamp),
-    deferred_position: Option(Int),
-  )
-}
-
-/// The record a mark names, where the lease is active and the consumer's,
-/// the record `exists` in the lease's pocket and `record.status = held`.
+/// `Record{pocket: lease.pocket, key: record_key}`. It is the record a mark
+/// names, where the lease is active and the consumer's, the record `exists`
+/// in the lease's pocket and `record.status = held`.
 fn held(
   state: State,
   consumer: String,
   lease_id: String,
   record_key: String,
-) -> Result(Held, Nil) {
+) -> Result(HeldRecord, Nil) {
   use lease <- result.try(own_lease(state, consumer, lease_id))
-  use record <- result.try(model.record(
-    state.records,
-    pocket: lease.pocket,
-    key: record_key,
-  ))
-  case record.status {
-    RecordQueued -> Error(Nil)
-    RecordHeld(held_rank:, held_payload:, mark:, nacked_at:, deferred_position:) ->
-      Ok(Held(
-        lease:,
-        record:,
-        held_rank:,
-        held_payload:,
-        mark:,
-        nacked_at:,
-        deferred_position:,
-      ))
-  }
+  model.held_under(state.records, lease, record_key)
 }
 
 /// Whether the record a mark names is held under the consumer's active
@@ -137,7 +107,7 @@ fn mark(
   consumer: String,
   lease_id: String,
   record_key: String,
-  effect: fn(Held) -> Plan,
+  effect: fn(HeldRecord) -> Plan,
 ) -> Plan {
   case held(state, consumer, lease_id, record_key) {
     Error(Nil) ->
@@ -166,7 +136,7 @@ fn reset_expiries(state: State, pocket_key: String) -> State {
 /// leaves. The held version and the arrival position stay.
 fn remark(
   state: State,
-  held: Held,
+  held: HeldRecord,
   mark: Mark,
   nacked_at: Option(Timestamp),
 ) -> State {

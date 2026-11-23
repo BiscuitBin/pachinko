@@ -69,31 +69,26 @@ fn batch(state: State, pocket: Pocket, limit: Int) -> List(Record) {
   state.records
   |> model.records_of(pocket.key)
   |> model.queued
-  |> list.sort(fn(a, b) { int.compare(a.position, b.position) })
+  |> model.oldest_first
   |> list.take(int.min(limit, config.settings(state.config).max_pull_batch))
 }
 
 /// The end of a pull that hands out a batch: `Handed` for each record of
 /// the batch, in the batch's order, and the `Batch` answer, which names the
-/// lease the records were handed under. `state` is the state the rule's
-/// other `ensures` lines left. The batch was computed before any `Handed`
-/// is answered, so its records carry the rank and payload they had then.
-fn hand_out(
-  state: State,
-  pull: Pull,
-  lease: Lease,
-  pocket: Pocket,
-  batch: List(Record),
-) -> Plan {
+/// lease the records were handed under; the consumer and the pocket are that
+/// lease's. `state` is the state the rule's other `ensures` lines left. The
+/// batch was computed before any `Handed` is answered, so its records carry
+/// the rank and payload they had then.
+fn hand_out(state: State, lease: Lease, batch: List(Record)) -> Plan {
   Finish(
     state,
     list.map(batch, fn(record) {
-      Handed(pocket_key: pocket.key, record_key: record.key)
+      Handed(pocket_key: lease.pocket, record_key: record.key)
     }),
     Some(Batch(
-      consumer: pull.consumer,
+      consumer: lease.consumer,
       lease: lease.id,
-      pocket: pocket.key,
+      pocket: lease.pocket,
       records: list.map(batch, fn(record) {
         BatchRecord(key: record.key, rank: record.rank, payload: record.payload)
       }),
@@ -137,9 +132,7 @@ fn pull_within_lease() -> Row(Pull) {
             )
           hand_out(
             State(..state, leases: model.replace_lease(state.leases, extended)),
-            pull,
             extended,
-            pocket,
             batch,
           )
         }
@@ -187,9 +180,7 @@ fn pull_claims_front_pocket() -> Row(Pull) {
               pockets: model.replace_pocket(state.pockets, leased),
               leases: list.append(state.leases, [lease]),
             ),
-            pull,
             lease,
-            pocket,
             batch,
           )
         }

@@ -2,8 +2,10 @@
 //// Every field the specification declares is here, under its name. A
 //// reference to another entity is that entity's key (spec note G09).
 
+import gleam/int
 import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 import pachinko_double/config.{type Config}
 import pachinko_double/time.{type Timestamp}
 
@@ -179,6 +181,44 @@ pub fn record(
   })
 }
 
+/// A held record as a rule reads it: the lease it is held under, for
+/// `lease.pocket` and `lease.consumer`, the record, and the five fields only
+/// a held record has.
+pub type HeldRecord {
+  HeldRecord(
+    lease: Lease,
+    record: Record,
+    held_rank: Int,
+    held_payload: BitArray,
+    mark: Mark,
+    nacked_at: Option(Timestamp),
+    deferred_position: Option(Int),
+  )
+}
+
+/// `Record{pocket: lease.pocket, key: key}`, where it `exists` and
+/// `record.status = held`. The lease is the caller's, whatever its status.
+pub fn held_under(
+  records: List(Record),
+  lease: Lease,
+  key: String,
+) -> Result(HeldRecord, Nil) {
+  use record <- result.try(record(records, pocket: lease.pocket, key:))
+  case record.status {
+    RecordQueued -> Error(Nil)
+    RecordHeld(held_rank:, held_payload:, mark:, nacked_at:, deferred_position:) ->
+      Ok(HeldRecord(
+        lease:,
+        record:,
+        held_rank:,
+        held_payload:,
+        mark:,
+        nacked_at:,
+        deferred_position:,
+      ))
+  }
+}
+
 /// The records with `record` in the place of the one it replaces, the
 /// record of its pocket and key. No other record changes and none moves: a
 /// changed entity keeps its place in its list.
@@ -232,6 +272,12 @@ pub fn queued(records: List(Record)) -> List(Record) {
 /// `records where status = held`.
 pub fn held(records: List(Record)) -> List(Record) {
   list.filter(records, fn(record) { record.status != RecordQueued })
+}
+
+/// The records smallest position first: the order a pull hands them out in,
+/// and the order a lease's end frees them in.
+pub fn oldest_first(records: List(Record)) -> List(Record) {
+  list.sort(records, fn(a, b) { int.compare(a.position, b.position) })
 }
 
 /// A pocket's `ending_records`: `records where status = held and mark !=
