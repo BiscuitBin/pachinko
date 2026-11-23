@@ -5,8 +5,8 @@ test builds a queue with and checks it by, and `pachinko_double.exceptions`
 every exception class the double defines. For each, `__all__` is exactly the
 list below, in its order; each name is the same object as the one its defining
 module holds; and the namespace binds no other public name and defines no
-`__getattr__`, so a name cannot be reachable from a namespace that does not
-list it. The three lists share no name.
+`__getattr__`, so it answers no name it does not list, but for its own
+submodules. The three `__all__` lists share no name.
 """
 
 import importlib
@@ -84,7 +84,8 @@ class NamespaceTest(unittest.TestCase):
                 self.assertEqual(listed, [name for name, _ in names])
 
     def test_the_lists_hold_8_7_and_15_names(self) -> None:
-        self.assertEqual([len(names) for names in NAMESPACES.values()], [8, 7, 15])
+        listed = [importlib.import_module(namespace).__all__ for namespace in NAMESPACES]
+        self.assertEqual([len(names) for names in listed], [8, 7, 15])
 
     def test_each_name_is_its_defining_modules_object(self) -> None:
         for namespace, names in NAMESPACES.items():
@@ -104,5 +105,5 @@ class NamespaceTest(unittest.TestCase):
                 self.assertIsNone(vars(module).get("__getattr__"))
 
     def test_no_name_is_in_two_namespaces(self) -> None:
-        every = [name for names in NAMESPACES.values() for name, _ in names]
+        every = [name for namespace in NAMESPACES for name in importlib.import_module(namespace).__all__]
         self.assertEqual(sorted(every), sorted(set(every)))

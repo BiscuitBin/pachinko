@@ -20,6 +20,9 @@ The entities, their enums and the durations are in `pachinko_double.model`.
 Each rule module is imported by its own name, such as `pachinko_double.pull`.
 """
 
+# Bound here so that `pachinko_double.harness` and `pachinko_double.exceptions`
+# answer after a bare `import pachinko_double`, as `pachinko_double.model` does.
+from . import exceptions, harness
 from .config import Config
 from .consuming import HeldRecordView, LeaseView
 from .inspection import Snapshot
