@@ -337,7 +337,8 @@ Exception raised:
     ImportError: cannot import name 'FakeClock' from 'pachinko_double' (/Users/scutting/.supacode/repos/pachinko/build-python-double/double/pachinko_double/__init__.py)
 ```
 
-After step 4 `just python-double` ran 280 tests, `OK`.
+Steps 4 and 5 went in together. After them `just python-double` ran 280 tests, `OK`
+(`ai_tmp/pd/PD09/green-step5.txt`).
 
 ### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
 
