@@ -1,7 +1,7 @@
 ---
 id: PD09
 title: "Python double: a small top level, with harness and exceptions namespaces"
-status: todo
+status: done
 depends_on: [PD08]
 parallel_with: []
 branch: ticket/pd09-public-interface
@@ -236,14 +236,203 @@ pattern, saying so under Departures, if either does not behave as written.
 
 ## Hand-back notes
 
-Written at the end, in the order PD08's hand-back uses: base and branch, baseline, what
-landed, the red steps, the checkpoint's record, departures, and Verification.
+### 1. Base and branch
+
+- Branch: `build-python-double`.
+- Base commit: `00f230051ebcc2730342c39a0eeb92bc2707f1cf`, the commit that added this ticket.
+- Work commit: `197050043fd9197ca2aeece6d516cb40d54e9a41`.
+- On 2026-11-23 the maintainer directed that PD09 land on this branch in this worktree, as
+  PD01 to PD08 did. That departs from AGENTS.md's one-ticket-per-worktree rule and from
+  this ticket's `branch:`. `ticket/pd09-public-interface` was not created, and
+  `just initialize` was not run.
+- The same day the maintainer ruled on the first Open point: `Clock` and `LeaseIds` stay
+  in `harness`. "Decisions fixed" stands as written.
+
+### 2. Baseline
+
+Both ran on the untouched worktree at `00f230051ebcc2730342c39a0eeb92bc2707f1cf`
+(`ai_tmp/pd/PD09/baseline-python-double.txt` and `baseline-check.txt`).
+
+- `just python-double` printed `Ran 275 tests` and ended `OK`.
+- `just check` ended `All checks passed and the worktree is unchanged.`, and
+  `git status --short` printed nothing.
+
+### 3. What landed
+
+- `__init__.py`: the eight names, in the order of "Decisions fixed". The sixteen names of
+  `model.py`, the fifteen exception classes, the seven harness names and the nine
+  submodule re-exports are gone from it. Its docstring names the three namespaces and
+  `model`.
+- `harness.py` (new): a docstring, three import lines and an `__all__` of seven names.
+- `exceptions.py` (new): a docstring that names the two groups, three import statements
+  and an `__all__` of fifteen names, the twelve refusals first.
+- `tests/test_interface.py` (new): the pin, five tests. For each namespace, `__all__`
+  equals the list, in order; the counts are 8, 7 and 15; each name is the same object as
+  its defining module's, and its `__module__` is that module; the namespace binds no
+  other public name and has no module `__getattr__`; and the three lists share no name.
+- `double/README.md`: the walkthrough's one import line is two, and "How the package
+  follows the specification" ends with the table of namespaces. No other sentence there
+  said where a moved name is imported from: the page names defining modules
+  (`refusals.py`, `effects.py`), which is still true.
+- The suite has 280 tests, the baseline's 275 and the pin's five. The coverage test stays
+  strict at 93, 32 and 35.
+- After a bare `import pachinko_double`, `sys.modules` holds the same seventeen
+  `pachinko_double` modules at the base and at the work commit
+  (`ai_tmp/pd/PD09/sysmodules-before.txt` and `sysmodules-after.txt`): `queue.py`
+  imports every rule module, so the registry is still complete without the re-exports.
+
+No defining module is edited, no test under a `# scenario:` tag is changed, and
+`double/tests/test_guide.py` is untouched.
+
+### 4. The red steps
+
+Each ran at `00f230051ebcc2730342c39a0eeb92bc2707f1cf` with uncommitted changes, and its
+output was saved as it happened under `ai_tmp/pd/PD09/`. In each run the coverage test's
+`test_every_test_def_was_collected_and_outside_this_module_passed` also failed, naming the
+same tests: it reports any test that did not pass.
+
+Step 2 (`red-step2.txt`), with `test_interface.py` added and the package untouched. The
+run ended `Ran 280 tests` and `FAILED (failures=3, errors=26)`. The two failures are the
+top level's 55 names:
+
+```text
+FAIL: test_each_namespace_lists_exactly_its_names_in_order (tests.test_interface.NamespaceTest.test_each_namespace_lists_exactly_its_names_in_order) (namespace='pachinko_double')
+AssertionError: Lists differ: ['HOUR', 'MILLISECOND', 'MINUTE', 'SECOND',[712 chars]tle'] != ['Queue', 'Config', 'Batch', 'NoPocketAvail[58 chars]hot']
+FAIL: test_each_namespace_binds_no_public_name_it_does_not_list (tests.test_interface.NamespaceTest.test_each_namespace_binds_no_public_name_it_does_not_list) (namespace='pachinko_double')
+AssertionError: Lists differ: ['Batch', 'Clock', 'Config', 'ConfigRefused', 'Config[607 chars]eck'] != ['Batch', 'Config', 'HeldRecordView', 'LeaseView', 'N[48 chars]ort']
+```
+
+The 26 errors are the two namespaces that did not exist. Four are these, and the other
+22 are `test_each_name_is_its_defining_modules_object`, once for each of the 7 and 15
+names, with the same two messages:
+
+```text
+ERROR: test_each_namespace_lists_exactly_its_names_in_order (tests.test_interface.NamespaceTest.test_each_namespace_lists_exactly_its_names_in_order) (namespace='pachinko_double.harness')
+ModuleNotFoundError: No module named 'pachinko_double.harness'
+ERROR: test_each_namespace_lists_exactly_its_names_in_order (tests.test_interface.NamespaceTest.test_each_namespace_lists_exactly_its_names_in_order) (namespace='pachinko_double.exceptions')
+ModuleNotFoundError: No module named 'pachinko_double.exceptions'
+ERROR: test_each_namespace_binds_no_public_name_it_does_not_list (tests.test_interface.NamespaceTest.test_each_namespace_binds_no_public_name_it_does_not_list) (namespace='pachinko_double.harness')
+ModuleNotFoundError: No module named 'pachinko_double.harness'
+ERROR: test_each_namespace_binds_no_public_name_it_does_not_list (tests.test_interface.NamespaceTest.test_each_namespace_binds_no_public_name_it_does_not_list) (namespace='pachinko_double.exceptions')
+ModuleNotFoundError: No module named 'pachinko_double.exceptions'
+```
+
+Step 3 (`red-step3.txt`), with the two namespaces added, `__init__.py` trimmed and
+`double/README.md` untouched. The pin's five tests passed. The run ended `Ran 280 tests`
+and `FAILED (failures=2)`: the walkthrough and the coverage test's report of it. The
+walkthrough's message opens with the import, and the other 44 failed examples are
+`NameError`s that follow from it:
+
+```text
+FAIL: test_the_guides_walkthrough_runs_as_written (tests.test_guide.GuideTest.test_the_guides_walkthrough_runs_as_written)
+AssertionError: 45 != 0 : **********************************************************************
+File "/Users/scutting/.supacode/repos/pachinko/build-python-double/double/README.md", line 240, in README.md
+Failed example:
+    from pachinko_double import Config, FakeClock, Queue, SequentialLeaseIds, check
+Exception raised:
+    Traceback (most recent call last):
+      File "<doctest README.md[1]>", line 1, in <module>
+        from pachinko_double import Config, FakeClock, Queue, SequentialLeaseIds, check
+    ImportError: cannot import name 'FakeClock' from 'pachinko_double' (/Users/scutting/.supacode/repos/pachinko/build-python-double/double/pachinko_double/__init__.py)
+```
+
+After step 4 `just python-double` ran 280 tests, `OK`.
+
+### 5. Checkpoint 1 record: conformance and breakage (before the final commit)
+
+- Ran at: `00f230051ebcc2730342c39a0eeb92bc2707f1cf` plus uncommitted work (steps 2 to 5).
+  HEAD was the base, so the brief gave the uncommitted diff
+  (`ai_tmp/review/PD09-1/diff-uncommitted.patch`), the three untracked files by name
+  (`scope.md`), the ticket's seven questions and the saved red output, and none of the
+  author's reasoning.
+- Harness and model: Codex `gpt-6-astra`, `-s read-only`, through the corrected command.
+  Each findings file is Codex's last message (`Source: last-message`). Codex ran
+  `just python-double` itself (280 tests, `OK`); its sandbox blocked `just check`. No
+  writer or gate of the lead's ran meanwhile, and the tree's diff was byte-identical to
+  the reviewed patch afterwards.
+- Lenses: conformance and breakage.
+- Triage: one fresh subagent, which checked each finding by command, mutated only a
+  throwaway copy under `ai_tmp/review/PD09-1/` and edited no tree file (`verdicts.md`).
+  It had stopped before the lead applied a fix or ran a gate.
+- Findings: 0 high, 2 medium (one reported by both lenses), 2 low. No second round,
+  since no high-severity finding was valid.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1, B2 | medium | valid | Verification's import probe matches only a line that starts with the import. It prints nothing for an indented import, for two spaces after `from`, for `import pachinko_double as p` then `p.FakeClock`, and for anything in the three excluded test files | not applied: the fix edits the Verification script, outside Files touched; handed back under Open points |
+| B1 | medium | valid | the pin read `vars(namespace)` and passed over every module, so a module `__getattr__` that answers `FakeClock` at the top level, or an unrelated module bound in `harness`, left all five tests passing | applied in `test_interface.py`: only the namespace's own submodule is passed over, and a module `__getattr__` fails the test |
+| C2 | low | valid | `exceptions.py` said "every exception class the double raises", but the package also raises the builtin `ValueError` | applied: the three docstrings say "defines" |
+| C3 | low | valid | the package docstring gave `Queue.lease_view` one answer, and it also answers `None` | applied in `__init__.py` |
+
+C1 and B2 are about the script, not the tree: the triage's parsed scan of every `.py`
+file and every doctest under `double/` found only `rules`, `invariants`, `decay`, `Config`
+and `Queue` imported from the top level. B1's two shapes do not occur in the tree. After
+B1's fix the pin failed on each of six in-memory mutations and passed when each was
+undone (`ai_tmp/pd/PD09/pin-probes.txt`): a `__getattr__` alias, an unrelated module in
+`harness`, a sibling module in `harness`, a plain alias at the top level, a name added
+to an `__all__`, and a name rebound.
+
+### 6. Departures
+
+- PD09 landed on `build-python-double` in the series' worktree, with no new worktree, no
+  `ticket/pd09-public-interface` and no `just initialize` (section 1).
+- The pin has two assertions beyond step 2's three. It checks each name's `__module__`,
+  and it checks that a namespace binds no public name it does not list and has no module
+  `__getattr__`. Without the second, a leftover import in `__init__.py` would pass the
+  pin while the name stayed reachable from two namespaces, which is step 6's first
+  question. Review finding B1 tightened it after step 2's red was saved, so the pin that
+  ran red is the earlier form.
+- The lead started the two Codex runs itself, each as its own background job that
+  reports its exit, where PD06's deltas name one runner subagent per lens. Nothing
+  polled on a bare file name.
+- The review ran on the uncommitted diff from the base, not `git diff "$base"...HEAD`,
+  which was empty before the work commit.
+- The lead applied the three in-scope fixes itself after the triage subagent had stopped,
+  where PD06's deltas have the triage subagents apply them.
+- The valid finding C1 (B2) concerns the ticket's own Verification script. It was not
+  applied, because the ticket's row in Files touched allows only `status:` and these
+  notes. Verification below ran as the ticket writes it. Both of its controls behaved as
+  written, so the pattern was not corrected.
+- The triage subagent left a throwaway directory under the gitignored
+  `ai_tmp/review/PD09-1/` (`triage-b1`).
+
+### 7. Verification
+
+The Verification block ran at `197050043fd9197ca2aeece6d516cb40d54e9a41`, the work commit,
+as one `sh` script under `set -eu`, with `base` set to
+`00f230051ebcc2730342c39a0eeb92bc2707f1cf`. It exited 0 (`exit=0`). The two controls
+behaved as written, and the probe printed nothing. The opening and closing lines of its
+output (`ai_tmp/pd/PD09/verify-1970500.log`):
+
+```text
+197050043fd9197ca2aeece6d516cb40d54e9a41
+python -B -c 'import sys; v = sys.version.split()[0]; print("python-double: Python", v); sys.exit(0 if sys.version_info >= (3, 14) else "python-double: needs Python 3.14 or newer, found " + v)'
+python-double: Python 3.14.10
+PACHINKO_DOUBLE_SUITE=recipe python -B -m unittest discover -s double/tests -t double -p 'test*.py'
+........................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 280 tests in 0.146s
+
+OK
+…  (just check-docs and just check output elided; full log kept in ai_tmp)
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+```
 
 ## Open points
 
-- `Clock` and `LeaseIds` are the two protocols `Queue`'s constructor takes. This ticket
-  puts them in `harness`, beside the fakes. The alternative is to keep them at the top
-  level, which would then hold ten names. The maintainer has not ruled on it.
+- **Closed.** `Clock` and `LeaseIds` are the two protocols `Queue`'s constructor takes.
+  This ticket puts them in `harness`, beside the fakes. The alternative was to keep them
+  at the top level, which would then hold ten names. On 2026-11-23 the maintainer ruled
+  that they stay in `harness`.
 - The tests keep importing fakes and exceptions from the defining modules. Whether they
   should later import them from `harness` and `exceptions`, so that the suite shows the
   intended paths, is left for a later ticket.
+- **C1 (B2): Verification's import probe sees only an import that starts its line.** It
+  misses an indented import, a second space after `from`, an alias of the package
+  followed by an attribute, and the three test files it leaves out. The tree holds none
+  of these today (section 5). Proposed for a later ticket: replace the `rg` probe with a
+  parsed check, either in the script or as a test in `test_interface.py`, that walks
+  every `.py` file and every doctest under `double/` and allows, from the top level,
+  only the eight names and the package's submodules.

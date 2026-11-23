@@ -58,7 +58,7 @@ snapshot.
 | PD06 | Close-out and the specification reader's guide | `PD06-close-out.md` | PD05 | done |
 | PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | done |
 | PD08 | One read context for every rule | `PD08-one-read-context.md` | PD06 | done |
-| PD09 | A small top level, with harness and exceptions namespaces | `PD09-public-interface.md` | PD08 | todo |
+| PD09 | A small top level, with harness and exceptions namespaces | `PD09-public-interface.md` | PD08 | done |
 
 ## Dependencies
 
