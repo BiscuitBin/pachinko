@@ -271,7 +271,8 @@ Both ran on the untouched worktree at `00f230051ebcc2730342c39a0eeb92bc2707f1cf`
   its defining module's, and its `__module__` is that module; the namespace binds no
   other public name and has no module `__getattr__`; and the three lists share no name.
 - `double/README.md`: the walkthrough's one import line is two, and "How the package
-  follows the specification" ends with the table of namespaces. No other sentence there
+  follows the specification" gains the table of namespaces, after the table of what
+  happens when no guard holds and before `### Entities`. No other sentence there
   said where a moved name is imported from: the page names defining modules
   (`refusals.py`, `effects.py`), which is still true.
 - The suite has 280 tests, the baseline's 275 and the pin's five. The coverage test stays
@@ -395,6 +396,9 @@ to an `__all__`, and a name rebound.
   written, so the pattern was not corrected.
 - The triage subagent left a throwaway directory under the gitignored
   `ai_tmp/review/PD09-1/` (`triage-b1`).
+- The `/code-review` pass followed this ticket's record commit, and its fixes have their
+  own commit (section 8). One of them adds a line to `__init__.py` that "Decisions fixed"
+  does not name: `from . import exceptions, harness`.
 
 ### 7. Verification
 
@@ -420,6 +424,28 @@ The worktree matches the check baseline.
 All checks passed and the worktree is unchanged.
 ```
 
+### 8. The code review, after the record commit
+
+After `5e13a83acc2727f145748eeb118e45d568561c27`, the `/code-review` pass ran at medium
+effort over `00f230051ebcc2730342c39a0eeb92bc2707f1cf..HEAD`. It found one bug and five
+nits.
+
+| Finding | Outcome |
+| --- | --- |
+| After a bare `import pachinko_double`, `pachinko_double.harness` and `pachinko_double.exceptions` raised `AttributeError`, while `pachinko_double.model` answered | fixed: `__init__.py` imports both modules; neither is in `__all__`, and the pin passes over a namespace's own submodules |
+| Nothing pins that the nine rule modules are attributes after a bare import; they are bound only because `queue.py` imports them | not changed: "Decisions fixed" drops those re-exports; added to Open points |
+| The pin's docstring said a name cannot be reachable from a namespace that does not list it, yet a namespace answers its own submodules, and a re-added `from . import rules` passes | fixed in the docstring, which now says what is checked; the gap is in Open points with the one above |
+| The count test and the no-shared-name test read only the test file's lists | fixed: both read each namespace's `__all__` |
+| `ConfigValues` and `Violation` are types a reader's code can name (`Snapshot.config`, `InvariantsBroken.violations`), and they sit in `harness` | not changed: the lists are the maintainer's; added to Open points |
+| Section 7's quoted block holds one line no command printed, the elision; section 3 said the README table ends its section | the elision follows PD06's and PD08's hand-backs and is marked with `…`; section 3 is corrected |
+
+The fixes are commit `fb836020c21221af5b955f11f27759df61ebc665`. The Verification block
+ran again there, as written, and exited 0: `Ran 280 tests`, `OK`, the probe silent, and
+`All checks passed and the worktree is unchanged.`
+(`ai_tmp/pd/PD09/verify-review-fix.log`). The pin still failed on each of the six
+mutations of section 5, and the no-shared-name test failed with `Refusal` added to
+`harness.__all__`.
+
 ## Open points
 
 - **Closed.** `Clock` and `LeaseIds` are the two protocols `Queue`'s constructor takes.
@@ -436,3 +462,11 @@ All checks passed and the worktree is unchanged.
   parsed check, either in the script or as a test in `test_interface.py`, that walks
   every `.py` file and every doctest under `double/` and allows, from the top level,
   only the eight names and the package's submodules.
+- **The submodules as attributes are not pinned.** `pachinko_double.<module>` answers
+  after a bare import only because `queue.py` imports every rule module, and the pin
+  cannot tell that from a re-export put back in `__init__.py`. A pin would run a fresh
+  interpreter, since any test that imports a submodule binds it.
+- **`ConfigValues` and `Violation` in `harness`.** A reader who annotates
+  `snapshot.config` or handles `InvariantsBroken.violations` names a type that only
+  `harness` exports. The ruling of 2026-11-23 covered `Clock` and `LeaseIds`; the
+  maintainer has not been asked about these two.
