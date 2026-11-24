@@ -185,7 +185,7 @@ The 93 scenarios, each with the one library test whose `// scenario:` tag pins i
 found by `rg -n 'scenario: S0NN'`, and for the thirteen `wire` scenarios the test that
 also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
 boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
-placeholder for open question N; `decision:NNNN`, a scenario decision NNNN settled. S066
+placeholder for open question N, which no row carries today; `decision:NNNN`, a scenario decision NNNN settled. S066
 and S067 each have two halves in two tests; the tag sits on the first and the row names
 both.
 
@@ -216,7 +216,7 @@ both.
 | S023 | A publish revives an idle pocket at the back | core | `crates/libpachinko/tests/queue/lease.rs`, `a_publish_revives_an_idle_pocket_at_the_back` | |
 | S024 | A supersede revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_revives_a_parked_pocket` | |
 | S025 | An equal-rank publish does not revive a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `an_equal_rank_publish_does_not_revive_a_parked_pocket` | |
-| S026 | Only a publish revives a parked pocket (OQ7 as the rules stand) | oq:7 | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
+| S026 | Only a publish revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
 | S027 | A pull claims the front pocket, leases it and holds the batch | core | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch` | |
 | S028 | A positive limit returns at most that many, oldest first, and later pulls continue | core, wire | `crates/libpachinko/tests/queue/pull.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` | `crates/pachinko/tests/http.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` (driver `limit_pages`) |
 | S029 | A limit above `max_pull_batch` is capped | edge | `crates/libpachinko/tests/queue/pull.rs`, `a_limit_above_max_pull_batch_is_capped` | |

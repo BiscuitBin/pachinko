@@ -34,13 +34,14 @@ built second ([decision 0002](../decisions/0002-specs-are-the-source-of-truth.md
 [Specifications](../explanation/specifications.md). Today `docs/specs/` holds one
 module, `pachinko.allium`, which specifies the domain, and the library and the service
 implement it. A behaviour that no module states is not the library's yet, however obvious
-it looks; the module's open questions mark the decisions nobody has made.
+it looks; the module's open questions mark the decisions no code may answer yet.
 
 ## What it deliberately does not do
 
-- **No answer to an open question.** Who reads the superseded and dead-letter queues,
-  capacity beyond shedding them and the other open questions in the root module are the
-  maintainer's to decide; the code answers none of them.
+- **No answer to an open question.** Who reads the superseded and dead-letter queues
+  and whether a new pocket jumps the queue, the two open questions in the root module,
+  are answered by the maintainer and by no code yet: each stays an open question until
+  `tickets/T39-decide-q2-q6.md` lands it.
   [Terminology](terminology.md) holds the domain's words.
 - **No persistence, authentication or TLS.** The queue lives in the service's memory and
   is lost when it stops; the HTTP surface is unauthenticated and binds loopback by

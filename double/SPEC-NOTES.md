@@ -18,7 +18,7 @@ order within it, keeping the id it was written with. By the ticket that wrote it
 | PD02 | [N13](#n13-a-batch-names-its-lease-and-pocket-by-key-and-carries-no-expiry) | [N14](#n14-the-pull-tables-refusal-is-unreachable) | [N15](#n15-a-pull-draws-a-lease-id-only-when-it-creates-a-lease)†, [N17](#n17-s019s-large-ranks-are-a-64-bit-integers-extremes-not-the-doubles), [N19](#n19-a-pull-whose-limit-is-not-positive-still-claims-a-pocket), [N20](#n20-renews-refusal-is-leasefenced-and-an-unknown-lease-id-meets-it) | [N16](#n16-s012-s015-and-s022-assert-absolute-positions-impl-choice), [N18](#n18-a-pull-or-a-renew-by-a-consumer-that-never-joined-is-refused-impl-choice) |
 | PD03 | [N24](#n24-an-ended-lease-stays-in-the-state-and-a-release-and-a-mark-answer-nothing) | [N21](#n21-the-refusals-of-a-mark-are-the-doubles-leasefenced-recordnotheld-markconflict), [N26](#n26-the-release-tables-refusal-past-fencing-is-unreachable), [N28](#n28-a-refused-action-reads-no-clock-s085) | [N25](#n25-one-lease-end-sends-freed-smallest-held-position-first), [N27](#n27-an-idle-pocket-keeps-its-position) | [N22](#n22-an-ack-nack-release-or-lease-read-by-a-consumer-that-never-joined-is-refused-impl-choice), [N23](#n23-s090s-lease-view-lists-the-held-records-smallest-position-first-impl-choice) |
 | PD04 | [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour), [N32](#n32-a-deferral-answers-nothing-where-the-rust-answers-superseded) | — | [N30](#n30-a-deferred-version-shed-by-a-later-publish-takes-the-publishs-now) | [N29](#n29-s091-pins-the-order-of-the-entries-one-lease-end-creates-impl-choice) |
-| PD05 | [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) | [N35](#n35-an-entry-a-lapse-creates-with-a-zero-ttl-decays-in-the-same-tick), [N37](#n37-the-expiry-rules-answer-when-no-guard-holds-is-unreachable-through-tick) | [N33](#n33-tick-is-the-doubles-only-clock-and-it-reports-what-it-did), [N34](#n34-one-tick-lapses-in-expires_at-order-then-decays-in-queue-order), [N36](#n36-only-a-publish-revives-a-parked-pocket-as-the-rules-stand-oq7) | — |
+| PD05 | [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) | [N35](#n35-an-entry-a-lapse-creates-with-a-zero-ttl-decays-in-the-same-tick), [N37](#n37-the-expiry-rules-answer-when-no-guard-holds-is-unreachable-through-tick) | [N33](#n33-tick-is-the-doubles-only-clock-and-it-reports-what-it-did), [N34](#n34-one-tick-lapses-in-expires_at-order-then-decays-in-queue-order), [N36](#n36-only-a-publish-revives-a-parked-pocket-open-question-7-closed) | — |
 
 † records a reading and leaves no question of its own.
 
@@ -181,30 +181,32 @@ What each trigger answers, the subject of finding 2, as the notes record it:
 
 ### Open questions left untouched
 
-The specification's six open questions, numbered as
-`docs/how-to/work-with-the-specs.md` numbers them, are untouched. No note answers one, and
-the double adds no rule for any of them:
+The specification has two open questions left, numbered as
+`docs/how-to/work-with-the-specs.md` numbers them. No note answers either, and the
+double adds no rule for either:
 
 - Question 2: "Who reads the superseded and dead-letter queues, and what can they do: an
   operator listing, a replay action back into the pocket, or a consumable stream under
   the lease model? The answer also fixes what an entry must carry; reason and nacked_by
   are kept on that assumption."
-- Question 3: "Capacity beyond shedding the decaying queues first: which superseded
-  records and dead letters shed first, a bound on records, disk spill, a back-pressure
-  signal to publishers, or none? Request-shape limits (rows, bytes, timeouts) are not
-  capacity refusals."
-- Question 4: "Routing by worker pool or priority (standard against high-memory workers,
-  newly onboarded tenants first, spot against reserved): separate deployments, or a
-  property of pockets?"
-- Question 5: "Adaptive lease TTL: should lease_ttl be derived from observed lease
-  durations to shorten recovery after a consumer dies?"
 - Question 6: "Should a newly created pocket be able to jump to the front of the queue,
   opt-in, for fast first service?"
-- Question 7: "Can anything other than a publish revive a parked pocket, such as an
-  operator action or a cooldown?"
 
-The catalog has one `oq:N` row, S026 (`oq:7`). Its test ports the rules as they stand:
-only a publish revives a parked pocket. N36 records it and leaves question 7 open.
+The maintainer has ruled on both, and `tickets/T39-decide-q2-q6.md` records the rulings.
+Each adds behaviour, so its line stays in the specification until that ticket lands it,
+and the double changes with it then.
+
+The maintainer closed the other four, and none of the closures changes the double:
+
+| Question | Closed | Ruling | The double |
+| --- | --- | --- | --- |
+| 3, capacity beyond shedding the decaying queues | 2026-11-24 | Superseded records are removed first, oldest `shed_at` first, and dead letters only when none is left, oldest `nacked_at` first. No record is removed or bounded, and no publish is refused. | It reclaims no space, so it removes nothing early. |
+| 4, routing by worker pool or priority | 2026-11-24 | Worker pools and priority classes run as separate deployments. | One `Queue` is one deployment. |
+| 5, an adaptive lease TTL | 2026-11-23 | `lease_ttl` stays one fixed config value. | `Config.lease_ttl` is fixed. |
+| 7, reviving a parked pocket other than by a publish | 2026-11-23 | Only a publish revives a parked pocket. | N36: the rules already read so, and S026 pins it. |
+
+The catalog has no `oq:N` row. S026 carried `oq:7` until question 7 closed; its test is
+unchanged, and N36 records the closure.
 
 ### Notes that record a reading, with no question
 
@@ -994,23 +996,24 @@ flowchart TD
 - **Question:** as N29: should the specification order what several lapses in one tick
   create, or say that the order is not observable?
 
-### N36: only a publish revives a parked pocket, as the rules stand (`oq:7`)
+### N36: only a publish revives a parked pocket (open question 7, closed)
 
 - **Ticket:** PD05.
-- **Concerns:** `ReviveParkedPocket`, open question 7 ("Can anything other than a
-  publish revive a parked pocket, such as an operator action or a cooldown?"), the
-  comment above `PublishNewKey`, and scenarios S024, S025, S026 and S092.
+- **Concerns:** `ReviveParkedPocket`, the closed open question 7 ("Can anything other
+  than a publish revive a parked pocket, such as an operator action or a cooldown?"), the
+  comments above `PublishNewKey` and `ReviveIdlePocket`, and scenarios S024, S025, S026 and S092.
 - **The specification says:** `ReviveParkedPocket` answers `PocketTouched`, which only
   `PublishNewKey`, `Supersede` and `DeferBehindHeldVersion` emit. A stale publish and a
   publish at the stored rank emit nothing.
 - **The double does:**
   - `ReviveParkedPocket` is the second row of the `PocketTouched` table, beside
     `ReviveIdlePocket`, and nothing else emits `PocketTouched`.
-  - S026, labelled `oq:7`, ports the question as the rules stand. Time, ticks, and
+  - S026 pins it. Time, ticks, and
     another pocket's lease, publish and release leave a parked pocket parked with its
     count. S025 and S092 show that a refused equal-rank publish and a stale publish do
     the same.
-  - The double adds no cooldown and no operator action. The question stays open.
+  - The double adds no cooldown and no operator action, and the specification now
+    rules both out.
 
 ```mermaid
 flowchart LR
@@ -1024,8 +1027,9 @@ flowchart LR
     other["time, ticks, and another<br/>pocket's lease, publish<br/>or release (S026)"] -.-> x
 ```
 
-- **Question:** open question 7 itself. If anything else may revive a parked pocket, it
-  needs a rule, and S026 changes with it.
+- **Question:** none. The maintainer closed open question 7 on 2026-11-23: only a
+  publish revives a parked pocket, with no operator action and no cooldown. S026 lost
+  its `oq:7` label and its test is unchanged.
 
 ## The `impl-choice` rows
 

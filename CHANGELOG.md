@@ -13,6 +13,12 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
 
 ### Changed
 
+- The specification closes open questions 3, 4, 5 and 7 and keeps two, questions 2 and
+  6. `lease_ttl` stays one fixed value; only a publish revives a parked pocket; worker
+  pools and priority classes run as separate deployments; and when space must be
+  reclaimed, superseded records are removed first and dead letters after them, oldest
+  first, with no record removed or bounded and no publish refused. No behaviour of the
+  library changes.
 - The crate root is the caller's interface, and one `use libpachinko::{…}` names it:
   `Queue`, `Config`, the names and values, `Timestamp`, `LeaseId`, `ParseLeaseIdError`,
   `HeldRecord`, every outcome and every error enum moved there, and `ids`, `config`,
@@ -69,7 +75,7 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   the stored rank is rejected and changes nothing, and no longer calls it a placeholder.
   The specification closes open questions 1 and 9, answers the two the wave's code
   review raised, a supersede shedding a held version and a stale publish reviving a
-  parked pocket, and keeps six open questions.
+  parked pocket, and kept six open questions at that point.
 - The store seam: `PocketRecords` loses `settle`, `defer` and `free_held` and gains
   `defer_behind_held`, `mark`, `held`, which lists the `MarkedRecord`s, and `end_lease`,
   which applies the six lease-end rows and returns the new `records::EndedVersion`s.

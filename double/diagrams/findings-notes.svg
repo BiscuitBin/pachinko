@@ -217,5 +217,5 @@ text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 <text x="788.75" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">03</text>
 <text x="801.25" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">03</text>
 <text x="813.75" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">04</text>
-<text x="10" y="477" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Finding 1 is answered (2026-11-20); the other fourteen are open. N02, N06, N08 and N15 record a reading; N36 is open question 7.</text>
+<text x="10" y="477" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Finding 1 is answered (2026-11-20); the other fourteen are open. N02, N06, N08 and N15 record a reading; N36 is question 7, closed.</text>
 </svg>

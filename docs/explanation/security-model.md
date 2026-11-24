@@ -131,9 +131,12 @@ request's shape, 413 with its own code, decided before any row applies; none is 
 capacity refusal, and a service under load makes a request wait rather than refuse it,
 by the specification's `NeverRefusedForCapacity`. Nothing bounds the memory the queue
 holds across requests: a publisher within every limit can still grow it without end.
-Whether and how to bound it is the specification's third open question, and the
-resident memory of PR 38's prototype, 8,191 MiB after ten seconds of batch publishing
-(decision 0019's evidence), is the reason it needs an answer.
+The specification does not bound it: the maintainer closed its third open question on
+2026-11-24, and `NeverRefusedForCapacity` now says that superseded records and then dead
+letters are removed early when space must be reclaimed, and that no record is removed
+or bounded. The service does not reclaim that space yet. Memory bounds stay with the
+deployment, and the resident memory of PR 38's prototype, 8,191 MiB after ten seconds of
+batch publishing (decision 0019's evidence), shows what an unbounded publisher costs.
 
 Time is bounded less than shape. `--request-timeout-ms` bounds each handler and nothing
 else, so a connection that sends nothing, or a request head that trickles in or never

@@ -61,6 +61,7 @@ snapshot.
 | T36 | Diagram drift: a check that the committed SVGs match the script that draws them, and where that script lives | `T36-diagram-drift-check.md` | T35 | T33 | todo |
 | T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | todo |
 | T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | none | todo |
+| T39 | Land the operator listing of the shed queues (question 2) and new-pocket-first (question 6), both ruled | `T39-decide-q2-q6.md` | T35 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -81,7 +82,7 @@ T00 ─┬─ T01 ────────────┐
 The MVP wave, after T19:
 
 ```text
-T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35
+T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35 ── T39
                  ├─ T27 ───────┴─ T30 ─┤       ├─ T33 ── T38
                  └─ T29 ───────────────┘       └─ T34
 ```
@@ -192,7 +193,10 @@ the MVP wave.
   hand-rolled connection wrapper, and with it the header-read deadline, and T38 names
   what a slow or silent client can then do and looks for an existing way to bound it. It
   writes no production code, waits for T33, and ends with a recommendation the
-  maintainer decides on.
+  maintainer decides on. T39 lands the two rulings of 2026-11-23 and
+  2026-11-24 that add behaviour: an operator's read-only listing of the shed queues
+  (the module's question 2) and the `new_pocket_first` switch (question 6). The same
+  rulings closed questions 3, 4, 5 and 7 in the module's wording alone.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

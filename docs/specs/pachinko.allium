@@ -20,10 +20,14 @@
 --   - Storage, snapshots, replication and recovery: implementation.
 --   - Transport, wire format and client authentication: decision 0019
 --     records them, triggered by the surfaces below.
---   - Memory bounds, disk spill and autoscaling: deployment; see the
---     capacity open question.
+--   - Memory bounds, disk spill and autoscaling: deployment. The module
+--     bounds no Record and refuses no publish for capacity; see
+--     NeverRefusedForCapacity.
 --   - Topics: a deployment is one queue; separate concerns run separate
 --     deployments.
+--   - Worker pools and priority classes (standard against high-memory
+--     workers, spot against reserved): each pool or class runs as its own
+--     deployment; a pocket carries neither.
 --   - Reading the superseded and dead-letter queues: open question.
 --
 -- Dependencies
@@ -275,6 +279,12 @@ entity Lease {
 
 -- The five defaults are the maintainer's, confirmed for the MVP by
 -- decision 0019; a deployment sets its own.
+--
+-- lease_ttl is one fixed value and is never derived from observed lease
+-- durations. It is a liveness timeout: a live consumer renews, and a
+-- deployment that wants fast recovery after a consumer dies sets a short
+-- lease_ttl. Decided by the maintainer on 2026-11-23, closing open
+-- question 5.
 config {
     lease_ttl: Duration = 5.minutes
     max_consecutive_expiries: Integer = 3
@@ -438,6 +448,12 @@ rule DropStalePublish {
         expires_at: now + config.superseded_ttl
     )
 }
+
+-- Only a publish revives a parked pocket: ReviveParkedPocket answers
+-- PocketTouched, which the three rules named above PublishNewKey alone
+-- emit. No operator action and no cooldown revives one, and time alone
+-- leaves it parked. Decided by the maintainer on 2026-11-23, closing open
+-- question 7.
 
 rule ReviveIdlePocket {
     when: PocketTouched(pocket_key)
@@ -1081,8 +1097,12 @@ surface Publishing {
     @guarantee NeverRefusedForCapacity
         -- A publish is never rejected because the deployment is full.
         -- When space must be reclaimed, SupersededRecords and DeadLetters
-        -- are removed before their expires_at; a Record is never removed
-        -- for capacity. Which of them go first is the capacity open question.
+        -- are removed before their expires_at: SupersededRecords first,
+        -- oldest shed_at first, and DeadLetters only when no
+        -- SupersededRecord is left, oldest nacked_at first. A Record is
+        -- never removed for capacity, and the number of Records is not
+        -- bounded. Decided by the maintainer on 2026-11-24, closing open
+        -- question 3.
 
     @guarantee EveryDropIsVisible
         -- A version leaves its pocket in one of three ways, and nothing
@@ -1217,12 +1237,19 @@ surface Consuming {
 -- question 11, a stale publish touching its pocket, on 2026-11-16: it
 -- does not (see the comment above PublishNewKey). On 2026-11-16 the
 -- maintainer also closed question 1, equal rank with a different
--- payload: the publish is rejected (see the Publish comment). So the six
--- lines below are questions 2 to 7.
+-- payload: the publish is rejected (see the Publish comment). On
+-- 2026-11-23 the maintainer closed questions 5 and 7. Question 5, an
+-- adaptive lease TTL: lease_ttl stays one fixed config value (see the
+-- Config comment). Question 7, reviving a parked pocket other than by a
+-- publish: nothing else revives one (see the comment above
+-- ReviveIdlePocket). On 2026-11-24 the maintainer closed questions 3 and
+-- 4. Question 3, capacity beyond shedding the decaying queues:
+-- superseded records go first and dead letters after them, oldest first,
+-- no Record is removed or bounded and no publish is refused (see
+-- NeverRefusedForCapacity). Question 4, routing by worker pool or
+-- priority: pools and classes run as separate deployments (see
+-- Excludes); its "newly onboarded tenants first" is the subject of
+-- question 6. So the two lines below are questions 2 and 6.
 
 open question "Who reads the superseded and dead-letter queues, and what can they do: an operator listing, a replay action back into the pocket, or a consumable stream under the lease model? The answer also fixes what an entry must carry; reason and nacked_by are kept on that assumption."
-open question "Capacity beyond shedding the decaying queues first: which superseded records and dead letters shed first, a bound on records, disk spill, a back-pressure signal to publishers, or none? Request-shape limits (rows, bytes, timeouts) are not capacity refusals."
-open question "Routing by worker pool or priority (standard against high-memory workers, newly onboarded tenants first, spot against reserved): separate deployments, or a property of pockets?"
-open question "Adaptive lease TTL: should lease_ttl be derived from observed lease durations to shorten recovery after a consumer dies?"
 open question "Should a newly created pocket be able to jump to the front of the queue, opt-in, for fast first service?"
-open question "Can anything other than a publish revive a parked pocket, such as an operator action or a cooldown?"

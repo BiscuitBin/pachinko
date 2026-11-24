@@ -350,8 +350,8 @@ fn an_equal_rank_publish_does_not_revive_a_parked_pocket() {
     assert_eq!(fixture.pocket("a").status, PocketStatus::Parked);
 }
 
-// scenario: S026 (open question 7: only a publish revives a parked pocket, as the
-// rules stand; an operator action or a cooldown would be a new rule)
+// scenario: S026 (only a publish revives a parked pocket; the specification rules
+// out an operator action and a cooldown)
 // obligation: rule-failure.ReviveParkedPocket.2
 #[test]
 fn only_a_publish_revives_a_parked_pocket() {
