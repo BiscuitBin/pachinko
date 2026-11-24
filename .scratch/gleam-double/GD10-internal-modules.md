@@ -28,7 +28,7 @@ Three kinds of `pub` name are mixed in those modules:
   `inspection.snapshot`, and everything in `rules`, `domain`, `core` and the rule
   modules. These are `pub` because another module under `gleam-double/src/` uses them.
 - **What is `pub` only for the tests.** `core.run`, `core.registry`, `rules.dispatch`,
-  `inspection.empty` and a few more. No other module under `gleam-double/src/` names
+  `invariants.registry` and a few more. No other module under `gleam-double/src/` names
   them, and nothing says so.
 
 Gleam has two tools for this. A module whose path is `<package>/internal` or lies under
@@ -91,12 +91,15 @@ follows it, and reports under Departures if one of these cannot hold.
   | Module | Marked `@internal` | Count |
   | --- | --- | --- |
   | `model` | `State`, `new`, `HeldRecord`, `held_under`, `replace_record`, `replace_pocket`, `replace_lease`, `queued`, `oldest_first`, `ending`, `leases_of_pocket`, `leases_of_consumer` | 12 |
-  | `inspection` | `snapshot`, `empty` | 2 |
+  | `inspection` | `snapshot` | 1 |
   | `invariants` | `Invariant`, `registry` | 2 |
   | The root, `config`, `time`, `refusals`, `failure`, `answers` | none | 0 |
 
   `replace_lease` is named by one test module, `expiry_test`, which builds a state by
-  hand. It is marked with its two siblings.
+  hand. It is marked with its two siblings. `inspection.empty` is not marked: no module
+  under `gleam-double/src/` names it, but `owner_test.gleam` uses it to write the
+  snapshot it expects, as a caller's own test would, and on 2026-11-23 the maintainer
+  ruled that it is part of the interface.
 - **What stays unmarked, which is the interface.** With the root's 17 items from GD08:
 
   | Module | Items | Constructors |
@@ -108,14 +111,14 @@ follows it, and reports under Departures if one of these cannot hold.
   | `answers` | `Answer`, `BatchRecord`, `TickReport`, `LeaseView`, `HeldView` | As GD09 lists them |
   | `model`, the entities | `Queue`, `Publisher`, `Consumer`, `PocketStatus`, `Pocket`, `Mark`, `RecordStatus`, `Record`, `Reason`, `SupersededRecord`, `DeadLetter`, `LeaseStatus`, `Lease` | `PocketStatus`: `PocketQueued`, `PocketLeased`, `PocketIdle`, `PocketParked`. `Mark`: `Unsettled`, `Acked`, `Nacked`. `RecordStatus`: `RecordQueued`, `RecordHeld`. `Reason`: `Superseded`, `Stale`. `LeaseStatus`: `LeaseActive`, `LeaseReleased`, `LeaseExpired`. Each other type has one constructor of its own name |
   | `model`, the lookups over a snapshot's lists | `pocket`, `record`, `lease`, `records_of`, `held`, `active` | none |
-  | `inspection` | `Snapshot`, `PocketView`, `ConsumerView`, `Views`, `views` | Each type has one constructor of its own name |
+  | `inspection` | `Snapshot`, `empty`, `PocketView`, `ConsumerView`, `Views`, `views` | Each type has one constructor of its own name |
   | `invariants` | `check` | none |
 
   `model` has 31 `pub` items: 19 unmarked and 12 marked. `Queue` stays unmarked because
   it is an entity of the specification, though only a `State` holds one.
 - **The test-only table.** A name is *`pub` only for the tests* when it is a `pub fn` or
   a `pub const` that sits in a module under `internal/` or is marked `@internal`, and no
-  other module under `gleam-double/src/` names it. There are seven:
+  other module under `gleam-double/src/` names it. There are six:
 
   | Name | What the tests use it for |
   | --- | --- |
@@ -124,7 +127,6 @@ follows it, and reports under Departures if one of these cannot hold.
   | `core.run_due` | Running outcomes a test made by hand, one after another, as a tick does |
   | `core.registry` | The coverage check reads the rules from it |
   | `rules.dispatch` | Asking which row's guard holds, without running its effect |
-  | `inspection.empty` | The snapshot of a new queue, to build a state by hand on |
   | `invariants.registry` | The coverage check, and the positive controls, read the checker's entries |
 
   The table lists functions. A type only a test names, such as `core.Ran`, follows the
@@ -149,8 +151,8 @@ follows it, and reports under Departures if one of these cannot hold.
   - No module under `gleam-double/src/` imports a module of the package under an alias.
     None does at the base: `rg -n '^import pachinko_double.* as |^\} as ' gleam-double/src`
     prints nothing.
-  - The guide's test-only table and the pin's own list of seven hold the same names.
-  - Each of the seven is a `pub fn` of its module, and no other module under
+  - The guide's test-only table and the pin's own list of six hold the same names.
+  - Each of the six is a `pub fn` of its module, and no other module under
     `gleam-double/src/` names it.
   - Every other `pub fn` and `pub const` that sits under `internal/` or is marked is
     named by some other module under `gleam-double/src/`. So a new test-only name fails
@@ -298,13 +300,13 @@ full commit id and "with uncommitted changes". Evidence goes under `ai_tmp/gd/GD
    the paths on the three fences that name `identity.gleam` and `publish.gleam`, since
    the run reads the file a fence names. Run `just gleam-double-format`, then
    `just gleam-double`. The layout assertions pass now. The list assertions still fail,
-   for the fourteen marks not yet written, and nothing else may. Save
+   for the thirteen marks not yet written, and nothing else may. Save
    `git diff -M "$base" -- gleam-double/src` and its `--stat`, and show that each of the
    eleven is a rename whose changed lines all belong to `import` statements.
-5. **Green: the marks.** Add the other fourteen `@internal` lines. `just gleam-double`
+5. **Green: the marks.** Add the other thirteen `@internal` lines. `just gleam-double`
    builds with no warning, which is the third probe; quote it. Every assertion of step 2
    passes, and the run is green.
-6. **Red, then green: the test-only table.** Add the pin's assertions about the seven
+6. **Red, then green: the test-only table.** Add the pin's assertions about the six
    names, with their controls, and run `just gleam-double-format`. They fail: the guide
    has no such table. Quote the failure. Add the table to the guide; the run is green.
    Then show the scan can fail: in a scratch change, call `core.registry()` from the
@@ -327,7 +329,7 @@ full commit id and "with uncommitted changes". Evidence goes under `ai_tmp/gd/GD
    - Would the pin fail if a module were added to `internal/` or beside it, if an item
      gained or lost a mark, or if a new `pub fn` under `internal/` were used only by a
      test?
-   - Is any of the seven test-only names in fact named by a module under
+   - Is any of the six test-only names in fact named by a module under
      `gleam-double/src/`, or is any other name `pub` only for the tests?
    - Outside `import` statements, `@internal` lines and the root's header, did any line
      under `gleam-double/src/` change?
@@ -349,12 +351,12 @@ full commit id and "with uncommitted changes". Evidence goes under `ai_tmp/gd/GD
 
 - `gleam-double/src/pachinko_double/` holds exactly the eight vocabulary modules and
   `internal/`, which holds exactly the eleven moved modules. The pin asserts it.
-- `model`, `inspection` and `invariants` carry exactly the 12, 2 and 2 marks of
+- `model`, `inspection` and `invariants` carry exactly the 12, 1 and 2 marks of
   "Decisions fixed", and no other module under `gleam-double/src/` carries one. The pin
   asserts each module's unmarked and marked lists.
 - No vocabulary module imports a module under `pachinko_double/internal/`, and no module
   under `gleam-double/src/` imports another under an alias. The pin asserts both.
-- The guide's test-only table lists exactly the seven names, and the pin holds the table
+- The guide's test-only table lists exactly the six names, and the pin holds the table
   against the source in both directions. Step 6's scratch break is quoted.
 - No file under `gleam-double/src/` or `gleam-double/test/` imports a moved module by its
   old path. `gleam-double/README.md`, `gleam-double/SPEC-NOTES.md` and
@@ -416,21 +418,27 @@ for item in 'type State' 'fn new' 'type HeldRecord' 'fn held_under' 'fn replace_
   rg -qU "^@internal\npub $item\b" "$src/model.gleam"
 done
 rg -qU '^@internal\npub fn snapshot\b' "$src/inspection.gleam"
-rg -qU '^@internal\npub fn empty\b' "$src/inspection.gleam"
+pattern='^@internal\npub fn empty\b'
+probe=$(printf '@internal\npub fn empty(settings: Settings) -> Snapshot {\n' | rg -U --count-matches "$pattern")
+test "$probe" -eq 1
+if rg -nU "$pattern" "$src/inspection.gleam"; then exit 1; else test "$?" -eq 1; fi
 rg -qU '^@internal\npub type Invariant\b' "$src/invariants.gleam"
 rg -qU '^@internal\npub fn registry\b' "$src/invariants.gleam"
 marks=$(rg -c '^@internal$' "$src/model.gleam")
 test "$marks" -eq 12
 marks=$(rg -c '^@internal$' "$src/inspection.gleam")
-test "$marks" -eq 2
+test "$marks" -eq 1
 marks=$(rg -c '^@internal$' "$src/invariants.gleam")
 test "$marks" -eq 2
 marked=$(rg -l '^@internal' gleam-double/src | LC_ALL=C sort | tr '\n' ' ')
 test "$marked" = "$src/inspection.gleam $src/invariants.gleam $src/model.gleam "
 
-seams='core\.run|core\.run_at|core\.run_due|core\.registry|rules\.dispatch|inspection\.empty|invariants\.registry'
+seams='core\.run|core\.run_at|core\.run_due|core\.registry|rules\.dispatch|invariants\.registry'
 rows=$(rg -c "^\| \`($seams)\` \|" gleam-double/README.md)
-test "$rows" -eq 7
+test "$rows" -eq 6
+probe=$(printf '| `inspection.empty` | a row that must not be there |\n' | rg -c '^\| `inspection\.empty` \|')
+test "$probe" -eq 1
+if rg -n '^\| `inspection\.empty` \|' gleam-double/README.md; then exit 1; else test "$?" -eq 1; fi
 
 pattern="src/pachinko_double/($moved)\.gleam"
 probe=$(printf 'src/pachinko_double/publish.gleam\nsrc/pachinko_double/internal/publish.gleam\n' | rg -c "$pattern")
@@ -477,10 +485,10 @@ departures; and what was not run.
   ticket shows only that the build is clean and that the pin holds the layout.
   `gleam docs build` and `gleam export package-interface` would show the rest, and each
   needs a new recipe.
-- **`inspection.empty` is listed as test-only, as the maintainer was shown it on
-  2026-11-23.** Besides the checker's controls, `owner_test.gleam` uses it to write the
-  snapshot it expects, which is what a caller's own test would do. The maintainer may prefer it unmarked, as part of
-  `inspection`'s interface.
+- **Closed: `inspection.empty`.** The maintainer was first shown it as a test-only
+  name. Besides the checker's controls, `owner_test.gleam` uses it to write the snapshot
+  it expects, which is what a caller's own test would do. On 2026-11-23 the maintainer
+  ruled that it stays unmarked, as part of `inspection`'s interface.
 - **`Queue` is unmarked and `State` is marked.** A caller never holds either: the
   snapshot gives `next_position` as a field. `Queue` stays in the interface as an entity
   of the specification.

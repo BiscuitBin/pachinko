@@ -92,9 +92,10 @@ The second group is this ticket's own design, written from a scan of the tree at
 commit Context names. The builder follows it, and reports under Departures if one of
 these cannot hold.
 
-- **The five values are plain arguments.** What the maintainer was shown on 2026-11-23
-  called them labelled, "as every other trigger function already does". The other trigger functions
-  take plain positional arguments, so `publish` matches them:
+- **The five values are plain arguments.** What the maintainer was first shown on
+  2026-11-23 called them labelled, "as every other trigger function already does". The
+  other trigger functions take plain positional arguments, so `publish` matches them,
+  and the maintainer confirmed plain arguments the same day:
 
   ```gleam
   pub fn publish(
@@ -398,10 +399,11 @@ what was not run.
   public module instead, and `publish` keep taking one. The maintainer chose the five
   values on 2026-11-23, so that `Publication` stays with its rule module, where it is the
   input of the `Publish` table.
-- **Labelled or plain.** The maintainer was shown labelled arguments on 2026-11-23, and
+- **Closed: labelled or plain.** The maintainer was first shown labelled arguments, and
   this ticket writes plain ones, to match `pull`, `ack` and the rest. Three of the five
-  are `String`s, so labels would guard against a swapped pair. Labelling one function and not the others is a
-  choice for the maintainer.
+  are `String`s, so labels would guard against a swapped pair. On 2026-11-23 the
+  maintainer ruled for plain arguments, over labels for `publish` alone and over
+  keeping `Publication` as the argument.
 - **How a caller names the failure type.** A caller writes `failure.Failure(Refusal)`,
   or uses the root's `Reply`. The root could hold an alias for it, which would be an
   eighteenth item. `domain.Failure` is that alias today, and GD10 makes `domain`

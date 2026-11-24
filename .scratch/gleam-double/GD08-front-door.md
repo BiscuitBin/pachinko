@@ -383,17 +383,17 @@ what was not run.
 
 ## Open points
 
-- **A constant can refer to a function, and the maintainer was told it cannot.** What
-  the maintainer was shown on 2026-11-23 gave three reasons a name is public only where
-  it is defined: no re-exports, no constructors through an alias, and "a constant cannot hold
-  a function". The third is wrong. The standard library's `gleam/dynamic/decode` defines
+- **Closed: a constant can refer to a function, and the maintainer was told it
+  cannot.** What the maintainer was first shown on 2026-11-23 gave three reasons a name
+  is public only where it is defined: no re-exports, no constructors through an alias,
+  and "a constant cannot hold a function". The third is wrong. The standard library's `gleam/dynamic/decode` defines
   `pub const string: Decoder(String) = Decoder(decode_string)`, a constant that holds
   one. A thin root of constants that refer to `owner.gleam`'s functions was therefore an
   option the maintainer was not shown. It would hand on the functions only: `Outcome`,
   `PartialTick` and every type of GD09 would still be public only where they are
   defined, and what a function loses when a constant refers to it was not tried here.
-  The choice to move the owner whole stands unless the maintainer changes it before
-  step 1.
+  Shown the correction later the same day, the maintainer ruled that the owner still
+  moves whole.
 - **`gleam docs build` and `gleam export package-interface`** would give the compiler's
   own view of the public list, where the pin reads source text. Each needs a new
   `Justfile` recipe, so neither is in scope for GD08 to GD11.
