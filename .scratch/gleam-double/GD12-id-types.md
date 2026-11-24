@@ -1587,6 +1587,28 @@ passing build; that the baseline ran on an untouched tree, beyond the files' tim
 count; the exact `codex exec` command lines and the Codex processes' exit statuses; who
 ran the triage; and the models of the subagents.
 
+### 11. Before publish: the series review
+
+Before the series was offered for publishing, one Codex (gpt-6-astra) breakage lens read
+`f56ece6..9699fd6` (`ai_tmp/review/GD12-series/`, `findings-breakage.md` and
+`verdicts.md`). It found no defect in the tree, and three limits of the checks:
+
+- **B1, medium, valid as a limit.** The pin reads text: it counts the lines that name
+  `String`. A private helper whose parameters are left unannotated, and which is handed
+  two ids' texts after a `let` matches them out, infers `String` for both, so the two
+  could be swapped and the pin would pass. No such helper is in the tree: every id under
+  `src/` crosses a function boundary as its own type. Closing the gap would need a pin
+  that every parameter of a named function under `src/` is annotated, which this ticket
+  does not ask for; it is left as residual risk.
+- **B2, low, valid as wording.** Verification's defect-text probe counts each literal in
+  its file; it does not show that the literal is still asserted. Step 6's residue is
+  what showed that no assertion changed (section 6): an `assert` turned into `let _ =`
+  is a token the residue reports.
+- **B3, low, invalid.** A `printf` whose format ends in a bare `%` fails after writing
+  its lines, and the pipeline's status is the last command's. Every format the script
+  passes `printf` is a fixed literal with no such directive, so no producer of the
+  script can fail that way.
+
 ## Open points
 
 - **The test diff is large.** Most of it is mechanical, and step 6's residue is what
