@@ -139,6 +139,7 @@ snapshot.
 | GD09 | The caller's types in public modules | `GD09-callers-types.md` | GD08 | done |
 | GD10 | The engine and the rules under `internal/` | `GD10-internal-modules.md` | GD09 | done |
 | GD11 | Test support under `test/support/` | `GD11-test-support.md` | GD08 | done |
+| GD12 | A type of its own for each id | `GD12-id-types.md` | GD11 | todo |
 
 ## Dependencies
 
@@ -154,8 +155,11 @@ and no two tickets run in it at once.
 
 ```text
 GD08 ──> GD09 ──> GD10
-  └────────────────────> GD11
+  └────────────────────> GD11 ──> GD12
 ```
+
+GD12 starts from the tree GD11 left. It moves no module: it gives each id a type of
+its own, from the root's functions to the engine.
 
 ## What each ticket delivers
 
@@ -172,6 +176,7 @@ GD08 ──> GD09 ──> GD10
 | GD09 | L | A caller that drives the queue and reads every reply imports only the root, the vocabulary modules and test support. The walkthrough test is the witness |
 | GD10 | L | A listing of `src/pachinko_double/` shows the split. The pin holds the public module list, each public module's names and the list of names that are `pub` only for the tests |
 | GD11 | S | A listing of `test/` shows the tests and one support directory, and the pin holds both lists |
+| GD12 | XL | A call with two ids swapped does not compile. Each id is a type of its own in `ids.gleam`, and the pin holds that no `String` under `src/` is an id |
 
 ## The interface tickets
 
@@ -240,7 +245,7 @@ lands whole before any publish scenario is ported.
 | GD05 | 4 | 0 | 12 | 34 |
 | GD06 | 7 | 0 | 34 | 0 |
 | GD07 | 0 | 0 | 0 | none; the pending lists are deleted |
-| GD08 to GD11 | 0 | 0 | 0 | none |
+| GD08 to GD12 | 0 | 0 | 0 | none |
 
 Why GD01 and GD02 are split where PD01 was one: no Gleam toolchain has run in this
 repository, so GD01 proves it on the thinnest real path before the model and the checker
