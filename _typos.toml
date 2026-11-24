@@ -23,3 +23,8 @@ mis = "mis"
 als = "als"
 # T10 cites commit 097ede1, whose letters the checker reads as a misspelt "edge".
 ede = "ede"
+
+[default]
+# A Markdown link to a heading in the same file uses GitHub's slug of that
+# heading, which drops apostrophes: "the entity's key" becomes "entitys-key".
+extend-ignore-re = ['\]\(#[a-z0-9_-]+\)']

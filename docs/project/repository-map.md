@@ -65,6 +65,7 @@ library and the library never on the service.
 │   └── src/                main.rs, client.rs, workloads.rs, probe.rs and report.rs
 ├── double/                 The Python double of the specification, outside the workspace
 │   ├── README.md           The reader's guide: the specification mapped to the code, and a walkthrough
+│   ├── diagrams/           The SVG figures SPEC-NOTES.md shows
 │   ├── pachinko_double/    The package: the queue, its rule tables and the invariant checker
 │   ├── tests/              Its unittest suite, which just python-double runs
 │   └── SPEC-NOTES.md       The findings for the maintainer, then every note on the specification

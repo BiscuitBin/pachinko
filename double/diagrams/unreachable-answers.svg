@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 830 380" width="830" height="380" role="img" aria-labelledby="title desc">
+<title id="title">Answers no reachable state meets: Pull, Release and LeaseLapsed</title>
+<desc id="desc">Three tables whose answer when no guard holds cannot be reached through Queue. Pull (N14): PullWithinLease&#x27;s requires pocket.status = leased follows from an active lease by the invariant UnleasedHasNoActiveLease, and PullClaimsFrontPocket&#x27;s requires pocket.status = queued holds because the pocket is chosen from the queued pockets; so one of the three Pull rows always holds and PullRefused is reached only by a hand-built state. Release (N26): an ended, missing or foreign lease is LeaseFenced; past that, UnleasedHasNoActiveLease makes the pocket leased, and the two rows&#x27; record counts cover every pocket; so ReleaseRefused is reached only by a hand-built state. LeaseLapsed (N37): tick() offers only active leases whose expires_at has passed, and LeaseLapses and its expiry rule are one outcome, so the expiry rules&#x27; restated lease.status and lease.expires_at guards always hold, which rests on tick()&#x27;s filter rather than an invariant, while their pocket.status = leased guard holds by UnleasedHasNoActiveLease; the table&#x27;s answer when none holds, nothing happens, is reached only by hand-built dispatch.</desc>
+<style>
+svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; --g1: #8250df; --g2: #bf8700; --g3: #0969da; --g4: #1a7f37; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; --g1: #ab7df8; --g2: #d29922; --g3: #4493f8; --g4: #3fb950; } }
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: var(--fg); }
+text.muted { fill: var(--muted); }
+text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.bg { fill: var(--bg); }
+.lane { stroke: var(--line); stroke-width: 1; fill: none; }
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.edge.accent { stroke: var(--accent); }
+.edge.dash { stroke-dasharray: 5 4; }
+.head { fill: var(--fg); } .head.accent { fill: var(--accent); }
+.box { stroke: var(--line); stroke-width: 1.2; }
+.box.dash { stroke-dasharray: 5 4; }
+.box.plain { fill: var(--box); } .box.info { fill: var(--info); } .box.ok { fill: var(--ok); }
+.box.warn { fill: var(--warn); } .box.bad { fill: var(--bad); } .box.none { fill: var(--bg); }
+.dot { fill: var(--fg); } .ring { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.g1 { fill: var(--g1); } .g2 { fill: var(--g2); } .g3 { fill: var(--g3); } .g4 { fill: var(--g4); }
+.s1 { stroke: var(--g1); } .s2 { stroke: var(--g2); } .s3 { stroke: var(--g3); } .s4 { stroke: var(--g4); }
+</style>
+<rect width="830" height="380" rx="8" class="bg"/>
+<text x="10" y="16" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600">Three answers no state reached through Queue meets</text>
+<text x="140.0" y="44" font-size="13" text-anchor="middle" dominant-baseline="middle" font-weight="600">Pull (N14)</text>
+<text x="140.0" y="72" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="140.0" dy="-6.5625">UnleasedHasNoActiveLease,</tspan><tspan x="140.0" dy="13.125">and the claim picks a queued pocket</tspan></text>
+<rect x="10" y="94" width="260" height="176" rx="6" class="box ok"/>
+<text x="20" y="108" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">always holds through Queue</text>
+<text x="22" y="128" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">PullWithinLease</text>
+<text x="22" y="145" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">needs pocket leased: an active</text>
+<text x="22" y="162" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">lease&#x27;s pocket is leased (invariant)</text>
+<text x="22" y="179" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">PullClaimsFrontPocket</text>
+<text x="22" y="196" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">needs pocket queued: chosen from</text>
+<text x="22" y="213" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Pockets where status = queued</text>
+<text x="22" y="230" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">PullFindsNoPocket</text>
+<text x="22" y="247" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">no active lease, no queued pocket</text>
+<line x1="140.0" y1="274" x2="140.0" y2="300" class="edge dash"/>
+<polygon points="140.0,300.0 144.0,292.0 136.0,292.0" class="head"/>
+<rect x="10" y="302" width="260" height="44" rx="6" class="box bad box dash"/>
+<text x="140.0" y="316" font-size="11" text-anchor="middle" dominant-baseline="middle" font-weight="600">no guard holds: PullRefused</text>
+<text x="140.0" y="334" font-size="10" text-anchor="middle" dominant-baseline="middle" class="muted">reached only by a hand-built state</text>
+<text x="415.0" y="44" font-size="13" text-anchor="middle" dominant-baseline="middle" font-weight="600">Release (N26)</text>
+<text x="415.0" y="72" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="415.0" dy="-6.5625">past fencing:</tspan><tspan x="415.0" dy="13.125">UnleasedHasNoActiveLease</tspan></text>
+<rect x="285" y="94" width="260" height="176" rx="6" class="box ok"/>
+<text x="295" y="108" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">always holds through Queue past fencing</text>
+<text x="297" y="128" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">pocket.status = leased</text>
+<text x="297" y="145" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">past LeaseFenced (N21), by</text>
+<text x="297" y="162" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">UnleasedHasNoActiveLease</text>
+<text x="297" y="179" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">ReleaseRequeuesPocket</text>
+<text x="297" y="196" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">records.count &gt; ending_records.count</text>
+<text x="297" y="219" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">ReleaseIdlesEmptyPocket</text>
+<text x="297" y="236" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">records.count = ending_records.count</text>
+<line x1="415.0" y1="274" x2="415.0" y2="300" class="edge dash"/>
+<polygon points="415.0,300.0 419.0,292.0 411.0,292.0" class="head"/>
+<rect x="285" y="302" width="260" height="44" rx="6" class="box bad box dash"/>
+<text x="415.0" y="316" font-size="11" text-anchor="middle" dominant-baseline="middle" font-weight="600">past fencing, no guard holds: ReleaseRefused</text>
+<text x="415.0" y="334" font-size="10" text-anchor="middle" dominant-baseline="middle" class="muted">reached only by a hand-built state</text>
+<text x="690.0" y="44" font-size="13" text-anchor="middle" dominant-baseline="middle" font-weight="600">LeaseLapsed (N37)</text>
+<text x="690.0" y="72" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="muted"><tspan x="690.0" dy="-6.5625">status and expires_at: tick()&#x27;s filter;</tspan><tspan x="690.0" dy="13.125">pocket leased: UnleasedHasNoActiveLease</tspan></text>
+<rect x="560" y="94" width="260" height="176" rx="6" class="box ok"/>
+<text x="570" y="108" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">always holds through Queue</text>
+<text x="572" y="128" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">tick() offers</text>
+<text x="572" y="145" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">active leases with expires_at &lt;= now</text>
+<text x="572" y="168" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">LeaseLapses, then its expiry rule</text>
+<text x="572" y="185" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">one outcome: lease.status = active</text>
+<text x="572" y="202" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">and lease.expires_at &lt;= now hold</text>
+<text x="572" y="219" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">pocket.status = leased</text>
+<text x="572" y="236" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">an active lease&#x27;s pocket (invariant)</text>
+<line x1="690.0" y1="274" x2="690.0" y2="300" class="edge dash"/>
+<polygon points="690.0,300.0 694.0,292.0 686.0,292.0" class="head"/>
+<rect x="560" y="302" width="260" height="44" rx="6" class="box bad box dash"/>
+<text x="690.0" y="316" font-size="11" text-anchor="middle" dominant-baseline="middle" font-weight="600">no guard holds: nothing happens</text>
+<text x="690.0" y="334" font-size="10" text-anchor="middle" dominant-baseline="middle" class="muted">reached only by a hand-built state</text>
+<text x="10" y="366" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Each unreachable answer has its own test on a hand-built state that breaks the invariant or skips tick()&#x27;s filter.</text>
+</svg>

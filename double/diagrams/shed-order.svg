@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 830 330" width="830" height="330" role="img" aria-labelledby="title desc">
+<title id="title">Superseded entries: shed_at order against rank order</title>
+<desc id="desc">Why shed_at does not order a key&#x27;s versions (N30). A held key: v1 is held under a lease; v3 is published at 10 ms and deferred; v5 is published at 20 ms, and Supersede sheds v3 with shed_at 20 ms, the publish&#x27;s now; v1 is shed only when the lease ends, with shed_at the lease&#x27;s ended_at, later. So the superseded queue holds v3 before v1, though v1 has the lowest rank. A queued key: the record is queued at rank 10; stale publishes of 5, 3 and 4 are each shed by DropStalePublish as it arrives, so they enter in the order 5, 3, 4, not by rank.</desc>
+<style>
+svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; --g1: #8250df; --g2: #bf8700; --g3: #0969da; --g4: #1a7f37; }
+@media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; --g1: #ab7df8; --g2: #d29922; --g3: #4493f8; --g4: #3fb950; } }
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif; fill: var(--fg); }
+text.muted { fill: var(--muted); }
+text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.bg { fill: var(--bg); }
+.lane { stroke: var(--line); stroke-width: 1; fill: none; }
+.edge { fill: none; stroke: var(--fg); stroke-width: 1.4; }
+.edge.accent { stroke: var(--accent); }
+.edge.dash { stroke-dasharray: 5 4; }
+.head { fill: var(--fg); } .head.accent { fill: var(--accent); }
+.box { stroke: var(--line); stroke-width: 1.2; }
+.box.dash { stroke-dasharray: 5 4; }
+.box.plain { fill: var(--box); } .box.info { fill: var(--info); } .box.ok { fill: var(--ok); }
+.box.warn { fill: var(--warn); } .box.bad { fill: var(--bad); } .box.none { fill: var(--bg); }
+.dot { fill: var(--fg); } .ring { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.g1 { fill: var(--g1); } .g2 { fill: var(--g2); } .g3 { fill: var(--g3); } .g4 { fill: var(--g4); }
+.s1 { stroke: var(--g1); } .s2 { stroke: var(--g2); } .s3 { stroke: var(--g3); } .s4 { stroke: var(--g4); }
+</style>
+<rect width="830" height="330" rx="8" class="bg"/>
+<text x="10" y="16" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600">A held key: two clocks stamp one key&#x27;s superseded entries</text>
+<line x1="60" y1="70" x2="760" y2="70" class="edge"/>
+<line x1="80" y1="64" x2="80" y2="76" class="edge"/>
+<text x="80" y="54" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="mono">before</text>
+<text x="80" y="96" font-size="10.5" text-anchor="middle" dominant-baseline="middle"><tspan x="80" dy="-6.5625">v1 held</tspan><tspan x="80" dy="13.125">under the lease</tspan></text>
+<line x1="250" y1="64" x2="250" y2="76" class="edge"/>
+<text x="250" y="54" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="mono">10 ms</text>
+<text x="250" y="96" font-size="10.5" text-anchor="middle" dominant-baseline="middle"><tspan x="250" dy="-6.5625">v3 published:</tspan><tspan x="250" dy="13.125">deferred</tspan></text>
+<line x1="420" y1="64" x2="420" y2="76" class="edge"/>
+<text x="420" y="54" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="mono">20 ms</text>
+<text x="420" y="96" font-size="10.5" text-anchor="middle" dominant-baseline="middle"><tspan x="420" dy="-6.5625">v5 published:</tspan><tspan x="420" dy="13.125">Supersede sheds v3</tspan></text>
+<line x1="680" y1="64" x2="680" y2="76" class="edge"/>
+<text x="680" y="54" font-size="10.5" text-anchor="middle" dominant-baseline="middle" class="mono">lease ends</text>
+<text x="680" y="96" font-size="10.5" text-anchor="middle" dominant-baseline="middle"><tspan x="680" dy="-6.5625">v1 shed at</tspan><tspan x="680" dy="13.125">ended_at</tspan></text>
+<text x="10" y="140" font-size="11" text-anchor="start" dominant-baseline="middle" class="muted">superseded queue</text>
+<rect x="140" y="126" width="110" height="28" rx="6" class="box warn"/>
+<text x="195.0" y="140.0" font-size="11" text-anchor="middle" dominant-baseline="middle">v3 · shed 20 ms</text>
+<rect x="256" y="126" width="140" height="28" rx="6" class="box warn"/>
+<text x="326.0" y="140.0" font-size="11" text-anchor="middle" dominant-baseline="middle">v1 · shed at ended_at</text>
+<text x="410" y="140" font-size="10.5" text-anchor="start" dominant-baseline="middle" class="muted">rank order would put v1 first</text>
+<line x1="10" y1="176" x2="820" y2="176" class="lane"/>
+<text x="10" y="196" font-size="13" text-anchor="start" dominant-baseline="middle" font-weight="600">A queued key: stale publishes enter as they arrive</text>
+<rect x="10" y="214" width="130" height="30" rx="6" class="box info"/>
+<text x="75.0" y="229.0" font-size="11" text-anchor="middle" dominant-baseline="middle">queued at rank 10</text>
+<rect x="180" y="214" width="70" height="30" rx="6" class="box plain"/>
+<text x="215.0" y="229.0" font-size="11" text-anchor="middle" dominant-baseline="middle">publish 5</text>
+<line x1="215" y1="246" x2="215" y2="268" class="edge"/>
+<polygon points="215.0,268.0 219.0,260.0 211.0,260.0" class="head"/>
+<rect x="180" y="270" width="70" height="26" rx="6" class="box warn"/>
+<text x="215.0" y="283.0" font-size="11" text-anchor="middle" dominant-baseline="middle">rank 5</text>
+<rect x="270" y="214" width="70" height="30" rx="6" class="box plain"/>
+<text x="305.0" y="229.0" font-size="11" text-anchor="middle" dominant-baseline="middle">publish 3</text>
+<line x1="305" y1="246" x2="305" y2="268" class="edge"/>
+<polygon points="305.0,268.0 309.0,260.0 301.0,260.0" class="head"/>
+<rect x="270" y="270" width="70" height="26" rx="6" class="box warn"/>
+<text x="305.0" y="283.0" font-size="11" text-anchor="middle" dominant-baseline="middle">rank 3</text>
+<rect x="360" y="214" width="70" height="30" rx="6" class="box plain"/>
+<text x="395.0" y="229.0" font-size="11" text-anchor="middle" dominant-baseline="middle">publish 4</text>
+<line x1="395" y1="246" x2="395" y2="268" class="edge"/>
+<polygon points="395.0,268.0 399.0,260.0 391.0,260.0" class="head"/>
+<rect x="360" y="270" width="70" height="26" rx="6" class="box warn"/>
+<text x="395.0" y="283.0" font-size="11" text-anchor="middle" dominant-baseline="middle">rank 4</text>
+<text x="460" y="283" font-size="10.5" text-anchor="start" dominant-baseline="middle" class="muted">DropStalePublish sheds each: queue order 5, 3, 4; rank order 3, 4, 5</text>
+<text x="10" y="318" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">While one record of a key stays queued, the entries Supersede sheds for it are ordered by rank as well as by shed_at.</text>
+</svg>
