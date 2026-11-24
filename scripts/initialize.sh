@@ -34,6 +34,12 @@ just install-tools
 # reach a green gate.
 just install-allium
 
+# The Quint CLI from tools/quint/package-lock.json into the gitignored
+# tools/quint/node_modules, through the environment's npm (decision 0021). Its
+# lock holds every package's integrity hash; the evaluator and Apalache it
+# downloads on first use are pinned by version only.
+just install-quint
+
 # `Cargo.lock` is committed and every gate passes `--locked`; this line exists
 # for a clone whose lockfile was deleted by hand.
 test -f Cargo.lock || cargo generate-lockfile

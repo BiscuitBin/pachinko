@@ -17,7 +17,7 @@ is ignored. The order is the `recipes` list under `[tool.biscuit-games-tooling]`
 | Order | Gate | Runs | Proves |
 | --- | --- | --- | --- |
 | 1 | `check-toolchain` | `rustup show active-toolchain` | `cargo` is rustup's proxy, and the active toolchain is `rust-toolchain.toml`'s channel, selected by that file rather than by `RUSTUP_TOOLCHAIN` or a `rustup override`; the run log names it. A `+toolchain` on a direct cargo call is out of the recipe's sight, and no recipe passes one. |
-| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `loadgen/Cargo.toml` with `loadgen/Cargo.lock`, and `pyproject.toml` with `pixi.lock`. |
+| 2 | `lock-check` | `cargo update --workspace --locked --offline`, the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run`, `npm ci --dry-run --offline --prefix tools/quint` | `Cargo.toml` agrees with `Cargo.lock`, `fuzz/Cargo.toml` with `fuzz/Cargo.lock`, `loadgen/Cargo.toml` with `loadgen/Cargo.lock`, `pyproject.toml` with `pixi.lock`, and `tools/quint/package.json` with `tools/quint/package-lock.json`. npm's check needs no cache and installs nothing; it writes only its log under npm's cache, outside the worktree. |
 | 3 | `lint` | `prek run --all-files`, then `prek run --files` over every untracked file Git does not ignore | The whole hook gate passes over every tracked file, and every hook that reads the files it is given passes over every untracked file Git does not ignore. |
 | 4 | `fmt-check` | `cargo fmt --all --check`, and the same over `fuzz/Cargo.toml` and `loadgen/Cargo.toml` | Every Rust file, the fuzz and loadgen crates' included, is as rustfmt would write it. |
 | 5 | `toml-check` | `taplo fmt --check`, `taplo lint` | Every TOML file is as taplo would write it, and passes taplo's lint. |
@@ -185,8 +185,8 @@ suppression is one lint on one line, as
 | `snapshots-check` | `just snapshots-review`, or `just snapshots-accept` and read the diff before committing. |
 | `check-clean` | Find the recipe that wrote the file. A recipe that changes the worktree is a defect in that recipe. |
 
-`just lock`, `just sync`, `just install-toolchain`, `just install-tools` and
-`just install-allium` reach the network, and an agent runs them only when its task
+`just lock`, `just sync`, `just install-toolchain`, `just install-tools`,
+`just install-allium` and `just install-quint` reach the network, and an agent runs them only when its task
 authorises it.
 
 ## What the hook gate contains

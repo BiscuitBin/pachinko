@@ -71,13 +71,19 @@
       "enabled": false
     },
     {
-      "description": "Lock-file maintenance rewrites pixi.lock as well as Cargo.lock. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "description": "Lock-file maintenance rewrites pixi.lock and tools/quint/package-lock.json as well as Cargo.lock. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "dependencyDashboardApproval": true
     },
     {
       "description": "Binaries in tools.txt and source builds in tools-source.txt. Each is a download nothing verifies beyond the transport or the registry checksum, and rustqual is a gate. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchDepNames": ["cargo-hack", "cargo-release", "cargo-fuzz", "rustqual"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The Quint CLI in tools/quint/package.json, pinned exactly, and package-lock.json relocked with it on the same branch; a stale lock fails lock-check. Quint pins the evaluator and Apalache it downloads on first use, so moving it moves them too (decision 0021). Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchManagers": ["npm"],
+      "groupName": "quint",
       "dependencyDashboardApproval": true
     },
     {

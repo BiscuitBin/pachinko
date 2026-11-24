@@ -13,16 +13,17 @@ prints the same list. This page says what each recipe is for, grouped as the `Ju
 groups them. The `Justfile` is the only supported interface: if something is worth
 running twice, it belongs there rather than in a shell history.
 
-Ten recipes reach the network: `install-toolchain`, `install-tools`, `install-allium`,
-`install-hooks`, `sync`, `lock`, `lock-upgrade`, `audit`, `check-links-online` and
-`image`.
-`just initialize` runs the first five of them (`install-hooks` only from the primary
+Eleven recipes reach the network: `install-toolchain`, `install-tools`, `install-allium`,
+`install-quint`, `install-hooks`, `sync`, `lock`, `lock-upgrade`, `audit`,
+`check-links-online` and `image`. `quint` reaches it too the first time `run`, `test`,
+`verify`, `compile --target tlaplus` or the REPL needs a backend.
+`just initialize` runs the first six of them (`install-hooks` only from the primary
 checkout), and is the one command a fresh clone needs the network for. Nothing inside
 `just check` reaches it once `just sync` has fetched the registry index: `lock-check` and
 `deny` then answer from that cache, and `lint` finds every hook environment already
 prepared, because `install-hooks` prepared it. On a cold Cargo cache, `lock-check` fails
 rather than fetching the index. `build`, `test`, `site`, `plan-spec`, `audit`, `mutants`,
-`bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`, `image` and `check-links-online` are outside `just check`, and
+`bench`, `loadgen`, `test-loadgen`, `fuzz`, `semver`, `image`, `quint` and `check-links-online` are outside `just check`, and
 so is every recipe that writes. CI's `loadgen` job runs `test-loadgen`.
 
 The gate numbers below are the order `just check` runs the gates in, which is the
@@ -33,15 +34,16 @@ proves and why.
 
 | Recipe | Purpose |
 | --- | --- |
-| `just initialize` | One explicit first run. Installs the pixi environment from `pixi.lock`, the pinned toolchain, the binaries `tools.txt` and `tools-source.txt` list and the pinned `allium` binary; fetches the Cargo dependencies; and installs the hook from the primary checkout; a secondary worktree skips the hook and says so. Over the network. Never formats, stages, commits, tags or pushes. |
+| `just initialize` | One explicit first run. Installs the pixi environment from `pixi.lock`, the pinned toolchain, the binaries `tools.txt` and `tools-source.txt` list, the pinned `allium` binary and the Quint CLI; fetches the Cargo dependencies; and installs the hook from the primary checkout; a secondary worktree skips the hook and says so. Over the network. Never formats, stages, commits, tags or pushes. |
 | `just check-toolchain` | Refuse to go on unless `cargo` is rustup's proxy and the active toolchain is the pin, selected by `rust-toolchain.toml`, then print it. A cargo from pixi, Homebrew or a distribution ignores that file, and `RUSTUP_TOOLCHAIN` or a `rustup override` outranks it, so the gate refuses each before anything else runs. A `+toolchain` on a direct cargo call is out of its sight; no recipe passes one. Gate 1. |
 | `just install-toolchain` | Install the toolchain and components `rust-toolchain.toml` names, through rustup. Over the network when any of them is missing. |
 | `just install-tools` | Install the tools conda-forge lacks into `.tools/bin/` through the environment's cargo-binstall, in two passes. The `tools.txt` pass takes a release binary or fails, never compiling; the `tools-source.txt` pass, for a tool with no release binary, takes a signed cargo-quickinstall build if one exists and otherwise builds from crates.io source with `--locked`, without a GitHub token. A pass whose list is empty is skipped; a list file that is missing or unreadable fails the recipe. Over the network. |
 | `just install-allium` | Download, verify and install the pinned `allium` binary into `.tools/bin/`, which Git ignores. Over the network; no lockfile can name a binary. |
+| `just install-quint` | Install the Quint CLI from `tools/quint/package-lock.json` into `tools/quint/node_modules/`, which Git ignores, with `npm ci` from the pixi environment. Over the network. Not part of `sync`; see [decision 0021](../decisions/0021-project-managed-quint-cli.md). |
 | `just sync` | Install `Cargo.lock`, `fuzz/Cargo.lock`, `loadgen/Cargo.lock` and `pixi.lock` exactly as committed; never rewrites them. Run after pulling. Over the network. |
-| `just lock` | Relock `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` at the versions the manifests allow, and `pixi.lock` against `pyproject.toml`. Over the network. |
-| `just lock-upgrade` | `cargo update` for the three Rust locks and `pixi update`: move within the manifests' constraints. `pixi upgrade`, which rewrites the pins themselves, is not this recipe. Over the network. |
-| `just lock-check` | Fail if a manifest and its lockfile disagree, for all four lockfiles. Offline, and writes none; fails on a cold Cargo cache until `just sync` has run. Gate 2. |
+| `just lock` | Relock `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` at the versions the manifests allow, `pixi.lock` against `pyproject.toml`, and `tools/quint/package-lock.json` against its `package.json`. Over the network. |
+| `just lock-upgrade` | `cargo update` for the three Rust locks, `pixi update` and `npm update --package-lock-only` for the Quint CLI's: move within the manifests' constraints. `pixi upgrade`, which rewrites the pins themselves, is not this recipe. Over the network. |
+| `just lock-check` | Fail if a manifest and its lockfile disagree, for all five lockfiles, the Quint CLI's included. Offline, and writes none; fails on a cold Cargo cache until `just sync` has run. Gate 2. |
 | `just install-hooks` | Install the read-only pre-commit gate and prepare every hook environment, so that `just lint` never fetches. Over the network. Run it from the primary checkout: every worktree shares one hooks directory, and the hook runs the environment of whichever worktree installed it. |
 
 ## Develop
@@ -52,16 +54,16 @@ proves and why.
 | `just loadgen <workload> [--name value…]` | Run the load generator or the lapse probe in the excluded `loadgen/` crate against a running `pachinko serve`; `just loadgen --help` lists the workloads and flags. A run with any error prints no rate and exits non-zero. Never in CI or `just check`. See [Load generation](testing.md#load-generation). |
 | `just test-loadgen` | Run the excluded `loadgen/` crate's unit tests, which `just test` cannot reach. Outside `just check`; CI's `loadgen` job runs it. |
 | `just python-double` | Run the Python double's `unittest` suite under `double/tests/` on pixi's Python, refusing a Python older than 3.14 and printing the version it found. Runs `python -B`, so it writes no `__pycache__/`, and `-t double`, so the suite's `load_tests` runs the coverage test last. Prints the number of tests run. Outside `just check` and CI. |
-| `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all four locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
+| `just fuzz [target] [seconds]` | Fuzz on pinned stable with no sanitizer; defaults to `smoke` and 300 seconds. Checks all five locks, then runs offline. Compilation adds time. See [Fuzzing](testing.md#fuzzing) for prerequisites and crash output. |
 | `just image` | Build the linux/amd64 container as `pachinko:dev` with Docker. Requires a running Docker daemon; outside `just check`. Over the network: the build pulls the digest-pinned base images and fetches the crates inside the container. See [Build the container image](../how-to/build-the-container-image.md). |
 | `just build` | Build every crate with every feature. Outside `just check`. |
 | `just test` | Every unit and integration test through cargo-nextest with `INSTA_UPDATE=no`: a snapshot mismatch fails without writing pending files. Then every doctest through `cargo test --doc`, because nextest cannot run doctests. Outside `just check`, where `coverage` and `test-doc` run the same tests. |
 | `just test-doc` | Every doctest. Gate 10. |
 | `just test-doc-default` | Every doctest with default features, libpachinko and pachinko each in its own `cargo test --doc --package` run, after `cargo tree` shows that neither package's dependencies enable `testing`, so a doc example that needs the `testing` feature fails unless it guards its lines with `# #[cfg(feature = "testing")]`. Gate 20. |
-| `just semver [baseline]` | Report library API compatibility against an explicit Git revision, the last reachable `libpachinko-v*` tag, or, before the first release, the merge base with `origin/main` (`main` in a clone without that remote branch). Checks all four locks, then runs cargo-semver-checks offline. Outside `just check`; advisory on pull requests until 1.0. |
-| `just snapshots-check` | Check all four locks, then run every unit and integration test with every feature through cargo-insta and nextest offline. cargo-insta cannot pass `--locked` through to nextest, so the locks are checked first. Fails mismatches without writing snapshots or pending files, and rejects unreferenced `.snap` files; doctests are left to gate 10. Gate 19. |
+| `just semver [baseline]` | Report library API compatibility against an explicit Git revision, the last reachable `libpachinko-v*` tag, or, before the first release, the merge base with `origin/main` (`main` in a clone without that remote branch). Checks all five locks, then runs cargo-semver-checks offline. Outside `just check`; advisory on pull requests until 1.0. |
+| `just snapshots-check` | Check all five locks, then run every unit and integration test with every feature through cargo-insta and nextest offline. cargo-insta cannot pass `--locked` through to nextest, so the locks are checked first. Fails mismatches without writing snapshots or pending files, and rejects unreferenced `.snap` files; doctests are left to gate 10. Gate 19. |
 | `just snapshots-review` | Open cargo-insta's interactive review of pending snapshots for a person at a terminal. |
-| `just snapshots-accept` | Check all four locks, then rerun every unit and integration test with every feature through cargo-insta and nextest offline, and accept all pending snapshots without prompting, deleting any `.snap` file no test refers to. Writes and deletes `.snap` files; read the diff before committing and give the reason for the change. |
+| `just snapshots-accept` | Check all five locks, then rerun every unit and integration test with every feature through cargo-insta and nextest offline, and accept all pending snapshots without prompting, deleting any `.snap` file no test refers to. Writes and deletes `.snap` files; read the diff before committing and give the reason for the change. |
 
 ## Format
 
@@ -98,6 +100,7 @@ proves and why.
 | `just check-specs` | `allium check` over `docs/specs/`. Asserts that every module reports an empty `diagnostics` array; anything reported is a regression. Waiver terms: [Work with the specifications](../how-to/work-with-the-specs.md). Gate 17. |
 | `just analyse-specs` | `allium analyse` over `docs/specs/`: the same structural diagnostics plus data flow, reachability, deadlocks and conflicts. Asserts that both arrays are empty; a finding cannot be waived, so any finding is a regression. Gate 18. |
 | `just plan-spec <module>` | Print the raw JSON test obligations for `docs/specs/<module>.allium`; give the module name without the extension. Plans that module alone, reading no imports, so plan imported modules separately. A suggestion list: asserts nothing, writes nothing and is outside `just check`. Runs `.tools/bin/allium` by path, so it needs the pinned binary from `just install-allium` and never falls through to another `allium` on `PATH`. |
+| `just quint <args>` | Run the pinned Quint CLI, `tools/quint/node_modules/.bin/quint`, by path, so it needs `just install-quint` and never falls through to another `quint` on `PATH`; for example `just quint typecheck <file>.qnt`. `typecheck` is offline; `run`, `test`, `verify`, `compile --target tlaplus` and the REPL download their backend into `.quint/`, which Git ignores, on first use. Not a gate and outside `just check`; see [decision 0021](../decisions/0021-project-managed-quint-cli.md). |
 | `just diagrams` | Redraw the SVG diagrams under `docs/decisions/0020/` from `scripts/diagrams.py`, standard-library Python run by the pixi environment's interpreter. The script owns each diagram's layout and words, so edit it and rerun, never the SVG. Writes, so it is outside `just check`, and nothing checks that the files match the script. |
 | `just check-links-online` | Follow external links. Manual; needs the network. |
 

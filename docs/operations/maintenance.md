@@ -33,10 +33,13 @@ fifteen minutes, raise the workflow's thirty-minute timeout before it becomes a 
 
 **Monthly.** Move the dependency pins, one kind at a time, as
 [Maintain dependencies](../how-to/maintain-dependencies.md) describes. `just lock-upgrade`
-moves all four lockfiles within the manifests' constraints — `Cargo.lock`,
+moves all five lockfiles within the manifests' constraints — `Cargo.lock`,
 `fuzz/Cargo.lock` and `loadgen/Cargo.lock` within the caret ranges, `pixi.lock` beneath
-the exact tool pins; run `just check` and commit all four. A tool pin itself moves in `pyproject.toml`, then
-`pixi update <name>`, then `pixi.lock` is committed. A line in `tools.txt` or
+the exact tool pins, and `tools/quint/package-lock.json` beneath the Quint CLI's exact
+pin; run `just check` and commit all five. A tool pin itself moves in `pyproject.toml`, then
+`pixi update <name>`, then `pixi.lock` is committed; the Quint CLI's moves in
+`tools/quint/package.json`, then `just lock`, as
+[The Quint CLI](../how-to/maintain-dependencies.md#the-quint-cli) describes. A line in `tools.txt` or
 `tools-source.txt` moves in Renovate's pull request once approved on the dashboard, and
 takes effect at the next `just install-tools`; a `tools-source.txt` line moves one release
 at a time, with `just check` run on each, because rustqual is a gate. A hook `rev` or a

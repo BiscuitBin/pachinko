@@ -61,6 +61,12 @@
 # loop would otherwise append here itself.
 **/.allium-loop/
 
+# The Quint CLI `just install-quint` puts under tools/quint (its lock is
+# committed), and the evaluator and Apalache it downloads into QUINT_HOME,
+# which the Justfile points at .quint/.
+tools/quint/node_modules/
+.quint/
+
 # Fuzz build products, corpora and crash/coverage output (lockfile is committed).
 fuzz/target/
 fuzz/corpus/

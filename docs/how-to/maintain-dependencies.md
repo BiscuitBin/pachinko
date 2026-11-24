@@ -55,8 +55,9 @@ than a `Justfile` recipe, and outside `just check`.
 | `pixi bootstrap` | `requires-pixi` in `pyproject.toml` and `pixi-version` in the `setup` action, together |
 | `cargo-nextest` | the pin in `pyproject.toml` and `nextest-version` in `.config/nextest.toml`, together |
 | `hook revs` | every hook SHA and comment in both prek configurations, but lychee's |
+| `quint` | the `@informalsystems/quint` pin in `tools/quint/package.json`, with `tools/quint/package-lock.json` relocked on the same branch |
 | one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
-| lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` together under the `crates` group, and `pixi.lock` |
+| lock-file maintenance | the transitive closure of the lockfiles, in three pull requests: `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` together under the `crates` group, `pixi.lock`, and `tools/quint/package-lock.json` under the `quint` group |
 
 Major updates open in a pull request of their own beside their group's, because
 Renovate's `separateMajorMinor` is on and takes precedence over a group. A branch that
@@ -90,11 +91,15 @@ just lock-check
 ```
 
 This runs `cargo update --workspace --locked --offline`, once for the workspace and once
-each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, and `pixi lock --check --offline --dry-run`,
-none of which writes. It is gate 2 of
+each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run`,
+and `npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock. None
+rewrites a lockfile or installs a package; npm writes only its log, under its cache
+outside the worktree. It is gate 2 of
 `just check`, so a manifest edited without relocking fails the gate rather than
 drifting. Being offline, it fails on a cold Cargo cache rather than fetching the
-registry index; `just sync` fills the cache.
+registry index; `just sync` fills the cache. The npm check needs no cache: a lock that
+satisfies `tools/quint/package.json` passes cold, and one that does not fails, as out of
+sync on a warm cache and as not cached on a cold one.
 
 ## Fetch what the lockfiles name
 
@@ -104,7 +109,8 @@ just sync
 
 This runs `cargo fetch --locked` for the workspace, for `fuzz/Cargo.toml` and for
 `loadgen/Cargo.toml`, and `pixi install --frozen`: all four lockfiles, exactly as committed, and it never rewrites
-any. It reaches the network, so run it while the
+any. The fifth lockfile, `tools/quint/package-lock.json`, is `just install-quint`'s
+([The Quint CLI](#the-quint-cli)). It reaches the network, so run it while the
 network is there, before the offline gates need the sources.
 
 ## Update deliberately
@@ -115,12 +121,14 @@ just lock-upgrade    # move every crate to the newest version its range admits
 ```
 
 `just lock` relocks the workspace and the excluded `fuzz/` and `loadgen/` crates against what the
-manifests state, then runs `pixi lock`. It is not a no-op: a dependency whose range was
+manifests state, then runs `pixi lock` and relocks `tools/quint/package-lock.json` with
+`npm install --package-lock-only`. It is not a no-op: a dependency whose range was
 edited, or that is new, resolves to the newest version its range admits, not to the
 version the range names.
 `just lock-upgrade` moves every crate in `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock`,
 transitive ones included, to the newest version its range admits, which under caret
-ranges changes plenty, and runs `pixi update`. Every tool pin is exact, so that moves
+ranges changes plenty, runs `pixi update`, and runs `npm update --package-lock-only` over
+the Quint CLI's transitive packages. Every tool pin is exact, so that moves
 transitive packages and one direct one: Python, pinned `3.14.*`, whose patch release can
 move. Both recipes reach the network. Read every lockfile diff before accepting them.
 
@@ -279,6 +287,33 @@ updated in [Work with the specifications](work-with-the-specs.md) in that same c
 Moving the package pin in `pyproject.toml` is itself a trigger for both specification
 hooks, so the gate re-reads the modules against the new version on the commit that moves
 the pin, but only after `just install-allium` has actually installed it.
+
+## The Quint CLI
+
+`@informalsystems/quint` is an npm package, so neither pixi nor cargo-binstall can hold it
+([decision 0021](../decisions/0021-project-managed-quint-cli.md)). pixi pins Node, and
+`tools/quint/` is a private npm project of its own: `package.json` names the CLI at an
+exact version, and `package-lock.json`, which is committed, holds every package's
+integrity hash. `just install-quint` installs it into `tools/quint/node_modules/`, which
+Git ignores, through the environment's npm. It reaches the network.
+
+To move the pin, edit the version in `tools/quint/package.json`, keeping it exact, then
+relock, reinstall and confirm:
+
+```console
+just lock
+just install-quint
+just quint --version
+```
+
+Read the `package-lock.json` diff before committing it with the manifest. `just lock`
+uses the pixi environment's npm, so no global Node is needed. A Quint release can move
+the versions of the Rust evaluator and Apalache it downloads on first use; read its
+release notes, then run `just quint run` on a module once, so the new evaluator lands in
+`.quint/`. Those downloads are pinned by the CLI's version and checked by nothing else.
+
+Renovate's `quint` group proposes the same move. Approve it on the dashboard, check the
+branch out, and run `just install-quint` and the Quint commands you use before merging.
 
 ## Actions in the workflows
 

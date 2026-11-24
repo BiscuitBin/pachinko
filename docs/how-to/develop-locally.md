@@ -24,7 +24,8 @@ No other installer: not uv, not cargo-binstall. `rust-toolchain.toml` names the 
 toolchain and its components, and rustup installs them the first time cargo runs here.
 `pyproject.toml` names every other tool and `pixi.lock` pins it, with `tools.txt` and
 `tools-source.txt`, one `name@version` per line, the exceptions for what conda-forge
-lacks.
+lacks, and `tools/quint/`, an npm project whose lock pins the Quint CLI
+([Quint](#quint)).
 [Configuration](../reference/configuration.md) has each figure; this page states none.
 The page covers Ubuntu and macOS on Apple silicon, the two platforms `pyproject.toml`
 solves for. Windows is not supported: the `Justfile` and the Allium installer are
@@ -85,11 +86,11 @@ just initialize
 This installs the pixi environment from `pixi.lock`, installs the pinned toolchain,
 refuses a cargo that is not rustup's, installs cargo-hack, cargo-release and cargo-fuzz
 from `tools.txt` and rustqual from `tools-source.txt` into `.tools/bin`, then the Allium
-checker, syncs all four lockfiles, and installs the pre-commit hook with every hook
-environment. Run it once per clone. It needs the network for the pixi environment, the
+checker and the Quint CLI, syncs the four Cargo and pixi lockfiles, and installs the
+pre-commit hook with every hook environment. Run it once per clone. It needs the network for the pixi environment, the
 toolchain, the `tools.txt` binaries, rustqual (a signed build if one exists, otherwise a
 build from its crates.io source),
-the Allium checker, `cargo fetch` and the hook clones. It never formats, stages,
+the Allium checker, the Quint CLI's npm packages, `cargo fetch` and the hook clones. It never formats, stages,
 commits, tags or pushes.
 
 The hook is installed from the primary checkout only, because every worktree shares one
@@ -147,7 +148,37 @@ just sync
 It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.lock`,
 `fuzz/Cargo.lock` and `loadgen/Cargo.lock` name.
 After `tools.txt` or `tools-source.txt` has moved, run `just install-tools` as well; it
-skips a version that is already there.
+skips a version that is already there. After `tools/quint/package-lock.json` has moved,
+run `just install-quint`.
+
+## Quint
+
+The Quint CLI is pinned in `tools/quint/` and installed into the worktree by
+`just initialize`, or on its own by `just install-quint`, which reaches the network
+([decision 0021](../decisions/0021-project-managed-quint-cli.md)). Run it through its
+recipe:
+
+```console
+just quint --version
+just quint typecheck path/to/module.qnt
+just quint run path/to/module.qnt
+```
+
+`typecheck` works offline. `run`, `test` and the REPL download Quint's Rust evaluator
+the first time, and `verify` and `compile --target tlaplus` download Apalache, which
+also needs a Java runtime the environment does not provide. Every recipe sets `QUINT_HOME` to the gitignored `.quint/`,
+so those downloads land in the worktree and `~/.quint` is never written. A bare `quint`
+from your shell is not this one, or is nothing at all.
+
+### Optional: Quint Studio
+
+Quint Studio is Informal Systems' desktop application for Quint. Its installer,
+`https://studio.quint.sh/install.sh`, is a curl-pipe that downloads the latest release,
+unpinned and with no checksum, installs it system-wide, into `/Applications` on macOS or
+`~/.local/bin` on Linux, puts `quint-studio` on your `PATH`, and asks you to sign in with
+an account. That is a per-machine choice, made outside this repository: no recipe, gate or
+CI job depends on Studio, and the CLI the recipes run is the pinned one above, whatever
+Studio installs.
 
 ## Related pages
 

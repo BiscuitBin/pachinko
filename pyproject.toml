@@ -35,6 +35,9 @@ cargo-semver-checks = "==0.51.0"
 # conda-forge's newest on 2026-09-24; the pin follows conda-forge, not crates.io.
 cargo-shear = "==1.13.4"
 taplo = "==0.10.0"
+# For tools/quint only: npm installs the Quint CLI from its lock; decision 0021.
+# An LTS line, verified 2026-11-24 on both supported platforms.
+nodejs = "==24.22.3"
 
 [tool.pixi.pypi-dependencies]
 biscuit-games-tooling = { git = "https://github.com/steven-cutting/biscuit_games_tooling", tag = "v0.3.0" }

@@ -66,3 +66,10 @@ mutants.out*/
 /fuzz/artifacts/
 /fuzz/coverage/
 /loadgen/target/
+
+# The Quint CLI `just install-quint` puts under tools/quint (its lock is
+# committed), and the evaluator and Apalache it downloads into QUINT_HOME,
+# which the Justfile points at .quint/. Ignored for the same reason as
+# target/: files Git can see abort the snapshot.
+/tools/quint/node_modules/
+/.quint/

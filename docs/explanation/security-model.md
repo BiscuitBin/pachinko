@@ -66,7 +66,12 @@ for tests are never a source to use where unpredictability matters.
   published would not be taken: that pass disables cargo-binstall's `crate-meta-data`
   strategy, so nothing unsigned arrives by it
   ([decision 0012](../decisions/0012-metrics-gate.md)). It also runs with the GitHub
-  token unset, so the build scripts it compiles cannot read the token.
+  token unset, so the build scripts it compiles cannot read the token. The Quint CLI is
+  the third exception: npm installs it from a lock that holds every package's integrity
+  hash, but on first use it downloads its Rust evaluator, and for `verify` and TLA+ compilation Apalache, from
+  GitHub releases at versions it pins and checks against no checksum
+  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). No gate runs those
+  commands.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
   app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
   this one alone, and the one party outside the maintainer and GitHub Actions that holds

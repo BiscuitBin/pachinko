@@ -86,11 +86,12 @@ library and the library never on the service.
 ├── Justfile                Every supported command
 ├── pyproject.toml          The pixi manifest: every other tool, Python and prek
 ├── pixi.lock               The pin for everything pyproject.toml names
+├── tools/quint/            The Quint CLI's npm project: package.json, its lock and .npmrc
 ├── .pre-commit-config.yaml  .pre-commit-fix.yaml   The hooks prek runs, and the set just fix runs
 ├── .markdownlint-cli2.jsonc  lychee.toml  _typos.toml   The prose and link checkers
 ├── .editorconfig  .gitattributes  .gitignore   Editor, line-ending and ignore rules
 ├── README.md  CHANGELOG.md  SECURITY.md  LICENSE   The front page, the history, reporting, Apache-2.0
-└── target/ .pixi/ .tools/ ai_tmp/ mutants.out/   Gitignored; never committed
+└── target/ .pixi/ .tools/ .quint/ ai_tmp/ mutants.out/   Gitignored; never committed
 ```
 
 The effects gate's std-API bans live in `crates/libpachinko/clippy.toml`, which clippy

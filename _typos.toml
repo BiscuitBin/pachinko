@@ -7,6 +7,9 @@
 extend-exclude = [
   "Cargo.lock",
   "pixi.lock",
+  "tools/quint/package-lock.json",
+  "tools/quint/node_modules/",
+  ".quint/",
   ".pixi/",
   ".tools/",
   "target/",

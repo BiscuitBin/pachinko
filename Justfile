@@ -10,6 +10,15 @@ set shell := ["sh", "-eu", "-c"]
 # first for the compiler (check-toolchain proves it).
 export PATH := justfile_directory() / ".pixi" / "envs" / "default" / "bin" + ":" + justfile_directory() / ".tools" / "bin" + ":" + env("PATH")
 
+# Quint downloads its Rust evaluator (`run`, `test`, the REPL) and Apalache
+# (`verify`, `compile --target tlaplus`) on first use, into QUINT_HOME, which defaults to ~/.quint. Every
+# recipe points it into the gitignored .quint/ instead, so the downloads stay
+# in the worktree like every other tool (decision 0021). Relative, because
+# every recipe runs from this directory and Quint 0.34.0 pastes the path
+# unquoted into shell `tar` and `chmod` commands, which a checkout path with a
+# space would break.
+export QUINT_HOME := ".quint"
+
 # Line-coverage floor over crates/*/src/**. Lower the complexity, not the
 # number.
 coverage_floor := "90"
@@ -58,7 +67,15 @@ install-tools:
 install-allium:
     bg-install-allium
 
-# All four lockfiles, exactly as committed. Never rewrites any.
+# The Quint CLI from tools/quint/package-lock.json into the gitignored
+# tools/quint/node_modules (network), through the environment's npm. Not in
+# `sync`: the setup action runs that in every CI job, and no job needs Quint
+# until a gate does (decision 0021).
+install-quint:
+    npm ci --prefix tools/quint
+
+# The four Cargo and pixi lockfiles, exactly as committed. Never rewrites any.
+# The fifth, tools/quint/package-lock.json, is `install-quint`'s.
 sync:
     cargo fetch --locked
     cargo fetch --locked --manifest-path fuzz/Cargo.toml
@@ -70,6 +87,7 @@ lock:
     cargo update --workspace --manifest-path fuzz/Cargo.toml
     cargo update --workspace --manifest-path loadgen/Cargo.toml
     pixi lock
+    npm install --package-lock-only --prefix tools/quint
 
 # Within the manifest's constraints only; every direct pin is exact, so this
 # moves transitives (openssl, libcxx, the Python patch level). `pixi upgrade`
@@ -79,16 +97,21 @@ lock-upgrade:
     cargo update --manifest-path fuzz/Cargo.toml
     cargo update --manifest-path loadgen/Cargo.toml
     pixi update
+    npm update --package-lock-only --prefix tools/quint
 
 # Offline, like every gate recipe: a cold Cargo cache fails rather than
 # fetching the registry index (`just sync` fills it), and an offline solve on a
 # stale lock still fails, which is the right answer. --dry-run because pixi
-# would otherwise rewrite a stale lock from that restricted solve.
+# would otherwise rewrite a stale lock from that restricted solve. npm's
+# --dry-run installs nothing and --offline fetches nothing: a manifest the lock
+# does not satisfy fails, on a warm cache as out of sync and on a cold one as
+# not cached.
 lock-check:
     cargo update --workspace --locked --offline
     cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
     cargo update --workspace --locked --offline --manifest-path loadgen/Cargo.toml
     pixi lock --check --offline --dry-run
+    npm ci --dry-run --offline --prefix tools/quint
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
 # the ripsecrets build with the machine's rustup and the pinned toolchain), so
@@ -416,6 +439,13 @@ analyse-specs:
 # on PATH.
 plan-spec module:
     .tools/bin/allium plan "docs/specs/$1.allium"
+
+# The pinned Quint CLI, by path, so that a worktree without `just
+# install-quint` fails here rather than falling through to a quint on PATH.
+# `typecheck` is offline; `run`, `test`, the REPL, `verify` and
+# `compile --target tlaplus` download their backend into .quint/ on first use. Not a gate (decision 0021).
+quint *args:
+    tools/quint/node_modules/.bin/quint "$@"
 
 # Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
 # which owns their layout and words: edit the script, never an SVG. It writes
