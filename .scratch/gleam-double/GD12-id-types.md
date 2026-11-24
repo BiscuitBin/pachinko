@@ -254,7 +254,9 @@ these cannot hold. Each count's command is in "Files touched".
     `identity.gleam`'s `publisher_joins`, whose table becomes `Table(PublisherId)`, and
     `publish.gleam`'s `revive`, whose signature, guard annotation and `Impossible` text
     follow the decisions above. The other 16 are blocks of the walkthrough, which are
-    `guide_test.gleam`'s text and change with it. `publish.gleam`'s `record` and
+    `guide_test.gleam`'s text and change with it. Each block changes in the stage of
+    step 4 that changes the lines it copies; the prose below changes at step 7.
+    `publish.gleam`'s `record` and
     `model.gleam`'s `RecordStatus` do not change, nor do the walkthrough's `Shown`,
     `fired` and closing check.
   - "Where to look" names `ids.gleam` first in its second row.
@@ -293,11 +295,11 @@ these cannot hold. Each count's command is in "Files touched".
       `RecordKey` and `LeaseId`, each with one constructor that wraps a `String` and checks
       nothing. Every field, parameter and reply that holds an id takes its type, so passing
       one id where another is expected does not compile.
-    - The `String` inside is stored unchanged: the caller's, or for a lease id the one the
-      owner's lease-id function returns (G10). No rule reads it: a guard or a lookup
-      compares two ids with `==`, and a defect text takes the `String` out by matching it.
-      Like G07's payload, this is a type other than the one the specification declares,
-      recorded so that a reader of the specification knows why.
+    - The `String` inside is stored unchanged: the caller's, or for a lease id the one in
+      the `LeaseId` that the owner's lease-id function returns (G10). No rule reads it: a
+      guard or a lookup compares two ids with `==`, and a defect text takes the `String`
+      out by matching it. Like G07's payload, this is a type other than the one the
+      specification declares, recorded so that a reader of the specification knows why.
     - The pin in `interface_test.gleam` holds that no `pub fn` of the root names `String`,
       and that the lines under `src/` that name it are the 32 that hold no id.
   - **`N`-note:** no `N`-note. N06 holds a reference as the key, a string; this note
@@ -336,10 +338,23 @@ these cannot hold. Each count's command is in "Files touched".
   ```
 
 - **What the pin gains**, in `gleam-double/test/interface_test.gleam`, with the unit
-  GD08 fixed. Six new tests:
+  GD08 fixed. Eight new tests:
   - "ids holds its interface, and nothing marked": the five types, each with one
     constructor of its own name, none `@internal`.
   - "ids imports nothing": no line of `ids.gleam` starts with `import`.
+  - A control, "a type is defined by a type line at column 0, public, opaque or
+    private", for a reader `defined_types`, which returns the names a module's code
+    defines as types: from each line that starts at column 0 with `type`, `pub type`
+    or `pub opaque type` and a space, the word that follows. On hand-made text it names
+    a public type with a body, an alias, an opaque type, a private type and
+    `pub type ConsumerId(a) {`, whose name ends at the `(`. It does not name a
+    constructor indented by two spaces, such as `rules`'
+    `LeaseId(next: fn(ids.LeaseId) -> Plan(state, event, answer))`, a `pub fn`, or a
+    `type` line in a comment or a string.
+  - "only ids defines a type named like an id": `ids`' `defined_types` are the five,
+    and no other module under `gleam-double/src/`, `internal/` included, defines one of
+    their names, public or private, as a type or an alias. `items` reads only `pub`
+    lines, so it cannot hold this.
   - A control, "a signature runs from its pub fn line to the line that ends with {", for
     a new reader `signatures`: a `pub fn` item's signature is its line and the lines
     after it, up to and including the first line of the code that ends with `{`; a line
@@ -368,8 +383,8 @@ these cannot hold. Each count's command is in "Files touched".
   - "answers imports only model and time" becomes "answers imports only ids, model and
     time".
   - The witness's allowed list gains `pachinko_double/ids`, and
-    `gleam-double/test/guide_test.gleam` imports it.
-  - The header's description of the assertions and of the parser's rules gains the two
+    `gleam-double/test/guide_test.gleam` imports it from step 4's `PublisherId` stage.
+  - The header's description of the assertions and of the parser's rules gains the three
     readers and the new assertions.
 
   The root's 17 items, GD10's marks and the six names `pub` only for the tests are
@@ -536,14 +551,14 @@ goes under `ai_tmp/gd/GD12/`.
    `pachinko_double.renew(owner, "lease-1", "c1")`, the consumer and the lease swapped.
    `just gleam-double` builds it, every test passes, and the run fails only with
    `swap_test.gleam is on disk and not listed in main`. Quote that and delete the file.
-2. **Red: the pin.** Add to `interface_test.gleam` the six tests and the four changes of
-   "What the pin gains". Run `just gleam-double-format` first, then `just gleam-double`.
-   The two controls pass on hand-made text. These fail: the two `ids` tests, the layout
-   test and "no vocabulary module imports a module under internal/", since `ids.gleam`
-   cannot be read; "answers imports only ids, model and time"; "no pub fn of the root
-   takes or returns a String", which names ten functions; and the `String` lines, which
-   finds 128 lines against the list's 32. Quote each failure, and any other test that
-   fails because `ids.gleam` is missing.
+2. **Red: the pin.** Add to `interface_test.gleam` the eight tests and the four changes
+   of "What the pin gains". Run `just gleam-double-format` first, then
+   `just gleam-double`. The three controls pass on hand-made text. These fail: the three
+   tests that read `ids` by name, the layout test and "no vocabulary module imports a
+   module under internal/", since `ids.gleam` cannot be read; "answers imports only
+   ids, model and time"; "no pub fn of the root takes or returns a String", which names
+   ten functions; and the `String` lines, which finds 128 lines against the list's 32.
+   Quote each failure, and any other test that fails because `ids.gleam` is missing.
 3. **Green: `ids.gleam`.** Write it as "Decisions fixed" gives it. `just gleam-double`
    passes except for three tests, which fail as in step 2: the root's signatures, the
    `String` lines, and "answers imports only ids, model and time", since `answers`
@@ -560,14 +575,27 @@ goes under `ai_tmp/gd/GD12/`.
      compiler's type mismatch.
    - **Green.** Change every field, parameter and call that holds that id, in
      `gleam-double/src/` and then in `gleam-double/test/`, with the defect texts' `let`
-     lines where that id is rendered. Run `just gleam-double-format`, then
-     `just gleam-double`. It passes except for the root's signatures and the `String`
-     lines, whose failures name fewer functions and fewer lines at each stage, and,
-     in the `PublisherId` stage, the `answers` imports test. Quote both counts.
+     lines where that id is rendered. Run `just gleam-double-format`. Then copy into
+     `gleam-double/README.md`, verbatim as formatted, each fenced block that copies a
+     line this stage changed, in `guide_test.gleam` or in an excerpted source, so that
+     the guide's drift test, "every gleam block of the guide is verbatim in its source,
+     and the setting's, the common start's and each scenario's section shows its whole
+     function", stays green. The `PublisherId` stage changes two blocks:
+     `identity.gleam`'s excerpt and the setting's block, which holds
+     `harness.publisher_joins(double, "p")`. It is also the stage at which
+     `guide_test.gleam` gains its import of `pachinko_double/ids`: before step 3 the
+     module cannot be found, and before the walkthrough names an id the import is
+     unused, which does not build. Then run `just gleam-double`. It passes except for
+     the root's signatures and the `String` lines, and, in the `PublisherId` stage, the
+     `answers` imports test. The `String` lines fall at each stage. The root's
+     signatures name, stage by stage, 9, 6, 6, 5 and then no functions, on 16, 9, 8, 5
+     and then no lines, against 10 on 18 at the base: the `PocketKey` stage leaves six
+     functions, because `publish` still takes its record key as a `String`. Quote the
+     three counts: the root's functions and lines, and the `String` lines.
 
    The `ConsumerId` stage probes the fact of "Decisions fixed", and turns the `answers`
    imports test green. After the `LeaseId` stage `just gleam-double` passes, with the
-   baseline's count plus the pin's six new tests.
+   baseline's count plus the pin's eight new tests.
 5. **The swap no longer compiles.** Write the scratch module of step 1 again with the
    typed swap, `pachinko_double.renew(owner, LeaseId("lease-1"), ConsumerId("c1"))`.
    `just gleam-double` stops on the compiler's type mismatch, before any test runs.
@@ -594,7 +622,9 @@ goes under `ai_tmp/gd/GD12/`.
    controls on hand-made pairs: a pair that differs only by wrapping shows no
    difference, a pair with two ids swapped shows one, and a pair with a literal changed
    shows one.
-7. **Words.** Update the guide as "Decisions fixed" says, and the root's header. In
+7. **Words.** Update the guide's prose as "Decisions fixed" says: "Where to look",
+   "Entities", the lease-id bullet and "A custom type"; step 4 has changed its blocks.
+   Update the root's header. In
    `gleam-double/SPEC-NOTES.md`, change the three sentences of G05, G09 and G10, add G68
    last under "Where it raises what no `N`-note holds" and item 9 after item 8 of "What
    this double raises that no `N`-note holds", each as "Decisions fixed" gives it, and
@@ -618,7 +648,8 @@ goes under `ai_tmp/gd/GD12/`.
      `refusals` or under `internal/`?
    - Does the coverage check still collect every test and stay strict at 93, 32 and 35?
    - Do G68 and item 9 read as "Decisions fixed" gives them, and does no other sentence
-     of `gleam-double/SPEC-NOTES.md` change?
+     of `gleam-double/SPEC-NOTES.md` change beyond the three of G05, G09 and G10, the
+     note count and the heading table's count?
    - Could a probe in Verification print nothing while its claim is false?
 9. **Commit and hand back.** Commit the work on `branch:`. Rerun Verification at that
    commit and quote it, headed by the full commit id. Set `status: done` here and in
@@ -643,7 +674,7 @@ goes under `ai_tmp/gd/GD12/`.
 - Steps 2 and 4 are each quoted red before they turn green, step 4 once for each of the
   five ids.
 - `just gleam-double` exits 0 with the coverage check strict at 93, 32 and 35. Its test
-  count is the baseline's plus the pin's six.
+  count is the baseline's plus the pin's eight.
 - The diff changes no fenced block of `gleam-double/README.md` beyond the 18, and every
   one of them matches its file.
 - `gleam-double/SPEC-NOTES.md` holds G68, last under "Where it raises what no `N`-note
@@ -662,8 +693,9 @@ script's first check stops it when `base` is unset or names no commit. Each prob
 passes by printing nothing follows its positive control on every spelling it must
 catch. `sh` reads only the status of a pipeline's last command, so every command whose
 failure matters runs alone in an assignment or last in its pipeline: `rg`, `git`,
-`awk`, `sort` and `find` each fill a variable of their own, and only `printf` feeds a
-pipe.
+`awk`, `sort`, `find` and `cat` each fill a variable of their own, and only `printf`
+feeds a pipe. No probe passes on an empty pipe: one that reads a variable through
+`printf` counts a line it knows is there, or compares what it read with a fixed text.
 
 ```sh
 set -eu
@@ -710,7 +742,12 @@ test "$probe" -eq 3
 sigs=$(awk "$signatures" "$root")
 fns=$(printf '%s\n' "$sigs" | rg -c '^pub fn ')
 test "$fns" -eq 12
-if printf '%s\n' "$sigs" | rg -n '\bString\b'; then exit 1; else test "$?" -eq 1; fi
+# The signatures are read from a variable, so the probe appends one line that
+# names String and counts exactly that one: a printf that writes nothing gives
+# rg no line, and rg's status 1 stops the assignment, where `if ... | rg` would
+# read the empty pipe as absence.
+named=$(printf '%s\nString\n' "$sigs" | rg -c '\bString\b')
+test "$named" -eq 1
 
 # The lines under src/ that name String, outside a whole-line comment, are 32,
 # by module as "Decisions fixed" counts them. The word control takes a bare, a
@@ -734,15 +771,31 @@ pattern='\bstring\.inspect\b'
 probe=$(printf 'Impossible("no pocket " <> string.inspect(key))\nkey |> string.inspect\n' | rg -c "$pattern")
 test "$probe" -eq 2
 if rg -n "$pattern" gleam-double/src; then exit 1; else test "$?" -eq 1; fi
-# ... and the tests still assert the texts as they were.
-rg -q -F '"no held record q under lease lease-1"' gleam-double/test/lease_end_test.gleam
-rg -q -F '"nacked record m has no nacked_at"' gleam-double/test/lease_end_test.gleam
-rg -q -F '" has no deferred_position"' gleam-double/test/lease_end_test.gleam
-rg -q -F '"no held record k3 under lease lease-1"' gleam-double/test/settle_test.gleam
-rg -q -F '"no record a in pocket pk"' gleam-double/test/publish_test.gleam
-rg -q -F '"record a in pocket pk is not held"' gleam-double/test/publish_test.gleam
-rg -q -F '"no pocket nowhere"' gleam-double/test/publish_test.gleam
-rg -q -F '"no active lease lease-0 of consumer c1 on a leased pocket"' gleam-double/test/lease_test.gleam
+# ... and the tests still assert the texts as they were: each of the nine
+# literal lines by counting its literal in its file, as often as at the base,
+# so that a changed copy of a repeated text is seen, and the tenth by its whole
+# line, the prefix, one name and the suffix. The literal's control counts it
+# twice and refuses another record, a longer pocket and the text unquoted; the
+# line's control takes `key` and another name, and refuses a changed prefix, a
+# changed suffix and a literal in place of the name.
+probe=$(printf '  EffectFailed(r, "no record a in pocket pk"),\n  EffectFailed(s, "no record a in pocket pk"),\n  EffectFailed(r, "no record b in pocket pk"),\n  EffectFailed(r, "no record a in pocket pk2"),\n  // no record a in pocket pk\n' | rg -c -F '"no record a in pocket pk"')
+test "$probe" -eq 2
+asserted() {
+  n=$(rg -c -F "$3" "gleam-double/test/$1.gleam")
+  test "$n" -eq "$2"
+}
+asserted lease_end_test 1 '"no held record q under lease lease-1"'
+asserted lease_end_test 2 '"nacked record m has no nacked_at"'
+asserted settle_test 1 '"no held record k3 under lease lease-1"'
+asserted publish_test 2 '"no record a in pocket pk"'
+asserted publish_test 1 '"record a in pocket pk is not held"'
+asserted publish_test 1 '"no pocket nowhere"'
+asserted lease_test 1 '"no active lease lease-0 of consumer c1 on a leased pocket"'
+pattern='^\s*"held record " <> [a-z_][a-z0-9_]* <> " has no deferred_position",$'
+probe=$(printf '            "held record " <> key <> " has no deferred_position",\n  "held record " <> text2 <> " has no deferred_position",\n  "held  record " <> key <> " has no deferred_position",\n  "held record " <> key <> " has no deferred_positions",\n  "held record " <> "k" <> " has no deferred_position",\n' | rg -c "$pattern")
+test "$probe" -eq 2
+built=$(rg -c "$pattern" gleam-double/test/lease_end_test.gleam)
+test "$built" -eq 1
 
 # The walkthrough imports only what the witness allows, ids among them. The
 # control holds an engine import plain, with names and under an alias, the
@@ -799,6 +852,55 @@ done
 rg -q -F 'The 68 notes follow' gleam-double/SPEC-NOTES.md
 if rg -n -F 'The 67 notes follow' gleam-double/SPEC-NOTES.md; then exit 1; else test "$?" -eq 1; fi
 rg -q -F '| Raises what no `N`-note holds | 22 |' gleam-double/SPEC-NOTES.md
+# ... and the notes hold what the counts say, where they belong. The file holds
+# 68 notes; its control counts a note of any id and neither a deeper heading
+# nor a heading with no number. `placed` slices "Where it raises what no
+# `N`-note holds" up to the next `## ` heading, and prints how many notes it
+# holds and the last one's id. `listed` slices "What this double raises that no
+# `N`-note holds" up to the next heading, and prints how many items it numbers,
+# how many of them are out of order, and the last one's title. Their controls
+# hold a note in another section, a deeper heading, an item numbered 10 and an
+# item after item 9's, and then each as it should be.
+pattern='^### G[0-9]+: '
+probe=$(printf '### G68: x\n### G7: y\n#### G1: z\n### G: w\n' | rg -c "$pattern")
+test "$probe" -eq 2
+total=$(rg -c "$pattern" gleam-double/SPEC-NOTES.md)
+test "$total" -eq 68
+placed='/^## /{s=($0 == "## Where it raises what no `N`-note holds")} s && /^### G[0-9]+: /{n++; last=$2} END {print n+0, last}'
+probe=$(printf '%s\n' '## Where the second reading agrees with an `N`-note' '### G68: x' '## Where it raises what no `N`-note holds' '### G62: y' '#### G69: z' '### G66: w' '## The `impl-choice` rows' '### G70: v' | awk "$placed")
+test "$probe" = "2 G66:"
+probe=$(printf '%s\n' '## Where it raises what no `N`-note holds' '### G66: w' '### G68: x' '## The `impl-choice` rows' | awk "$placed")
+test "$probe" = "2 G68:"
+probe=$(awk "$placed" gleam-double/SPEC-NOTES.md)
+test "$probe" = "22 G68:"
+listed='/^##+ /{s=($0 == "### What this double raises that no `N`-note holds")} s && /^[0-9]+\. /{n++; if ($1 != n ".") bad++; last=substr($0, length($1) + 2, 20)} END {print n+0, bad+0, last}'
+probe=$(printf '%s\n' '### What this double raises that no `N`-note holds' '1. **a.** x' "10. **The ids' format.** y" '3. **b.** z' '### What the actor showed about the serialized stream' '4. **c.** w' | awk "$listed")
+test "$probe" = "3 1 **b.** z"
+probe=$(printf '%s\n' '### What this double raises that no `N`-note holds' '1. **a.** x' '   wrapped' "2. **The ids' format.** y" '#### Deeper' '3. **c.** w' | awk "$listed")
+test "$probe" = "2 0 **The ids' format.**"
+probe=$(awk "$listed" gleam-double/SPEC-NOTES.md)
+test "$probe" = "9 0 **The ids' format.**"
+# ... and G68 and item 9 read word for word as "Decisions fixed" gives them.
+# `fixed` reads this ticket's two `markdown` blocks, without their two spaces
+# of indentation, then, after a marker line, the notes, and prints how many
+# blocks it read and how many of them the notes hold as a run of whole lines.
+# The control's notes hold its first block and then its second, with one word
+# changed and as given.
+fixed='
+/^=== the notes$/ { notes = 1; next }
+!notes && /^  ```markdown$/ { b++; inb = 1; next }
+!notes && inb && /^  ```$/ { inb = 0; next }
+!notes && inb { blk[b] = blk[b] substr($0, 3) "\n"; next }
+notes { text = text $0 "\n" }
+END { for (i = 1; i <= b; i++) if (index("\n" text, "\n" blk[i])) f++; print b + 0, f + 0 }'
+for last in 't 2 1' 'u 2 2'; do
+  probe=$(printf '%s\n' '  ```markdown' '  ### G68: x' '' '  - y' '  ```' '  ```gleam' '  z' '  ```' '  ```markdown' '  9. **w.** v' '     u' '  ```' '=== the notes' '### G67: a' '### G68: x' '' '- y' '' '9. **w.** v' "   ${last%% *}" | awk "$fixed")
+  test "$probe" = "${last#* }"
+done
+ticket=$(cat .scratch/gleam-double/GD12-id-types.md)
+text=$(cat gleam-double/SPEC-NOTES.md)
+probe=$(printf '%s\n=== the notes\n%s\n' "$ticket" "$text" | awk "$fixed")
+test "$probe" = "2 2"
 
 # The files changed under src/ are exactly the fifteen. The control: the same
 # command names a file that did change.
