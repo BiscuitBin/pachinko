@@ -137,7 +137,7 @@ snapshot.
 | GD07 | Close-out and the reader's guide | `GD07-close-out.md` | GD06 | done |
 | GD08 | The front door, with the owner as the root module | `GD08-front-door.md` | none | done |
 | GD09 | The caller's types in public modules | `GD09-callers-types.md` | GD08 | done |
-| GD10 | The engine and the rules under `internal/` | `GD10-internal-modules.md` | GD09 | todo |
+| GD10 | The engine and the rules under `internal/` | `GD10-internal-modules.md` | GD09 | done |
 | GD11 | Test support under `test/support/` | `GD11-test-support.md` | GD08 | todo |
 
 ## Dependencies

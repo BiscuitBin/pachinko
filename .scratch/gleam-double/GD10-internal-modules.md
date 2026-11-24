@@ -1,7 +1,7 @@
 ---
 id: GD10
 title: "Gleam double: the engine and the rules under internal/"
-status: todo
+status: done
 depends_on: [GD09]
 parallel_with: []
 branch: build-gleam-double
@@ -375,38 +375,48 @@ full commit id and "with uncommitted changes". Evidence goes under `ai_tmp/gd/GD
 ## Verification
 
 Run as one `sh` script from the repository root; `set -eu` stops it at the first command
-that fails. `base` is the commit step 1 records; set it before the script runs. Each
-probe that passes by printing nothing follows its positive control, and no probe reads
-`rg`'s status through a pipe. If the first probe's fallback was taken for a kind, types
-or functions, the builder changes the script for that kind only and says so under
-Departures: each `rg -qU` line for an item of that kind looks for the doc line above its
-`pub`, each count of marks adds the doc lines to the `@internal` lines, and the `body`
-line also passes over an added doc line.
+that fails. `base` is the commit step 1 records; set it before the script runs. The
+script's first check stops it when `base` is unset or names no commit. Each probe that
+passes by printing nothing follows its positive control. `sh` reads only the status of
+a pipeline's last command, so every command whose failure matters runs alone in an
+assignment or last in its pipeline: `ls`, `sort`, `rg -l` and `git diff` each fill a
+variable of their own, only `printf` feeds a pipe, and `rg` never does. If the first
+probe's fallback was taken for a kind, types or functions, the builder changes the
+script for that kind only and says so under Departures: each `rg -qU` line for an item
+of that kind looks for the doc line above its `pub`, each count of marks adds the doc
+lines to the `@internal` lines, and `counts` takes an added doc line as a mark too.
 
 ```sh
 set -eu
+git cat-file -e "$base^{commit}"   # base is set before the script runs
 git rev-parse HEAD
 just gleam-double
 test -f gleam-double/build/packages/packages.toml   # the gate below runs with build/ populated
 
 src=gleam-double/src/pachinko_double
 root=gleam-double/src/pachinko_double.gleam
-outer=$(ls gleam-double/src | LC_ALL=C sort | tr '\n' ' ')
+entries=$(ls gleam-double/src)
+sorted=$(printf '%s\n' "$entries" | LC_ALL=C sort)
+outer=$(printf '%s\n' "$sorted" | tr '\n' ' ')
 test "$outer" = "pachinko_double pachinko_double.gleam "
-top=$(ls "$src" | LC_ALL=C sort | tr '\n' ' ')
+entries=$(ls "$src")
+sorted=$(printf '%s\n' "$entries" | LC_ALL=C sort)
+top=$(printf '%s\n' "$sorted" | tr '\n' ' ')
 test "$top" = "answers.gleam config.gleam failure.gleam inspection.gleam internal invariants.gleam model.gleam refusals.gleam time.gleam "
-inner=$(ls "$src/internal" | LC_ALL=C sort | tr '\n' ' ')
+entries=$(ls "$src/internal")
+sorted=$(printf '%s\n' "$entries" | LC_ALL=C sort)
+inner=$(printf '%s\n' "$sorted" | tr '\n' ' ')
 test "$inner" = "consuming.gleam core.gleam decay.gleam domain.gleam expiry.gleam identity.gleam lease_end.gleam publish.gleam pull.gleam rules.gleam settle.gleam "
 
 moved='rules|domain|core|identity|publish|pull|settle|lease_end|expiry|decay|consuming'
 pattern="^import pachinko_double/($moved)\b"
-probe=$(printf 'import pachinko_double/core.{type Trigger}\nimport pachinko_double/internal/core\n' | rg -c "$pattern")
-test "$probe" -eq 1
+probe=$(printf 'import pachinko_double/core.{type Trigger}\nimport pachinko_double/decay\nimport pachinko_double/internal/core\nimport pachinko_double/core_x\n' | rg -c "$pattern")
+test "$probe" -eq 2
 if rg -n "$pattern" gleam-double/src gleam-double/test; then exit 1; else test "$?" -eq 1; fi
 
 pattern='^import pachinko_double/internal/'
-probe=$(printf 'import pachinko_double/internal/core\n' | rg -c "$pattern")
-test "$probe" -eq 1
+probe=$(printf 'import pachinko_double/internal/core\nimport pachinko_double/internal/rules.{type Table}\n  import pachinko_double/internal/core\n' | rg -c "$pattern")
+test "$probe" -eq 2
 for module in answers config failure inspection invariants model refusals time; do
   if rg -n "$pattern" "$src/$module.gleam"; then exit 1; else test "$?" -eq 1; fi
 done
@@ -430,15 +440,18 @@ marks=$(rg -c '^@internal$' "$src/inspection.gleam")
 test "$marks" -eq 1
 marks=$(rg -c '^@internal$' "$src/invariants.gleam")
 test "$marks" -eq 2
-marked=$(rg -l '^@internal' gleam-double/src | LC_ALL=C sort | tr '\n' ' ')
+files=$(rg -l '^@internal' gleam-double/src)
+sorted=$(printf '%s\n' "$files" | LC_ALL=C sort)
+marked=$(printf '%s\n' "$sorted" | tr '\n' ' ')
 test "$marked" = "$src/inspection.gleam $src/invariants.gleam $src/model.gleam "
 
 seams='core\.run|core\.run_at|core\.run_due|core\.registry|rules\.dispatch|invariants\.registry'
-rows=$(rg -c "^\| \`($seams)\` \|" gleam-double/README.md)
+rows=$(rg -c "^ *\| *\`($seams)\` *\|" gleam-double/README.md)
 test "$rows" -eq 6
-probe=$(printf '| `inspection.empty` | a row that must not be there |\n' | rg -c '^\| `inspection\.empty` \|')
-test "$probe" -eq 1
-if rg -n '^\| `inspection\.empty` \|' gleam-double/README.md; then exit 1; else test "$?" -eq 1; fi
+pattern='^ *\| *`inspection\.empty` *\|'
+probe=$(printf '| `inspection.empty` | a row |\n | `inspection.empty` | indented |\n|`inspection.empty`|tight|\n' | rg -c "$pattern")
+test "$probe" -eq 3
+if rg -n "$pattern" gleam-double/README.md; then exit 1; else test "$?" -eq 1; fi
 
 pattern="src/pachinko_double/($moved)\.gleam"
 probe=$(printf 'src/pachinko_double/publish.gleam\nsrc/pachinko_double/internal/publish.gleam\n' | rg -c "$pattern")
@@ -450,12 +463,34 @@ probe=$(printf 'import pachinko_double/internal/core as engine\n} as engine\nimp
 test "$probe" -eq 2
 if rg -n "$pattern" gleam-double/src; then exit 1; else test "$?" -eq 1; fi
 
+# The control: the same command names a file that did change.
+seen=$(git diff --name-only "$base" -- "$src/model.gleam")
+test "$seen" = "$src/model.gleam"
 pins=$(git diff --name-only "$base" -- gleam-double/gleam.toml gleam-double/manifest.toml)
 test -z "$pins"
 untouched=$(git diff --name-only "$base" -- "$src/config.gleam" "$src/time.gleam" "$src/refusals.gleam" "$src/failure.gleam" "$src/answers.gleam")
 test -z "$untouched"
-body=$(git diff "$base" -- "$src/model.gleam" "$src/inspection.gleam" "$src/invariants.gleam" | rg '^[+-]' | rg -v '^(\+\+\+|---) ' | rg -cv '^\+@internal$' || true)
-test -z "$body"
+
+# The marked modules change only by added `@internal` lines: every changed
+# line of their patch is one of the six file headers or one of the 15 marks.
+# A removed line that starts with `--` reads as a header, so it moves the
+# header count too. The control runs the same counts on a hand-made patch
+# that also changes a body line, and must see it.
+counts() {
+  headers=$(printf '%s\n' "$1" | rg -c '^(\+\+\+|---) ' || test "$?" -eq 1)
+  changed=$(printf '%s\n' "$1" | rg -c '^[+-]' || test "$?" -eq 1)
+  added=$(printf '%s\n' "$1" | rg -c '^\+@internal$' || test "$?" -eq 1)
+}
+control=$(printf -- '--- a/m.gleam\n+++ b/m.gleam\n@@ -1,2 +1,3 @@\n+@internal\n-pub fn f() {\n+pub fn f(x) {\n')
+counts "$control"
+test "$headers" -eq 2
+test "$added" -eq 1
+test "$changed" -ne "$((headers + added))"
+patch=$(git diff "$base" -- "$src/model.gleam" "$src/inspection.gleam" "$src/invariants.gleam")
+counts "$patch"
+test "$headers" -eq 6
+test "$added" -eq 15
+test "$changed" -eq "$((headers + added))"
 
 dumps=$(find gleam-double -name erl_crash.dump -print)
 test -z "$dumps"
@@ -465,18 +500,613 @@ status=$(git status --short)
 test -z "$status"
 ```
 
-The `body` line counts the changed lines of the three marked modules that are not an
-added `@internal`, and expects none: `rg -c` prints nothing and exits 1 when it counts
-zero, which `|| true` allows. The script does not show that a moved module changed only
-in its imports, because `gleam format` may rewrap an import; step 4's saved diff shows
-that. The builder runs each control first, and corrects a pattern, saying so under
-Departures, if one does not behave as written.
+The table probes allow spaces before a row and inside its first cell, as Markdown
+does. The `seen` line is the control for the two `git diff --name-only` probes after
+it: the same command names a file that did change. `counts` reads a patch of the
+three marked modules: its file headers, its changed lines and its added `@internal`
+lines. The patch passes when every changed line is a header or a mark, with six headers
+and fifteen marks; the control runs the same counts on a hand-made patch that also
+changes a body line, and must see the change. A removed line that starts with `--`
+reads as a header, so it moves the header count too. `rg -c` prints nothing and exits 1
+when it counts zero; `|| test "$?" -eq 1` lets that through and stops on any other
+status, and an empty count then fails the `test` that reads it. The script does not
+show that a moved module changed only in its imports, because `gleam format` may rewrap
+an import; step 4's saved diff shows that. The builder runs each control first, and
+corrects a pattern, saying so under Departures, if one does not behave as written.
 
 ## Hand-back notes
 
 Written at the end, in this order: base, branch and commits; the baseline; what landed;
 the probes; the red steps; the checkpoint's record; Verification at the work commit;
 departures; and what was not run.
+
+Evidence files are under `ai_tmp/gd/GD10/`, and the review record under
+`ai_tmp/review/GD10-1/`. None is committed. The implementer's files open with the commit
+line, `6e87e357c28fc9dbb59b7097435e0c34930b2ad9` alone at the baseline and with
+"(untouched)" or "with uncommitted changes" after it, except the five records of
+`just gleam-double-format` (`ev-red-format.txt`, `ev-probe-format-3.txt`,
+`ev-step4-format.txt`, `ev-step5-format.txt`, `ev-step6-format.txt`), which begin
+`$ <command>` and name no commit. The triage's recipe records (`ev-C1-red.txt`,
+`ev-B1-red.txt`, `ev-B2-red.txt`, the four `ev-*format.txt`, `ev-final.txt`,
+`ev-docs.txt`, `ev-B1-nolead-docs.txt`) also begin `$ <command>` and name no commit; its
+`ev-verif-controls.txt` opens with the commit line. In every quote below the recipe's
+echo of its own command lines is left out, and `...` marks other lines left out or a line
+cut short: a `FAIL` line is cut after the test's name, and the indented line under it,
+where one is given, gives the assertion's `Left` value, then its `Right`, from the same
+line. Times are UTC,
+read from the files' modification times, which are each file's last write; the work
+commit's own date is 2026-11-23T20:28:56-08:00, which is 2026-11-24T04:28:56Z. Where a
+fact the record should hold was never saved, the text says "not recorded"; where it rests
+only on the lead's message, the text says "by the lead's account".
+
+### 1. Base, branch and commits
+
+- Branch: `build-gleam-double`, in this worktree (shared rule 6).
+- Base commit: `6e87e357c28fc9dbb59b7097435e0c34930b2ad9` (`base.txt`, written at
+  03:52:09Z), GD09's record commit. It holds GD09's work,
+  `72fe01a206936433299151562c10fa8850281649`.
+- Work commit: `21791e62978c60909a9c3602e278c23f45c99eb2` (`work-commit.txt`), tree
+  `a466c704b7557a0acc5a27e6cb70e431bd294bc9`, titled "Put the Gleam double's engine and
+  rules under internal/, and mark the rest (GD10)". It touches 30 files
+  (`git show --stat`): the eleven renames under `gleam-double/src/pachinko_double/`, the
+  root, `model.gleam`, `inspection.gleam` and `invariants.gleam`; 13 test modules
+  (`interface_test.gleam` and the 12 that import a moved module); `gleam-double/README.md`
+  and `docs/project/repository-map.md`. `gleam-double/gleam.toml`,
+  `gleam-double/manifest.toml` and `gleam-double/SPEC-NOTES.md` are not touched.
+- The commit after it holds this record, the index's Status cell, and the ticket's
+  corrected Verification block and the paragraphs around it (section 8, departure 11).
+  The corrected block was not in the committed ticket at the work commit.
+- Nothing was fetched. Step 1's `just initialize` and `just gleam-double-deps` were not
+  run, by the lead's account; the baseline's `just gleam-double` passed its checks that
+  the gleam environment and `gleam-double/build/packages/` are present.
+
+### 2. Baseline
+
+At `6e87e357c28fc9dbb59b7097435e0c34930b2ad9`, on the untouched worktree.
+
+`ev-baseline-check.txt`, written at 03:53:19Z:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9
+$ just check
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+`ev-baseline-gleam.txt`, written at 03:53:19Z:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9
+$ just gleam-double
+...
+gleam 1.19.1
+...
+OTP 29
+...
+    Running pachinko_double_test.main
+326 tests run, 326 passed
+coverage faults: 0
+exit status: 0
+```
+
+The counts at the base, `ev-counts-base.txt` (written at 03:53:24Z): 67 import lines
+that name a moved module, in 22 files (departure 1); 35 paths of a moved module in the
+guide; and the aliased-import search, `rg exit 1`, printing nothing.
+
+### 3. What landed
+
+- **The layout.** The eleven modules moved with `git mv` to
+  `gleam-double/src/pachinko_double/internal/`: `rules`, `domain`, `core`, `identity`,
+  `publish`, `pull`, `settle`, `lease_end`, `expiry`, `decay` and `consuming`.
+  `src/pachinko_double/` now holds the eight vocabulary modules and `internal`, and
+  `gleam-double/src/` the root and the directory. Each move is a rename, R092 to R100,
+  whose changed lines are all import lines (`ev-moves-imports-only.txt`, section 5).
+- **The marks.** Fifteen `@internal` lines, each directly above its `pub`: the twelve of
+  `model` ("Decisions fixed"), `inspection.snapshot`, and `invariants.Invariant` and
+  `invariants.registry`. No other module under `gleam-double/src/` carries one.
+  `inspection.empty` stays unmarked.
+- **The root.** Its imports take the moved modules from `pachinko_double/internal/`, and
+  its `////` header gains closing sentences on the split (departure 8). No other line of
+  it changed (`ev-tests-imports-only.txt`, its last part).
+- **The tests.** Each of the 12 test modules that imported a moved module changes only in
+  its import statements (`ev-tests-imports-only.txt`). No test under a `Scenario` tag
+  changed beyond its imports.
+- **The pin**, `gleam-double/test/interface_test.gleam`, gains 21 tests: 13 at step 2, 6
+  at step 6 and 2 at the checkpoint (B2). Its tree assertions: "src/pachinko_double/
+  holds the eight vocabulary modules and internal/", "internal/ holds exactly the eleven
+  modules", the six "... holds its interface, and ..." tests of `config`, `time`,
+  `model`, `refusals`, `inspection` and `invariants`, "only model, inspection and
+  invariants carry marks: 12, 1 and 2", "no vocabulary module imports a module under
+  internal/", "no module under src/ imports a module under an alias", "the guide's table
+  lists exactly the names pub only for the tests" and "the names pub only for the tests
+  are the six, and no other name is". The rest are controls on text made by hand. Its
+  `////` header describes the new assertions and the parser's new rules. `failure` and
+  `answers` keep GD09's item tests, and the marks test asserts that they, the root and
+  `internal/` carry no mark. GD09's witness still stands.
+- **The words.** `gleam-double/README.md`'s "Where to look" takes the ticket's rows, with
+  "What is `pub` only for the tests" pointing to a new table under the heading
+  `### What is pub only for the tests`, which lists the six names and opens with a short
+  paragraph (departure 8). All 35 paths of a moved module, the three fences' included,
+  now give `src/pachinko_double/internal/`. The last two rows are not edited.
+  `docs/project/repository-map.md`'s `gleam-double/` row names the vocabulary, the
+  snapshot and the checker, and the `internal/` directory (departure 8).
+
+The test count: 326 at the base, 339 from step 2, 345 from step 6, and 347 after the
+checkpoint, the baseline's plus the pin's 21. The coverage check's constants stay 93, 32
+and 35, and every run below reports `coverage faults: 0`.
+
+### 4. The probes
+
+Every run in this section is uncommitted, on base
+`6e87e357c28fc9dbb59b7097435e0c34930b2ad9`. All three held; no fallback was taken and no
+stop was owed.
+
+- **Probe 1: `@internal` above a `pub type` and a `pub fn`.** `ev-probe-1.txt`, written at
+  03:59:13Z. After `just gleam-double-format` (`ev-probe-format-3.txt`, exit status 0),
+  the diff of `invariants.gleam` is two added lines, `+@internal` directly above
+  `pub type Invariant {` and above `pub fn registry() -> List(Invariant) {`. The run is
+  `ev-probe-gleam-3.txt` (written at 03:59:05Z): the format check and the build with
+  `--warnings-as-errors` pass, and `coverage.gleam:59` and `invariants_test.gleam:1292`
+  still call `invariants.registry()`, unchanged. The four `FAIL` lines are the pin's
+  layout and list assertions step 2 left red, less `invariants`', which the two marks
+  turned green:
+
+  ```text
+  6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+  ...
+  FAIL interface_test.src/pachinko_double/ holds the eight vocabulary modules and internal/: ...
+  FAIL interface_test.internal/ holds exactly the eleven modules: ...
+  FAIL interface_test.model holds its interface, and its twelve marked items: ...
+  FAIL interface_test.inspection holds its interface, and its one marked item: ...
+  339 tests run, 335 passed
+  coverage faults: 0
+  ...
+  exit status: 1
+  ```
+
+- **Probe 2: a module under `internal/` needs no entry in `gleam.toml`.**
+  `ev-probe-2.txt`, written at 03:59:14Z, from the same run. `git status --short` shows
+  `R  gleam-double/src/pachinko_double/decay.gleam -> gleam-double/src/pachinko_double/internal/decay.gleam`
+  and `core.gleam` and `decay_test.gleam` modified; `git diff --stat` of `gleam.toml` and
+  `manifest.toml` is empty, and `rg -n "internal" gleam-double/gleam.toml` ends
+  `rg exit 1`. The build passed with `decay` under `internal/`. Its file ends
+  `Result: holds.`
+- **Probe 3: no unmarked signature draws a warning.** `ev-probe-3.txt` is step 5's run,
+  after the last mark; the probe's note was appended after step 6, and the file was last
+  written at 04:10:14Z.
+
+  ```text
+  6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+  $ just gleam-double
+  ...
+    Compiling pachinko_double
+     Compiled in 2.01s
+  ...
+  339 tests run, 339 passed
+  coverage faults: 0
+  exit status: 0
+
+  --- Probe 3 (appended): the full build after the last mark, with --warnings-as-errors
+  warning lines in the run above: 0
+  The build is clean. That shows no warning was drawn; it does not by itself show that no unmarked signature names a marked type.
+  ```
+
+  The file adds a textual check of each unmarked `pub` item of the eight vocabulary
+  modules and the root for the words `State`, `HeldRecord` and `Invariant`, which ends
+  `hits: 0`. The script it ran, `leak.py`, is not saved under `ai_tmp/gd/GD10/`. The
+  probe's claim is therefore what its note says: no warning was drawn. The design lens
+  found no unmarked signature that names a marked or internal type (section 6).
+
+### 5. The red steps, and steps 4 to 8
+
+Every output in this section ran uncommitted, on base
+`6e87e357c28fc9dbb59b7097435e0c34930b2ad9`. The implementing subagent ran on
+`claude-opus-5-5`, by the lead's account. `just gleam-double-format` ran before each
+`just gleam-double` of steps 2 to 6, each exit status 0; what it changed at steps 3 and 4
+is in `format-diff.txt` (departure 2).
+
+#### Step 2: red, the layout and the names
+
+`ev-red-layout.txt`, written at 03:56:36Z, after `ev-red-format.txt` (exit status 0).
+The two layout assertions and the three lists with marks fail; the two import rules and
+every control pass.
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+FAIL interface_test.src/pachinko_double/ holds the eight vocabulary modules and internal/: crashed: ...
+  ... #(Value, Ok(["answers.gleam", "config.gleam", "consuming.gleam", "core.gleam", "decay.gleam", ... #(Value, Ok(["answers.gleam", "config.gleam", "failure.gleam", "inspection.gleam", "internal", "invariants.gleam", "model.gleam", "refusals.gleam", "time.gleam"])) ...
+FAIL interface_test.internal/ holds exactly the eleven modules: crashed: ...
+  ... #(Value, Error(Enoent)) ... #(Value, Ok(["consuming.gleam", "core.gleam", "decay.gleam", "domain.gleam", "expiry.gleam", "identity.gleam", "lease_end.gleam", "publish.gleam", "pull.gleam", "rules.gleam", "settle.gleam"])) ...
+FAIL interface_test.model holds its interface, and its twelve marked items: crashed: ...
+FAIL interface_test.inspection holds its interface, and its one marked item: crashed: ...
+FAIL interface_test.invariants holds its interface, and its two marked items: crashed: ...
+339 tests run, 334 passed
+coverage faults: 0
+...
+exit status: 1
+```
+
+In each of the three list failures `Left` is `Ok(#([...], []))`, the module's items
+with nothing marked, and `Right` holds the marked list of "Decisions fixed", opening
+`Item("HeldRecord", ...`, `Item("snapshot", ...` and `Item("Invariant", ...`.
+
+#### Step 3: the probes
+
+Section 4.
+
+#### Step 4: the moves
+
+`ev-step4-gleam.txt`, written at 03:59:43Z. The layout assertions pass; the two lists
+still missing marks fail, and nothing else:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+FAIL interface_test.model holds its interface, and its twelve marked items: crashed: ...
+FAIL interface_test.inspection holds its interface, and its one marked item: crashed: ...
+339 tests run, 337 passed
+coverage faults: 0
+...
+exit status: 1
+```
+
+`ev-moves-diff.txt` and `ev-moves-stat.txt` (written at 03:59:55Z) hold
+`git diff -M "$base" -- gleam-double/src` and its `--stat`; `ev-moves-diff-final.txt`
+is the same diff at the final tree of steps 1 to 8. `ev-moves-imports-only.txt` (last
+written at 04:10:34Z) strips every import statement from each module at the base and
+after the move and compares the rest with `cmp`:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+rules      ok    rename: R100 ...; non-import lines: 258 of 258 identical
+domain     ok    rename: R098 ...; non-import lines: 47 of 47 identical
+core       ok    rename: R096 ...; non-import lines: 351 of 351 identical
+identity   ok    rename: R092 ...; non-import lines: 46 of 46 identical
+publish    ok    rename: R098 ...; non-import lines: 352 of 352 identical
+pull       ok    rename: R098 ...; non-import lines: 248 of 248 identical
+settle     ok    rename: R098 ...; non-import lines: 429 of 429 identical
+lease_end  ok    rename: R098 ...; non-import lines: 344 of 344 identical
+expiry     ok    rename: R097 ...; non-import lines: 187 of 187 identical
+decay      ok    rename: R095 ...; non-import lines: 78 of 78 identical
+consuming  ok    rename: R100 ...; non-import lines: 36 of 36 identical
+
+failures: 0
+
+Control: the check sees a change to a non-import line. A copy of core.gleam with one body line altered:
+control: cmp found the difference, as it must
+...
+failures: 0
+```
+
+The last `failures: 0` is its rerun at the final tree of steps 1 to 8.
+
+#### Step 5: green, the marks
+
+`ev-probe-3.txt` (section 4): `339 tests run, 339 passed`, `coverage faults: 0`,
+exit status 0, the baseline's 326 plus step 2's 13.
+
+#### Step 6: red, then green, the test-only table
+
+`ev-red-testonly.txt`, written at 04:02:33Z, after `ev-step6-format.txt` (exit status 0).
+The guide has no table yet:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+FAIL interface_test.the guide's table lists exactly the names pub only for the tests: crashed: ...
+  ... #(Value, Ok([])) ... #(Value, Ok(["core.registry", "core.run", "core.run_at", "core.run_due", "invariants.registry", "rules.dispatch"])) ...
+345 tests run, 344 passed
+coverage faults: 0
+...
+exit status: 1
+```
+
+Only the guide-table assertion failed: the scan assertion, "the names pub only for the
+tests are the six, and no other name is", and every control passed, since the pin's own
+list of six already matched the source.
+
+With the table in the guide, `ev-green-testonly.txt` (written at 04:02:47Z):
+`345 tests run, 345 passed`, `coverage faults: 0`, exit status 0.
+
+The scratch break, `ev-scan-break.txt` (written at 04:02:58Z): the root's `inspect`
+gains `let _ = core.registry()`, and the scan fails:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+FAIL interface_test.the names pub only for the tests are the six, and no other name is: crashed: ...
+  ... #(Value, Ok(["core.registry is named by src/pachinko_double.gleam"])) ... #(Value, Ok([])) ...
+345 tests run, 344 passed
+coverage faults: 0
+...
+exit status: 1
+
+--- Reverted: the file restored from the copy taken before the break.
+...
+cmp: identical
+matches of 'registry' in git diff of the root: 0
+```
+
+#### Step 7: the words
+
+`ev-step7-gleam.txt` (written at 04:03:40Z): `345 tests run, 345 passed`,
+`coverage faults: 0`, exit status 0, which includes `guide_test`'s check of the guide's
+excerpts against the moved files. `ev-step7-docs.txt` (written at 04:03:40Z):
+`Validated 49 pages and 50 canonical topics.`, exit status 0. By the lead's account the
+`review-docs` skill was used for `docs/project/repository-map.md`, but its first step's
+`docs/reference/documentation-contract.md` was not opened (section 9).
+
+#### Step 8: the lists against the tree
+
+`ev-marked-names.txt`, written at 04:04:17Z, from the search script `marked.sh` quoted
+at its end, with controls on hand-made text first. Its summary:
+
+```text
+6e87e357c28fc9dbb59b7097435e0c34930b2ad9 with uncommitted changes
+...
+model.State                  consuming_test core_test decay_test expiry_test inspection_test lease_end_test lease_test publish_test pull_test settle_test
+model.new                    consuming_test core_test decay_test expiry_test lease_end_test lease_test publish_test pull_test settle_test
+model.HeldRecord             none
+...
+model.replace_lease          expiry_test
+...
+inspection.snapshot          expiry_test inspection_test
+invariants.Invariant         none
+invariants.registry          coverage interface_test invariants_test
+```
+
+Every other marked name is `none`. The tests use five marked names: `model.State`,
+`model.new`, `model.replace_lease`, `inspection.snapshot` and `invariants.registry`.
+`interface_test`'s hit is the string `"invariants.registry"` in the pin's own list, not
+a use (departure 9). `guide_test.gleam` names no marked name: its section lists the
+fifteen headings with no hit, and its positive control finds `model.pocket` at line 128.
+No stop was owed.
+
+`ev-probes-precommit.txt` (written at 04:10:26Z) ran Verification's probes as they then
+stood, before the checkpoint, without `git rev-parse HEAD`, `just check` and the
+`git status` test, under `sh -x`; it ended on `just check-docs`, exit status 0. The lines
+it removed sit at the line numbers they hold in
+`ai_tmp/review/GD10-1/verification.sh.before`, the triage's copy of the script before
+its fixes.
+
+### 6. Checkpoint record
+
+One checkpoint, step 9: conformance, breakage and design, before the work commit, over
+the base and the uncommitted diff.
+
+- **Reviewer and model.** One reviewer subagent per lens started Codex, `gpt-6-astra`,
+  in the form `ai_tmp/review/reviewer-subagent.md` gives: `codex exec -m gpt-6-astra -s
+  read-only -C "$PWD" -o "$DIR/last-$LENS.md" "$(cat "$DIR/brief-$LENS.txt")" <
+  /dev/null >| "$DIR/log-$LENS.txt" 2>&1 &`. The exact command lines are not saved. Each
+  `log-<lens>.txt` opens `OpenAI Codex v0.169.1`, `model: gpt-6-astra`,
+  `sandbox: read-only`, `reasoning effort: ultra`; the process ids are in
+  `pid-<lens>.txt` (written at 04:11:31Z and 04:11:35Z). `codex exec --help` for the
+  day is `ai_tmp/review/codex-exec-help-2026-11-23.txt` (`codex-cli 0.169.1`), last
+  written at 02:59:30Z, for GD09, the same UTC day; it was not rerun. Codex was on
+  `PATH`, so no fallback was needed. Every subagent in this ticket ran on
+  `claude-opus-5-5`, by the lead's account.
+- **Exit and recovery.** All three Codex processes exited normally, by the lead's
+  account; each log ends on the review's closing lines (`log-conformance.txt` at
+  04:15:43Z, `log-design.txt` at 04:16:21Z, `log-breakage.txt` at 04:17:53Z). Each
+  `findings-<lens>.md` opens `Source: last-message`.
+- **Brief.** `brief-<lens>.txt` is `brief-common.txt` followed by `lens-<lens>.txt`
+  (`cmp`, for this record). It names the ticket, the series index, the shared rules,
+  the base, `git diff -M 6e87e357c28fc9dbb59b7097435e0c34930b2ad9` plus every untracked
+  file read in full, the read limits, the step-9 questions and the uncommitted
+  `verification.sh`. The conformance lens conforms to "Decisions fixed", not to the
+  specification, and the design lens asks step 9's design questions. The brief says what
+  is still to come, and gives no hand-back conclusion. The three `lens-<lens>.txt` were
+  last written at 03:38:59Z, before `base.txt`.
+- **Triage.** By the lead's account, one separate subagent, neither a reviewer nor the
+  lead, checked each finding by a probe and applied the fixes; its verdicts are
+  `verdicts.md` (written at 04:28:39Z).
+- **Rounds.** One. No finding was high, so no second round was owed.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | medium, lowered to low | valid | The pin's import parser joined a comment line inside a name list into the list, so an unqualified use could escape the scan; the pinned formatter moves such comments out, so the gate cannot reach it today | `statement` drops each line from its first `//`; three controls in `reads_names` |
+| C2 | low | valid | The corrected script read `base` from ignored scratch | The ticket's block opens with `git cat-file -e "$base^{commit}"` and keeps `base` set before the script |
+| B1 | medium | valid | A table row with a leading space, or no spaces in its cells, escaped `table_names` and both Verification table probes, and markdownlint accepts it | `table_names` trims rows and reads the first cell, returning a stray spelling raw; both probes allow spaces before a row and inside its first cell |
+| B2 | low | valid | No pin assertion said that a module under `internal/`, the root, `failure` or `answers` carries no mark | `mark_lines`, its control `reads_mark_lines`, and `marks_per_module` |
+| B3 | low | valid | `sort` sat in the middle of four pipelines, so its failure was lost under `sh` | `sort` fills `sorted` in its own assignment at all four sites |
+| D | none | none | The design lens reported no findings | None |
+
+The evidence, all in `ai_tmp/review/GD10-1/` and run at
+`6e87e357c28fc9dbb59b7097435e0c34930b2ad9` with uncommitted changes; the recipe records
+among them name no commit:
+
+- `ev-C1-red.txt` (04:22:56Z), the control on the unchanged parser:
+  `FAIL interface_test.a module names m.f qualified on a line that is no comment, or
+  unqualified in its import: ...`, `#(Function, "reads_names"), #(Line, 1129)`,
+  `345 tests run, 344 passed`, exit status 1. `ev-C1-formatter.txt`: gleam 1.19.1's
+  `gleam format --stdin` moves the comment out of the braces, for a short list and a
+  wrapped one, `exit 0` each.
+- `ev-B1-red.txt` (04:23:16Z): `FAIL interface_test.a table's names are its rows' first
+  cells, under its heading: ...`, `Left` `["core.run", "rules.dispatch"]`, `Right`
+  `["core.run", "rules.dispatch", "core.indented", "core.tight", "core.bare"]`,
+  `345 tests run, 344 passed`, exit status 1. `ev-B1-nolead-docs.txt` (04:28:17Z): a
+  scratch row with no leading pipe fails `just check-docs` on
+  `MD055/table-pipe-style ... Missing leading pipe`, exit status 1; the README was then
+  restored from `README.backup`, byte-identical by `cmp`, by `verdicts.md`'s account.
+- `ev-B2-red.txt` (04:23:52Z), with `@internal` inserted above `pub fn run` in
+  `internal/core.gleam` (`ev-B2-scratch-diff.txt`: `124a125`, `> @internal`):
+  `FAIL interface_test.only model, inspection and invariants carry marks: 12, 1 and 2:
+  ...`, `Left` lists `#("src/pachinko_double/internal/core.gleam", 1)` beside the three,
+  `347 tests run, 346 passed`, exit status 1. The file was restored from
+  `core.gleam.backup`, byte-identical by `cmp`, by `verdicts.md`'s account.
+- `ev-verif-controls.txt` (04:24:42Z): C2's script stops with `base: unbound variable`
+  (exit status 1) when `base` is unset and with `fatal: Not a valid object name ...`
+  (exit status 128) on a missing commit; B1's row count is 4 under the old pattern and 6
+  under the new, and the `inspection.empty` control 1 and 3; B3's script with a failing
+  `sort` passes under the old form (exit status 0) and stops under the new (exit
+  status 2).
+- `ev-C2-block-diff.txt` (04:25:11Z): `tail -n +7 ai_tmp/gd/GD10/verification.sh`
+  against the ticket's block, `diff exit status: 0`.
+
+Applied by the triage to `gleam-double/test/interface_test.gleam`, the ticket's
+Verification block and the paragraphs around it, and `ai_tmp/gd/GD10/verification.sh`.
+By `verdicts.md`'s account no file under `gleam-double/src/` and not the guide changed
+in triage; for the two files its scratch edits touched, `README.backup` and
+`core.gleam.backup`, taken before those edits, match the work commit's files (`cmp`,
+for this record). Nothing was handed back.
+The reruns after the fixes, uncommitted, on base
+`6e87e357c28fc9dbb59b7097435e0c34930b2ad9`: `ev-format.txt`
+(`just gleam-double-format`), exit status 0; `ev-final.txt`, written at 04:25:32Z,
+`347 tests run, 347 passed`, `coverage faults: 0`, exit status 0; `ev-docs.txt`
+(`just check-docs`), `Validated 49 pages and 50 canonical topics.`, exit status 0; and
+`ev-verification-smoke.txt` (04:24:21Z), the corrected `verification.sh` under `sh -x`
+without `just gleam-double`, `just check-docs`, `just check` and the `git status` test,
+ending `exit status: 0`.
+
+### 7. Verification at the work commit
+
+At `21791e62978c60909a9c3602e278c23f45c99eb2`, the work commit, on a clean tree:
+`ev-verification-at-work.txt`, written at 04:29:25Z, is `ai_tmp/gd/GD10/verification.sh`
+under `sh -x`. The script is four header lines (`#!/bin/sh` and three comment lines),
+`set -eu` and `base=$(cat ai_tmp/gd/GD10/base.txt)`, followed by this ticket's corrected
+block verbatim, which opens with its own `set -eu` and `git cat-file -e`; a `diff` of the
+block against the script, made for this record before it was written, shows nothing
+else. At the run the corrected block was not yet committed in this ticket, and
+`git status --short` printed nothing, so the ticket's edit was set aside for the run as
+`ai_tmp/gd/GD10/ticket-triage.patch` (written at 04:28:56Z). That patch matches the
+ticket's uncommitted diff before this record was written (`cmp`, for this record).
+
+It exited 0, so every `test` held: `gleam-double/src/` holds the root and the
+directory, `src/pachinko_double/` the eight and `internal`, and `internal/` the eleven;
+no import of a moved module by its old path under `src/` or `test/`; no vocabulary module
+and not `guide_test.gleam` imports `pachinko_double/internal/`; the fifteen marks each
+directly above its `pub`, `inspection.empty` unmarked, the counts 12, 1 and 2, and only
+those three files marked; six table rows, and no `inspection.empty` row; no old path in
+the guide, `SPEC-NOTES.md` or the repository map; no aliased import under `src/`;
+`gleam.toml`, `manifest.toml` and the five untouched vocabulary modules unchanged; the
+marked modules' patch only headers and marks; no `erl_crash.dump`. Each probe's positive
+control printed its expected count first. The two `273 tests run: 273 passed, 0 skipped`
+lines inside `just check` are the Rust workspace's tests, not the double's.
+
+```text
+$ sh -x ai_tmp/gd/GD10/verification.sh
++ set -eu
+++ cat ai_tmp/gd/GD10/base.txt
++ base=6e87e357c28fc9dbb59b7097435e0c34930b2ad9
++ set -eu
++ git cat-file -e '6e87e357c28fc9dbb59b7097435e0c34930b2ad9^{commit}'
++ git rev-parse HEAD
+21791e62978c60909a9c3602e278c23f45c99eb2
++ just gleam-double
+...
+gleam 1.19.1
+...
+OTP 29
+...
+347 tests run, 347 passed
+coverage faults: 0
+...
++ marks=12
++ test 12 -eq 12
+...
++ rows=6
++ test 6 -eq 6
+...
++ test 2 -eq 2
++ test 1 -eq 1
++ test 5 -ne 3
+...
++ test 6 -eq 6
++ test 15 -eq 15
++ test 21 -eq 21
+...
+Validated 49 pages and 50 canonical topics.
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+++ git status --short
++ status=
++ test -z ''
+exit status: 0
+```
+
+### 8. Departures
+
+1. **The import count at the base was 67 lines in 22 files, not 87 in 29**
+   (`ev-counts-base.txt`). Its recorded command is
+   `rg -c "^import pachinko_double/($moved)" gleam-double/src gleam-double/test`, without
+   the ticket's `\b`. The guide's count, 35, matched the ticket.
+2. **The formatter moved lines the ticket did not name.** `just gleam-double-format`
+   re-sorted imports and rewrapped name lists after the hand edits of step 3 (one file,
+   `core.gleam`) and step 4 (20 files: the root, nine moved modules and ten test modules)
+   (`format-diff.txt`). Every changed line in it is an import line, a line of an import's
+   name list or its closing `}` (`grep`, for this record).
+3. **The implementer ran each producer alone** before the checkpoint, in
+   `verification.sh`. As first written, `ls` and `sort` fed pipes whose last status
+   alone was read; each now fills a variable of its own (`ev-verif-fix-producer.txt`: the
+   old form `exit status: 0` on a producer that fails, the new `exit status: 2`).
+4. **The `body` line became `counts`.** Its `|| true` hid a failing `git diff`; `counts`
+   allows only `rg`'s exit 1 and checks itself against a hand-made patch that changes a
+   body line (`ev-verif-fix-body.txt`: the old line `exit status: 0` on a bad base; the
+   control sees `headers=2 changed=5 added=1`, and a removed line starting `--` reads as
+   a header, `headers=3`).
+5. **The old-import probe's control gained two spellings**, the bare
+   `import pachinko_double/decay` and `core_x`, and expects 2; the internal-import probe's
+   control gained a name-list line and an indented line, and expects 2
+   (`ev-verif-fix-import.txt`: without `\b` the new control counts 3, with `\.` it
+   counts 1).
+6. **The two `git diff --name-only` probes gained the `seen` control**: the same command
+   names `model.gleam`, which did change (`ev-verif-fix-seen.txt`: on an unchanged path
+   the control stops, exit status 1).
+7. **The pin goes past the ticket in three places**, each read in
+   `git diff 6e87e357c28fc9dbb59b7097435e0c34930b2ad9 21791e62978c60909a9c3602e278c23f45c99eb2
+   -- gleam-double/test/interface_test.gleam` for this record: `reads_witness` also
+   asserts that `pachinko_double/internal/core` is refused; `test_only_faults` also faults
+   a listed name that is neither under `internal/` nor marked; and the header's sentence
+   on a control's text now reads "a list of lines or a string written with `\n` escapes".
+8. **Some prose is the implementer's.** The ticket fixes no wording for the paragraph
+   under "What is pub only for the tests" in the guide, the root header's closing
+   sentences, or the repository map's `gleam-double/` sentence.
+9. **The step-8 search counts a string literal.** Its hit at `interface_test.gleam:913`,
+   `"invariants.registry",`, as the file stood at step 8, is the pin's own list of
+   test-only names, not a use (`ev-marked-names.txt`).
+10. **The checkpoint corrected Verification and the pin again** (`verdicts.md`). The
+    block checks that the supplied `base` names a commit before it runs anything (C2);
+    this differs from the lead's note, which put the check above the block. Both table
+    probes allow spaces before a row and inside its first cell (B1). `sort` runs last in
+    a pipeline of its own (B3). In the pin, an import's name list is read without its
+    comments (C1); the guide's table rows are read after trimming, and a row spelled
+    otherwise yields its raw cell (B1), while markdownlint's MD055 rejects a row with no
+    leading pipe; and a new test asserts that only `model`, `inspection` and `invariants`
+    carry marks, 12, 1 and 2, counting raw `@internal` lines across `src/` (B2). Each was
+    shown red on its gap first. The pin adds 21 tests, not the implementer's 19.
+11. **The ticket's Verification block and the paragraphs around it were rewritten** by
+    the triage, though "Files touched" lists this ticket only for `status:` and the
+    hand-back. The paragraph before the block describes the `base` check and the rule
+    that every command whose failure matters runs alone in an assignment or last in its
+    pipeline; the paragraph after it describes the table probes' spacing, the `seen`
+    control and `counts`.
+
+### 9. What was not run, and what was not recorded
+
+Not run:
+
+- A push or a pull request. Both need authorisation (step 10); nothing left the worktree.
+- `just initialize`, `just gleam-double-deps` or any other network recipe. The review's
+  model calls are the only network use, which the checkpoint authorises.
+- A second review round. None was owed.
+- A review of the triage's fix diff.
+- The corrected Verification in full before the work commit. The smoke run left out four
+  checks (section 6); section 7's run is the first full one.
+- `docs/reference/documentation-contract.md` was not opened for the `review-docs`
+  skill's first step at step 7; `just check-docs` passed.
+- `gleam docs build` and `gleam export package-interface`, as Non-goals say.
+
+Not recorded: the exact `codex exec` command lines, beyond the form in
+`ai_tmp/review/reviewer-subagent.md`; probe 3's `leak.py`; the Codex processes' exit
+statuses, beyond the lead's account; and the models of the subagents, beyond the lead's
+account.
 
 ## Open points
 
