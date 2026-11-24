@@ -25,13 +25,13 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/string
 import harness.{type Double}
+import pachinko_double.{type Reply, Outcome}
 import pachinko_double/domain.{
   type BatchRecord, Batch, BatchRecord, NoPocketAvailable,
 }
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{Lease, LeaseActive}
-import pachinko_double/owner.{type Reply, Outcome}
 import runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
@@ -181,13 +181,14 @@ fn race(
   })
   let gates =
     list.map(callers, fn(_) {
-      let assert Ok(gate) = process.receive(ready, owner.call_timeout)
+      let assert Ok(gate) = process.receive(ready, pachinko_double.call_timeout)
       gate
     })
   list.each(gates, process.send(_, Nil))
   let answers =
     list.map(callers, fn(_) {
-      let assert Ok(answer) = process.receive(replies, owner.call_timeout)
+      let assert Ok(answer) =
+        process.receive(replies, pachinko_double.call_timeout)
       answer
     })
   // One reply from each caller, and none besides.

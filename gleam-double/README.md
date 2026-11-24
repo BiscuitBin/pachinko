@@ -2,7 +2,7 @@
 
 This directory holds a second double of the queue that
 [`docs/specs/pachinko.allium`](../docs/specs/pachinko.allium) specifies, written in Gleam
-under `src/pachinko_double/`. Its behaviour comes from the specification, together with
+under `src/`. Its behaviour comes from the specification, together with
 the four rulings the maintainer made on the Python double. The Rust implementation was
 never its source: the Rust's tests, and the doctest that owns S005, were opened only to port the
 catalog's scenarios. It serves two purposes. It is a second reading of the specification,
@@ -49,6 +49,18 @@ and on an invariant missing from the checker or lacking a positive control. The 
 sessions of the walkthrough below are tests in `test/guide_test.gleam`, and the same file
 holds the check that this page still matches them.
 
+## Where to look
+
+| A reader looking for | Opens |
+| --- | --- |
+| The interface: starting the owner, the triggers, the clock and the two reads | `src/pachinko_double.gleam` |
+| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam` and `refusals.gleam`, and for now the reply types in `rules.gleam`, `domain.gleam`, `core.gleam` and `consuming.gleam`, and `Publication` in `publish.gleam` |
+| The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam` |
+| The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam` |
+| The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam` |
+| The tests | `test/*_test.gleam`, run from `test/pachinko_double_test.gleam` |
+| Test support: the fakes, the runner and the coverage check | `test/harness.gleam`, `test/runner.gleam` and `test/coverage.gleam` |
+
 ## The specification's parts and where they live
 
 | The specification | The double |
@@ -60,7 +72,7 @@ holds the check that this page still matches them.
 | An invariant | An entry `Invariant(name, holds)` of `invariants.registry()`, under the invariant's name |
 | The state a rule reads and changes | `State` in `model.gleam`: the opaque `Config`, the `Queue`, whose counter is `state.queue.next_position`, and the entities' lists; `domain.gleam` binds the rules' types to it |
 | The state the invariants read | `Snapshot` in `inspection.gleam`, which `inspection.snapshot` makes from the `State` an outcome left: complete and immutable, with the settings as `Settings` and the derived sets in `inspection.views` |
-| A trigger a surface provides | A variant of `core.Trigger`, sent to the owner as one message by a function of `owner.gleam` |
+| A trigger a surface provides | A variant of `core.Trigger`, sent to the owner as one message by a function of `pachinko_double.gleam` |
 
 The guard of a row holds what the rule `requires`. It takes the state and the trigger's
 input and returns a `Bool`, and since nothing passes it a clock it cannot read the time.
@@ -225,11 +237,11 @@ name, which builds a snapshot that breaks it and shows that `check` names it.
 Several things the specification leaves to the clock or to whoever implements it are, in
 the double, explicit inputs or explicit messages, so that a run repeats exactly.
 
-- **The owner.** One `gleam_otp` actor, started by `owner.start`, holds the queue's state,
+- **The owner.** One `gleam_otp` actor, started by `pachinko_double.start`, holds the queue's state,
   its config, the clock function and the lease-id function. No other process holds any
   of the queue's state: not one per pocket, lease or consumer, not the test runner's, not
-  the fakes'. Nothing runs on a timer. `owner.gleam` is the only module under `src/` that
-  imports `gleam/erlang` or `gleam/otp`; the rest of `src/` is pure.
+  the fakes'. Nothing runs on a timer. `pachinko_double.gleam`, the root module, is the only
+  module under `src/` that imports `gleam/erlang` or `gleam/otp`; the rest of `src/` is pure.
 - **Its mailbox, the one serialized stream.** The owner's `Message` type has four
   variants: `Act`, which wraps a `core.Trigger`, the type with a variant for each trigger
   the two surfaces provide; `Tick`; and the reads `Inspect` and `LeaseView`. Messages are
@@ -239,8 +251,9 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   state as it was. This mailbox is the serialized stream that the specification's Lease
   expiry comment and
   [decision 0019](../docs/decisions/0019-service-runtime-tokio-and-http.md) ask for.
-  Callers use one function of `owner.gleam` per trigger, `owner.publish`, `owner.ack` and
-  so on, each waiting for the reply for at most `owner.call_timeout`, 1,000 ms. A caller
+  Callers use one function of `pachinko_double.gleam` per trigger,
+  `pachinko_double.publish`, `pachinko_double.ack` and so on, each waiting for the reply
+  for at most `pachinko_double.call_timeout`, 1,000 ms. A caller
   that gets no reply in that time, or whose owner has died, crashes; it receives no
   `rules.Failure`. The trigger it sent may still be applied after it has crashed: while
   the owner is held up, by a slow injected clock for instance, a publish
@@ -249,7 +262,7 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   names of the rules that fired in firing order and the answer. Only a pull answers
   something, a `Batch` or `NoPocketAvailable`; the specification gives the other triggers
   no answer, so the tests read their effect from a snapshot (G15).
-- **The injected clock.** `owner.start` takes `now: fn() -> Timestamp`, counted in whole
+- **The injected clock.** `pachinko_double.start` takes `now: fn() -> Timestamp`, counted in whole
   milliseconds (G01). The clock is read only when a row's effect asks for `now`, and at
   most once in an outcome; a refusal never reads it, because only an effect can ask. The
   double contains no real clock. Tests pass the fake from `test/harness.gleam`, which
@@ -260,7 +273,7 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   lease. The fake in `test/harness.gleam` counts its calls and hands out `lease-1`, then
   `lease-2`, and onward.
 - **`Tick`.** Time passes for the double only when the owner receives `Tick`, sent by
-  `owner.tick`; until then no lease expires and no shed entry decays. On a tick the owner
+  `pachinko_double.tick`; until then no lease expires and no shed entry decays. On a tick the owner
   reads the clock once and calls `core.tick(state, now)`. First come the lapses: every
   active lease with `expires_at <= now`, earliest `expires_at` first and ties in creation
   order (G57), each one outcome through `LeaseLapses` and `LeaseLapsed`. Then the decays:
@@ -272,12 +285,12 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   outcome, and replies `PartialTick` (G59). An action processed after a lease's
   `expires_at` but before the tick that lapses it therefore succeeds, as branch A of
   decision 0019 says it must.
-- **The inspection seam.** `owner.inspect` sends `Inspect` and receives an
+- **The inspection seam.** `pachinko_double.inspect` sends `Inspect` and receives an
   `inspection.Snapshot` of the whole state: the settings, `next_position`, and the lists of
   publishers, consumers, pockets, records, leases, superseded records and dead letters,
   each in creation order so that snapshots compare with `==` (G06, G19). Derived sets are
   not part of it; `inspection.views(snapshot)` derives them once, and the checker reads
-  nothing but a snapshot and its views. `owner.lease_view` sends `LeaseView` and receives
+  nothing but a snapshot and its views. `pachinko_double.lease_view` sends `LeaseView` and receives
   `consuming.lease_view`'s answer, what the `Consuming` surface shows one consumer. An
   ended lease remains in the snapshot, under the maintainer's ruling on the Python
   double's N24. The lists' order is the double's choice, not the specification's, which is

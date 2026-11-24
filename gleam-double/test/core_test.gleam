@@ -24,6 +24,7 @@
 import gleam/list
 import gleam/option.{None, Some}
 import harness.{type Double}
+import pachinko_double.{Outcome}
 import pachinko_double/config
 import pachinko_double/core
 import pachinko_double/domain.{type Step, type Table, PocketTouched}
@@ -31,7 +32,6 @@ import pachinko_double/invariants
 import pachinko_double/model.{
   type State, Consumer, PocketIdle, PocketQueued, Publisher, State,
 }
-import pachinko_double/owner.{Outcome}
 import pachinko_double/rules.{
   Applied, BrokenInvariant, Defect, EffectFailed, Finish, LeaseId,
   NothingHappens, Now, Row, Table,

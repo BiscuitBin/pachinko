@@ -5,6 +5,7 @@ import gleam/erlang/process
 import gleam/list
 import gleam/option.{None}
 import harness
+import pachinko_double.{Outcome, PartialTick}
 import pachinko_double/config.{Settings}
 import pachinko_double/core.{TickReport}
 import pachinko_double/inspection.{type Snapshot, Snapshot}
@@ -12,7 +13,6 @@ import pachinko_double/invariants
 import pachinko_double/model.{
   LeaseActive, LeaseExpired, PocketLeased, PocketQueued, Publisher,
 }
-import pachinko_double/owner.{Outcome, PartialTick}
 import pachinko_double/publish.{Publication}
 import pachinko_double/refusals.{PublisherAlreadyJoined}
 import pachinko_double/rules.{BrokenInvariant, Refused}
@@ -81,7 +81,8 @@ fn competing_joins() -> List(String) {
   })
   let answers =
     list.map(list.repeat(Nil, callers), fn(_) {
-      let assert Ok(reply) = process.receive(replies, owner.call_timeout)
+      let assert Ok(reply) =
+        process.receive(replies, pachinko_double.call_timeout)
       reply
     })
   let joined = Ok(Outcome(["PublisherJoins"], None))
@@ -115,23 +116,27 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   }
   let assert Ok(config) =
     config.new(Settings(..config.defaults(), lease_ttl: 10))
-  let assert Ok(started) = owner.start(config, harness.clock(clock), lease_id)
+  let assert Ok(started) =
+    pachinko_double.start(config, harness.clock(clock), lease_id)
   let queue = started.data
-  let assert Ok(_) = owner.publisher_joins(queue, "p")
+  let assert Ok(_) = pachinko_double.publisher_joins(queue, "p")
   list.each(["c1", "c2", "c3"], fn(consumer) {
-    let assert Ok(_) = owner.consumer_joins(queue, consumer)
+    let assert Ok(_) = pachinko_double.consumer_joins(queue, consumer)
     Nil
   })
   list.each(["a", "b", "c"], fn(key) {
     let assert Ok(_) =
-      owner.publish(queue, Publication("p", key, key <> "1", 1, <<key:utf8>>))
+      pachinko_double.publish(
+        queue,
+        Publication("p", key, key <> "1", 1, <<key:utf8>>),
+      )
     Nil
   })
-  let assert Ok(_) = owner.pull(queue, "c1", 1)
+  let assert Ok(_) = pachinko_double.pull(queue, "c1", 1)
   harness.set_time(clock, 5)
-  let assert Ok(_) = owner.pull(queue, "c2", 1)
-  let assert Ok(_) = owner.pull(queue, "c3", 1)
-  let before = owner.inspect(queue)
+  let assert Ok(_) = pachinko_double.pull(queue, "c2", 1)
+  let assert Ok(_) = pachinko_double.pull(queue, "c3", 1)
+  let before = pachinko_double.inspect(queue)
   let twins = fn(snapshot: Snapshot) {
     list.filter(snapshot.leases, fn(lease) { lease.id == "lease-2" })
   }
@@ -140,10 +145,10 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   harness.set_time(clock, 15)
   let reads = harness.clock_reads(clock)
   let assert Error(PartialTick(report, BrokenInvariant(broken))) =
-    owner.tick(queue)
+    pachinko_double.tick(queue)
   assert harness.clock_reads(clock) == reads + 1
   assert list.contains(broken, "LeasedHasOneActiveLease")
-  let after = owner.inspect(queue)
+  let after = pachinko_double.inspect(queue)
   let assert Ok(first) = model.lease(after.leases, "lease-1")
   assert first.status == LeaseExpired(ended_at: 15)
   assert report.lapsed == [first]
@@ -160,9 +165,10 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   assert list.map(after.pockets, fn(pocket) { #(pocket.key, pocket.status) })
     == [#("a", PocketQueued), #("b", PocketLeased), #("c", PocketLeased)]
   // A second tick meets the same failure and changes nothing more.
-  let assert Error(PartialTick(again, BrokenInvariant(_))) = owner.tick(queue)
+  let assert Error(PartialTick(again, BrokenInvariant(_))) =
+    pachinko_double.tick(queue)
   assert again.lapsed == []
-  assert owner.inspect(queue) == after
+  assert pachinko_double.inspect(queue) == after
   []
 }
 

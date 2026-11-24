@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/otp/actor
+import pachinko_double.{type PartialTick, type Reply, Outcome}
 import pachinko_double/config.{type Config, type Settings, Settings}
 import pachinko_double/consuming.{type HeldView, type LeaseView}
 import pachinko_double/core.{type TickReport}
@@ -17,7 +18,6 @@ import pachinko_double/domain.{
 }
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type Pocket, type Record, PocketQueued}
-import pachinko_double/owner.{type PartialTick, type Reply, Outcome}
 import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{type Refusal}
 import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, Refused}
@@ -134,7 +134,7 @@ pub fn lease_id_draws(lease_ids: LeaseIds) -> Int {
 /// A started owner with its fakes, and a log of the rules its triggers fired.
 pub type Double {
   Double(
-    owner: Subject(owner.Message),
+    owner: Subject(pachinko_double.Message),
     clock: Clock,
     lease_ids: LeaseIds,
     log: Subject(LogMessage),
@@ -165,7 +165,7 @@ pub fn start(config: Config) -> Double {
     })
     |> actor.start
   let assert Ok(started) =
-    owner.start(config, clock(fake_clock), lease_ids(fake_lease_ids))
+    pachinko_double.start(config, clock(fake_clock), lease_ids(fake_lease_ids))
   Double(
     owner: started.data,
     clock: fake_clock,
@@ -224,11 +224,11 @@ fn logged(double: Double, reply: Reply) -> Reply {
 }
 
 pub fn publisher_joins(double: Double, publisher_id: String) -> Reply {
-  logged(double, owner.publisher_joins(double.owner, publisher_id))
+  logged(double, pachinko_double.publisher_joins(double.owner, publisher_id))
 }
 
 pub fn consumer_joins(double: Double, consumer_id: String) -> Reply {
-  logged(double, owner.consumer_joins(double.owner, consumer_id))
+  logged(double, pachinko_double.consumer_joins(double.owner, consumer_id))
 }
 
 /// A publish by the fixture's publisher, `p`, with a text payload, as the
@@ -266,14 +266,14 @@ pub fn publish_as(
 
 /// A publish of a publication made by hand, for a payload that is not text.
 pub fn publish_publication(double: Double, publication: Publication) -> Reply {
-  logged(double, owner.publish(double.owner, publication))
+  logged(double, pachinko_double.publish(double.owner, publication))
 }
 
 /// A tick, as the Rust fixture's `tick` without its check: the owner reads
 /// the clock once and applies everything due. A tick that succeeded is
 /// logged like any trigger.
 pub fn tick(double: Double) -> Result(TickReport, PartialTick) {
-  let reply = owner.tick(double.owner)
+  let reply = pachinko_double.tick(double.owner)
   case reply {
     Ok(report) -> process.send(double.log, Fired(report.fired))
     Error(_) -> Nil
@@ -283,7 +283,7 @@ pub fn tick(double: Double) -> Result(TickReport, PartialTick) {
 
 /// A pull, as the Rust fixture's `try_pull`: whatever the owner replies.
 pub fn pull(double: Double, consumer: String, limit: Int) -> Reply {
-  logged(double, owner.pull(double.owner, consumer, limit))
+  logged(double, pachinko_double.pull(double.owner, consumer, limit))
 }
 
 /// A pulled batch, unpacked, as the Rust fixture's `Batch`, beside the names
@@ -317,7 +317,7 @@ pub fn keys(records: List(BatchRecord)) -> List(String) {
 }
 
 pub fn renew(double: Double, consumer: String, lease: String) -> Reply {
-  logged(double, owner.renew(double.owner, consumer, lease))
+  logged(double, pachinko_double.renew(double.owner, consumer, lease))
 }
 
 /// An ack, as the Rust fixture's `ack`: whatever the owner replies.
@@ -327,7 +327,7 @@ pub fn ack(
   lease: String,
   record_key: String,
 ) -> Reply {
-  logged(double, owner.ack(double.owner, consumer, lease, record_key))
+  logged(double, pachinko_double.ack(double.owner, consumer, lease, record_key))
 }
 
 /// A nack, as the Rust fixture's `nack`: whatever the owner replies.
@@ -337,12 +337,15 @@ pub fn nack(
   lease: String,
   record_key: String,
 ) -> Reply {
-  logged(double, owner.nack(double.owner, consumer, lease, record_key))
+  logged(
+    double,
+    pachinko_double.nack(double.owner, consumer, lease, record_key),
+  )
 }
 
 /// A release, as the Rust fixture's `release`: whatever the owner replies.
 pub fn release(double: Double, consumer: String, lease: String) -> Reply {
-  logged(double, owner.release(double.owner, consumer, lease))
+  logged(double, pachinko_double.release(double.owner, consumer, lease))
 }
 
 /// The Rust fixture's `refused`: runs `action`, which must be refused with
@@ -379,7 +382,7 @@ pub fn lease_view(
   double: Double,
   consumer: String,
 ) -> Result(Option(LeaseView), Failure) {
-  owner.lease_view(double.owner, consumer)
+  pachinko_double.lease_view(double.owner, consumer)
 }
 
 /// The lease view's records' keys, in order, as the Rust fixture's
@@ -423,7 +426,7 @@ fn drive_on(
 }
 
 pub fn inspect(double: Double) -> Snapshot {
-  owner.inspect(double.owner)
+  pachinko_double.inspect(double.owner)
 }
 
 /// The pocket with this key, read from a fresh snapshot, as the Rust

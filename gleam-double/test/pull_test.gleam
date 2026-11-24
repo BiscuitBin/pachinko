@@ -25,6 +25,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double, Pulled}
+import pachinko_double.{type Reply, Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/core
 import pachinko_double/domain.{
@@ -37,7 +38,6 @@ import pachinko_double/model.{
   PocketQueued, Publisher, Queue, Record, RecordHeld, RecordQueued, State,
   Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/pull.{type Pull, Handover, Pull}
 import pachinko_double/refusals.{PullRefused, UnknownConsumer}
 import pachinko_double/rules.{Applied, Defect, Done, NoRuleHeld, Refused}

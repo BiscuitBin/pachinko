@@ -1,7 +1,33 @@
-//// The owner: the one process that holds the queue's state. Every trigger is
-//// one message in its mailbox, applied one at a time through the pure core,
-//// so the mailbox is the specification's "one serialized stream". The clock
-//// and the lease-id source are functions it is started with.
+//// The double's interface, and its owner: the one process that holds the
+//// queue's state. Every trigger is one message in its mailbox, applied one at
+//// a time through the pure core, so the mailbox is the specification's "one
+//// serialized stream". The clock and the lease-id source are functions it is
+//// started with. This is the only module under `src/` that imports
+//// `gleam/erlang` or `gleam/otp`.
+////
+//// A caller calls this module by its name. Its seventeen items:
+////
+//// - Starting: `start`, `Message` and `call_timeout`.
+//// - The `Publishing` surface: `publisher_joins` and `publish`.
+//// - The `Consuming` surface: `consumer_joins`, `pull`, `renew`, `ack`,
+////   `nack` and `release`, and the read `lease_view`.
+//// - The clock: `tick`.
+//// - What they answer: `Reply`, `Outcome` and `PartialTick`.
+//// - The inspection seam: `inspect`.
+////
+//// Three things a caller reads are the double's own channels, for tests and
+//// for the coverage check, and not something the specification answers:
+//// `inspect`, the complete snapshot; the field `Outcome.fired`, the names of
+//// the rules an outcome fired; and the field `TickReport.fired`, the same for
+//// the outcomes of a `tick`.
+////
+//// A caller's other names live in other modules. What it names when it sends
+//// a trigger or reads a reply is in `config`, `time`, `model` and `refusals`.
+//// The snapshot that `inspect` returns, and the checker of the invariants,
+//// are in `inspection` and `invariants`. Some types a caller sends or a reply
+//// carries still sit in engine modules: a reply carries `rules.Failure`,
+//// `domain.Answer`, `core.TickReport` and `consuming.LeaseView`, and
+//// `publish` takes a `publish.Publication`.
 
 import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option, None, Some}

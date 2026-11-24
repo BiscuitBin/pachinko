@@ -7,8 +7,8 @@
 import gleam/option.{None}
 import gleam/result
 import harness
+import pachinko_double.{Outcome}
 import pachinko_double/config.{type Settings, Settings}
-import pachinko_double/owner.{Outcome}
 import pachinko_double/refusals.{ConfigRefused}
 import pachinko_double/time
 import runner.{type Test, Scenario, Test}

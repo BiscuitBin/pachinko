@@ -35,6 +35,7 @@ import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
 import harness.{type Double}
+import pachinko_double.{type PartialTick, type Reply, Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/core.{type TickReport, TickReport}
 import pachinko_double/invariants
@@ -42,7 +43,6 @@ import pachinko_double/model.{
   LeaseActive, LeaseExpired, LeaseReleased, PocketLeased, PocketQueued,
   RecordQueued,
 }
-import pachinko_double/owner.{type PartialTick, type Reply, Outcome}
 import pachinko_double/refusals.{LeaseFenced}
 import pachinko_double/rules.{Refused}
 import runner.{type Test, Scenario, Test}
@@ -298,13 +298,14 @@ fn compete(renew_first: Bool) -> List(String) {
   }
   let gates =
     list.map([1, 2], fn(_) {
-      let assert Ok(gate) = process.receive(ready, owner.call_timeout)
+      let assert Ok(gate) = process.receive(ready, pachinko_double.call_timeout)
       gate
     })
   list.each(gates, process.send(_, Nil))
   let answers =
     list.map([1, 2], fn(_) {
-      let assert Ok(answer) = process.receive(replies, owner.call_timeout)
+      let assert Ok(answer) =
+        process.receive(replies, pachinko_double.call_timeout)
       answer
     })
   assert process.receive(replies, 0) == Error(Nil)

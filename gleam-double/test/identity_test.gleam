@@ -10,10 +10,10 @@
 import gleam/list
 import gleam/option.{None}
 import harness
+import pachinko_double.{Outcome}
 import pachinko_double/config
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/model.{Consumer, Publisher}
-import pachinko_double/owner.{Outcome}
 import pachinko_double/refusals.{ConsumerAlreadyJoined, PublisherAlreadyJoined}
 import pachinko_double/rules.{Refused}
 import pachinko_double/time

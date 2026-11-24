@@ -29,6 +29,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import harness.{type Double}
+import pachinko_double.{type Reply, Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/core.{TickReport}
 import pachinko_double/domain.{Batch, BatchRecord}
@@ -39,7 +40,6 @@ import pachinko_double/model.{
   Pocket, PocketLeased, PocketQueued, Record, RecordHeld, RecordQueued,
   Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/owner.{type Reply, Outcome}
 import runner.{type Test, Scenario, Test}
 import simplifile
 

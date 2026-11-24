@@ -24,6 +24,7 @@
 
 import gleam/option.{None}
 import harness.{type Double, Driven}
+import pachinko_double.{Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/core.{type TickReport, TickReport}
 import pachinko_double/decay
@@ -33,7 +34,6 @@ import pachinko_double/model.{
   Pocket, PocketQueued, Publisher, Queue, Record, RecordQueued, Stale, State,
   Superseded, SupersededRecord,
 }
-import pachinko_double/owner.{Outcome}
 import pachinko_double/rules.{Applied, Done}
 import runner.{type Test, Scenario, Test}
 
@@ -82,7 +82,7 @@ pub fn tests() -> List(Test) {
   ]
 }
 
-fn fired(rules: List(String)) -> owner.Reply {
+fn fired(rules: List(String)) -> pachinko_double.Reply {
   Ok(Outcome(rules, None))
 }
 

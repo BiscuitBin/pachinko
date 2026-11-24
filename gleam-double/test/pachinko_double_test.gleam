@@ -18,6 +18,7 @@ import gleam/list
 import guide_test
 import identity_test
 import inspection_test
+import interface_test
 import invariants_test
 import lease_end_test
 import lease_endings_test
@@ -53,6 +54,7 @@ fn modules() -> List(Module) {
     Module("parking_test", parking_test.tests()),
     Module("guide_test", guide_test.tests()),
     Module("coverage_test", coverage_test.tests()),
+    Module("interface_test", interface_test.tests()),
     Module("inspection_test", inspection_test.tests()),
     Module("invariants_test", invariants_test.tests()),
   ]

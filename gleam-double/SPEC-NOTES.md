@@ -245,7 +245,7 @@ finding:
    question: should the catalog hold a row in which an action and a lapse compete?
 4. **No rule needed more than one message, and no process but the owner holds queue
    state.** This
-   is a reading of `owner.gleam`, not a test result. Each trigger a surface provides is
+   is a reading of `pachinko_double.gleam`, not a test result. Each trigger a surface provides is
    one `Act` message, which the owner applies through the core and answers before it
    takes the next message. The events a rule emits run inside that one apply step:
    `core_test`'s three witness tests, "a publish of a new key into an idle pocket
@@ -257,8 +257,9 @@ finding:
    draws, and the harness's log holds the names of the rules that fired. None of them
    holds queue state, though the owner relies on them: that two leases never share an
    id rests on the injected source, and `owner_test`'s `PartialTick` test breaks it on
-   purpose (G27). `owner` is the only module under `src/` that imports `gleam/erlang` or
-   `gleam/otp`, which GD07's Verification checks. No test can show that no other process
+   purpose (G27). The root module, `pachinko_double.gleam`, which is the owner, is the only
+   module under `src/` that imports `gleam/erlang` or `gleam/otp`, which
+   `interface_test` checks. No test can show that no other process
    holds state, and none is offered as showing it. The scratch owner of finding 1 kept
    the state but applied each `Pull` in a process of its own and needed a second message
    to bring the new state back; only the three competing tests caught it, in the orders
@@ -273,7 +274,7 @@ finding:
    a `Tick`, which the owner takes in its turn. So a lapse never overtakes a message that
    reached the mailbox before its `Tick`, and no lapse happens without one (G62). Every
    order the double produces is one the sentence allows. That too is a reading of
-   `owner.gleam`: no test can show that an order never occurs. **The maintainer decides**
+   `pachinko_double.gleam`: no test can show that an order never occurs. **The maintainer decides**
    G62's question: is a lapse overtaking a queued action a freedom of the implementation
    only, or something every implementation must be able to show?
 6. **A failure part-way through a tick.** GD06 chose that a tick keeps each outcome that
@@ -1308,7 +1309,7 @@ under "How the notes are grouped".
   lapse or a decay.
 - **The double does:**
   - It has no background time and no timer. The owner's `Tick` message is the clock:
-    `owner.tick` sends it, and the owner takes it in mailbox order like any action.
+    `pachinko_double.tick` sends it, and the owner takes it in mailbox order like any action.
     `core.Trigger`, the type of every other message that changes state, holds only the
     triggers a surface provides, so no `Act` carries a clock trigger, and only
     `core.tick`, which the `Tick` message calls, reaches the four temporal tables. The

@@ -45,6 +45,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import harness.{type Double, Driven}
+import pachinko_double.{type Reply, Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/consuming.{HeldView}
 import pachinko_double/core
@@ -56,7 +57,6 @@ import pachinko_double/model.{
   PocketIdle, PocketLeased, Publisher, Queue, Record, RecordHeld, RecordQueued,
   State, Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/refusals.{
   type Refusal, EqualRankRefused, LeaseFenced, MarkConflict, RecordNotHeld,
   UnknownConsumer,

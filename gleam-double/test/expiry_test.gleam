@@ -23,6 +23,7 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double, Driven}
+import pachinko_double.{type Reply, Outcome}
 import pachinko_double/config.{Settings}
 import pachinko_double/core.{type TickReport, TickReport}
 import pachinko_double/domain.{LeaseLapsed}
@@ -35,7 +36,6 @@ import pachinko_double/model.{
   PocketLeased, PocketParked, PocketQueued, Publisher, Queue, Record, RecordHeld,
   RecordQueued, Stale, State, Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/owner.{type Reply, Outcome}
 import pachinko_double/publish.{Publication}
 import pachinko_double/rules.{Applied, Done, Finish, Now}
 import runner.{type Test, Scenario, Test}
