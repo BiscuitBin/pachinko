@@ -1,7 +1,7 @@
 ---
 id: GD12
 title: "Gleam double: a type of its own for each id"
-status: todo
+status: done
 depends_on: [GD11]
 parallel_with: []
 branch: build-gleam-double
@@ -940,6 +940,652 @@ takes `git diff --text` and counts a file header only before its file's first `@
 Written at the end, in this order: base, branch and commits; the baseline; what landed;
 the red steps, one per stage of step 4; the swap; the residue; the checkpoint's record;
 Verification at the work commit; departures; and what was not run.
+
+Evidence files are under `ai_tmp/gd/GD12/`, the checkpoint's record under
+`ai_tmp/review/GD12-1/` and the plan review's under `ai_tmp/review/GD12-plan/`. None is
+committed. Most of the implementer's records of steps 2 to 7 open with the line
+`547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes`, most of them then a
+note on what the run is. The baseline's two records, `ev-counts-base.txt`, `fences.txt`,
+`ev-swap-strings.txt`, `ev-defect-literals.txt`, `format-diff.txt` and the 47
+`just gleam-double-format` records name no commit. `ev-verification-at-work.txt` opens
+`$ sh ai_tmp/gd/GD12/verification.sh` and names its commit through `git rev-parse HEAD`.
+In every quote below the recipe's echo of its own command lines is left out, an absolute
+path is cut to its part under the repository with `...`, the runner's coloured
+`runtime error` lines are left out, and `...` marks other lines left out or a line cut
+short: a `FAIL` line is cut after the test's name. Times are UTC on 2026-11-24, read from
+the files' modification times, which are each file's last write. The base commit's date
+is 2026-11-23T23:11:02-08:00 (07:11:02Z), the work commit's 2026-11-23T23:59:31-08:00
+(07:59:31Z). Where a fact the record should hold was never saved, the text says "not
+recorded"; where it rests only on the lead's message, it says "by the lead's account".
+
+### 1. Base, branch and commits
+
+- Branch: `build-gleam-double`, in this worktree (shared rule 6).
+- After `f56ece6`, the commit Context names and PR #53's head, three commits touch this
+  ticket alone, the first with the series index: `02236a1` adds it; `d604e23` records
+  the maintainer's three rulings of 2026-11-23; `547c34b` applies the plan review's
+  fixes (section 7).
+- Base commit: `547c34b4dbad59558b88b7fb46ed6e373f01bb35` (`base.txt`, last written at
+  07:11:04Z). It holds GD11, the series review's fixes and this ticket as the plan review
+  left it.
+- Work commit: `fc5fbac1f1527dfe9c0d5b7895120c8fe712826f` (`work-commit.txt`, 07:59:33Z),
+  tree `509fbb895a0407498ebb55b256a6785289491a84`, titled "Give each of the Gleam
+  double's ids a type of its own (GD12)". It touches 39 files (`git show --stat`, 4154
+  insertions and 2208 deletions): 15 under `gleam-double/src/`, the new `ids.gleam` and
+  the 14 modules of the table in "Decisions fixed"; 22 under `gleam-double/test/`, the 20
+  the ticket counts with `interface_test.gleam` and `rules_test.gleam`; and
+  `gleam-double/README.md` and `gleam-double/SPEC-NOTES.md`. It touches nothing under
+  `docs/`, `crates/` or `double/`, neither `gleam.toml` nor `manifest.toml`, nor the
+  `Justfile` or this ticket.
+- The commit after it holds this record, `status: done` and the index's Status cell. The
+  ticket's Verification block did not change: it is `verification.sh` from line 8
+  (section 8).
+- Nothing was fetched. Step 1's `just initialize` and `just gleam-double-deps` were not
+  run, by the lead's account; the baseline's `just check` and `just gleam-double` passed
+  their checks that the toolchains, the gleam environment and
+  `gleam-double/build/packages/` are present.
+
+### 2. Baseline
+
+At `547c34b4dbad59558b88b7fb46ed6e373f01bb35`. Neither file names a commit or says the
+tree was untouched. Both were last written a minute after `base.txt`, at 07:12:05Z and
+07:12:09Z, before the first red (`ev-red-pin.txt`, 07:19:56Z), and the count, 353, is the
+last recorded run's (`ai_tmp/gd/series-review/fix2/ev-gleam-2.txt`) and holds none of the
+pin's eight new tests.
+
+`ev-baseline-check.txt`:
+
+```text
+$ just check
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+`ev-baseline-gleam.txt`:
+
+```text
+$ just gleam-double
+...
+    Running pachinko_double_test.main
+353 tests run, 353 passed
+coverage faults: 0
+exit status: 0
+```
+
+The eight commands of "Files touched", rerun at the base: `ev-counts-base.txt` (07:12:19Z)
+and `fences.txt`. Each count is the ticket's. Command 1 prints 105 lines in 14 modules,
+with each module's count as the table gives it; command 2, 128 lines; command 3, the 28
+lines with `<>`, in `publish`, `settle`, `expiry`, `lease_end`, `core` and `pull`;
+command 4, the ten lines and `settle_test.gleam:1230`'s doc comment; command 5, `12` and
+`18`; command 6, 1,251 lines in 20 files; command 7, 13 lines in 5 modules; command 8,
+23 blocks and 121 lines in 19 blocks, one of which, block 4, holds one line.
+
+### 3. What landed
+
+- **`ids.gleam`**, new: the five open types, each with one constructor wrapping a
+  `String`, with the header and doc comments "Decisions fixed" gives. It imports nothing.
+- **`gleam-double/src/`.** Each field, parameter and reply of the table in "Decisions
+  fixed" takes its id's type; no field, label, argument, function or constructor is
+  renamed, reordered, added or removed. `rules.gleam` imports `pachinko_double/ids`
+  without a name list and writes `ids.LeaseId` in `LeaseId`, `NeedsLeaseId` and `drive`;
+  `core_test.gleam`, `publish_test.gleam` and `rules_test.gleam` write the id's
+  constructor `ids.LeaseId`. `config`, `time`, `failure`, `inspection`, `invariants` and
+  `internal/decay` do not change. After the change 32 code lines under `src/` name
+  `String`, by module as the ticket's table counts them.
+- **The defect texts.** Each of the 14 takes the id's `String` out with a plain `let`,
+  such as `let ConsumerId(consumer) = pull.consumer`. Where the text is a case arm's or
+  an argument's expression, the `let` and the text sit in a block, `{ ... }`, which the
+  residue shows (K1, section 6). Every text is the base's: `ev-defect-literals.txt`
+  (07:32:47Z) compares each of the six modules' string literals in order, base against
+  tree, and prints `same 15/15` for `publish`, `22/22` for `settle`, `13/13` for
+  `lease_end`, `9/9` for `expiry`, `11/11` for `pull` and `9/9` for `core`. Verification
+  finds no `string.inspect` under `src/` and the ten asserting test lines as they were.
+- **The test support.** `test/support/harness.gleam` takes and returns the typed ids as
+  the harness table gives them; its fake hands out
+  `LeaseId("lease-" <> int.to_string(draws + 1))`.
+- **The tests.** 20 test modules wrap each id in its constructor around the literal they
+  had, import the constructors by name, and type their helpers' ids. Where a test renders
+  or sorts an id, a `let` matches its text out; where it computes one, the constructor
+  wraps the result. `competing_test.gleam` goes further (departure 1).
+- **The pin**, `gleam-double/test/interface_test.gleam`: the eight new tests and four
+  changes of "What the pin gains", with the readers `defined_types`, `signatures`,
+  `string_lines` and one the ticket does not name, `string_signatures` (departure 5). It
+  was written at step 2 and did not change through step 7 (`ev-pin-unchanged.txt`,
+  07:41:23Z: `cmp` against `snap/interface_test.step2.gleam`, `exit status: 0`). At the
+  checkpoint one control changed (I1, section 7).
+- **The words** (step 7). In `gleam-double/README.md`, the 18 blocks, "Where to look",
+  whose second row names `ids.gleam` first, "Entities" (departure 6), the lease-id bullet
+  with `lease_id: fn() -> LeaseId` and "A custom type" with
+  `Pocket(key: PocketKey("pk"), ...)`. The root's header names `ids` among what a caller
+  names and counts nine modules. In `gleam-double/SPEC-NOTES.md`, the three sentences of
+  G05, G09 and G10, G68, item 9, "The 68 notes follow" and 22 in the heading table.
+  After `just gleam-double-format` (`ev-format-step7.txt`, `exit status: 0`),
+  `ev-step7-gleam.txt` (07:36:38Z) reads `361 tests run, 361 passed`,
+  `coverage faults: 0`, `exit status: 0`, which includes the guide's drift test, and
+  `ev-step7-docs.txt` reads `Validated 49 pages and 50 canonical topics.`,
+  `exit status: 0`.
+
+The test count: 353 at the base, 361 from step 2 on, the baseline's plus the pin's
+eight. The coverage check's constants stay 93, 32 and 35, and every run below that
+reaches the tests reports `coverage faults: 0`. All 47 `just gleam-double-format` records end `exit status: 0`.
+
+### 4. The red steps
+
+Every output in this section ran uncommitted, on base
+`547c34b4dbad59558b88b7fb46ed6e373f01bb35`, and each record's first line says so. The
+lines a wrapper wrote above the run (the note, the `FAIL` list and the two counts) are
+the implementer's, read from the run below them.
+
+#### Step 2: red, the pin
+
+`ev-red-pin.txt` (07:19:56Z), after `ev-step2-format.txt` (`exit status: 0`). The three
+controls pass; the eight tests the ticket names fail, and no other.
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+controls passing (no FAIL line): "a type is defined by a type line at column 0, ...
+root functions naming String: 10 ( start publisher_joins consumer_joins publish pull renew ack nack release lease_view), on 18 lines
+code lines under src/ naming String: 128
+...
+FAIL interface_test.answers imports only ids, model and time: crashed: ...
+FAIL interface_test.src/pachinko_double/ holds the nine vocabulary modules and internal/: crashed: ...
+FAIL interface_test.ids holds its interface, and nothing marked: crashed: ...
+FAIL interface_test.ids imports nothing: crashed: ...
+FAIL interface_test.only ids defines a type named like an id: crashed: ...
+FAIL interface_test.no pub fn of the root takes or returns a String: crashed: ...
+FAIL interface_test.the lines under src/ that name String are the 32 that hold no id: crashed: ...
+FAIL interface_test.no vocabulary module imports a module under internal/: crashed: ...
+361 tests run, 353 passed
+coverage faults: 0
+...
+exit status: 1
+```
+
+#### Step 3: green, `ids.gleam`
+
+`ev-green-ids.txt` (07:20:15Z), after `ev-format-step3.txt` (`exit status: 0`). The three
+tests the ticket names still fail; the `String` lines are the base's 128 and `ids`' five.
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+step 3: ids.gleam written as the ticket gives it
+FAIL lines below: 3
+FAIL interface_test.answers imports only ids, model and time
+FAIL interface_test.no pub fn of the root takes or returns a String
+FAIL interface_test.the lines under src/ that name String are the 32 that hold no id
+361 tests run, 358 passed
+root functions naming String: 10 ( start publisher_joins ... lease_view), on 18 lines
+code lines under src/ naming String: 133
+...
+exit status: 1
+```
+
+#### Step 4: one id at a time
+
+Each red changes one call in `owner_test.gleam`'s `partial_tick_keeps_what_ran` and
+stops on the compiler's type mismatch, `exit status: 1`, before any test runs
+(`ev-red-<id>.txt`, each after `ev-format-red-<id>.txt`, `exit status: 0`). Each fence
+below gives the record's first three lines and its compiler block. In the block, the
+gutter-only and blank lines, the caret line under the source and the recipe's
+`error: recipe ...` line are left out, each marked `...`, and the path is cut. The base
+lines the ticket names (121, 123, 128, and 110 to 119) had moved by each stage's
+imports, as it foresaw.
+
+`ev-red-PublisherId.txt` (07:21:30Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+PublisherId stage, red: owner_test.gleam partial_tick_keeps_what_ran passes PublisherId("p") to the root's publisher_joins (base line 121); src/ unchanged
+--- the compiler error ---
+error: Type mismatch
+    ┌─ .../gleam-double/test/owner_test.gleam:122:61
+...
+122 │   let assert Ok(_) = pachinko_double.publisher_joins(queue, PublisherId("p"))
+...
+Expected type:
+...
+    String
+...
+Found type:
+...
+    ids.PublisherId
+...
+exit status: 1
+```
+
+`ev-red-ConsumerId.txt` (07:23:44Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+ConsumerId stage, red: owner_test.gleam partial_tick_keeps_what_ran passes ConsumerId(consumer) to the root's consumer_joins (base line 123); src/ as the PublisherId stage left it
+--- the compiler error ---
+error: Type mismatch
+    ┌─ .../gleam-double/test/owner_test.gleam:125:45
+...
+125 │       pachinko_double.consumer_joins(queue, ConsumerId(consumer))
+...
+Expected type:
+...
+    String
+...
+Found type:
+...
+    ids.ConsumerId
+...
+exit status: 1
+```
+
+`ev-red-PocketKey.txt` (07:26:07Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+PocketKey stage, red: owner_test.gleam partial_tick_keeps_what_ran passes PocketKey(key) as the pocket key of the root's publish (base line 128); src/ as the ConsumerId stage left it
+--- the compiler error ---
+error: Type mismatch
+    ┌─ .../gleam-double/test/owner_test.gleam:133:9
+...
+133 │         PocketKey(key),
+...
+Expected type:
+...
+    String
+...
+Found type:
+...
+    ids.PocketKey
+...
+exit status: 1
+```
+
+`ev-red-RecordKey.txt` (07:28:32Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+RecordKey stage, red: owner_test.gleam partial_tick_keeps_what_ran passes RecordKey(key <> "1") as the record key of the root's publish (base line 128); src/ as the PocketKey stage left it
+--- the compiler error ---
+error: Type mismatch
+    ┌─ .../gleam-double/test/owner_test.gleam:134:9
+...
+134 │         RecordKey(key <> "1"),
+...
+Expected type:
+...
+    String
+...
+Found type:
+...
+    ids.RecordKey
+...
+exit status: 1
+```
+
+`ev-red-LeaseId.txt` (07:30:53Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+LeaseId stage, red: owner_test.gleam partial_tick_keeps_what_ran makes its lease-id function (base lines 110 to 115) return a LeaseId, which the root's start takes (base line 119); src/ as the RecordKey stage left it
+--- the compiler error ---
+error: Type mismatch
+    ┌─ .../gleam-double/test/owner_test.gleam:122:57
+...
+122 │     pachinko_double.start(config, harness.clock(clock), lease_id)
+...
+Expected type:
+...
+    fn() -> String
+...
+Found type:
+...
+    fn() -> ids.LeaseId
+...
+exit status: 1
+```
+
+Each green (`ev-green-<id>.txt`) ran after the stage's `just gleam-double-format` rounds
+(`ev-format-g-*.txt`, `exit status: 0` each) and gives the three counts step 4 asks for.
+Each matches the ticket's expectation, which the record's note line states:
+
+| Stage | Record | Root functions naming `String`, on lines | `String` lines under `src/` | Tests | Failing |
+| --- | --- | --- | --- | --- | --- |
+| `PublisherId` | 07:23:37Z | 9 on 16 | 125 | 361 run, 358 passed | root signatures, `String` lines, `answers` imports |
+| `ConsumerId` | 07:25:58Z | 6 on 9 | 96 | 361 run, 359 passed | root signatures, `String` lines |
+| `PocketKey` | 07:28:26Z | 6 on 8 | 76 | 361 run, 359 passed | root signatures, `String` lines |
+| `RecordKey` | 07:30:46Z | 5 on 5 | 58 | 361 run, 359 passed | root signatures, `String` lines |
+| `LeaseId` | 07:32:37Z | 0 on 0 | 32 | 361 run, 361 passed | none |
+
+`ev-green-LeaseId.txt`:
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+LeaseId stage, green: expected 0 functions on 0 lines; no FAIL; 361 = 353 + 8
+FAIL lines below: 0
+361 tests run, 361 passed
+root functions naming String: 0 (), on 0 lines
+code lines under src/ naming String: 32
+...
+coverage faults: 0
+exit status: 0
+```
+
+**The `let` probe**, in the `ConsumerId` stage: `ev-probe-let.txt` (07:25:53Z). Its
+note names the three `let` lines it probes, `pull.gleam:122`, `settle.gleam:309` and
+`settle.gleam:377`, and ends:
+
+```text
+Verdict: a plain let destructures a single-constructor type with no warning; no fallback.
+```
+
+Its run 2 is a run whose `gleam build --warnings-as-errors` passed and whose tests ran:
+`361 tests run, 358 passed`, `exit status: 1`. Its three failures are the root's
+signatures, the `String` lines, and the guide's drift test; the record does not say
+why the drift test failed, and the likely reading is that the stage's blocks were not
+yet copied into the guide. It is not the stage's green, which is
+`ev-green-ConsumerId.txt`. Its run 1 is the first build after `src/` changed, which
+stopped on the tests' type mismatches. The first passing build was not saved
+(departure 7).
+
+### 5. The swap
+
+**Step 1**, at `547c34b4dbad59558b88b7fb46ed6e373f01bb35`, with only the scratch
+`gleam-double/test/swap_test.gleam` added: `ev-swap-strings.txt` (07:12:30Z), which
+names no commit. The swapped call built, and every test passed:
+
+```text
+$ just gleam-double
+...
+FAULT swap_test.gleam is on disk and not listed in main
+FAULT swap_test.gleam is on disk and main does not import it
+353 tests run, 353 passed
+coverage faults: 0
+...
+error: recipe `gleam-double` failed on line 486 with exit code 1
+exit status: 1
+```
+
+The run failed on two `FAULT` lines, where the ticket quotes one (departure 2). The
+scratch module's text is not recorded.
+
+**Step 5**, uncommitted on base `547c34b4dbad59558b88b7fb46ed6e373f01bb35`:
+`ev-swap-typed.txt` (07:33:14Z). The build stops on two type mismatches, one for each
+swapped argument, and no test runs:
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+step 5: scratch test/swap_test.gleam returns pachinko_double.renew(owner, LeaseId("lease-1"), ConsumerId("c1")); the file is deleted after the run
+--- the compiler errors ---
+error: Type mismatch
+  ┌─ .../gleam-double/test/swap_test.gleam:6:32
+...
+6 │   pachinko_double.renew(owner, LeaseId("lease-1"), ConsumerId("c1"))
+...
+Expected type:
+...
+    ids.ConsumerId
+...
+Found type:
+...
+    ids.LeaseId
+...
+error: Type mismatch
+  ┌─ .../gleam-double/test/swap_test.gleam:6:52
+...
+Expected type:
+...
+    ids.LeaseId
+...
+Found type:
+...
+    ids.ConsumerId
+...
+error: recipe `gleam-double` failed on line 485 with exit code 1
+--- tests run lines (none expected) ---
+0
+...
+exit status: 1
+```
+
+Neither record shows the scratch file's deletion. It is in no commit: the work commit's
+39 files do not hold it, and Verification's last test, `git status --short` empty, held
+at the work commit.
+
+### 6. The residue
+
+`ai_tmp/gd/GD12/residue.py`, run with `python3 -I`, normalises the base's text and the
+tree's as step 6 gives it, with two corrections (departure 3), and runs five controls
+first, where step 6 names three. At step 6, `residue-step6.txt` (07:34:33Z) ended
+`entries: 85`, `exit status: 0`; `ev-residue-controls.txt` (07:34:30Z) shows the three
+controls of then. After step 7 and the checkpoint's B2 fix, `residue.txt` (07:55:22Z):
+
+```text
+547c34b4dbad59558b88b7fb46ed6e373f01bb35 with uncommitted changes
+$ python3 -I ai_tmp/gd/GD12/residue.py   (rerun after the GD12-1 triage fixed B2: ...
+ok   a pair that differs only by wrapping shows no difference
+ok   a pair with two ids swapped shows one
+ok   a pair with a literal changed shows one
+ok   a pair that drops an alias from an import line inside a multi-line string shows one
+ok   a pair that moves a space inside a multi-line string shows one
+...
+entries: 86
+exit status: 0
+```
+
+The 86 are the step-6 run's 85 and the root's header, which step 7 rewrote. From its
+first entry on, the run matches the run before B2's fix line for line
+(`ai_tmp/review/GD12-1/residue-before-B2.txt`, by `verdicts.md`'s account).
+`residue-classified.txt` (07:55:40Z) classifies each entry:
+
+```text
+Counts: K1 49, K2 36, S7 1, other 0. (Before the lead's ruling, entries 57 and 58 were
+classified D1, a departure for the lead: K2 34, D1 2.)
+```
+
+- **K1, 49 entries**, the first kind: the defect texts' `let` lines under `src/`, in
+  `core`, `expiry`, `lease_end`, `publish`, `pull` and `settle`, with the block a case
+  arm needs for them and the text naming the bound name where it named the field.
+- **K2, 36 entries**, the second kind, under `test/`: a `let` that matches an id's text
+  out to render a payload, sort keys or note a lease id in a log, in `competing_test`,
+  `decay_test`, `inspection_test`, `lease_endings_test`, `lease_test`, `rules_test` and
+  `settle_test`; and a constructor around a computed `String`, in `owner_test`'s
+  `RecordKey(key <> "1")` and the harness's fake. Entries 57 and 58, the `list.map` and
+  `fn` on the right-hand side of `compete`'s sort assertion, are K2 by the lead's ruling
+  (departure 1).
+- **S7, 1 entry**, the root's `////` header. It is neither kind step 6 allows; it is the
+  header "The root's header follows" asks for, and a comment is one token to the
+  normaliser, so the reflowed paragraph is one entry. Read literally, the acceptance
+  criterion "Step 6's residue holds only the two kinds it allows" does not hold for this
+  entry.
+
+What the residue cannot show: a test that wraps a `String` it keeps, such as
+`ConsumerId(caller)` in `competing_test.gleam`, normalises to `caller`, so `consumers()`
+keeping `List(String)` leaves no entry (`ev-competing.txt`, item 2; C1).
+
+### 7. Checkpoint record
+
+**The plan review**, before the build. Codex, `gpt-6-astra`, one conformance lens, read
+the ticket at `d604e23`, after the rulings, against `02236a1`
+(`ai_tmp/review/GD12-plan/`). Its eight findings, C1 to C5 medium and C6 to C8 low, are
+all valid by `verdicts.md` (07:10:06Z); none was high. The fixes are commit `547c34b`.
+
+**Checkpoint 1**, step 8: conformance and breakage, before the work commit, over
+`git diff -M 547c34b4dbad59558b88b7fb46ed6e373f01bb35` plus the untracked files,
+`ids.gleam` read in full. There was no `design` lens.
+
+- **Reviewer and model.** One reviewer subagent per lens started Codex, `gpt-6-astra`,
+  in the form `ai_tmp/review/reviewer-subagent.md` gives: `codex exec -m gpt-6-astra -s
+  read-only -C "$PWD" -o "$DIR/last-$LENS.md" "$(cat "$DIR/brief-$LENS.txt")" <
+  /dev/null >| "$DIR/log-$LENS.txt" 2>&1 &`. The exact command lines are not saved. Each
+  `log-<lens>.txt` opens `OpenAI Codex v0.169.1`, `model: gpt-6-astra`,
+  `sandbox: read-only`, `reasoning effort: ultra`; the process ids are in
+  `pid-<lens>.txt` (07:42:07Z and 07:42:08Z). `codex exec --help` was not rerun; the
+  record of 2026-11-23 is `ai_tmp/review/codex-exec-help-2026-11-23.txt`.
+- **Exit and recovery.** `last-conformance.md` was last written at 07:48:34Z and
+  `last-breakage.md` at 07:49:57Z. Each `findings-<lens>.md` opens
+  `Source: last-message`, and the rest of it matches its `last-<lens>.md` (`cmp`, for
+  this record). Each log ends with its lens's final message; the processes' exit
+  statuses are not recorded.
+- **Brief.** `brief-<lens>.txt` is `brief-common.txt` followed by `lens-<lens>.txt`
+  (`cmp`, for this record). It names this ticket, the series index, the shared rules,
+  §11 and §14, the base and the diff, and sends each lens first to step 6's residue and
+  `residue.py`, then to the files of `gleam-double/src/`, then to the pin, the harness,
+  the guide and the notes, and only then to the other tests. It gives the read limits,
+  the step-8 questions and `verification.sh` as Verification. It asks each lens to
+  conform to "Decisions fixed", "What the pin gains", "Non-goals", "Files touched" and
+  "Acceptance criteria", and checks the four ids' names and declared types against
+  `docs/specs/pachinko.allium`. The brief says what is still to come and gives no
+  hand-back conclusion.
+- **Triage.** `verdicts.md` (07:59:10Z) gives each verdict, the probe behind it and the
+  fixes. C1 and C2 rest on the lead's rulings. Who ran the triage is not recorded beyond
+  its title, "GD12-1 triage verdicts".
+- **Rounds.** One. No finding was high, so no second round was owed.
+
+| Id | Severity | Verdict | Reason | Applied |
+| --- | --- | --- | --- | --- |
+| C1 | low | valid, record only | `consumers()`, `every_turn`, `compete`, `race` and `grants` in `competing_test.gleam` carry `String`s and wrap each where it becomes an id; by the lead's ruling, that is the "wraps the result" of "Decisions fixed" | No code change; departure 1 |
+| C2 | low | valid, record only | Residue entries 57 and 58 were classified D1, outside the two kinds; by the lead's ruling they are the second kind | `residue-classified.txt` classifies them K2; departure 1 |
+| B1 | medium | invalid | `defined_types` misses `opaque type X`, but gleam 1.19.1 refuses a private opaque type even without warnings as errors, so the build stops before the pin runs | None |
+| B2 | medium | valid | `residue.py` tokenised each line apart, so a string spanning lines was read as code: an import line or a space inside one could change unseen | The whole text is tokenised as one stream; two controls added; the rerun finds the same 86 entries |
+| I1 | none given; raised by the implementer | valid | The signatures control's `"String"` sat in `f`'s body, so "does not name ... a `String` in a string" was never exercised | The string moved into `f`'s signature; its doc comment says so |
+
+The evidence, in `ai_tmp/review/GD12-1/`:
+
+- `ev-B1-probe.txt` (07:54:25Z), a scratch project outside the tree with the pinned
+  gleam: `gleam format --check src`, `exit 0`; `gleam build` without
+  `--warnings-as-errors`, `error: Private opaque type`, `Only a public type can be
+  opaque.`, `exit 1`. Handed back by `verdicts.md`: a fourth prefix for
+  `defined_types` would change the reader the ticket fixes at three.
+- `ev-B2-red.txt` (07:55:30Z): the two new controls on the old tokeniser print
+  `FAIL a pair that drops an alias from an import line inside a multi-line string shows
+  one`, `FAIL a pair that moves a space inside a multi-line string shows one`,
+  `a control misbehaved`, `exit status: 1`; after the fix all five print `ok`,
+  `exit status: 0`. The reviewer's two scenarios find `runner alias dropped: 0` and
+  `coverage spacing moved: 0` before the fix and `1` each after. `residue-before-B2.py`
+  is the script before the fix.
+- `ev-I1-red.txt` (07:56:15Z), with a broken reader that keeps a string's contents: the
+  old control lets "a signature runs from its pub fn line to the line that ends with {"
+  pass, `361 tests run, 357 passed`; the corrected control fails it, at
+  `#(Function, "reads_signatures"), #(Line, 1927)`, `361 tests run, 356 passed`. The
+  reader was restored; the diff against `interface_test-before-I1.gleam` is the
+  control's lines and its doc comment alone.
+- `ev-verif-sync.txt` (07:56:33Z): no fix touched `verification.sh`, so the ticket's
+  block was not edited.
+
+The reruns after the fixes, uncommitted on base
+`547c34b4dbad59558b88b7fb46ed6e373f01bb35`: `ev-format.txt`, `exit status: 0`;
+`ev-final.txt` (07:56:38Z), `361 tests run, 361 passed`, `coverage faults: 0`,
+`exit status: 0`; `ev-docs.txt`, `Validated 49 pages and 50 canonical topics.`,
+`exit status: 0`; `ev-lint.txt`, `exit status: 0`; and `ev-verif-precommit.txt`
+(07:57:08Z), Verification without `git rev-parse HEAD`, `just check` and the
+`git status` test, with the untracked `ids.gleam` added to the changed-files probe,
+ending `verif-precommit: every check passed`, `exit status: 0`.
+
+### 8. Verification at the work commit
+
+At `fc5fbac1f1527dfe9c0d5b7895120c8fe712826f`, the work commit, on a clean tree:
+`ev-verification-at-work.txt`, last written at 08:00:06Z, is
+`sh ai_tmp/gd/GD12/verification.sh`. The script is `#!/bin/sh`, four comment lines,
+`base=$(cat ai_tmp/gd/GD12/base.txt)` and `git cat-file -e "$base^{commit}"`, followed
+from line 8 by this ticket's Verification block verbatim; a `diff` of the script from
+line 8 against the block, made for this record, shows nothing. The run was under plain
+`sh`, so no probe's values are traced. It exited 0 under `set -eu`, so every `test`
+held: `ids.gleam` imports nothing and is the one home of the five types, each open with
+one constructor; the root's twelve signatures name no `String`; the code lines naming
+`String` are 32, by module as "Decisions fixed" counts them; no `string.inspect`; the
+ten asserting test lines as they were; the walkthrough's imports within the witness and
+`ids` among them; no id as a `String` in the guide or in the three sentences of the
+notes; G68 once, last under its heading, item 9 with its question, 68 notes and 22 in
+the heading table, G68 and item 9 word for word; exactly the fifteen files under
+`src/` changed, and neither `gleam.toml` nor `manifest.toml`; no `erl_crash.dump`; and
+`git status --short` empty after `just check`. The two `273 tests run: 273 passed, 0
+skipped` lines inside `just check` are the Rust workspace's tests, not the double's.
+
+```text
+$ sh ai_tmp/gd/GD12/verification.sh
+fc5fbac1f1527dfe9c0d5b7895120c8fe712826f
+...
+361 tests run, 361 passed
+coverage faults: 0
+...
+Validated 49 pages and 50 canonical topics.
+...
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+exit status: 0
+```
+
+### 9. Departures
+
+1. **`competing_test.gleam`'s `compete` assertion and `consumers()`, by the lead's
+   ruling on D1** (`ev-competing.txt`; C1 and C2). Both sides of `compete`'s
+   `list.sort(..., string.compare)` hold `PocketKey`s after the change, and an id has
+   no order. The left side's existing `fn(grant)` takes each key's text out with
+   `let PocketKey(key) = grant.pocket_key`; the right side gains a `list.map` with a new
+   `fn(pocket_key)` that does the same over `list.take(pocket_keys, granted)`. The texts
+   compared are the base's. The lead ruled this the second kind step 6 allows; residue
+   entries 57 and 58. `consumers()` stays `List(String)`, and each caller is wrapped
+   where it becomes an id: `harness.pull(double, ConsumerId(caller), limit)`,
+   `harness.consumer_joins(double, ConsumerId(caller))`,
+   `assert consumer == ConsumerId(caller)` and `NoPocketAvailable(ConsumerId(caller))`.
+2. **Step 1's swap failed on two `FAULT` lines**, where the ticket quotes one
+   (`ev-swap-strings.txt`): `... is on disk and not listed in main` and
+   `... is on disk and main does not import it`.
+3. **`residue.py` goes past step 6's text.**
+   - Two corrections to the normaliser (`ev-residue-correction.txt`): `X(a)` also takes
+     a tuple's field, as in `RecordKey(version.0)`, and a `,` before the `>>` that
+     closes a bit array is dropped like one before `)`, `]` or `}`. The rules as
+     written leave 94 entries; the corrected script 85. The nine it removes are four
+     `RecordKey(version.0)` wraps and five commas `gleam format` writes; the
+     uncorrected script fails its own first control.
+   - After B2, the whole text is tokenised as one stream, so a string that spans lines
+     is read as text.
+   - It runs five controls, where step 6 names three; the last two are B2's.
+   - The residue has a third class, S7, entry 1, the root's header (step 7), beside the
+     two kinds. The final counts are K1 49, K2 36, S7 1 (`residue-classified.txt`).
+4. **The formatter moved lines the ticket did not name** (`format-diff.txt`, the diff
+   of the tree before and after each of 46 `just gleam-double-format` rounds). It
+   sorted imports and rewrapped long lines. None of the 32 `String` lines under `src/`
+   was split or changed: under `src/` it added or removed 136 lines, 48 of them naming
+   `import`, and none of them holds the text `String` (checked for this record with
+   `grep -F String` over those lines, which prints nothing; the same lines with a word
+   boundary print nothing too, and that pattern counts 1 on `x: String,`). Step 2's
+   round, on the pin alone, is not in the file: it holds 46 rounds of the 47 records.
+5. **The pin goes past the ticket's text.** It adds a reader the ticket does not name,
+   `string_signatures`, which keeps each `pub fn` whose signature names `String`, with
+   those lines trimmed. "no pub fn of the root takes or returns a String" asserts that
+   the root has twelve signatures and that `string_signatures` finds none, and the
+   `String` lines test holds the 32 rows in `string_lines_held`. The header's wording on
+   the three readers and the new assertions is the implementer's, since the ticket fixes
+   no text for it. The signatures control was corrected after its red at the checkpoint
+   (I1).
+6. **The guide's new "Entities" sentence cites "(G68)"**, which the ticket's wording
+   does not give, and that paragraph, like the root's header paragraph, is reflowed
+   around the changed words.
+7. **The `let` probe held, with no fallback** (`ev-probe-let.txt`), but its first
+   passing build's output was not kept: an identical rerun overwrote it, and the record
+   holds that rerun as run 2.
+
+### 10. What was not run, and what was not recorded
+
+Not run:
+
+- A push or a pull request. Both need authorisation (step 9); nothing left the worktree.
+- `just initialize`, `just gleam-double-deps` or any other network recipe. The review's
+  model calls are the only network use, which the checkpoint authorises.
+- A second review round. None was owed.
+- A review of the triage's fixes: I1's change to the pin and B2's to `residue.py`.
+- The full Verification before the work commit. `ev-verif-precommit.txt` left out
+  `git rev-parse HEAD`, `just check` and the `git status` test; section 8's run is the
+  first full one.
+- Verification under `sh -x`: its probes' values are not traced, only its exit.
+
+Not recorded: the scratch swap module's text at step 1, and its deletion at steps 1 and
+5, beyond its absence from the work commit and the clean tree; the `let` probe's first
+passing build; that the baseline ran on an untouched tree, beyond the files' times and
+count; the exact `codex exec` command lines and the Codex processes' exit statuses; who
+ran the triage; and the models of the subagents.
 
 ## Open points
 

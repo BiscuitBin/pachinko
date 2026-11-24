@@ -139,7 +139,7 @@ snapshot.
 | GD09 | The caller's types in public modules | `GD09-callers-types.md` | GD08 | done |
 | GD10 | The engine and the rules under `internal/` | `GD10-internal-modules.md` | GD09 | done |
 | GD11 | Test support under `test/support/` | `GD11-test-support.md` | GD08 | done |
-| GD12 | A type of its own for each id | `GD12-id-types.md` | GD11 | todo |
+| GD12 | A type of its own for each id | `GD12-id-types.md` | GD11 | done |
 
 ## Dependencies
 
