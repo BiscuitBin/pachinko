@@ -1,14 +1,18 @@
 # Tickets for a Gleam double of libpachinko
 
-These seven tickets build a second double of the domain `docs/specs/pachinko.allium`
-defines, in Gleam: a pure core that holds every rule, behind one owner actor that
-serializes every action and every tick. It covers the pocket queue, leases, pull, ack,
-nack, renew, release, the lease's end, expiry, parking and decay. The HTTP service is out
-of scope, and so is a real ticker: tests set a fake clock and send `Tick` themselves.
+The first seven tickets, GD01 to GD07, build a second double of the domain
+`docs/specs/pachinko.allium` defines, in Gleam: a pure core that holds every rule, behind
+one owner actor that serializes every action and every tick. It covers the pocket queue,
+leases, pull, ack, nack, renew, release, the lease's end, expiry, parking and decay. The
+HTTP service is out of scope, and so is a real ticker: tests set a fake clock and send
+`Tick` themselves. Four more, GD08 to GD11, change no behaviour: they lay the finished
+double out so that its interface is one place a reader can find. "The interface tickets"
+below says what the maintainer chose for them.
 
 The tickets follow the format and the conventions of `tickets/`, as the Python double's
-did (`.scratch/python-double/README.md`). Each one cites `tickets/CONVENTIONS.md` by
-section and carries word for word the same shared rules and adversarial-review deltas.
+did (`.scratch/python-double/README.md`). Each of GD01 to GD07 cites
+`tickets/CONVENTIONS.md` by section and carries word for word the same shared rules and
+adversarial-review deltas.
 The double is derived from the specification, read with the maintainer's four rulings in
 `double/SPEC-NOTES.md`. The Python and Rust sources are never read for behaviour. It has
 the Python double's coverage: 93 scenarios, 32 rules fired and 35 invariant controls. It
@@ -131,13 +135,26 @@ snapshot.
 | GD05 | Deferral behind the held version | `GD05-deferral.md` | GD04 | done |
 | GD06 | The clock, with Tick, lapse, parking and decay | `GD06-clock-tick-lapse-parking-decay.md` | GD05 | done |
 | GD07 | Close-out and the reader's guide | `GD07-close-out.md` | GD06 | done |
+| GD08 | The front door, with the owner as the root module | `GD08-front-door.md` | none | todo |
+| GD09 | The caller's types in public modules | `GD09-callers-types.md` | GD08 | todo |
+| GD10 | The engine and the rules under `internal/` | `GD10-internal-modules.md` | GD09 | todo |
+| GD11 | Test support under `test/support/` | `GD11-test-support.md` | GD08 | todo |
 
 ## Dependencies
 
-The series is a chain, so no two tickets run in parallel.
+GD01 to GD07 are a chain, so no two of them ran in parallel.
 
 ```text
 GD01 ──> GD02 ──> GD03 ──> GD04 ──> GD05 ──> GD06 ──> GD07
+```
+
+GD08 to GD11 start from the finished double. GD11 needs only GD08, which creates the
+test it extends. It is still written to run last, because the series shares one worktree
+and no two tickets run in it at once.
+
+```text
+GD08 ──> GD09 ──> GD10
+  └────────────────────> GD11
 ```
 
 ## What each ticket delivers
@@ -151,6 +168,60 @@ GD01 ──> GD02 ──> GD03 ──> GD04 ──> GD05 ──> GD06 ──> GD
 | GD05 | M | A newer version of a held key is deferred and never lost, and the release reconciles all six `Freed` rows |
 | GD06 | L | `Tick` is a mailbox message. A late action ahead of the tick succeeds (decision 0019's branch A), and nothing is pending |
 | GD07 | M | Strict coverage, the reader's guide with a checked walkthrough, and the findings: each `G`-note against its `N`-note, and what the actor showed |
+| GD08 | M | `import pachinko_double` gives `start`, every trigger, `tick` and the two reads. The root module's header is the map of the package, and a pin test holds its 17 names |
+| GD09 | L | A caller that drives the queue and reads every reply imports only the root, the vocabulary modules and test support. The walkthrough test is the witness |
+| GD10 | L | A listing of `src/pachinko_double/` shows the split. The pin holds the public module list, each public module's names and the list of names that are `pub` only for the tests |
+| GD11 | S | A listing of `test/` shows the tests and one support directory, and the pin holds both lists |
+
+## The interface tickets
+
+`/to-tickets` asked for the Gleam counterpart of PD09, which is on `build-python-double`
+at commit `ba06b5e6aeb0b33f5590a043296c879bc5262653` and not on this branch: one place a
+reviewer goes to see the production interface, with the test-only parts, the test harness
+and the other concerns easy to tell apart, done the way Gleam does it. PD09 was one small
+ticket because Python re-exports names. A Gleam module has no re-export, and a type
+alias carries no constructors, so a type a caller builds or matches on is public only
+where it is defined, and the work is moves. GD08's Open points corrects one statement
+the maintainer was shown with these choices: a constant can refer to a function.
+
+The maintainer chose these on 2026-11-23:
+
+| Question | Choice |
+| --- | --- |
+| The root module, `src/pachinko_double.gleam` | The owner, moved there whole. `owner.gleam` goes, and "the owner" stays the concept's name |
+| Depth | The full Gleam layout, in four tickets |
+| Test support | `test/support/`, with the three modules as they are |
+| Branch | `build-gleam-double`, as GD01 to GD07 |
+
+The layout the four tickets reach, under `gleam-double/`:
+
+```text
+src/pachinko_double.gleam        the interface: start, the eight triggers, tick, lease_view, inspect
+src/pachinko_double/
+  config time model refusals     what a caller names, as today
+  failure answers                new: types moved out of rules, domain, core and consuming
+  inspection invariants          the snapshot and the checker
+  internal/
+    rules domain core            the engine
+    identity publish pull settle lease_end expiry decay consuming   the specification's rules
+test/
+  *_test.gleam                   the tests, and the entry module
+  support/                       harness, runner, coverage
+```
+
+The four differ from GD01 to GD07 in three ways:
+
+- They own no rule, no invariant and no scenario, and add no spec note.
+- They cite the shared rules and the review deltas from `GD07-close-out.md` and do not
+  copy them. GD08 restates one sentence of shared rule 4, which named the module
+  `owner`.
+- Each has one checkpoint, with the conformance and breakage lenses. GD10's adds
+  `design`.
+
+Each "Decisions fixed" section is in two groups: what the maintainer chose, and the
+exact lists the ticket's writer drew from a scan of the tree at commit
+`aebae0afadfb34a2d8ae762316376f70d3df08fe`. The second group is a proposal until its
+ticket starts.
 
 ## What each ticket owns
 
@@ -169,6 +240,7 @@ lands whole before any publish scenario is ported.
 | GD05 | 4 | 0 | 12 | 34 |
 | GD06 | 7 | 0 | 34 | 0 |
 | GD07 | 0 | 0 | 0 | none; the pending lists are deleted |
+| GD08 to GD11 | 0 | 0 | 0 | none |
 
 Why GD01 and GD02 are split where PD01 was one: no Gleam toolchain has run in this
 repository, so GD01 proves it on the thinnest real path before the model and the checker
@@ -199,8 +271,9 @@ Every ticket runs `tickets/CONVENTIONS.md` §14 before its final commit, with Co
 findings and apply the valid fixes. GD01 adds a checkpoint after its design, and GD02
 one after its model and checker, each before any scenario of its own is ported. GD07's
 checkpoint reviews the whole double and its spec notes. Those three add a `design` lens.
-Until T37 lands, every ticket embeds the corrected Codex command, which closes stdin and
-keeps the findings apart from `-o`'s last message.
+Until T37 lands, each of GD01 to GD07 embeds the corrected Codex command, which closes
+stdin and keeps the findings apart from `-o`'s last message. GD08 to GD11 take it from
+`GD07-close-out.md`, which they cite.
 
 The deltas are the Python series', with three changes of wording: the design lens asks
 about modules and about what holds queue state, where the Python series' asked about
