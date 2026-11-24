@@ -44,7 +44,6 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{HeldView}
 import pachinko_double/config.{Settings}
@@ -64,7 +63,8 @@ import pachinko_double/refusals.{
   type Refusal, EqualRankRefused, LeaseFenced, MarkConflict, RecordNotHeld,
   UnknownConsumer,
 }
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double, Driven}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [

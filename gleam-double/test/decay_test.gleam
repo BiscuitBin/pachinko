@@ -23,7 +23,6 @@
 //// stale versions both decay in one tick, and the report names both.
 
 import gleam/option.{None}
-import harness.{type Double, Driven}
 import pachinko_double.{Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
@@ -36,7 +35,8 @@ import pachinko_double/model.{
   Pocket, PocketQueued, Publisher, Queue, Record, RecordQueued, Stale, State,
   Superseded, SupersededRecord,
 }
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double, Driven}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [

@@ -23,7 +23,6 @@
 
 import gleam/list
 import gleam/option.{None, Some}
-import harness.{type Double}
 import pachinko_double.{Outcome}
 import pachinko_double/config
 import pachinko_double/failure.{BrokenInvariant, Defect, EffectFailed}
@@ -36,7 +35,8 @@ import pachinko_double/invariants
 import pachinko_double/model.{
   type State, Consumer, PocketIdle, PocketQueued, Publisher, State,
 }
-import runner.{type Test, Test}
+import support/harness.{type Double}
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

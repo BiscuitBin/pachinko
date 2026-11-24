@@ -8,7 +8,6 @@ import competing_test
 import config_test
 import consuming_test
 import core_test
-import coverage
 import coverage_test
 import decay_test
 import expiry_test
@@ -28,9 +27,10 @@ import parking_test
 import publish_test
 import pull_test
 import rules_test
-import runner.{type Module, Module}
 import runner_test
 import settle_test
+import support/coverage
+import support/runner.{type Module, Module}
 
 fn modules() -> List(Module) {
   [

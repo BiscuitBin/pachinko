@@ -24,7 +24,7 @@ import pachinko_double/model.{
   PocketIdle, PocketLeased, Publisher, Queue, Record, RecordHeld, RecordQueued,
   Stale, State, Superseded, SupersededRecord, Unsettled,
 }
-import runner.{type Test, Test}
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

@@ -32,7 +32,6 @@
 
 import gleam/list
 import gleam/option.{None, Some}
-import harness.{type Double, type Pulled}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{type TickReport, BatchRecord, NoPocketAvailable}
 import pachinko_double/config.{Settings}
@@ -43,7 +42,8 @@ import pachinko_double/model.{
   PocketParked, PocketQueued, RecordHeld, RecordQueued, Stale, SupersededRecord,
 }
 import pachinko_double/refusals.{EqualRankRefused, LeaseFenced, RecordNotHeld}
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double, type Pulled}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [

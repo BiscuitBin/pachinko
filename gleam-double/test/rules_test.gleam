@@ -3,7 +3,6 @@
 
 import gleam/int
 import gleam/option.{None, Some}
-import harness
 import pachinko_double/failure.{
   Defect, EffectFailed, GuardOverlap, NoRuleHeld, Refused,
 }
@@ -12,7 +11,8 @@ import pachinko_double/internal/rules.{
   Defective, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Refuses,
   Row, Table, World,
 }
-import runner.{type Test, Test}
+import support/harness
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

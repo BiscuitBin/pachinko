@@ -13,7 +13,6 @@
 //// nothing` red. The tests named `... breaks nothing` are the near misses
 //// the base cannot hold.
 
-import coverage
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import pachinko_double/config.{Settings}
@@ -26,7 +25,8 @@ import pachinko_double/model.{
   RecordQueued, Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/time.{type Timestamp}
-import runner.{type Test, InvariantControl, Test}
+import support/coverage
+import support/runner.{type Test, InvariantControl, Test}
 
 pub fn tests() -> List(Test) {
   [

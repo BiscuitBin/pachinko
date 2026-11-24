@@ -24,7 +24,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
-import harness.{type Double}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{
   type BatchRecord, Batch, BatchRecord, NoPocketAvailable,
@@ -32,7 +31,8 @@ import pachinko_double/answers.{
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{Lease, LeaseActive}
-import runner.{type Test, Test}
+import support/harness.{type Double}
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

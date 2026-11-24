@@ -35,7 +35,6 @@
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{NoPocketAvailable}
 import pachinko_double/config
@@ -56,7 +55,8 @@ import pachinko_double/model.{
   Superseded, SupersededRecord, Unsettled,
 }
 import pachinko_double/refusals.{EqualRankRefused, UnknownPublisher}
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double, Driven}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [

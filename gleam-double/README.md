@@ -40,7 +40,7 @@ just gleam-double
 The recipe refuses to start on a missing or mismatched pin, then checks the layout with
 `gleam format`, builds with warnings treated as errors, and runs the tests. Their entry
 point, `main` in `test/pachinko_double_test.gleam`, runs the registered tests one after
-another, each in a monitored process with a timeout, and then `test/coverage.gleam`,
+another, each in a monitored process with a timeout, and then `test/support/coverage.gleam`,
 before it prints the number of tests run and passed. The run fails on a failed test; on a
 runner that would take a test that crashed or never returned for a pass, which the runner
 checks on two such tests of its own, outside the registry; on a catalog scenario that no
@@ -60,7 +60,7 @@ holds the check that this page still matches them.
 | The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam`, under `src/pachinko_double/internal/` |
 | What is `pub` only for the tests | The table below this one |
 | The tests | `test/*_test.gleam`, run from `test/pachinko_double_test.gleam` |
-| Test support: the fakes, the runner and the coverage check | `test/harness.gleam`, `test/runner.gleam` and `test/coverage.gleam` |
+| Test support: the fakes, the runner and the coverage check | `test/support/harness.gleam`, `test/support/runner.gleam` and `test/support/coverage.gleam` |
 
 ### What is pub only for the tests
 
@@ -281,12 +281,12 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
 - **The injected clock.** `pachinko_double.start` takes `now: fn() -> Timestamp`, counted in whole
   milliseconds (G01). The clock is read only when a row's effect asks for `now`, and at
   most once in an outcome; a refusal never reads it, because only an effect can ask. The
-  double contains no real clock. Tests pass the fake from `test/harness.gleam`, which
+  double contains no real clock. Tests pass the fake from `test/support/harness.gleam`, which
   `harness.set_time` moves and which counts how often it is read.
 - **The lease-id source.** The specification's `Lease` has no identity, yet ack, nack,
   renew and release each name a lease, so the double gives each lease an id (G10). The
   owner's `lease_id: fn() -> String` is called only when `PullClaimsFrontPocket` grants a
-  lease. The fake in `test/harness.gleam` counts its calls and hands out `lease-1`, then
+  lease. The fake in `test/support/harness.gleam` counts its calls and hands out `lease-1`, then
   `lease-2`, and onward.
 - **`Tick`.** Time passes for the double only when the owner receives `Tick`, sent by
   `pachinko_double.tick`; until then no lease expires and no shed entry decays. On a tick the owner

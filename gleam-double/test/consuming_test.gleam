@@ -8,7 +8,6 @@
 //// joined.
 
 import gleam/option.{None, Some}
-import harness
 import pachinko_double.{Outcome}
 import pachinko_double/answers.{HeldView, LeaseView}
 import pachinko_double/config
@@ -20,7 +19,8 @@ import pachinko_double/model.{
   RecordQueued, State, Unsettled,
 }
 import pachinko_double/refusals.{UnknownConsumer}
-import runner.{type Test, Test}
+import support/harness
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

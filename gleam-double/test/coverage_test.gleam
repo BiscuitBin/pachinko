@@ -1,9 +1,9 @@
 //// The coverage check's own tests, each on inputs made by hand.
 
-import coverage.{type Inputs, Inputs}
 import gleam/list
 import gleam/string
-import runner.{
+import support/coverage.{type Inputs, Inputs}
+import support/runner.{
   type Ran, type Tag, type Test, Failed, InvariantControl, Passed, Ran, Report,
   Scenario, Test,
 }

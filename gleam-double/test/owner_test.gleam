@@ -4,7 +4,6 @@
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None}
-import harness
 import pachinko_double.{Outcome, PartialTick}
 import pachinko_double/answers.{TickReport}
 import pachinko_double/config.{Settings}
@@ -15,7 +14,8 @@ import pachinko_double/model.{
   LeaseActive, LeaseExpired, PocketLeased, PocketQueued, Publisher,
 }
 import pachinko_double/refusals.{PublisherAlreadyJoined}
-import runner.{type Test, Test}
+import support/harness
+import support/runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
   [

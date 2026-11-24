@@ -10,7 +10,9 @@
 //// the replies, `failure` and `answers`, hold exactly the reply types;
 //// `failure` imports nothing, and `answers` imports only `model` and `time`.
 //// The witness, the walkthrough in `test/guide_test.gleam`, imports no engine
-//// module and no rule module.
+//// module and no rule module. `test/` holds at its top level only the test
+//// modules and the directory `support`, which holds exactly the coverage
+//// check, the fakes and the runner.
 ////
 //// The layout splits the interface from the engine: `src/pachinko_double/`
 //// holds the eight vocabulary modules and the directory `internal`, which
@@ -48,12 +50,12 @@
 //// `\n` escapes, so that no line of this file other than its own imports
 //// starts with `import`.
 
-import coverage
 import gleam/list
 import gleam/result
 import gleam/string
-import runner.{type Test, Test}
 import simplifile
+import support/coverage
+import support/runner.{type Test, Test}
 
 /// One public item of a module: its name, its constructors in the body's
 /// order, and whether it is marked `@internal`.
@@ -206,6 +208,26 @@ pub fn tests() -> List(Test) {
       [],
       test_only_names,
     ),
+    Test(
+      "a top level that holds a module that is not a test, a directory named like one, or no support, differs",
+      [],
+      reads_test_top_level,
+    ),
+    Test(
+      "a support listing with a fourth module, or one missing, differs",
+      [],
+      reads_support_listing,
+    ),
+    Test(
+      "test/ holds at its top level only test modules and support/",
+      [],
+      test_top_level,
+    ),
+    Test(
+      "test/support/ holds exactly coverage, harness and runner",
+      [],
+      support_top_level,
+    ),
   ]
 }
 
@@ -316,13 +338,13 @@ fn module_name(text: String) -> String {
 }
 
 /// Whether the witness may import a module: one under `gleam/`,
-/// `simplifile`, the support modules `harness` and `runner`, the root, or
-/// one of the eight vocabulary modules.
+/// `simplifile`, the support modules `support/harness` and `support/runner`,
+/// the root, or one of the eight vocabulary modules.
 pub fn witness_allows(module: String) -> Bool {
   string.starts_with(module, "gleam/")
   || list.contains(
     [
-      "simplifile", "harness", "runner", "pachinko_double",
+      "simplifile", "support/harness", "support/runner", "pachinko_double",
       "pachinko_double/config", "pachinko_double/time", "pachinko_double/model",
       "pachinko_double/refusals", "pachinko_double/failure",
       "pachinko_double/answers", "pachinko_double/inspection",
@@ -506,12 +528,13 @@ fn source_top_level() -> List(String) {
 fn import_lines() -> List(String) {
   [
     "//// A test module made by hand.", "", "import gleam/list",
-    "import gleam/option.{type Option, None}", "import harness.{type Double}",
-    "import pachinko_double", "import pachinko_double.{type Reply, Outcome}",
+    "import gleam/option.{type Option, None}",
+    "import support/harness.{type Double}", "import pachinko_double",
+    "import pachinko_double.{type Reply, Outcome}",
     "import pachinko_double/core", "import pachinko_double/core.{TickReport}",
     "import pachinko_double/core as engine", "import pachinko_double/model.{",
     "  type Mark,", "}", "  import pachinko_double/domain",
-    "// import pachinko_double/rules", "import runner.{type Test, Test}",
+    "// import pachinko_double/rules", "import support/runner.{type Test, Test}",
     "import simplifile",
   ]
 }
@@ -519,9 +542,10 @@ fn import_lines() -> List(String) {
 fn reads_imports() -> List(String) {
   assert imported_modules(string.join(import_lines(), "\n"))
     == [
-      "gleam/list", "gleam/option", "harness", "pachinko_double",
+      "gleam/list", "gleam/option", "support/harness", "pachinko_double",
       "pachinko_double", "pachinko_double/core", "pachinko_double/core",
-      "pachinko_double/core", "pachinko_double/model", "runner", "simplifile",
+      "pachinko_double/core", "pachinko_double/model", "support/runner",
+      "simplifile",
     ]
   []
 }
@@ -534,6 +558,8 @@ fn reads_witness() -> List(String) {
   assert !witness_allows("pachinko_double/configuration")
   assert !witness_allows("pachinko_double/domain")
   assert !witness_allows("pachinko_double/internal/core")
+  assert !witness_allows("harness")
+  assert !witness_allows("runner")
   assert !witness_allows("gleam")
   assert witness_allows("gleam/erlang/process")
   []
@@ -1439,5 +1465,97 @@ fn source_modules() -> Result(List(#(String, String)), String) {
 fn test_only_names() -> List(String) {
   assert result.map(source_modules(), test_only_faults(_, test_only()))
     == Ok([])
+  []
+}
+
+/// The test directory and its one directory, which holds the test support,
+/// from `gleam-double/`.
+pub const test_directory = "test"
+
+pub const support_directory = "test/support"
+
+/// The three support modules: the coverage check, the fakes and the runner.
+fn support_modules() -> List(String) {
+  ["coverage.gleam", "harness.gleam", "runner.gleam"]
+}
+
+/// The names of a listing's entries that are not test modules, sorted. Each
+/// entry is a name and whether it is a file; a test module is a file whose
+/// name ends in `_test.gleam`. At the top level of `test/` that is only
+/// `support`.
+pub fn not_tests(entries: List(#(String, Bool))) -> List(String) {
+  list.filter_map(entries, fn(entry) {
+    let #(name, file) = entry
+    case file && string.ends_with(name, "_test.gleam") {
+      True -> Error(Nil)
+      False -> Ok(name)
+    }
+  })
+  |> list.sort(string.compare)
+}
+
+/// A directory's entries, each with whether it is a file.
+fn kinds(directory: String, names: List(String)) -> List(#(String, Bool)) {
+  list.map(names, fn(name) {
+    #(name, simplifile.is_file(directory <> "/" <> name) == Ok(True))
+  })
+}
+
+/// A directory's listing, sorted, so that two listings compare with `==`.
+pub fn listing(entries: List(String)) -> List(String) {
+  list.sort(entries, string.compare)
+}
+
+/// A top level of test modules and `support` leaves only `support`; one that
+/// holds `helpers.gleam`, a directory named like a test module, or no
+/// `support`, leaves something else.
+fn reads_test_top_level() -> List(String) {
+  assert not_tests([
+      #("support", False),
+      #("a_test.gleam", True),
+      #("pachinko_double_test.gleam", True),
+    ])
+    == ["support"]
+  assert not_tests([
+      #("a_test.gleam", True),
+      #("support", False),
+      #("helpers.gleam", True),
+    ])
+    == ["helpers.gleam", "support"]
+  assert not_tests([
+      #("a_test.gleam", True),
+      #("support", False),
+      #("extra_test.gleam", False),
+    ])
+    == ["extra_test.gleam", "support"]
+  assert not_tests([#("a_test.gleam", True)]) != ["support"]
+  []
+}
+
+/// The three support modules in any order are the support listing; a fourth
+/// module, or one missing, is not.
+fn reads_support_listing() -> List(String) {
+  assert listing(["runner.gleam", "coverage.gleam", "harness.gleam"])
+    == support_modules()
+  assert listing([
+      "runner.gleam", "coverage.gleam", "extra.gleam", "harness.gleam",
+    ])
+    != support_modules()
+  assert listing(["coverage.gleam", "harness.gleam"]) != support_modules()
+  []
+}
+
+fn test_top_level() -> List(String) {
+  assert result.map(simplifile.read_directory(test_directory), fn(names) {
+      not_tests(kinds(test_directory, names))
+    })
+    == Ok(["support"])
+  assert simplifile.is_directory(support_directory) == Ok(True)
+  []
+}
+
+fn support_top_level() -> List(String) {
+  assert result.map(simplifile.read_directory(support_directory), listing)
+    == Ok(support_modules())
   []
 }

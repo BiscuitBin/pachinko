@@ -3,7 +3,7 @@
 import gleam/erlang/process
 import gleam/list
 import gleam/string
-import runner.{type Test, Failed, Module, Passed, Test}
+import support/runner.{type Test, Failed, Module, Passed, Test}
 
 pub fn tests() -> List(Test) {
   [
@@ -71,7 +71,7 @@ import rules_test as rules
 import nested/lease_test.{tests}
 import publish_test_helpers
 // import publish_test
-import runner.{type Module, Module}
+import support/runner.{type Module, Module}
 
 fn modules() -> List(Module) {
   [Module(\"pull_test\", owner_test.tests())]

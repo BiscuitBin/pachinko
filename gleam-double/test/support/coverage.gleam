@@ -12,10 +12,10 @@ import gleam/list
 import gleam/string
 import pachinko_double/internal/core
 import pachinko_double/invariants
-import runner.{
+import simplifile
+import support/runner.{
   type Ran, type Report, type Tag, Failed, InvariantControl, Passed, Scenario,
 }
-import simplifile
 
 /// The catalog and the specification, from `gleam-double/`, where the run
 /// starts.

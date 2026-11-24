@@ -34,7 +34,6 @@
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
-import harness.{type Double}
 import pachinko_double.{type PartialTick, type Reply, Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
@@ -45,7 +44,8 @@ import pachinko_double/model.{
   RecordQueued,
 }
 import pachinko_double/refusals.{LeaseFenced}
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [

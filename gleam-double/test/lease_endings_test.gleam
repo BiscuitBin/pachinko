@@ -33,7 +33,6 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import harness.{type Double}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{type TickReport, HeldView, LeaseView}
 import pachinko_double/config.{Settings}
@@ -43,7 +42,8 @@ import pachinko_double/model.{
   Nacked, PocketIdle, PocketParked, PocketQueued, RecordHeld, RecordQueued,
   Superseded, SupersededRecord, Unsettled,
 }
-import runner.{type Test, Scenario, Test}
+import support/harness.{type Double}
+import support/runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {
   [
