@@ -12,6 +12,7 @@ import gleam/option.{None}
 import pachinko_double.{Outcome}
 import pachinko_double/config
 import pachinko_double/failure.{Refused}
+import pachinko_double/ids.{ConsumerId, PocketKey, PublisherId, RecordKey}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/model.{Consumer, Publisher}
 import pachinko_double/refusals.{ConsumerAlreadyJoined, PublisherAlreadyJoined}
@@ -39,17 +40,18 @@ pub fn tests() -> List(Test) {
 
 fn publisher_joins_once() -> List(String) {
   let double = harness.fixture()
-  assert harness.publisher_joins(double, "q")
+  assert harness.publisher_joins(double, PublisherId("q"))
     == Ok(Outcome(["PublisherJoins"], None))
   let before = harness.inspect(double)
-  assert harness.publisher_joins(double, "q")
-    == Error(Refused(PublisherAlreadyJoined("q")))
+  assert harness.publisher_joins(double, PublisherId("q"))
+    == Error(Refused(PublisherAlreadyJoined(PublisherId("q"))))
   let after = harness.inspect(double)
   assert after == before
   // `impl-choice`: the Rust asserts this order, and the specification gives
   // the publishers none. It holds because the snapshot lists them in the
   // order they joined (spec note G06).
-  assert after.publishers == [Publisher("p"), Publisher("q")]
+  assert after.publishers
+    == [Publisher(PublisherId("p")), Publisher(PublisherId("q"))]
   // UniquePublisherId, by hand until the checker lands.
   assert list.unique(after.publishers) == after.publishers
   assert harness.clock_reads(double.clock) == 0
@@ -59,19 +61,19 @@ fn publisher_joins_once() -> List(String) {
 
 fn consumer_joins_once() -> List(String) {
   let double = harness.fixture()
-  assert harness.consumer_joins(double, "c4")
+  assert harness.consumer_joins(double, ConsumerId("c4"))
     == Ok(Outcome(["ConsumerJoins"], None))
   let before = harness.inspect(double)
-  assert harness.consumer_joins(double, "c4")
-    == Error(Refused(ConsumerAlreadyJoined("c4")))
+  assert harness.consumer_joins(double, ConsumerId("c4"))
+    == Error(Refused(ConsumerAlreadyJoined(ConsumerId("c4"))))
   let after = harness.inspect(double)
   assert after == before
   // As the Rust asserts it, `(c4, None)`: `c4` is among the consumers, in no
   // stated order, and holds no lease.
-  assert list.contains(after.consumers, Consumer("c4"))
+  assert list.contains(after.consumers, Consumer(ConsumerId("c4")))
   let assert Ok(c4) =
     list.find(inspection.views(after).consumers, fn(view) {
-      view.consumer == Consumer("c4")
+      view.consumer == Consumer(ConsumerId("c4"))
     })
   assert c4.active_leases == []
   // UniqueConsumerId, by hand until the checker lands.
@@ -86,13 +88,13 @@ fn consumer_joins_once() -> List(String) {
 fn shared_id() -> List(String) {
   let double = harness.fixture()
   let before = harness.inspect(double)
-  assert harness.publisher_joins(double, "c1")
+  assert harness.publisher_joins(double, PublisherId("c1"))
     == Ok(Outcome(["PublisherJoins"], None))
-  assert harness.consumer_joins(double, "p")
+  assert harness.consumer_joins(double, ConsumerId("p"))
     == Ok(Outcome(["ConsumerJoins"], None))
   let after = harness.inspect(double)
-  assert list.contains(after.publishers, Publisher("c1"))
-  assert list.contains(after.consumers, Consumer("p"))
+  assert list.contains(after.publishers, Publisher(PublisherId("c1")))
+  assert list.contains(after.consumers, Consumer(ConsumerId("p")))
   assert list.length(after.publishers) == list.length(before.publishers) + 1
   assert list.length(after.consumers) == list.length(before.consumers) + 1
   harness.fired(double)
@@ -119,37 +121,37 @@ fn default_threshold_and_decay_ttls() -> List(String) {
 /// lease id.
 fn a_join_changes_only_its_entity() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "a", "a1", 1, "old")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "old")
     == Ok(Outcome(["PublishIntoNewPocket"], None))
-  assert harness.publish(double, "a", "a2", 1, "a2")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a2"), 1, "a2")
     == Ok(Outcome(["PublishNewKey"], None))
-  assert harness.publish(double, "a", "a1", 2, "new")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 2, "new")
     == Ok(Outcome(["Supersede"], None))
-  let batch = harness.batch(double, "c1", 10)
-  assert harness.nack(double, "c1", batch.lease, "a2")
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("a2"))
     == Ok(Outcome(["NackMarksRecord"], None))
-  let assert Ok(_) = harness.release(double, "c1", batch.lease)
+  let assert Ok(_) = harness.release(double, ConsumerId("c1"), batch.lease)
   let before = harness.inspect(double)
   assert before.superseded != []
   assert before.dead_letters != []
   let reads = harness.clock_reads(double.clock)
   let draws = harness.lease_id_draws(double.lease_ids)
-  assert harness.consumer_joins(double, "c4")
+  assert harness.consumer_joins(double, ConsumerId("c4"))
     == Ok(Outcome(["ConsumerJoins"], None))
   assert harness.inspect(double)
     == Snapshot(
       ..before,
-      consumers: list.append(before.consumers, [Consumer("c4")]),
+      consumers: list.append(before.consumers, [Consumer(ConsumerId("c4"))]),
     )
   assert harness.clock_reads(double.clock) == reads
   assert harness.lease_id_draws(double.lease_ids) == draws
   let before = harness.inspect(double)
-  assert harness.publisher_joins(double, "q")
+  assert harness.publisher_joins(double, PublisherId("q"))
     == Ok(Outcome(["PublisherJoins"], None))
   assert harness.inspect(double)
     == Snapshot(
       ..before,
-      publishers: list.append(before.publishers, [Publisher("q")]),
+      publishers: list.append(before.publishers, [Publisher(PublisherId("q"))]),
     )
   assert harness.clock_reads(double.clock) == reads
   assert harness.lease_id_draws(double.lease_ids) == draws

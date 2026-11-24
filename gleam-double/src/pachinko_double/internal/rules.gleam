@@ -15,6 +15,7 @@ import gleam/option.{type Option, None, Some}
 import pachinko_double/failure.{
   type Failure, Defect, EffectFailed, GuardOverlap, NoRuleHeld, Refused,
 }
+import pachinko_double/ids
 import pachinko_double/time.{type Timestamp}
 
 /// What a row's effect does, as a program `run` interprets.
@@ -26,7 +27,7 @@ pub type Plan(state, event, answer) {
   /// its rows ask.
   Now(next: fn(Timestamp) -> Plan(state, event, answer))
   /// The row creates a lease and needs an id for it.
-  LeaseId(next: fn(String) -> Plan(state, event, answer))
+  LeaseId(next: fn(ids.LeaseId) -> Plan(state, event, answer))
   /// The row allots a position: it is handed the counter's value, and the
   /// counter advances. The state the row finishes with has its counter
   /// overwritten, so only `run` ever moves it.
@@ -77,7 +78,7 @@ pub type Applied(state, answer) {
 pub type Step(state, answer, refusal) {
   Done(result: Result(Applied(state, answer), Failure(refusal)))
   NeedsNow(next: fn(Timestamp) -> Step(state, answer, refusal))
-  NeedsLeaseId(next: fn(String) -> Step(state, answer, refusal))
+  NeedsLeaseId(next: fn(ids.LeaseId) -> Step(state, answer, refusal))
 }
 
 /// Where one outcome stands: the state so far, the `now` it read, if it has
@@ -254,7 +255,7 @@ fn emit(
 pub fn drive(
   step: Step(state, answer, refusal),
   now: fn() -> Timestamp,
-  lease_id: fn() -> String,
+  lease_id: fn() -> ids.LeaseId,
 ) -> Result(Applied(state, answer), Failure(refusal)) {
   case step {
     Done(result) -> result

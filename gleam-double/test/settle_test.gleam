@@ -48,6 +48,10 @@ import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{HeldView}
 import pachinko_double/config.{Settings}
 import pachinko_double/failure.{Defect, EffectFailed, Refused}
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type RecordKey, ConsumerId, LeaseId, PocketKey,
+  PublisherId, RecordKey,
+}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/internal/core
 import pachinko_double/internal/rules.{Applied, Done, Refuses, Row, Table}
@@ -219,29 +223,29 @@ fn dead_letter_ttl() -> Int {
 
 /// The Rust test file's `held`: a fixture whose pocket `pk` holds `k` at
 /// rank 1, payload `v1`, pulled by `c1`, and that lease's id.
-fn held() -> #(Double, String) {
+fn held() -> #(Double, LeaseId) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
     == fired(["PublishIntoNewPocket"])
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == [claims, hold]
   #(double, batch.lease)
 }
 
 /// The Rust test file's `marked_both_ways`: `pk` with `k1` and `k2`, both
 /// held by `c1` from `t0`, then `k1` nacked and `k2` acked at 10 ms.
-fn marked_both_ways() -> #(Double, String) {
+fn marked_both_ways() -> #(Double, LeaseId) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k1", 1, "k1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k1"), 1, "k1")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "pk", "k2", 1, "k2")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k2"), 1, "k2")
     == fired(["PublishNewKey"])
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == [claims, hold, hold]
   let _ = harness.at(double, 10)
-  assert harness.nack(double, "c1", batch.lease, "k1")
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("k1"))
     == fired([nack_marks_record])
-  assert harness.ack(double, "c1", batch.lease, "k2")
+  assert harness.ack(double, ConsumerId("c1"), batch.lease, RecordKey("k2"))
     == fired([ack_marks_record])
   #(double, batch.lease)
 }
@@ -299,7 +303,7 @@ const consume_deferred = "ConsumeAckedVersionQueueDeferred"
 const dead_letter_deferred = "DeadLetterNackedVersionQueueDeferred"
 
 /// The Rust test file's `marked`: a lease view's record for `key` at rank 1.
-fn marked(key: String, payload: String, mark: Mark) -> answers.HeldView {
+fn marked(key: RecordKey, payload: String, mark: Mark) -> answers.HeldView {
   HeldView(key:, held_rank: 1, held_payload: <<payload:utf8>>, mark:)
 }
 
@@ -307,11 +311,12 @@ fn marked(key: String, payload: String, mark: Mark) -> answers.HeldView {
 
 fn ack_marks() -> List(String) {
   let #(double, lease) = held()
-  assert harness.publish(double, "pk", "other", 1, "o")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("other"), 1, "o")
     == fired(["PublishNewKey"])
   // The Rust's ack answers `Acked`; the specification's answers nothing.
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
-  let record = harness.record(double, "pk", "k")
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert record.status == held_as(1, "v1", Acked, None)
   // `impl-choice` (spec notes G04 and G33): an absolute
   // position, which holds only because the queue's first position is 0.
@@ -319,12 +324,15 @@ fn ack_marks() -> List(String) {
   let snapshot = harness.inspect(double)
   // "Nothing is removed": the pocket's record keys, by key, as the Rust
   // lists them.
-  assert model.records_of(snapshot.records, "pk")
-    |> list.map(fn(record) { record.key })
+  assert model.records_of(snapshot.records, PocketKey("pk"))
+    |> list.map(fn(record) {
+      let RecordKey(key) = record.key
+      key
+    })
     |> list.sort(string.compare)
     == ["k", "other"]
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
-  assert view.records == [marked("k", "v1", Acked)]
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
+  assert view.records == [marked(RecordKey("k"), "v1", Acked)]
   assert snapshot.superseded == []
   assert snapshot.dead_letters == []
   // The Rust's `invariants::all`, by the checker, which the apply step has
@@ -336,20 +344,20 @@ fn ack_marks() -> List(String) {
 fn ack_extends() -> List(String) {
   let double =
     harness.fixture_with(Settings(..harness.fixture_settings(), lease_ttl: 10))
-  assert harness.publish(double, "pk", "k", 1, "v")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v")
     == fired(["PublishIntoNewPocket"])
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == [claims, hold]
   // The Rust asserts the batch's `expires_at`; the lease's is the same fact
   // (N13).
   let assert [granted] = harness.inspect(double).leases
   assert granted.expires_at == harness.t0 + 10
   let _ = harness.advance(double.clock, harness.t0, 4)
-  assert harness.ack(double, "c1", batch.lease, "k")
+  assert harness.ack(double, ConsumerId("c1"), batch.lease, RecordKey("k"))
     == fired([ack_marks_record])
   let assert [lease] = harness.inspect(double).leases
   assert lease.expires_at == harness.t0 + 14
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   assert view.expires_at == harness.t0 + 14
   harness.fired(double)
 }
@@ -358,25 +366,26 @@ fn ack_extends() -> List(String) {
 /// `queued`, and `other` holds `x`; `c1` pulls one record, `k` of `pk`, and
 /// `c2` one, `x` of `other`; then 500 ms pass. It answers `c1`'s lease id
 /// and `c2`'s.
-fn two_leases() -> #(Double, String, String) {
+fn two_leases() -> #(Double, LeaseId, LeaseId) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 1, "v")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "pk", "queued", 1, "q")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("queued"), 1, "q")
     == fired(["PublishNewKey"])
-  assert harness.publish(double, "other", "x", 1, "x")
+  assert harness.publish(double, PocketKey("other"), RecordKey("x"), 1, "x")
     == fired(["PublishIntoNewPocket"])
-  let mine = harness.batch(double, "c1", 1)
-  assert #(mine.fired, mine.pocket_key) == #([claims, hold], "pk")
-  let theirs = harness.batch(double, "c2", 1)
-  assert #(theirs.fired, theirs.pocket_key) == #([claims, hold], "other")
+  let mine = harness.batch(double, ConsumerId("c1"), 1)
+  assert #(mine.fired, mine.pocket_key) == #([claims, hold], PocketKey("pk"))
+  let theirs = harness.batch(double, ConsumerId("c2"), 1)
+  assert #(theirs.fired, theirs.pocket_key)
+    == #([claims, hold], PocketKey("other"))
   let _ = harness.advance(double.clock, harness.t0, 500)
   #(double, mine.lease, theirs.lease)
 }
 
 /// A lease id the fake source never hands out here, for the Rust's
 /// `LeaseId::from_u128(99)`.
-const never = "lease-99"
+const never = LeaseId("lease-99")
 
 /// Each refusal's name and shape is `impl-choice`: `LeaseFenced` (spec note
 /// G28, as N21), and `RecordNotHeld` and the lease being checked first
@@ -394,20 +403,42 @@ fn rejected_acks() -> List(String) {
       harness.ack(double, consumer, lease, key)
     })
   }
-  refused(UnknownConsumer("nobody"), "nobody", lease, "k")
-  refused(LeaseFenced("Ack", "c1", never), "c1", never, "k")
-  refused(LeaseFenced("Ack", "c1", theirs), "c1", theirs, "x")
-  list.each(["absent", "queued"], fn(key) {
-    refused(RecordNotHeld("Ack", lease, key), "c1", lease, key)
+  refused(
+    UnknownConsumer(ConsumerId("nobody")),
+    ConsumerId("nobody"),
+    lease,
+    RecordKey("k"),
+  )
+  refused(
+    LeaseFenced("Ack", ConsumerId("c1"), never),
+    ConsumerId("c1"),
+    never,
+    RecordKey("k"),
+  )
+  refused(
+    LeaseFenced("Ack", ConsumerId("c1"), theirs),
+    ConsumerId("c1"),
+    theirs,
+    RecordKey("x"),
+  )
+  list.each([RecordKey("absent"), RecordKey("queued")], fn(key) {
+    refused(RecordNotHeld("Ack", lease, key), ConsumerId("c1"), lease, key)
   })
-  refused(RecordNotHeld("Ack", lease, "x"), "c1", lease, "x")
+  refused(
+    RecordNotHeld("Ack", lease, RecordKey("x")),
+    ConsumerId("c1"),
+    lease,
+    RecordKey("x"),
+  )
   // "No refusal moved the expiry."
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   assert view.expires_at == harness.t0 + lease_ttl()
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
   // "A repeat is not a refusal." The Rust's answers `Acked` again; here it
   // succeeds, answers nothing, and is the repeat's rule.
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_repeats])
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_repeats])
   harness.fired(double)
 }
 
@@ -417,15 +448,16 @@ fn nack_marks() -> List(String) {
   let #(double, lease) = held()
   let nacked = harness.at(double, 20)
   // The Rust's nack answers `Nacked`; the specification's answers nothing.
-  assert harness.nack(double, "c1", lease, "k") == fired([nack_marks_record])
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([nack_marks_record])
   // "The nack extended it."
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   assert view.expires_at == nacked + lease_ttl()
-  assert harness.record(double, "pk", "k").status
+  assert harness.record(double, PocketKey("pk"), RecordKey("k")).status
     == held_as(1, "v1", Nacked, Some(nacked))
   // "Not before the end."
   assert harness.inspect(double).dead_letters == []
-  let again = harness.batch(double, "c1", 10)
+  let again = harness.batch(double, ConsumerId("c1"), 10)
   assert again.fired == [within]
   assert again.lease == lease
   // "No redelivery."
@@ -437,17 +469,17 @@ fn nack_marks() -> List(String) {
   let ended = harness.at(double, 30)
   // The Rust unwraps the release's answer; the specification's release
   // answers nothing.
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired(["ReleaseIdlesEmptyPocket", "DeadLetterNackedRecord"])
   let snapshot = harness.inspect(double)
   assert snapshot.dead_letters
     == [
       DeadLetter(
-        pocket: "pk",
-        key: "k",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k"),
         rank: 1,
         payload: <<"v1":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: nacked,
         expires_at: ended + dead_letter_ttl(),
       ),
@@ -455,7 +487,7 @@ fn nack_marks() -> List(String) {
   // The Rust's `invariants::nacked_before_expiry`, by the checker.
   assert !list.contains(invariants.check(snapshot), "NackedBeforeExpiry")
   // The pocket is still there, and holds no record.
-  let pocket = harness.pocket(double, "pk")
+  let pocket = harness.pocket(double, PocketKey("pk"))
   assert model.records_of(snapshot.records, pocket.key) == []
   harness.fired(double)
 }
@@ -470,14 +502,29 @@ fn rejected_nacks() -> List(String) {
       harness.nack(double, consumer, lease, key)
     })
   }
-  refused(UnknownConsumer("nobody"), "nobody", lease, "k")
-  refused(LeaseFenced("Nack", "c1", never), "c1", never, "k")
-  refused(LeaseFenced("Nack", "c1", theirs), "c1", theirs, "x")
-  list.each(["absent", "queued", "x"], fn(key) {
-    refused(RecordNotHeld("Nack", lease, key), "c1", lease, key)
+  refused(
+    UnknownConsumer(ConsumerId("nobody")),
+    ConsumerId("nobody"),
+    lease,
+    RecordKey("k"),
+  )
+  refused(
+    LeaseFenced("Nack", ConsumerId("c1"), never),
+    ConsumerId("c1"),
+    never,
+    RecordKey("k"),
+  )
+  refused(
+    LeaseFenced("Nack", ConsumerId("c1"), theirs),
+    ConsumerId("c1"),
+    theirs,
+    RecordKey("x"),
+  )
+  list.each([RecordKey("absent"), RecordKey("queued"), RecordKey("x")], fn(key) {
+    refused(RecordNotHeld("Nack", lease, key), ConsumerId("c1"), lease, key)
   })
   assert harness.inspect(double).dead_letters == []
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   assert view.expires_at == harness.t0 + lease_ttl()
   harness.fired(double)
 }
@@ -493,12 +540,14 @@ fn repeats() -> List(String) {
     ])
   // The Rust's repeats answer `Acked` and `Nacked`, like the first; here
   // each succeeds, answers nothing, and is its repeat's rule.
-  assert harness.ack(double, "c1", lease, "k2") == fired([ack_repeats])
-  assert harness.nack(double, "c1", lease, "k1") == fired([nack_repeats])
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k2"))
+    == fired([ack_repeats])
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k1"))
+    == fired([nack_repeats])
   // "A repeat moves the lease's expiry and nothing else."
   assert harness.inspect(double) == expected
   // "The first nack's time stands."
-  assert harness.record(double, "pk", "k1").status
+  assert harness.record(double, PocketKey("pk"), RecordKey("k1")).status
     == held_as(1, "k1", Nacked, Some(harness.t0 + 10))
   harness.fired(double)
 }
@@ -514,20 +563,24 @@ fn changed_mark() -> List(String) {
   let #(double, lease) = marked_both_ways()
   let _ = harness.at(double, 500)
   let reads = harness.clock_reads(double.clock)
-  harness.refused(double, MarkConflict("Ack", lease, "k1"), fn() {
-    harness.ack(double, "c1", lease, "k1")
+  harness.refused(double, MarkConflict("Ack", lease, RecordKey("k1")), fn() {
+    harness.ack(double, ConsumerId("c1"), lease, RecordKey("k1"))
   })
-  harness.refused(double, MarkConflict("Nack", lease, "k2"), fn() {
-    harness.nack(double, "c1", lease, "k2")
+  harness.refused(double, MarkConflict("Nack", lease, RecordKey("k2")), fn() {
+    harness.nack(double, ConsumerId("c1"), lease, RecordKey("k2"))
   })
   // "The first marks stand."
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
-  assert view.records == [marked("k1", "k1", Nacked), marked("k2", "k2", Acked)]
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
+  assert view.records
+    == [
+      marked(RecordKey("k1"), "k1", Nacked),
+      marked(RecordKey("k2"), "k2", Acked),
+    ]
   assert harness.clock_reads(double.clock) == reads
   let earlier = harness.at(double, 100)
   // The Rust's renew answers the new expiry; the specification's answers
   // nothing, and the lease holds it (N13).
-  assert harness.renew(double, "c1", lease) == fired(["Renew"])
+  assert harness.renew(double, ConsumerId("c1"), lease) == fired(["Renew"])
   let assert [active] = harness.inspect(double).leases
   assert active.expires_at == earlier + lease_ttl()
   harness.fired(double)
@@ -536,20 +589,22 @@ fn changed_mark() -> List(String) {
 fn repeat_nack_keeps_time() -> List(String) {
   let #(double, lease) = held()
   let first = harness.at(double, 10)
-  assert harness.nack(double, "c1", lease, "k") == fired([nack_marks_record])
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([nack_marks_record])
   let _ = harness.at(double, 30)
-  assert harness.nack(double, "c1", lease, "k") == fired([nack_repeats])
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([nack_repeats])
   let ended = harness.at(double, 40)
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired(["ReleaseIdlesEmptyPocket", "DeadLetterNackedRecord"])
   assert harness.inspect(double).dead_letters
     == [
       DeadLetter(
-        pocket: "pk",
-        key: "k",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k"),
         rank: 1,
         payload: <<"v1":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: first,
         expires_at: ended + dead_letter_ttl(),
       ),
@@ -563,22 +618,24 @@ fn repeat_nack_keeps_time() -> List(String) {
 /// order.
 fn lease_read() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "z", 1, "z")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("z"), 1, "z")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "pk", "a", 1, "a") == fired(["PublishNewKey"])
-  assert harness.publish(double, "pk", "m", 1, "m") == fired(["PublishNewKey"])
-  let batch = harness.batch(double, "c1", 10)
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "a")
+    == fired(["PublishNewKey"])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("m"), 1, "m")
+    == fired(["PublishNewKey"])
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == [claims, hold, hold, hold]
-  assert harness.ack(double, "c1", batch.lease, "a")
+  assert harness.ack(double, ConsumerId("c1"), batch.lease, RecordKey("a"))
     == fired([ack_marks_record])
-  assert harness.nack(double, "c1", batch.lease, "m")
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("m"))
     == fired([nack_marks_record])
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   assert view.records
     == [
-      marked("z", "z", Unsettled),
-      marked("a", "a", Acked),
-      marked("m", "m", Nacked),
+      marked(RecordKey("z"), "z", Unsettled),
+      marked(RecordKey("a"), "a", Acked),
+      marked(RecordKey("m"), "m", Nacked),
     ]
   harness.fired(double)
 }
@@ -589,8 +646,9 @@ fn lease_read() -> List(String) {
 fn deferred_behind_held() -> List(String) {
   let #(double, lease) = held()
   let next = harness.inspect(double).next_position
-  assert harness.publish(double, "pk", "k", 3, "v3") == fired([defer])
-  let record = harness.record(double, "pk", "k")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
+    == fired([defer])
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   // "The newer version is deferred at the counter's value."
   assert record.status == deferred_as(1, "v1", Unsettled, None, Some(next))
   assert #(record.rank, record.payload, record.position)
@@ -598,12 +656,13 @@ fn deferred_behind_held() -> List(String) {
   assert harness.inspect(double).next_position == next + 1
   // "Nothing is shed."
   assert harness.inspect(double).superseded == []
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
-  assert harness.record(double, "pk", "k").status
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
+  assert harness.record(double, PocketKey("pk"), RecordKey("k")).status
     == deferred_as(1, "v1", Acked, None, Some(next))
-  let assert Ok(Some(view)) = harness.lease_view(double, "c1")
+  let assert Ok(Some(view)) = harness.lease_view(double, ConsumerId("c1"))
   // "The lease read shows the held version."
-  assert view.records == [marked("k", "v1", Acked)]
+  assert view.records == [marked(RecordKey("k"), "v1", Acked)]
   // The Rust's `invariants::all`, by the checker.
   assert invariants.check(harness.inspect(double)) == []
   harness.fired(double)
@@ -617,39 +676,43 @@ fn deferred_behind_held() -> List(String) {
 /// as N29).
 fn deferred_behind_acked() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "pk", "early", 1, "e")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("early"), 1, "e")
     == fired(["PublishNewKey"])
-  let first = harness.batch(double, "c1", 1)
+  let first = harness.batch(double, ConsumerId("c1"), 1)
   assert first.fired == [claims, hold]
   let lease = first.lease
-  assert harness.publish(double, "pk", "k", 3, "v3") == fired([defer])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
+    == fired([defer])
   let arrival = 3
-  assert harness.publish(double, "pk", "between", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("between"), 1, "b")
     == fired(["PublishNewKey"])
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
   // "A held record keeps its position until the lease ends."
-  assert harness.record(double, "pk", "k").position == 1
-  let again = harness.batch(double, "c1", 10)
+  assert harness.record(double, PocketKey("pk"), RecordKey("k")).position == 1
+  let again = harness.batch(double, ConsumerId("c1"), 10)
   assert again.fired == [within, hold, hold]
   assert again.lease == lease
   // "The deferred key is not handed out again under this lease."
-  assert harness.keys(again.records) == ["early", "between"]
-  assert harness.release(double, "c1", lease)
+  assert harness.keys(again.records)
+    == [RecordKey("early"), RecordKey("between")]
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired([
       release_requeues,
       consume_deferred,
       requeue_unsettled,
       requeue_unsettled,
     ])
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert #(record.status, record.position, record.rank)
     == #(RecordQueued, arrival, 3)
-  let next = harness.batch(double, "c1", 10)
+  let next = harness.batch(double, ConsumerId("c1"), 10)
   assert next.fired == [claims, hold, hold, hold]
   assert next.lease != lease
-  assert harness.keys(next.records) == ["early", "k", "between"]
+  assert harness.keys(next.records)
+    == [RecordKey("early"), RecordKey("k"), RecordKey("between")]
   harness.fired(double)
 }
 
@@ -660,15 +723,17 @@ fn deferred_behind_acked() -> List(String) {
 fn two_supersedes_while_held() -> List(String) {
   let #(double, lease) = held()
   let _ = harness.at(double, 10)
-  assert harness.publish(double, "pk", "k", 3, "v3") == fired([defer])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
+    == fired([defer])
   // "v1 is held."
   assert harness.inspect(double).superseded == []
   let twenty = harness.at(double, 20)
-  assert harness.publish(double, "pk", "k", 5, "v5") == fired(["Supersede"])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "v5")
+    == fired(["Supersede"])
   let v3 =
     SupersededRecord(
-      pocket: "pk",
-      key: "k",
+      pocket: PocketKey("pk"),
+      key: RecordKey("k"),
       rank: 3,
       payload: <<"v3":utf8>>,
       reason: Superseded,
@@ -677,19 +742,20 @@ fn two_supersedes_while_held() -> List(String) {
     )
   // "v3 is shed at once."
   assert harness.inspect(double).superseded == [v3]
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   // "v5 keeps v3's arrival position."
   assert #(record.status, record.rank)
     == #(deferred_as(1, "v1", Unsettled, None, Some(2)), 5)
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
   let _ = harness.at(double, 30)
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired([release_requeues, consume_deferred])
   let snapshot = harness.inspect(double)
   // "The acked v1 is consumed."
   assert snapshot.superseded == [v3]
   assert snapshot.dead_letters == []
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert #(record.status, record.position, record.rank) == #(RecordQueued, 2, 5)
   harness.fired(double)
 }
@@ -701,16 +767,23 @@ fn two_supersedes_while_held() -> List(String) {
 /// G48): the arrival position 2.
 fn stale_against_latest() -> List(String) {
   let #(double, _) = held()
-  assert harness.publish(double, "pk", "k", 3, "v3") == fired([defer])
-  assert harness.publish(double, "pk", "k", 2, "v2")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
+    == fired([defer])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 2, "v2")
     == fired(["DropStalePublish"])
   // "An equal rank is rejected, against the latest rank."
   harness.refused(
     double,
-    EqualRankRefused(pocket_key: "pk", record_key: "k", rank: 3),
-    fn() { harness.publish(double, "pk", "k", 3, "again") },
+    EqualRankRefused(
+      pocket_key: PocketKey("pk"),
+      record_key: RecordKey("k"),
+      rank: 3,
+    ),
+    fn() {
+      harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "again")
+    },
   )
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert record.rank == 3
   assert record.status == deferred_as(1, "v1", Unsettled, None, Some(2))
   harness.fired(double)
@@ -719,25 +792,27 @@ fn stale_against_latest() -> List(String) {
 /// `impl-choice` (spec note G04, and G48): the arrival position 2.
 fn acked_then_published() -> List(String) {
   let #(double, lease) = held()
-  assert harness.ack(double, "c1", lease, "k") == fired([ack_marks_record])
-  assert harness.publish(double, "pk", "k", 2, "v2") == fired([defer])
-  let record = harness.record(double, "pk", "k")
+  assert harness.ack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([ack_marks_record])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 2, "v2")
+    == fired([defer])
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   // "The record stays held and acked, with v2 deferred."
   assert #(record.status, record.rank)
     == #(deferred_as(1, "v1", Acked, None, Some(2)), 2)
-  let again = harness.batch(double, "c1", 10)
+  let again = harness.batch(double, ConsumerId("c1"), 10)
   assert again.fired == [within]
   assert again.lease == lease
   // "Not pullable again in this lease."
   assert again.records == []
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired([release_requeues, consume_deferred])
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert #(record.status, record.position) == #(RecordQueued, 2)
-  let next = harness.batch(double, "c1", 10)
+  let next = harness.batch(double, ConsumerId("c1"), 10)
   assert next.fired == [claims, hold]
   assert next.lease != lease
-  assert harness.keys(next.records) == ["k"]
+  assert harness.keys(next.records) == [RecordKey("k")]
   let assert [handed] = next.records
   assert handed.rank == 2
   harness.fired(double)
@@ -748,38 +823,40 @@ fn acked_then_published() -> List(String) {
 /// release.
 fn nacked_then_published() -> List(String) {
   let #(double, lease) = held()
-  assert harness.nack(double, "c1", lease, "k") == fired([nack_marks_record])
-  assert harness.publish(double, "pk", "k", 2, "v2") == fired([defer])
-  let record = harness.record(double, "pk", "k")
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k"))
+    == fired([nack_marks_record])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 2, "v2")
+    == fired([defer])
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert #(record.status, record.rank)
     == #(deferred_as(1, "v1", Nacked, Some(harness.t0), Some(2)), 2)
-  let again = harness.batch(double, "c1", 10)
+  let again = harness.batch(double, ConsumerId("c1"), 10)
   assert again.fired == [within]
   // "Not pullable again in this lease."
   assert again.records == []
   assert harness.inspect(double).dead_letters == []
   let ended = harness.at(double, 5)
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == fired([release_requeues, dead_letter_deferred])
   // "The dead letter appears at the release."
   assert harness.inspect(double).dead_letters
     == [
       DeadLetter(
-        pocket: "pk",
-        key: "k",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k"),
         rank: 1,
         payload: <<"v1":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: harness.t0,
         expires_at: ended + dead_letter_ttl(),
       ),
     ]
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   // "v2 is queued at its arrival position."
   assert #(record.status, record.position, record.rank) == #(RecordQueued, 2, 2)
-  let next = harness.batch(double, "c1", 10)
+  let next = harness.batch(double, ConsumerId("c1"), 10)
   assert next.fired == [claims, hold]
-  assert harness.keys(next.records) == ["k"]
+  assert harness.keys(next.records) == [RecordKey("k")]
   harness.fired(double)
 }
 
@@ -831,41 +908,76 @@ fn marking(
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 20),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1"), Consumer("c2")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [Consumer(ConsumerId("c1")), Consumer(ConsumerId("c2"))],
     pockets: [
-      Pocket("other", PocketLeased, 9, 0),
-      Pocket("pk", PocketLeased, 2, expiries),
-      Pocket("done", PocketIdle, 1, 1),
+      Pocket(PocketKey("other"), PocketLeased, 9, 0),
+      Pocket(PocketKey("pk"), PocketLeased, 2, expiries),
+      Pocket(PocketKey("done"), PocketIdle, 1, 1),
     ],
     records: [
-      unsettled(Record("other", "k1", 47, <<"theirs":utf8>>, 10, RecordQueued)),
-      unsettled(Record("pk", "k2", 45, <<"two":utf8>>, 6, RecordQueued)),
-      k1(Record("pk", "k1", 44, <<"one":utf8>>, 3, RecordQueued)),
-      Record("pk", "k3", 46, <<"three":utf8>>, 8, RecordQueued),
-      unsettled(Record("other", "kx", 48, <<"x":utf8>>, 12, RecordQueued)),
+      unsettled(Record(
+        PocketKey("other"),
+        RecordKey("k1"),
+        47,
+        <<"theirs":utf8>>,
+        10,
+        RecordQueued,
+      )),
+      unsettled(Record(
+        PocketKey("pk"),
+        RecordKey("k2"),
+        45,
+        <<"two":utf8>>,
+        6,
+        RecordQueued,
+      )),
+      k1(Record(
+        PocketKey("pk"),
+        RecordKey("k1"),
+        44,
+        <<"one":utf8>>,
+        3,
+        RecordQueued,
+      )),
+      Record(
+        PocketKey("pk"),
+        RecordKey("k3"),
+        46,
+        <<"three":utf8>>,
+        8,
+        RecordQueued,
+      ),
+      unsettled(Record(
+        PocketKey("other"),
+        RecordKey("kx"),
+        48,
+        <<"x":utf8>>,
+        12,
+        RecordQueued,
+      )),
     ],
     leases: [
       Lease(
-        id: "lease-0",
-        pocket: "pk",
-        consumer: "c1",
+        id: LeaseId("lease-0"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: ended,
         granted_at: 100,
         expires_at: 100 + ttl,
       ),
       Lease(
-        id: "lease-2",
-        pocket: "other",
-        consumer: "c2",
+        id: LeaseId("lease-2"),
+        pocket: PocketKey("other"),
+        consumer: ConsumerId("c2"),
         status: LeaseActive,
         granted_at: 500,
         expires_at: 500 + ttl,
       ),
       Lease(
-        id: "lease-1",
-        pocket: "pk",
-        consumer: "c1",
+        id: LeaseId("lease-1"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseActive,
         granted_at: granted,
         expires_at: granted + ttl,
@@ -873,8 +985,8 @@ fn marking(
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "k1",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k1"),
         rank: 43,
         payload: <<"older":utf8>>,
         reason: Superseded,
@@ -884,11 +996,11 @@ fn marking(
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "pk",
-        key: "k0",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k0"),
         rank: 42,
         payload: <<"zero":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: 120,
         expires_at: 150 + config.defaults().dead_letter_ttl,
       ),
@@ -917,7 +1029,7 @@ const released = LeaseReleased(150)
 /// One trigger through the apply step at this time, with the clock reads
 /// and the lease-id draws it asked for.
 fn applied(state: State, trigger: core.Trigger, now: Int) -> harness.Driven {
-  harness.drive(core.apply(state, trigger), now, "unused")
+  harness.drive(core.apply(state, trigger), now, LeaseId("unused"))
 }
 
 /// `c1` acks `pk`'s unsettled `k1` at 900, `pk` having seen two expiries.
@@ -932,7 +1044,11 @@ fn ack_marks_exactly() -> List(String) {
   let assert [other_k1, k2, k1, k3, kx] = state.records
   let assert [lease_0, lease_2, lease_1] = state.leases
   let now = 900
-  assert applied(state, core.Ack(Ack("c1", "lease-1", "k1")), now)
+  assert applied(
+      state,
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      now,
+    )
     == Driven(
       Ok(Applied(
         State(
@@ -960,7 +1076,11 @@ fn ack_repeats_exactly() -> List(String) {
   let state = marking(0, acked, released)
   let assert [lease_0, lease_2, lease_1] = state.leases
   let now = 1100
-  assert applied(state, core.Ack(Ack("c1", "lease-1", "k1")), now)
+  assert applied(
+      state,
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      now,
+    )
     == Driven(
       Ok(Applied(
         State(..state, leases: [
@@ -988,7 +1108,11 @@ fn nack_marks_exactly() -> List(String) {
   let assert [other_k1, k2, k1, k3, kx] = state.records
   let assert [lease_0, lease_2, lease_1] = state.leases
   let now = 950
-  assert applied(state, core.Nack(Nack("c1", "lease-1", "k1")), now)
+  assert applied(
+      state,
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      now,
+    )
     == Driven(
       Ok(Applied(
         State(
@@ -1016,7 +1140,11 @@ fn nack_repeats_exactly() -> List(String) {
   let state = marking(0, nacked, released)
   let assert [lease_0, lease_2, lease_1] = state.leases
   let now = 1200
-  assert applied(state, core.Nack(Nack("c1", "lease-1", "k1")), now)
+  assert applied(
+      state,
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      now,
+    )
     == Driven(
       Ok(Applied(
         State(..state, leases: [
@@ -1077,7 +1205,11 @@ fn deferred_marks() -> List(String) {
       ],
     )
   }
-  assert applied(state, core.Ack(Ack("c1", "lease-1", "k1")), 900)
+  assert applied(
+      state,
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      900,
+    )
     == Driven(
       Ok(Applied(
         after(deferred_with(k1, Acked, None), 900),
@@ -1087,7 +1219,11 @@ fn deferred_marks() -> List(String) {
       clock_reads: 1,
       lease_id_draws: 0,
     )
-  assert applied(state, core.Nack(Nack("c1", "lease-1", "k1")), 950)
+  assert applied(
+      state,
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      950,
+    )
     == Driven(
       Ok(Applied(
         after(deferred_with(k1, Nacked, Some(950)), 950),
@@ -1100,11 +1236,26 @@ fn deferred_marks() -> List(String) {
   let marked = fn(mark, nacked_at) {
     marking(0, fn(record) { deferred_with(record, mark, nacked_at) }, released)
   }
-  assert mark_rules(state, "c1", "lease-1", "k1")
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
     == #(Some(ack_marks_record), Some(nack_marks_record))
-  assert mark_rules(marked(Acked, None), "c1", "lease-1", "k1")
+  assert mark_rules(
+      marked(Acked, None),
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
     == #(Some(ack_repeats), None)
-  assert mark_rules(marked(Nacked, Some(nacked_at)), "c1", "lease-1", "k1")
+  assert mark_rules(
+      marked(Nacked, Some(nacked_at)),
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
     == #(None, Some(nack_repeats))
   [ack_marks_record, nack_marks_record]
 }
@@ -1122,18 +1273,38 @@ fn zero_lease_ttl() -> List(String) {
       clock_reads: 1,
       lease_id_draws: 0,
     ) = applied(state, trigger, now)
-    let assert Ok(lease) = model.lease(after.leases, "lease-1")
+    let assert Ok(lease) = model.lease(after.leases, LeaseId("lease-1"))
     #(fired, lease.expires_at)
   }
-  assert expiry(with(unsettled), core.Ack(Ack("c1", "lease-1", "k1")), 900)
+  assert expiry(
+      with(unsettled),
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      900,
+    )
     == #([ack_marks_record], 900)
-  assert expiry(with(acked), core.Ack(Ack("c1", "lease-1", "k1")), 1000)
+  assert expiry(
+      with(acked),
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      1000,
+    )
     == #([ack_repeats], 1000)
-  assert expiry(with(unsettled), core.Nack(Nack("c1", "lease-1", "k1")), 1100)
+  assert expiry(
+      with(unsettled),
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      1100,
+    )
     == #([nack_marks_record], 1100)
-  assert expiry(with(nacked), core.Nack(Nack("c1", "lease-1", "k1")), 1200)
+  assert expiry(
+      with(nacked),
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
+      1200,
+    )
     == #([nack_repeats], 1200)
-  assert expiry(with(unsettled), core.Renew(Renew("c1", "lease-1")), 1300)
+  assert expiry(
+      with(unsettled),
+      core.Renew(Renew(ConsumerId("c1"), LeaseId("lease-1"))),
+      1300,
+    )
     == #(["Renew"], 1300)
   [ack_marks_record, ack_repeats, nack_marks_record, nack_repeats, "Renew"]
 }
@@ -1153,9 +1324,9 @@ fn nack_rule(state: State, nack: Nack) -> Option(String) {
 /// The rules an ack and a nack with these three names are sent to.
 fn mark_rules(
   state: State,
-  consumer: String,
-  lease: String,
-  key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  key: RecordKey,
 ) -> #(Option(String), Option(String)) {
   #(
     ack_rule(state, Ack(consumer, lease, key)),
@@ -1175,30 +1346,98 @@ fn mark_rules(
 /// what dispatch finds is asserted.
 fn mark_guards() -> List(String) {
   let state = marking(0, unsettled, released)
-  assert mark_rules(state, "c1", "lease-1", "k1")
-    == #(Some(ack_marks_record), Some(nack_marks_record))
-  assert mark_rules(marking(0, acked, released), "c1", "lease-1", "k1")
-    == #(Some(ack_repeats), None)
-  assert mark_rules(marking(0, nacked, released), "c1", "lease-1", "k1")
-    == #(None, Some(nack_repeats))
-  assert mark_rules(state, "c1", "lease-1", "k3") == #(None, None)
-  assert mark_rules(state, "c1", "lease-1", "absent") == #(None, None)
-  assert mark_rules(state, "c1", "lease-1", "kx") == #(None, None)
-  assert mark_rules(state, "c1", "lease-0", "k1") == #(None, None)
   assert mark_rules(
-      marking(0, unsettled, LeaseExpired(150)),
-      "c1",
-      "lease-0",
-      "k1",
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
+    == #(Some(ack_marks_record), Some(nack_marks_record))
+  assert mark_rules(
+      marking(0, acked, released),
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
+    == #(Some(ack_repeats), None)
+  assert mark_rules(
+      marking(0, nacked, released),
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
+    == #(None, Some(nack_repeats))
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k3"),
     )
     == #(None, None)
-  assert mark_rules(state, "c1", "lease-2", "k1") == #(None, None)
-  assert mark_rules(state, "c2", "lease-1", "k1") == #(None, None)
-  assert mark_rules(state, "c1", "lease-9", "k1") == #(None, None)
-  assert mark_rules(state, "c1", "pk", "k1") == #(None, None)
-  assert mark_rules(state, "c2", "lease-2", "k1")
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("absent"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("kx"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-0"),
+      RecordKey("k1"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      marking(0, unsettled, LeaseExpired(150)),
+      ConsumerId("c1"),
+      LeaseId("lease-0"),
+      RecordKey("k1"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-2"),
+      RecordKey("k1"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c2"),
+      LeaseId("lease-1"),
+      RecordKey("k1"),
+    )
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c1"),
+      LeaseId("lease-9"),
+      RecordKey("k1"),
+    )
+    == #(None, None)
+  assert mark_rules(state, ConsumerId("c1"), LeaseId("pk"), RecordKey("k1"))
+    == #(None, None)
+  assert mark_rules(
+      state,
+      ConsumerId("c2"),
+      LeaseId("lease-2"),
+      RecordKey("k1"),
+    )
     == #(Some(ack_marks_record), Some(nack_marks_record))
-  assert mark_rules(state, "c2", "lease-2", "kx")
+  assert mark_rules(
+      state,
+      ConsumerId("c2"),
+      LeaseId("lease-2"),
+      RecordKey("kx"),
+    )
     == #(Some(ack_marks_record), Some(nack_marks_record))
   []
 }
@@ -1208,9 +1447,9 @@ fn mark_guards() -> List(String) {
 /// failure hands back no state.
 fn mark_refusals_of(
   state: State,
-  consumer: String,
-  lease: String,
-  key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  key: RecordKey,
   expected: fn(String) -> Refusal,
 ) -> Nil {
   assert core.apply(state, core.Ack(Ack(consumer, lease, key)))
@@ -1237,39 +1476,97 @@ fn mark_refusals() -> List(String) {
   let not_held = fn(lease, key) {
     fn(action) { RecordNotHeld(action, lease, key) }
   }
-  mark_refusals_of(state, "cx", "lease-1", "k1", fn(_) { UnknownConsumer("cx") })
-  mark_refusals_of(state, "p", "lease-1", "k1", fn(_) { UnknownConsumer("p") })
-  mark_refusals_of(state, "c1", "lease-0", "k1", fenced("c1", "lease-0"))
-  mark_refusals_of(
-    marking(0, unsettled, LeaseExpired(150)),
-    "c1",
-    "lease-0",
-    "k1",
-    fenced("c1", "lease-0"),
-  )
-  mark_refusals_of(state, "c1", "lease-2", "k1", fenced("c1", "lease-2"))
-  mark_refusals_of(state, "c2", "lease-1", "k1", fenced("c2", "lease-1"))
-  mark_refusals_of(state, "c1", "lease-9", "k1", fenced("c1", "lease-9"))
-  mark_refusals_of(state, "c1", "lease-9", "absent", fenced("c1", "lease-9"))
   mark_refusals_of(
     state,
-    "c1",
-    "lease-1",
-    "absent",
-    not_held("lease-1", "absent"),
+    ConsumerId("cx"),
+    LeaseId("lease-1"),
+    RecordKey("k1"),
+    fn(_) { UnknownConsumer(ConsumerId("cx")) },
   )
-  mark_refusals_of(state, "c1", "lease-1", "k3", not_held("lease-1", "k3"))
-  mark_refusals_of(state, "c1", "lease-1", "kx", not_held("lease-1", "kx"))
+  mark_refusals_of(
+    state,
+    ConsumerId("p"),
+    LeaseId("lease-1"),
+    RecordKey("k1"),
+    fn(_) { UnknownConsumer(ConsumerId("p")) },
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-0"),
+    RecordKey("k1"),
+    fenced(ConsumerId("c1"), LeaseId("lease-0")),
+  )
+  mark_refusals_of(
+    marking(0, unsettled, LeaseExpired(150)),
+    ConsumerId("c1"),
+    LeaseId("lease-0"),
+    RecordKey("k1"),
+    fenced(ConsumerId("c1"), LeaseId("lease-0")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-2"),
+    RecordKey("k1"),
+    fenced(ConsumerId("c1"), LeaseId("lease-2")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c2"),
+    LeaseId("lease-1"),
+    RecordKey("k1"),
+    fenced(ConsumerId("c2"), LeaseId("lease-1")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-9"),
+    RecordKey("k1"),
+    fenced(ConsumerId("c1"), LeaseId("lease-9")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-9"),
+    RecordKey("absent"),
+    fenced(ConsumerId("c1"), LeaseId("lease-9")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-1"),
+    RecordKey("absent"),
+    not_held(LeaseId("lease-1"), RecordKey("absent")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-1"),
+    RecordKey("k3"),
+    not_held(LeaseId("lease-1"), RecordKey("k3")),
+  )
+  mark_refusals_of(
+    state,
+    ConsumerId("c1"),
+    LeaseId("lease-1"),
+    RecordKey("kx"),
+    not_held(LeaseId("lease-1"), RecordKey("kx")),
+  )
   assert core.apply(
       marking(0, nacked, released),
-      core.Ack(Ack("c1", "lease-1", "k1")),
+      core.Ack(Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
     )
-    == Done(Error(Refused(MarkConflict("Ack", "lease-1", "k1"))))
+    == Done(
+      Error(Refused(MarkConflict("Ack", LeaseId("lease-1"), RecordKey("k1")))),
+    )
   assert core.apply(
       marking(0, acked, released),
-      core.Nack(Nack("c1", "lease-1", "k1")),
+      core.Nack(Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k1"))),
     )
-    == Done(Error(Refused(MarkConflict("Nack", "lease-1", "k1"))))
+    == Done(
+      Error(Refused(MarkConflict("Nack", LeaseId("lease-1"), RecordKey("k1")))),
+    )
   []
 }
 
@@ -1286,9 +1583,13 @@ fn mark_without_record() -> List(String) {
       Table(
         "Ack",
         [Row(row.name, fn(_state, _ack) { True }, row.effect)],
-        Refuses(fn(_state, _ack) { UnknownConsumer("unused") }),
+        Refuses(fn(_state, _ack) { UnknownConsumer(ConsumerId("unused")) }),
       )
-    assert core.run(unguarded, Ack("c1", "lease-1", "k3"), state)
+    assert core.run(
+        unguarded,
+        Ack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k3")),
+        state,
+      )
       == Done(Error(Defect("Ack", EffectFailed(row.name, reason))))
   })
   list.each(settle.nack().rows, fn(row) {
@@ -1296,9 +1597,13 @@ fn mark_without_record() -> List(String) {
       Table(
         "Nack",
         [Row(row.name, fn(_state, _nack) { True }, row.effect)],
-        Refuses(fn(_state, _nack) { UnknownConsumer("unused") }),
+        Refuses(fn(_state, _nack) { UnknownConsumer(ConsumerId("unused")) }),
       )
-    assert core.run(unguarded, Nack("c1", "lease-1", "k3"), state)
+    assert core.run(
+        unguarded,
+        Nack(ConsumerId("c1"), LeaseId("lease-1"), RecordKey("k3")),
+        state,
+      )
       == Done(Error(Defect("Nack", EffectFailed(row.name, reason))))
   })
   []

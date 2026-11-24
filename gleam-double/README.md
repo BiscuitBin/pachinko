@@ -54,7 +54,7 @@ holds the check that this page still matches them.
 | A reader looking for | Opens |
 | --- | --- |
 | The interface: starting the owner, the triggers, the clock and the two reads | `src/pachinko_double.gleam` |
-| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam`, under `src/pachinko_double/` |
+| What a caller names when it sends a trigger or reads a reply | `ids.gleam`, `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam`, under `src/pachinko_double/` |
 | The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam`, under `src/pachinko_double/` |
 | The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam`, under `src/pachinko_double/internal/` |
 | The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam` and `decay.gleam`, under `src/pachinko_double/internal/` |
@@ -138,14 +138,15 @@ below.
 `model.State` is the whole state as one value. Where the specification has one entity
 point at another, the double stores the other's key, so `Record.pocket` holds a pocket's
 key and `Lease.consumer` a consumer's id (G09). The one field `Lease` adds, `id`, exists
-because every action under a lease has to say which lease it means (G10). Fields the
-specification declares `when status = held` exist only on the `RecordHeld` variant, and
-`ended_at` only on the two variants of `LeaseStatus` for an ended lease (G14). Sets the
-specification derives, `held_records`, `ending_records`, `active_leases` and the rest, are
-never stored: `inspection.views` computes them from a snapshot, a `PocketView` per pocket
-and a `ConsumerView` per consumer, under the specification's names. For `config`,
-`config.defaults()` returns the five defaults as `Settings`, and `config.default()` the
-`Config` built from them.
+because every action under a lease has to say which lease it means (G10). Each id and
+key is a type of its own in `ids.gleam`, which wraps the specification's `String` and
+checks nothing (G68). Fields the specification declares `when status = held` exist only
+on the `RecordHeld` variant, and `ended_at` only on the two variants of `LeaseStatus` for
+an ended lease (G14). Sets the specification derives, `held_records`, `ending_records`,
+`active_leases` and the rest, are never stored: `inspection.views` computes them from a
+snapshot, a `PocketView` per pocket and a `ConsumerView` per consumer, under the
+specification's names. For `config`, `config.defaults()` returns the five defaults as
+`Settings`, and `config.default()` the `Config` built from them.
 
 ### Rules
 
@@ -288,7 +289,7 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   `harness.set_time` moves and which counts how often it is read.
 - **The lease-id source.** The specification's `Lease` has no identity, yet ack, nack,
   renew and release each name a lease, so the double gives each lease an id (G10). The
-  owner's `lease_id: fn() -> String` is called only when `PullClaimsFrontPocket` grants a
+  owner's `lease_id: fn() -> LeaseId` is called only when `PullClaimsFrontPocket` grants a
   lease. The fake in `test/support/harness.gleam` counts its calls and hands out `lease-1`, then
   `lease-2`, and onward.
 - **`Tick`.** Time passes for the double only when the owner receives `Tick`, sent by
@@ -345,8 +346,8 @@ pub type RecordStatus {
 }
 ```
 
-Calling a constructor with its labels makes a value, `Pocket(key: "pk", ...)` for
-instance. `State(..state, publishers:)` is `state` with that one field replaced, and a
+Calling a constructor with its labels makes a value, `Pocket(key: PocketKey("pk"), ...)`
+for instance. `State(..state, publishers:)` is `state` with that one field replaced, and a
 bare label such as `publishers:` stands for `publishers: publishers`. Payloads are
 `BitArray`s; `<<"v1":utf8>>` is the UTF-8 bytes of `v1` (G07).
 
@@ -362,7 +363,7 @@ fails, `Refuses` names the refusal.
 ```gleam src/pachinko_double/internal/identity.gleam
 /// `PublisherJoins(publisher_id)`. A join with an id already taken is
 /// refused (spec note G03).
-pub fn publisher_joins() -> Table(String) {
+pub fn publisher_joins() -> Table(PublisherId) {
   Table(
     "PublisherJoins",
     [
@@ -402,10 +403,10 @@ that matches. `revive` builds either revive row, and its guard is a `case` over 
 /// ensures: pocket.consecutive_expiries = 0
 /// ensures: queue.next_position = position + 1
 /// ```
-fn revive(name: String, from: PocketStatus) -> Row(String) {
+fn revive(name: String, from: PocketStatus) -> Row(PocketKey) {
   Row(
     name,
-    fn(state: State, pocket_key: String) {
+    fn(state: State, pocket_key: PocketKey) {
       case model.pocket(state.pockets, pocket_key) {
         Error(Nil) -> False
         Ok(pocket) -> pocket.status == from
@@ -413,7 +414,10 @@ fn revive(name: String, from: PocketStatus) -> Row(String) {
     },
     fn(state, pocket_key) {
       case model.pocket(state.pockets, pocket_key) {
-        Error(Nil) -> Impossible("no pocket " <> pocket_key)
+        Error(Nil) -> {
+          let PocketKey(key) = pocket_key
+          Impossible("no pocket " <> key)
+        }
         Ok(pocket) -> {
           use position <- Position
           let queued =
@@ -496,9 +500,12 @@ and handed out in increasing order.
       ),
     )
   let double = harness.start(config)
-  assert harness.publisher_joins(double, "p") == fired(["PublisherJoins"])
-  assert harness.consumer_joins(double, "c1") == fired(["ConsumerJoins"])
-  assert harness.consumer_joins(double, "c2") == fired(["ConsumerJoins"])
+  assert harness.publisher_joins(double, PublisherId("p"))
+    == fired(["PublisherJoins"])
+  assert harness.consumer_joins(double, ConsumerId("c1"))
+    == fired(["ConsumerJoins"])
+  assert harness.consumer_joins(double, ConsumerId("c2"))
+    == fired(["ConsumerJoins"])
 ```
 
 ### What a step shows
@@ -522,14 +529,15 @@ type Shown {
 ```
 
 ```gleam
-fn show(double: Double, keys: List(String)) -> Shown {
+fn show(double: Double, keys: List(RecordKey)) -> Shown {
   let snapshot = harness.inspect(double)
-  let assert Ok(pocket) = model.pocket(snapshot.pockets, "pk")
+  let assert Ok(pocket) = model.pocket(snapshot.pockets, PocketKey("pk"))
   Shown(
     next_position: snapshot.next_position,
     pocket:,
     records: list.map(keys, fn(key) {
-      let assert Ok(record) = model.record(snapshot.records, pocket: "pk", key:)
+      let assert Ok(record) =
+        model.record(snapshot.records, pocket: PocketKey("pk"), key:)
       record
     }),
     leases: snapshot.leases,
@@ -546,8 +554,8 @@ fn fired(rules: List(String)) -> Reply {
 ```
 
 ```gleam
-fn c2_pulls(double: Double) -> List(String) {
-  harness.keys(harness.batch(double, "c2", 10).records)
+fn c2_pulls(double: Double) -> List(RecordKey) {
+  harness.keys(harness.batch(double, ConsumerId("c2"), 10).records)
 }
 ```
 
@@ -559,21 +567,21 @@ position 0 and the record position 1.
 
 ```gleam
   let double = setting()
-  assert harness.publish(double, "pk", "k", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
     == fired(["PublishIntoNewPocket"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 2,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
@@ -590,29 +598,29 @@ Then `early` goes into the same pocket, a new key there, and `PublishNewKey` giv
 position 2:
 
 ```gleam
-  assert harness.publish(double, "pk", "early", 1, "e")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("early"), 1, "e")
     == fired(["PublishNewKey"])
-  assert show(double, ["k", "early"])
+  assert show(double, [RecordKey("k"), RecordKey("early")])
     == Shown(
       next_position: 3,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
           status: RecordQueued,
         ),
         Record(
-          pocket: "pk",
-          key: "early",
+          pocket: PocketKey("pk"),
+          key: RecordKey("early"),
           rank: 1,
           payload: <<"e":utf8>>,
           position: 2,
@@ -631,28 +639,33 @@ The batch is the oldest record, `k`, and the `Handed` for it reaches `HoldRecord
 marks the record held and unsettled with `held_rank` and `held_payload` copied from it:
 
 ```gleam
-  assert harness.pull(double, "c1", 1)
+  assert harness.pull(double, ConsumerId("c1"), 1)
     == Ok(Outcome(
       ["PullClaimsFrontPocket", "HoldRecord"],
       Some(
-        Batch(consumer: "c1", lease: "lease-1", pocket: "pk", records: [
-          BatchRecord(key: "k", rank: 1, payload: <<"v1":utf8>>),
-        ]),
+        Batch(
+          consumer: ConsumerId("c1"),
+          lease: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          records: [
+            BatchRecord(key: RecordKey("k"), rank: 1, payload: <<"v1":utf8>>),
+          ],
+        ),
       ),
     ))
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 3,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
@@ -667,9 +680,9 @@ marks the record held and unsettled with `held_rank` and `held_payload` copied f
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -688,21 +701,21 @@ record's `rank` and `payload` become `v3`'s, `held_rank` and `held_payload` keep
 
 ```gleam
   harness.set_time(double.clock, 10)
-  assert harness.publish(double, "pk", "k", 3, "v3")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
     == fired(["DeferBehindHeldVersion"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -717,9 +730,9 @@ record's `rank` and `payload` become `v3`'s, `held_rank` and `held_payload` keep
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -738,20 +751,26 @@ At 20 ms `c1` acks `k`. `AckMarksRecord` sets the mark to acked and moves the le
 ```gleam
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 20)
-  assert harness.ack(double, "c1", "lease-1", "k") == fired(["AckMarksRecord"])
-  assert show(double, ["k"])
+  assert harness.ack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
+    == fired(["AckMarksRecord"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -766,9 +785,9 @@ At 20 ms `c1` acks `k`. `AckMarksRecord` sets the mark to acked and moves the le
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -788,21 +807,21 @@ either shed queue, and `v3` is queued at 3, the position it arrived at, after `e
 
 ```gleam
   harness.set_time(double.clock, 50)
-  assert harness.release(double, "c1", "lease-1")
+  assert harness.release(double, ConsumerId("c1"), LeaseId("lease-1"))
     == fired(["ReleaseRequeuesPocket", "ConsumeAckedVersionQueueDeferred"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 4,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 3,
@@ -811,9 +830,9 @@ either shed queue, and `v3` is queued at 3, the position it arrived at, after `e
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseReleased(ended_at: 50),
           granted_at: 0,
           expires_at: 1020,
@@ -822,7 +841,7 @@ either shed queue, and `v3` is queued at 3, the position it arrived at, after `e
       superseded: [],
       dead_letters: [],
     )
-  assert c2_pulls(double) == ["early", "k"]
+  assert c2_pulls(double) == [RecordKey("early"), RecordKey("k")]
 ```
 
 ### Scenario B: a nacked version is dead-lettered at the lease's end, and the deferred one queued at its arrival position
@@ -833,21 +852,26 @@ At 20 ms `c1` nacks `k`. `NackMarksRecord` sets the mark to nacked, records 20 m
 ```gleam
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 20)
-  assert harness.nack(double, "c1", "lease-1", "k")
+  assert harness.nack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
     == fired(["NackMarksRecord"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -862,9 +886,9 @@ At 20 ms `c1` nacks `k`. `NackMarksRecord` sets the mark to nacked, records 20 m
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -889,9 +913,9 @@ and `v3` is queued at its arrival position:
   harness.set_time(double.clock, 1020)
   let expired =
     Lease(
-      id: "lease-1",
-      pocket: "pk",
-      consumer: "c1",
+      id: LeaseId("lease-1"),
+      pocket: PocketKey("pk"),
+      consumer: ConsumerId("c1"),
       status: LeaseExpired(ended_at: 1020),
       granted_at: 0,
       expires_at: 1020,
@@ -909,19 +933,19 @@ and `v3` is queued at its arrival position:
         dead_letters: [],
       ),
     )
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 1,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 3,
@@ -932,17 +956,17 @@ and `v3` is queued at its arrival position:
       superseded: [],
       dead_letters: [
         DeadLetter(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
-          nacked_by: "c1",
+          nacked_by: ConsumerId("c1"),
           nacked_at: 20,
           expires_at: 8020,
         ),
       ],
     )
-  assert c2_pulls(double) == ["early", "k"]
+  assert c2_pulls(double) == [RecordKey("early"), RecordKey("k")]
 ```
 
 ### Scenario C: v3 is shed when v5 arrives; v1, nacked, is dead-lettered at the end; v5 takes v3's arrival position
@@ -953,21 +977,21 @@ counter's value, 4:
 ```gleam
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 15)
-  assert harness.publish(double, "pk", "between", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("between"), 1, "b")
     == fired(["PublishNewKey"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -980,8 +1004,8 @@ counter's value, 4:
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -990,9 +1014,9 @@ counter's value, 4:
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -1011,30 +1035,31 @@ untouched:
 
 ```gleam
   harness.set_time(double.clock, 18)
-  assert harness.publish(double, "pk", "k", 5, "v5") == fired(["Supersede"])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "v5")
+    == fired(["Supersede"])
   let v3 =
     SupersededRecord(
-      pocket: "pk",
-      key: "k",
+      pocket: PocketKey("pk"),
+      key: RecordKey("k"),
       rank: 3,
       payload: <<"v3":utf8>>,
       reason: Superseded,
       shed_at: 18,
       expires_at: 5018,
     )
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 1,
@@ -1047,8 +1072,8 @@ untouched:
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -1057,9 +1082,9 @@ untouched:
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -1074,21 +1099,26 @@ At 20 ms `c1` nacks `k`. The mark falls on the version `c1` was handed, `v1`:
 
 ```gleam
   harness.set_time(double.clock, 20)
-  assert harness.nack(double, "c1", "lease-1", "k")
+  assert harness.nack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
     == fired(["NackMarksRecord"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 1,
@@ -1101,8 +1131,8 @@ At 20 ms `c1` nacks `k`. The mark falls on the version `c1` was handed, `v1`:
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -1111,9 +1141,9 @@ At 20 ms `c1` nacks `k`. The mark falls on the version `c1` was handed, `v1`:
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -1130,29 +1160,29 @@ it inherited, 3, so `c2` is handed it before `between`, at 4:
 
 ```gleam
   harness.set_time(double.clock, 50)
-  assert harness.release(double, "c1", "lease-1")
+  assert harness.release(double, ConsumerId("c1"), LeaseId("lease-1"))
     == fired(["ReleaseRequeuesPocket", "DeadLetterNackedVersionQueueDeferred"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 6,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 5,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 3,
           status: RecordQueued,
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -1161,9 +1191,9 @@ it inherited, 3, so `c2` is handed it before `between`, at 4:
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseReleased(ended_at: 50),
           granted_at: 0,
           expires_at: 1020,
@@ -1172,17 +1202,18 @@ it inherited, 3, so `c2` is handed it before `between`, at 4:
       superseded: [v3],
       dead_letters: [
         DeadLetter(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
-          nacked_by: "c1",
+          nacked_by: ConsumerId("c1"),
           nacked_at: 20,
           expires_at: 7050,
         ),
       ],
     )
-  assert c2_pulls(double) == ["early", "k", "between"]
+  assert c2_pulls(double)
+    == [RecordKey("early"), RecordKey("k"), RecordKey("between")]
 ```
 
 ### Scenario D: an unsettled held version is superseded at the lease's end, and the newer version takes its position
@@ -1198,9 +1229,9 @@ and `c2` is handed it before `early`:
   harness.set_time(double.clock, 1000)
   let expired =
     Lease(
-      id: "lease-1",
-      pocket: "pk",
-      consumer: "c1",
+      id: LeaseId("lease-1"),
+      pocket: PocketKey("pk"),
+      consumer: ConsumerId("c1"),
       status: LeaseExpired(ended_at: 1000),
       granted_at: 0,
       expires_at: 1000,
@@ -1218,19 +1249,19 @@ and `c2` is handed it before `early`:
         dead_letters: [],
       ),
     )
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 1,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -1240,8 +1271,8 @@ and `c2` is handed it before `early`:
       leases: [expired],
       superseded: [
         SupersededRecord(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           reason: Superseded,
@@ -1251,7 +1282,7 @@ and `c2` is handed it before `early`:
       ],
       dead_letters: [],
     )
-  assert c2_pulls(double) == ["k", "early"]
+  assert c2_pulls(double) == [RecordKey("k"), RecordKey("early")]
 ```
 
 The checker ran at the end of every outcome above, and the state the session ends in

@@ -16,6 +16,7 @@
 import gleam/option.{None}
 import gleam/result
 import pachinko_double/config
+import pachinko_double/ids.{type LeaseId, LeaseId}
 import pachinko_double/internal/domain.{
   type Plan, type Row, type Table, LeaseLapsed,
 }
@@ -34,7 +35,7 @@ import pachinko_double/time.{type Timestamp}
 /// Lease.expires_at <= now`; for the expiry rules it is `LeaseLapsed(lease)`
 /// with the instant of the outcome that emitted it.
 pub type Lapse {
-  Lapse(lease: String, now: Timestamp)
+  Lapse(lease: LeaseId, now: Timestamp)
 }
 
 /// The clock trigger `lease: Lease.expires_at <= now`. Its one rule,
@@ -75,7 +76,10 @@ fn lease_lapses_rule() -> Row(Lapse) {
     },
     fn(state, lapse) {
       case model.lease(state.leases, lapse.lease) {
-        Error(Nil) -> Impossible("no lease " <> lapse.lease)
+        Error(Nil) -> {
+          let LeaseId(lease) = lapse.lease
+          Impossible("no lease " <> lease)
+        }
         Ok(lease) -> {
           use now <- Now
           Finish(state, [LeaseLapsed(lease: lease.id, now:)], None)
@@ -179,10 +183,10 @@ fn lease_expiry_idles_empty_pocket() -> Row(Lapse) {
 /// pocket keeps its position whatever its status.
 fn expire(state: State, lapse: Lapse, status: PocketStatus) -> Plan {
   case lapsing(state, lapse) {
-    Error(Nil) ->
-      Impossible(
-        "no active, due lease " <> lapse.lease <> " on a leased pocket",
-      )
+    Error(Nil) -> {
+      let LeaseId(lease) = lapse.lease
+      Impossible("no active, due lease " <> lease <> " on a leased pocket")
+    }
     Ok(#(lease, pocket)) -> {
       use now <- Now
       let #(state, freed) = lease_end.end(state, lease, lease_end.Lapse, now)

@@ -39,6 +39,9 @@ import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{NoPocketAvailable}
 import pachinko_double/config
 import pachinko_double/failure.{Defect, EffectFailed, Refused}
+import pachinko_double/ids.{
+  type PocketKey, type RecordKey, ConsumerId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/internal/core
 import pachinko_double/internal/domain.{type Event, type Plan, PocketTouched}
@@ -218,8 +221,8 @@ fn answers_nothing(rule: String) -> Reply {
 /// The Rust test file's own helper: a record's rank and payload.
 fn rank_and_payload(
   double: Double,
-  pocket_key: String,
-  record_key: String,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
 ) -> #(Int, BitArray) {
   let record = harness.record(double, pocket_key, record_key)
   #(record.rank, record.payload)
@@ -251,76 +254,80 @@ fn new_pocket() -> List(String) {
   // `impl-choice` (spec notes G04 and G16): the specification gives the
   // counter no first value. So are the three absolute positions below.
   assert harness.inspect(double).next_position == 0
-  assert harness.publish(double, "pk", "a", 3, "x")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 3, "x")
     == answers_nothing("PublishIntoNewPocket")
-  let pocket = harness.pocket(double, "pk")
+  let pocket = harness.pocket(double, PocketKey("pk"))
   assert pocket.status == PocketQueued
   assert pocket.position == 0
   assert pocket.consecutive_expiries == 0
-  let record = harness.record(double, "pk", "a")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("a"))
   assert record.position == 1
   assert record.status == RecordQueued
-  assert rank_and_payload(double, "pk", "a") == #(3, <<"x":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(3, <<"x":utf8>>)
   assert harness.inspect(double).next_position == 2
-  assert harness.order(double) == ["pk"]
+  assert harness.order(double) == [PocketKey("pk")]
   harness.fired(double)
 }
 
 fn new_key_appends() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 1, "x")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "x")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "pk", "b", 7, "y")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 7, "y")
     == answers_nothing("PublishNewKey")
   let snapshot = harness.inspect(double)
   assert list.length(snapshot.pockets) == 1
   // `impl-choice` (spec notes G04 and G29): the pocket's absolute position,
   // the record's, and the counter. That the new key takes the next position
   // and the pocket keeps its own is the specification's.
-  assert harness.pocket(double, "pk").position == 0
-  let record = harness.record(double, "pk", "b")
+  assert harness.pocket(double, PocketKey("pk")).position == 0
+  let record = harness.record(double, PocketKey("pk"), RecordKey("b"))
   assert #(record.position, record.status) == #(2, RecordQueued)
   assert snapshot.next_position == 3
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
-  assert harness.keys(batch.records) == ["a", "b"]
+  assert harness.keys(batch.records) == [RecordKey("a"), RecordKey("b")]
   harness.fired(double)
 }
 
 fn same_key_in_two_pockets() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "one", "k", 1, "x")
+  assert harness.publish(double, PocketKey("one"), RecordKey("k"), 1, "x")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "two", "k", 1, "y")
+  assert harness.publish(double, PocketKey("two"), RecordKey("k"), 1, "y")
     == answers_nothing("PublishIntoNewPocket")
-  assert rank_and_payload(double, "one", "k") == #(1, <<"x":utf8>>)
-  assert rank_and_payload(double, "two", "k") == #(1, <<"y":utf8>>)
-  assert harness.record(double, "one", "k").position
-    != harness.record(double, "two", "k").position
+  assert rank_and_payload(double, PocketKey("one"), RecordKey("k"))
+    == #(1, <<"x":utf8>>)
+  assert rank_and_payload(double, PocketKey("two"), RecordKey("k"))
+    == #(1, <<"y":utf8>>)
+  assert harness.record(double, PocketKey("one"), RecordKey("k")).position
+    != harness.record(double, PocketKey("two"), RecordKey("k")).position
   assert harness.inspect(double).superseded == []
   harness.fired(double)
 }
 
 fn supersede_in_place() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 1, "old")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "old")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "pk", "b", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 1, "b")
     == answers_nothing("PublishNewKey")
   let now = harness.advance(double.clock, harness.t0, 7)
-  assert harness.publish(double, "pk", "a", 2, "new")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 2, "new")
     == answers_nothing("Supersede")
-  let record = harness.record(double, "pk", "a")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("a"))
   // `impl-choice` (spec notes G04 and G16): the absolute position 1, and the
   // counter at 3 below. That the record is where its first publish put it is
   // the specification's.
   assert #(record.position, record.status) == #(1, RecordQueued)
-  assert rank_and_payload(double, "pk", "a") == #(2, <<"new":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(2, <<"new":utf8>>)
   let snapshot = harness.inspect(double)
   assert snapshot.next_position == 3
   let assert [shed] = snapshot.superseded
-  assert shed.pocket == "pk"
-  assert shed.key == "a"
+  assert shed.pocket == PocketKey("pk")
+  assert shed.key == RecordKey("a")
   assert #(shed.rank, shed.payload) == #(1, <<"old":utf8>>)
   assert shed.reason == Superseded
   assert #(shed.shed_at, shed.expires_at) == #(now, now + superseded_ttl())
@@ -334,26 +341,33 @@ fn supersede_in_place() -> List(String) {
 /// N32), and the state they leave is asserted below as the Rust asserts it.
 fn repeated_supersede() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "v1")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "pk", "b", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 1, "b")
     == answers_nothing("PublishNewKey")
   list.each([#(2, "v2"), #(3, "v3"), #(4, "v4")], fn(version) {
-    assert harness.publish(double, "pk", "a", version.0, version.1)
+    assert harness.publish(
+        double,
+        PocketKey("pk"),
+        RecordKey("a"),
+        version.0,
+        version.1,
+      )
       == answers_nothing("Supersede")
   })
   // `impl-choice` (spec notes G04 and G29): the absolute position. That the
   // record is where its first publish put it is the specification's.
-  assert harness.record(double, "pk", "a").position == 1
-  assert rank_and_payload(double, "pk", "a") == #(4, <<"v4":utf8>>)
+  assert harness.record(double, PocketKey("pk"), RecordKey("a")).position == 1
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(4, <<"v4":utf8>>)
   // `impl-choice` (spec note G19): the order of the superseded queue.
   assert list.map(harness.inspect(double).superseded, fn(shed) {
       #(shed.rank, shed.payload)
     })
     == [#(1, <<"v1":utf8>>), #(2, <<"v2":utf8>>), #(3, <<"v3":utf8>>)]
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
-  assert harness.keys(batch.records) == ["a", "b"]
+  assert harness.keys(batch.records) == [RecordKey("a"), RecordKey("b")]
   let assert [first, ..] = batch.records
   assert first.rank == 4
   harness.fired(double)
@@ -361,13 +375,14 @@ fn repeated_supersede() -> List(String) {
 
 fn stale_is_shed() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 5, "kept")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 5, "kept")
     == answers_nothing("PublishIntoNewPocket")
   let now = harness.advance(double.clock, harness.t0, 3)
   // "Not an error": the publish succeeds, and answers nothing.
-  assert harness.publish(double, "pk", "a", 4, "late")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 4, "late")
     == answers_nothing("DropStalePublish")
-  assert rank_and_payload(double, "pk", "a") == #(5, <<"kept":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(5, <<"kept":utf8>>)
   let snapshot = harness.inspect(double)
   // `impl-choice` (spec notes G04 and G16): the absolute counter. That a
   // stale publish allots nothing is the specification's.
@@ -385,13 +400,17 @@ fn stale_is_shed() -> List(String) {
 /// note G13). The refusal reads no clock.
 fn equal_rank_rejected() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 2, "first")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 2, "first")
     == answers_nothing("PublishIntoNewPocket")
   let before = harness.inspect(double)
   let reads = harness.clock_reads(double.clock)
-  assert harness.publish(double, "pk", "a", 2, "second")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 2, "second")
     == Error(
-      Refused(EqualRankRefused(pocket_key: "pk", record_key: "a", rank: 2)),
+      Refused(EqualRankRefused(
+        pocket_key: PocketKey("pk"),
+        record_key: RecordKey("a"),
+        rank: 2,
+      )),
     )
   assert harness.inspect(double) == before
   assert harness.clock_reads(double.clock) == reads
@@ -404,23 +423,26 @@ fn equal_rank_rejected() -> List(String) {
 /// the one version that publish shed, with its reason.
 fn negative_and_zero_ranks() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", -5, "m5")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), -5, "m5")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "pk", "a", -1, "m1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), -1, "m1")
     == answers_nothing("Supersede")
-  assert rank_and_payload(double, "pk", "a") == #(-1, <<"m1":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(-1, <<"m1":utf8>>)
   assert shed_at_rank(double, -5) == [#(<<"m5":utf8>>, Superseded)]
   assert shed_count(double) == 1
-  assert harness.publish(double, "pk", "a", 0, "z")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 0, "z")
     == answers_nothing("Supersede")
-  assert rank_and_payload(double, "pk", "a") == #(0, <<"z":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(0, <<"z":utf8>>)
   assert shed_at_rank(double, -1) == [#(<<"m1":utf8>>, Superseded)]
   assert shed_count(double) == 2
-  assert harness.publish(double, "pk", "a", -2, "m2")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), -2, "m2")
     == answers_nothing("DropStalePublish")
   assert shed_at_rank(double, -2) == [#(<<"m2":utf8>>, Stale)]
   assert shed_count(double) == 3
-  assert rank_and_payload(double, "pk", "a") == #(0, <<"z":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(0, <<"z":utf8>>)
   harness.fired(double)
 }
 
@@ -435,21 +457,46 @@ fn large_ranks() -> List(String) {
   let lowest = -9_223_372_036_854_775_808
   let highest = 9_223_372_036_854_775_807
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", lowest, "min")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), lowest, "min")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "pk", "a", lowest + 1, "min+1")
+  assert harness.publish(
+      double,
+      PocketKey("pk"),
+      RecordKey("a"),
+      lowest + 1,
+      "min+1",
+    )
     == answers_nothing("Supersede")
-  assert harness.publish(double, "pk", "a", highest - 1, "max-1")
+  assert harness.publish(
+      double,
+      PocketKey("pk"),
+      RecordKey("a"),
+      highest - 1,
+      "max-1",
+    )
     == answers_nothing("Supersede")
-  assert harness.publish(double, "pk", "a", highest, "max")
+  assert harness.publish(
+      double,
+      PocketKey("pk"),
+      RecordKey("a"),
+      highest,
+      "max",
+    )
     == answers_nothing("Supersede")
-  assert harness.publish(double, "pk", "a", highest - 1, "late")
+  assert harness.publish(
+      double,
+      PocketKey("pk"),
+      RecordKey("a"),
+      highest - 1,
+      "late",
+    )
     == answers_nothing("DropStalePublish")
-  assert rank_and_payload(double, "pk", "a") == #(highest, <<"max":utf8>>)
+  assert rank_and_payload(double, PocketKey("pk"), RecordKey("a"))
+    == #(highest, <<"max":utf8>>)
   // `impl-choice` (spec note G19): the order of the superseded queue.
   assert list.map(harness.inspect(double).superseded, fn(shed) { shed.rank })
     == [lowest, lowest + 1, highest - 1, highest - 1]
-  let batch = harness.batch(double, "c1", 1)
+  let batch = harness.batch(double, ConsumerId("c1"), 1)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
   let assert [first, ..] = batch.records
   assert first.rank == highest
@@ -466,12 +513,12 @@ fn bytes_and_keys_round_trip() -> List(String) {
     int.range(from: 0, to: 256, with: <<>>, run: fn(bytes, byte) {
       <<bytes:bits, byte>>
     })
-  let pocket = "pocket-\u{e9}\u{4e2d}\u{1f600}"
-  let key = "key-\u{3b1}\u{3b2}\u{0}"
+  let pocket = PocketKey("pocket-\u{e9}\u{4e2d}\u{1f600}")
+  let key = RecordKey("key-\u{3b1}\u{3b2}\u{0}")
   assert harness.publish_publication(
       double,
       Publication(
-        publisher: "p",
+        publisher: PublisherId("p"),
         pocket_key: pocket,
         record_key: key,
         rank: 1,
@@ -479,7 +526,7 @@ fn bytes_and_keys_round_trip() -> List(String) {
       ),
     )
     == answers_nothing("PublishIntoNewPocket")
-  let batch = harness.batch(double, "c1", 1)
+  let batch = harness.batch(double, ConsumerId("c1"), 1)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
   assert batch.pocket_key == pocket
   let assert [first, ..] = batch.records
@@ -494,24 +541,24 @@ fn bytes_and_keys_round_trip() -> List(String) {
 /// so that check has nothing of its own to compare here.
 fn queued_pocket_keeps_its_place() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "first", "a", 1, "a")
+  assert harness.publish(double, PocketKey("first"), RecordKey("a"), 1, "a")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "second", "a", 1, "a")
+  assert harness.publish(double, PocketKey("second"), RecordKey("a"), 1, "a")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "first", "b", 1, "b")
+  assert harness.publish(double, PocketKey("first"), RecordKey("b"), 1, "b")
     == answers_nothing("PublishNewKey")
-  assert harness.publish(double, "first", "a", 2, "a2")
+  assert harness.publish(double, PocketKey("first"), RecordKey("a"), 2, "a2")
     == answers_nothing("Supersede")
-  assert harness.publish(double, "first", "a", 0, "a0")
+  assert harness.publish(double, PocketKey("first"), RecordKey("a"), 0, "a0")
     == answers_nothing("DropStalePublish")
   // `impl-choice` (spec notes G04 and G29): the absolute position. That the
   // pocket keeps the position it had is the specification's.
-  assert harness.pocket(double, "first").position == 0
-  assert harness.pocket(double, "first").status == PocketQueued
-  assert harness.order(double) == ["first", "second"]
-  let batch = harness.batch(double, "c1", 0)
+  assert harness.pocket(double, PocketKey("first")).position == 0
+  assert harness.pocket(double, PocketKey("first")).status == PocketQueued
+  assert harness.order(double) == [PocketKey("first"), PocketKey("second")]
+  let batch = harness.batch(double, ConsumerId("c1"), 0)
   assert batch.fired == ["PullClaimsFrontPocket"]
-  assert batch.pocket_key == "first"
+  assert batch.pocket_key == PocketKey("first")
   harness.fired(double)
 }
 
@@ -526,8 +573,8 @@ fn shed_entry(
   at: Int,
 ) -> model.SupersededRecord {
   SupersededRecord(
-    pocket: "pk",
-    key: "k",
+    pocket: PocketKey("pk"),
+    key: RecordKey("k"),
     rank:,
     payload: <<payload:utf8>>,
     reason:,
@@ -546,23 +593,23 @@ fn shed_entry(
 /// leased, so no revive rule fires.
 fn into_leased_pocket() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 1, "a")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "a")
     == answers_nothing("PublishIntoNewPocket")
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
-  let pocket_before = harness.pocket(double, "pk")
+  let pocket_before = harness.pocket(double, PocketKey("pk"))
   let lease_before = harness.inspect(double).leases
-  assert harness.publish(double, "pk", "b", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 1, "b")
     == answers_nothing("PublishNewKey")
-  let a_before = harness.record(double, "pk", "a")
+  let a_before = harness.record(double, PocketKey("pk"), RecordKey("a"))
   let counter = harness.inspect(double).next_position
-  assert harness.publish(double, "pk", "a", 2, "a2")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 2, "a2")
     == answers_nothing("DeferBehindHeldVersion")
   // The state the deferral leaves (the ruling on N32): `a` takes the rank
   // and payload, with the counter's value as its arrival position; the held
   // version, the mark, the nack time and the position stay; the counter
   // advances by one.
-  assert harness.record(double, "pk", "a")
+  assert harness.record(double, PocketKey("pk"), RecordKey("a"))
     == Record(
       ..a_before,
       rank: 2,
@@ -576,14 +623,14 @@ fn into_leased_pocket() -> List(String) {
       ),
     )
   assert harness.inspect(double).next_position == counter + 1
-  assert harness.publish(double, "pk", "a", 0, "a0")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 0, "a0")
     == answers_nothing("DropStalePublish")
   // "The held a1 is not shed; a2 waits behind it."
   assert harness.inspect(double).superseded
     == [
       SupersededRecord(
-        pocket: "pk",
-        key: "a",
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
         rank: 0,
         payload: <<"a0":utf8>>,
         reason: Stale,
@@ -591,17 +638,20 @@ fn into_leased_pocket() -> List(String) {
         expires_at: harness.t0 + superseded_ttl(),
       ),
     ]
-  let pocket = harness.pocket(double, "pk")
+  let pocket = harness.pocket(double, PocketKey("pk"))
   assert pocket.status == PocketLeased
   assert pocket.position == pocket_before.position
   assert harness.order(double) == []
   assert harness.inspect(double).leases == lease_before
-  assert harness.pull(double, "c2", 10)
-    == Ok(Outcome(["PullFindsNoPocket"], Some(NoPocketAvailable("c2"))))
-  let again = harness.batch(double, "c1", 10)
+  assert harness.pull(double, ConsumerId("c2"), 10)
+    == Ok(Outcome(
+      ["PullFindsNoPocket"],
+      Some(NoPocketAvailable(ConsumerId("c2"))),
+    ))
+  let again = harness.batch(double, ConsumerId("c1"), 10)
   assert again.fired == ["PullWithinLease", "HoldRecord"]
   assert again.lease == batch.lease
-  assert harness.keys(again.records) == ["b"]
+  assert harness.keys(again.records) == [RecordKey("b")]
   harness.fired(double)
 }
 
@@ -611,20 +661,20 @@ fn into_leased_pocket() -> List(String) {
 /// 2. It answers the time of the nack, if `mark` is a nack.
 fn held_and_marked(mark: Mark) -> #(Double, Option(Int)) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
     == answers_nothing("PublishIntoNewPocket")
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
   let marked_at = harness.at(double, 10)
   case mark {
     Unsettled -> #(double, None)
     Acked -> {
-      assert harness.ack(double, "c1", batch.lease, "k")
+      assert harness.ack(double, ConsumerId("c1"), batch.lease, RecordKey("k"))
         == answers_nothing("AckMarksRecord")
       #(double, None)
     }
     Nacked -> {
-      assert harness.nack(double, "c1", batch.lease, "k")
+      assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("k"))
         == answers_nothing("NackMarksRecord")
       #(double, Some(marked_at))
     }
@@ -666,9 +716,9 @@ fn judged_alike_marked(mark: Mark) -> List(String) {
   let deferred = held_as(mark, nacked_at, Some(2))
   let _ = harness.at(double, 20)
   // Higher: "deferred behind the held version".
-  assert harness.publish(double, "pk", "k", 3, "v3")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
     == answers_nothing("DeferBehindHeldVersion")
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   assert #(record.status, record.rank) == #(deferred, 3)
   let snapshot = harness.inspect(double)
   // "Nothing is shed."
@@ -676,24 +726,30 @@ fn judged_alike_marked(mark: Mark) -> List(String) {
   assert snapshot.next_position == 3
   let thirty = harness.at(double, 30)
   // A second higher: "v3 at once".
-  assert harness.publish(double, "pk", "k", 5, "v5")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "v5")
     == answers_nothing("Supersede")
   let v3 = shed_entry(3, "v3", Superseded, thirty)
   assert harness.inspect(double).superseded == [v3]
   // Equal: refused, and "equal changes nothing".
   harness.refused(
     double,
-    EqualRankRefused(pocket_key: "pk", record_key: "k", rank: 5),
-    fn() { harness.publish(double, "pk", "k", 5, "again") },
+    EqualRankRefused(
+      pocket_key: PocketKey("pk"),
+      record_key: RecordKey("k"),
+      rank: 5,
+    ),
+    fn() {
+      harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "again")
+    },
   )
   // Lower: stale.
-  assert harness.publish(double, "pk", "k", 4, "v4")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 4, "v4")
     == answers_nothing("DropStalePublish")
   let snapshot = harness.inspect(double)
   assert snapshot.superseded == [v3, shed_entry(4, "v4", Stale, thirty)]
   // "No dead letter while held."
   assert snapshot.dead_letters == []
-  let record = harness.record(double, "pk", "k")
+  let record = harness.record(double, PocketKey("pk"), RecordKey("k"))
   // "v5 keeps v3's arrival position."
   assert #(record.status, record.rank, record.position) == #(deferred, 5, 1)
   // The Rust's `invariants::all`, by the checker.
@@ -710,19 +766,27 @@ fn held_rank_again() -> List(String) {
   // "Nothing deferred: the held rank is the stored rank."
   harness.refused(
     double,
-    EqualRankRefused(pocket_key: "pk", record_key: "k", rank: 1),
-    fn() { harness.publish(double, "pk", "k", 1, "again") },
+    EqualRankRefused(
+      pocket_key: PocketKey("pk"),
+      record_key: RecordKey("k"),
+      rank: 1,
+    ),
+    fn() {
+      harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "again")
+    },
   )
-  assert harness.publish(double, "pk", "k", 3, "v3")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
     == answers_nothing("DeferBehindHeldVersion")
   let deferred = held_as(Unsettled, None, Some(2))
-  assert harness.record(double, "pk", "k").status == deferred
+  assert harness.record(double, PocketKey("pk"), RecordKey("k")).status
+    == deferred
   // "v3 deferred: the held rank is below the stored rank."
-  assert harness.publish(double, "pk", "k", 1, "again")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "again")
     == answers_nothing("DropStalePublish")
   assert harness.inspect(double).superseded
     == [shed_entry(1, "again", Stale, harness.t0 + 10)]
-  assert harness.record(double, "pk", "k").status == deferred
+  assert harness.record(double, PocketKey("pk"), RecordKey("k")).status
+    == deferred
   harness.fired(double)
 }
 
@@ -735,16 +799,56 @@ fn held_rank_again() -> List(String) {
 /// refused, the complete snapshot is unchanged and no clock was read.
 fn unknown_publisher() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "a", 1, "x")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "x")
     == answers_nothing("PublishIntoNewPocket")
   let before = harness.inspect(double)
   let reads = harness.clock_reads(double.clock)
   let refused = fn(publisher) { Error(Refused(UnknownPublisher(publisher))) }
-  assert harness.publish_as(double, "q", "pk", "a", 2, "y") == refused("q")
-  assert harness.publish_as(double, "q", "pk", "b", 1, "y") == refused("q")
-  assert harness.publish_as(double, "q", "other", "a", 1, "y") == refused("q")
-  assert harness.publish_as(double, "q", "pk", "a", 0, "y") == refused("q")
-  assert harness.publish_as(double, "c1", "pk", "a", 2, "y") == refused("c1")
+  assert harness.publish_as(
+      double,
+      PublisherId("q"),
+      PocketKey("pk"),
+      RecordKey("a"),
+      2,
+      "y",
+    )
+    == refused(PublisherId("q"))
+  assert harness.publish_as(
+      double,
+      PublisherId("q"),
+      PocketKey("pk"),
+      RecordKey("b"),
+      1,
+      "y",
+    )
+    == refused(PublisherId("q"))
+  assert harness.publish_as(
+      double,
+      PublisherId("q"),
+      PocketKey("other"),
+      RecordKey("a"),
+      1,
+      "y",
+    )
+    == refused(PublisherId("q"))
+  assert harness.publish_as(
+      double,
+      PublisherId("q"),
+      PocketKey("pk"),
+      RecordKey("a"),
+      0,
+      "y",
+    )
+    == refused(PublisherId("q"))
+  assert harness.publish_as(
+      double,
+      PublisherId("c1"),
+      PocketKey("pk"),
+      RecordKey("a"),
+      2,
+      "y",
+    )
+    == refused(PublisherId("c1"))
   assert harness.inspect(double) == before
   assert harness.clock_reads(double.clock) == reads
   harness.fired(double)
@@ -764,14 +868,14 @@ fn unknown_publisher() -> List(String) {
 /// The superseded queue already holds an entry, which the rule leaves alone.
 fn into_new_pocket_exactly() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "one", "a", 1, "x")
+  assert harness.publish(double, PocketKey("one"), RecordKey("a"), 1, "x")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "one", "a", 2, "w")
+  assert harness.publish(double, PocketKey("one"), RecordKey("a"), 2, "w")
     == answers_nothing("Supersede")
   let before = harness.inspect(double)
   assert list.length(before.superseded) == 1
   let reads = harness.clock_reads(double.clock)
-  assert harness.publish(double, "two", "b", -4, "y")
+  assert harness.publish(double, PocketKey("two"), RecordKey("b"), -4, "y")
     == answers_nothing("PublishIntoNewPocket")
   // The pocket takes the counter's value and its first record the next.
   assert harness.inspect(double)
@@ -780,7 +884,7 @@ fn into_new_pocket_exactly() -> List(String) {
       next_position: before.next_position + 2,
       pockets: list.append(before.pockets, [
         Pocket(
-          key: "two",
+          key: PocketKey("two"),
           status: PocketQueued,
           position: before.next_position,
           consecutive_expiries: 0,
@@ -788,8 +892,8 @@ fn into_new_pocket_exactly() -> List(String) {
       ]),
       records: list.append(before.records, [
         Record(
-          pocket: "two",
-          key: "b",
+          pocket: PocketKey("two"),
+          key: RecordKey("b"),
           rank: -4,
           payload: <<"y":utf8>>,
           position: before.next_position + 1,
@@ -806,16 +910,16 @@ fn into_new_pocket_exactly() -> List(String) {
 /// superseded queue already holds an entry, which the rule leaves alone.
 fn new_key_exactly() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "one", "a", 5, "x")
+  assert harness.publish(double, PocketKey("one"), RecordKey("a"), 5, "x")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "two", "b", 1, "y")
+  assert harness.publish(double, PocketKey("two"), RecordKey("b"), 1, "y")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "one", "a", 6, "w")
+  assert harness.publish(double, PocketKey("one"), RecordKey("a"), 6, "w")
     == answers_nothing("Supersede")
   let before = harness.inspect(double)
   assert list.length(before.superseded) == 1
   let reads = harness.clock_reads(double.clock)
-  assert harness.publish(double, "two", "a", 2, "z")
+  assert harness.publish(double, PocketKey("two"), RecordKey("a"), 2, "z")
     == answers_nothing("PublishNewKey")
   assert harness.inspect(double)
     == Snapshot(
@@ -823,8 +927,8 @@ fn new_key_exactly() -> List(String) {
       next_position: before.next_position + 1,
       records: list.append(before.records, [
         Record(
-          pocket: "two",
-          key: "a",
+          pocket: PocketKey("two"),
+          key: RecordKey("a"),
           rank: 2,
           payload: <<"z":utf8>>,
           position: before.next_position,
@@ -844,23 +948,23 @@ fn new_key_exactly() -> List(String) {
 /// the same key at the same rank, and its record is left alone.
 fn supersede_exactly() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "other", "b", 1, "old")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 1, "old")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "other", "a", 1, "a")
+  assert harness.publish(double, PocketKey("other"), RecordKey("a"), 1, "a")
     == answers_nothing("PublishNewKey")
-  assert harness.publish(double, "pk", "b", 1, "pk")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 1, "pk")
     == answers_nothing("PublishIntoNewPocket")
   let before = harness.inspect(double)
   let reads = harness.clock_reads(double.clock)
   let assert [b, a, elsewhere] = before.records
 
   let first = harness.advance(double.clock, harness.t0, 20)
-  assert harness.publish(double, "other", "b", 3, "new")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 3, "new")
     == answers_nothing("Supersede")
   let shed_first =
     SupersededRecord(
-      pocket: "other",
-      key: "b",
+      pocket: PocketKey("other"),
+      key: RecordKey("b"),
       rank: 1,
       payload: <<"old":utf8>>,
       reason: Superseded,
@@ -876,7 +980,7 @@ fn supersede_exactly() -> List(String) {
   assert harness.clock_reads(double.clock) == reads + 1
 
   let second = harness.advance(double.clock, first, 25)
-  assert harness.publish(double, "other", "b", 9, "newer")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 9, "newer")
     == answers_nothing("Supersede")
   assert harness.inspect(double)
     == Snapshot(
@@ -885,8 +989,8 @@ fn supersede_exactly() -> List(String) {
       superseded: [
         shed_first,
         SupersededRecord(
-          pocket: "other",
-          key: "b",
+          pocket: PocketKey("other"),
+          key: RecordKey("b"),
           rank: 3,
           payload: <<"new":utf8>>,
           reason: Superseded,
@@ -904,23 +1008,23 @@ fn supersede_exactly() -> List(String) {
 /// queue already holds. No record, no pocket and no counter changes.
 fn stale_exactly() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "other", "b", 3, "old")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 3, "old")
     == answers_nothing("PublishIntoNewPocket")
-  assert harness.publish(double, "other", "b", 5, "kept")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 5, "kept")
     == answers_nothing("Supersede")
   let before = harness.inspect(double)
   assert list.length(before.superseded) == 1
   let reads = harness.clock_reads(double.clock)
   let now = harness.advance(double.clock, harness.t0, 33)
-  assert harness.publish(double, "other", "b", 4, "late")
+  assert harness.publish(double, PocketKey("other"), RecordKey("b"), 4, "late")
     == answers_nothing("DropStalePublish")
   assert harness.inspect(double)
     == Snapshot(
       ..before,
       superseded: list.append(before.superseded, [
         SupersededRecord(
-          pocket: "other",
-          key: "b",
+          pocket: PocketKey("other"),
+          key: RecordKey("b"),
           rank: 4,
           payload: <<"late":utf8>>,
           reason: Stale,
@@ -943,21 +1047,31 @@ fn stale_exactly() -> List(String) {
 // state built by hand.
 
 fn publication(
-  pocket_key: String,
-  record_key: String,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
   rank: Int,
   payload: String,
 ) -> Publication {
-  Publication(publisher: "p", pocket_key:, record_key:, rank:, payload: <<
-    payload:utf8,
-  >>)
+  Publication(
+    publisher: PublisherId("p"),
+    pocket_key:,
+    record_key:,
+    rank:,
+    payload: <<
+      payload:utf8,
+    >>,
+  )
 }
 
 /// Publisher `p` and consumer `c1` joined, and nothing stored.
 fn joined() -> State {
-  State(..model.new(config.default()), publishers: [Publisher("p")], consumers: [
-    Consumer("c1"),
-  ])
+  State(
+    ..model.new(config.default()),
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [
+      Consumer(ConsumerId("c1")),
+    ],
+  )
 }
 
 /// Two queued pockets, each holding one queued record at rank 5: `pk` holds
@@ -967,12 +1081,19 @@ fn stored() -> State {
     ..joined(),
     queue: Queue(next_position: 4),
     pockets: [
-      Pocket("pk", PocketQueued, 0, 0),
-      Pocket("other", PocketQueued, 2, 0),
+      Pocket(PocketKey("pk"), PocketQueued, 0, 0),
+      Pocket(PocketKey("other"), PocketQueued, 2, 0),
     ],
     records: [
-      Record("pk", "a", 5, <<"x":utf8>>, 1, RecordQueued),
-      Record("other", "b", 5, <<"x":utf8>>, 3, RecordQueued),
+      Record(PocketKey("pk"), RecordKey("a"), 5, <<"x":utf8>>, 1, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("b"),
+        5,
+        <<"x":utf8>>,
+        3,
+        RecordQueued,
+      ),
     ],
   )
 }
@@ -1002,8 +1123,17 @@ fn held_record(deferred: Bool, mark: Mark) -> Record {
     )
   }
   case deferred {
-    True -> Record("pk", "a", 6, <<"newer":utf8>>, 1, held(Some(2)))
-    False -> Record("pk", "a", 5, <<"x":utf8>>, 1, held(None))
+    True ->
+      Record(
+        PocketKey("pk"),
+        RecordKey("a"),
+        6,
+        <<"newer":utf8>>,
+        1,
+        held(Some(2)),
+      )
+    False ->
+      Record(PocketKey("pk"), RecordKey("a"), 5, <<"x":utf8>>, 1, held(None))
   }
 }
 
@@ -1012,13 +1142,13 @@ fn leased(deferred: Bool, mark: Mark) -> State {
   State(
     ..joined(),
     queue: Queue(next_position: 3),
-    pockets: [Pocket("pk", PocketLeased, 0, 0)],
+    pockets: [Pocket(PocketKey("pk"), PocketLeased, 0, 0)],
     records: [held_record(deferred, mark)],
     leases: [
       Lease(
-        id: "lease-1",
-        pocket: "pk",
-        consumer: "c1",
+        id: ids.LeaseId("lease-1"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseActive,
         granted_at: harness.t0,
         expires_at: harness.t0 + 1000,
@@ -1038,21 +1168,28 @@ fn deferring(mark: Mark) -> State {
   State(
     ..joined(),
     queue: Queue(next_position: 6),
-    consumers: [Consumer("c1"), Consumer("c2")],
+    consumers: [Consumer(ConsumerId("c1")), Consumer(ConsumerId("c2"))],
     pockets: [
-      Pocket("other", PocketQueued, 2, 0),
-      Pocket("pk", PocketLeased, 0, 0),
+      Pocket(PocketKey("other"), PocketQueued, 2, 0),
+      Pocket(PocketKey("pk"), PocketLeased, 0, 0),
     ],
     records: [
-      Record("other", "a", 5, <<"theirs":utf8>>, 3, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("a"),
+        5,
+        <<"theirs":utf8>>,
+        3,
+        RecordQueued,
+      ),
       held_record(False, mark),
-      Record("pk", "b", 4, <<"b":utf8>>, 4, RecordQueued),
+      Record(PocketKey("pk"), RecordKey("b"), 4, <<"b":utf8>>, 4, RecordQueued),
     ],
     leases: [
       Lease(
-        id: "lease-1",
-        pocket: "pk",
-        consumer: "c1",
+        id: ids.LeaseId("lease-1"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseActive,
         granted_at: harness.t0,
         expires_at: harness.t0 + 1000,
@@ -1060,8 +1197,8 @@ fn deferring(mark: Mark) -> State {
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "a",
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
         rank: 3,
         payload: <<"older":utf8>>,
         reason: Superseded,
@@ -1071,11 +1208,11 @@ fn deferring(mark: Mark) -> State {
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "pk",
-        key: "k0",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k0"),
         rank: 2,
         payload: <<"zero":utf8>>,
-        nacked_by: "c2",
+        nacked_by: ConsumerId("c2"),
         nacked_at: harness.t0 - 90,
         expires_at: harness.t0 - 80 + config.defaults().dead_letter_ttl,
       ),
@@ -1099,8 +1236,11 @@ fn defer_exactly() -> List(String) {
     let assert [theirs, held, b] = state.records
     let assert Record(status: RecordHeld(..) as status, ..) = held
     let step =
-      core.apply(state, core.Publish(publication("pk", "a", 9, "newest")))
-    assert harness.drive(step, harness.t0 + 40, "unused")
+      core.apply(
+        state,
+        core.Publish(publication(PocketKey("pk"), RecordKey("a"), 9, "newest")),
+      )
+    assert harness.drive(step, harness.t0 + 40, ids.LeaseId("unused"))
       == Driven(
         Ok(Applied(
           State(..state, queue: Queue(next_position: 7), records: [
@@ -1130,7 +1270,7 @@ fn walk(plan: Plan, next_position: Int) -> Result(List(Event), String) {
     Finish(events:, ..) -> Ok(events)
     Now(next) -> walk(next(harness.t0), next_position)
     Position(next) -> walk(next(next_position), next_position + 1)
-    LeaseId(next) -> walk(next("no-lease"), next_position)
+    LeaseId(next) -> walk(next(ids.LeaseId("no-lease")), next_position)
     Impossible(reason) -> Error(reason)
   }
 }
@@ -1160,32 +1300,56 @@ fn rule(state: State, publication: Publication) -> Option(String) {
 /// `PublishIntoNewPocket` ensures none, and a stale publish does not touch
 /// the pocket.
 fn events() -> List(String) {
-  assert rule_and_events(stored(), publication("new", "a", 1, "y"))
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("new"), RecordKey("a"), 1, "y"),
+    )
     == #("PublishIntoNewPocket", [])
-  assert rule_and_events(stored(), publication("pk", "b", 1, "y"))
-    == #("PublishNewKey", [PocketTouched("pk")])
-  assert rule_and_events(stored(), publication("other", "a", 1, "y"))
-    == #("PublishNewKey", [PocketTouched("other")])
-  assert rule_and_events(stored(), publication("pk", "a", 6, "y"))
-    == #("Supersede", [PocketTouched("pk")])
-  assert rule_and_events(stored(), publication("other", "b", 6, "y"))
-    == #("Supersede", [PocketTouched("other")])
-  assert rule_and_events(stored(), publication("pk", "a", 4, "y"))
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("pk"), RecordKey("b"), 1, "y"),
+    )
+    == #("PublishNewKey", [PocketTouched(PocketKey("pk"))])
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("other"), RecordKey("a"), 1, "y"),
+    )
+    == #("PublishNewKey", [PocketTouched(PocketKey("other"))])
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+    )
+    == #("Supersede", [PocketTouched(PocketKey("pk"))])
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("other"), RecordKey("b"), 6, "y"),
+    )
+    == #("Supersede", [PocketTouched(PocketKey("other"))])
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("pk"), RecordKey("a"), 4, "y"),
+    )
     == #("DropStalePublish", [])
-  assert rule_and_events(stored(), publication("other", "b", 4, "y"))
+  assert rule_and_events(
+      stored(),
+      publication(PocketKey("other"), RecordKey("b"), 4, "y"),
+    )
     == #("DropStalePublish", [])
   assert rule_and_events(
       leased(True, Unsettled),
-      publication("pk", "a", 7, "y"),
+      publication(PocketKey("pk"), RecordKey("a"), 7, "y"),
     )
-    == #("Supersede", [PocketTouched("pk")])
+    == #("Supersede", [PocketTouched(PocketKey("pk"))])
   assert rule_and_events(
       leased(False, Unsettled),
-      publication("pk", "a", 6, "y"),
+      publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
     )
-    == #("DeferBehindHeldVersion", [PocketTouched("pk")])
-  assert rule_and_events(deferring(Acked), publication("pk", "a", 9, "y"))
-    == #("DeferBehindHeldVersion", [PocketTouched("pk")])
+    == #("DeferBehindHeldVersion", [PocketTouched(PocketKey("pk"))])
+  assert rule_and_events(
+      deferring(Acked),
+      publication(PocketKey("pk"), RecordKey("a"), 9, "y"),
+    )
+    == #("DeferBehindHeldVersion", [PocketTouched(PocketKey("pk"))])
   []
 }
 
@@ -1201,18 +1365,39 @@ fn events() -> List(String) {
 /// says that no other guard held.
 fn held_record_guards() -> List(String) {
   list.each(marks(), fn(mark) {
-    assert rule(leased(True, mark), publication("pk", "a", 7, "y"))
+    assert rule(
+        leased(True, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 7, "y"),
+      )
       == Some("Supersede")
-    assert rule(leased(False, mark), publication("pk", "a", 6, "y"))
+    assert rule(
+        leased(False, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+      )
       == Some("DeferBehindHeldVersion")
-    assert rule(leased(False, mark), publication("pk", "a", 5, "y")) == None
-    assert rule(leased(True, mark), publication("pk", "a", 6, "y")) == None
-    assert rule(leased(False, mark), publication("pk", "a", 4, "y"))
+    assert rule(
+        leased(False, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 5, "y"),
+      )
+      == None
+    assert rule(
+        leased(True, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+      )
+      == None
+    assert rule(
+        leased(False, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 4, "y"),
+      )
       == Some("DropStalePublish")
-    assert rule(leased(True, mark), publication("pk", "a", 5, "y"))
+    assert rule(
+        leased(True, mark),
+        publication(PocketKey("pk"), RecordKey("a"), 5, "y"),
+      )
       == Some("DropStalePublish")
   })
-  assert rule(stored(), publication("pk", "a", 6, "y")) == Some("Supersede")
+  assert rule(stored(), publication(PocketKey("pk"), RecordKey("a"), 6, "y"))
+    == Some("Supersede")
   []
 }
 
@@ -1230,8 +1415,12 @@ fn supersede_deferred_marked(mark: Mark) -> List(String) {
   let state = leased(True, mark)
   let now = harness.t0 + 9
   let step =
-    core.apply(state, core.Publish(publication("pk", "a", 7, "newest")))
-  let assert Ok(applied) = rules.drive(step, fn() { now }, fn() { "no-lease" })
+    core.apply(
+      state,
+      core.Publish(publication(PocketKey("pk"), RecordKey("a"), 7, "newest")),
+    )
+  let assert Ok(applied) =
+    rules.drive(step, fn() { now }, fn() { ids.LeaseId("no-lease") })
   assert applied
     == Applied(
       State(
@@ -1241,8 +1430,8 @@ fn supersede_deferred_marked(mark: Mark) -> List(String) {
         ],
         superseded: [
           SupersededRecord(
-            pocket: "pk",
-            key: "a",
+            pocket: PocketKey("pk"),
+            key: RecordKey("a"),
             rank: 6,
             payload: <<"newer":utf8>>,
             reason: Superseded,
@@ -1270,7 +1459,11 @@ fn supersede_without_record() -> List(String) {
       [Row("Supersede", fn(_state, _publication) { True }, supersede.effect)],
       NothingHappens,
     )
-  assert core.run(unguarded, publication("pk", "a", 6, "y"), joined())
+  assert core.run(
+      unguarded,
+      publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+      joined(),
+    )
     == Done(
       Error(Defect(
         "Publish",
@@ -1301,14 +1494,22 @@ fn defer_without_held_record() -> List(String) {
       ],
       NothingHappens,
     )
-  assert core.run(unguarded, publication("pk", "a", 6, "y"), joined())
+  assert core.run(
+      unguarded,
+      publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+      joined(),
+    )
     == Done(
       Error(Defect(
         "Publish",
         EffectFailed("DeferBehindHeldVersion", "no record a in pocket pk"),
       )),
     )
-  assert core.run(unguarded, publication("pk", "a", 6, "y"), stored())
+  assert core.run(
+      unguarded,
+      publication(PocketKey("pk"), RecordKey("a"), 6, "y"),
+      stored(),
+    )
     == Done(
       Error(Defect(
         "Publish",
@@ -1332,18 +1533,25 @@ fn with_idle() -> State {
     ..joined(),
     queue: Queue(next_position: 9),
     pockets: [
-      Pocket("pk", PocketQueued, 6, 0),
-      Pocket("idle", PocketIdle, 0, 2),
-      Pocket("other", PocketQueued, 2, 0),
+      Pocket(PocketKey("pk"), PocketQueued, 6, 0),
+      Pocket(PocketKey("idle"), PocketIdle, 0, 2),
+      Pocket(PocketKey("other"), PocketQueued, 2, 0),
     ],
     records: [
-      Record("pk", "a", 5, <<"x":utf8>>, 7, RecordQueued),
-      Record("other", "b", 5, <<"x":utf8>>, 3, RecordQueued),
+      Record(PocketKey("pk"), RecordKey("a"), 5, <<"x":utf8>>, 7, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("b"),
+        5,
+        <<"x":utf8>>,
+        3,
+        RecordQueued,
+      ),
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "a",
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
         rank: 4,
         payload: <<"older":utf8>>,
         reason: Superseded,
@@ -1353,11 +1561,11 @@ fn with_idle() -> State {
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "idle",
-        key: "gone",
+        pocket: PocketKey("idle"),
+        key: RecordKey("gone"),
         rank: 3,
         payload: <<"dead":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: 350,
         expires_at: 400 + config.defaults().dead_letter_ttl,
       ),
@@ -1379,7 +1587,7 @@ fn revive_idle_exactly() -> List(String) {
   let state = with_idle()
   let assert [pk, idle, other] = state.pockets
   let revive = "ReviveIdlePocket"
-  assert core.run(publish.pocket_touched(), "idle", state)
+  assert core.run(publish.pocket_touched(), PocketKey("idle"), state)
     == Done(
       Ok(Applied(
         State(..state, queue: Queue(next_position: 10), pockets: [
@@ -1398,9 +1606,12 @@ fn revive_idle_exactly() -> List(String) {
     )
   let fired = ["PublishNewKey", revive]
   assert harness.drive(
-      core.apply(state, core.Publish(publication("idle", "k", 1, "v"))),
+      core.apply(
+        state,
+        core.Publish(publication(PocketKey("idle"), RecordKey("k"), 1, "v")),
+      ),
       harness.t0,
-      "unused",
+      ids.LeaseId("unused"),
     )
     == Driven(
       Ok(Applied(
@@ -1418,7 +1629,14 @@ fn revive_idle_exactly() -> List(String) {
             other,
           ],
           records: list.append(state.records, [
-            Record("idle", "k", 1, <<"v":utf8>>, 9, RecordQueued),
+            Record(
+              PocketKey("idle"),
+              RecordKey("k"),
+              1,
+              <<"v":utf8>>,
+              9,
+              RecordQueued,
+            ),
           ]),
         ),
         fired,
@@ -1441,10 +1659,10 @@ fn touched_and_not_idle() -> List(String) {
     assert core.run(publish.pocket_touched(), pocket_key, state)
       == Done(Ok(Applied(state, [], None)))
   }
-  untouched(state, "pk")
-  untouched(state, "other")
-  untouched(state, "nowhere")
-  untouched(leased(False, Unsettled), "pk")
+  untouched(state, PocketKey("pk"))
+  untouched(state, PocketKey("other"))
+  untouched(state, PocketKey("nowhere"))
+  untouched(leased(False, Unsettled), PocketKey("pk"))
   []
 }
 
@@ -1462,14 +1680,14 @@ fn revive_guard_not_parked() -> List(String) {
     State(
       ..state,
       pockets: list.map(state.pockets, fn(pocket) {
-        case pocket.key == "idle" {
+        case pocket.key == PocketKey("idle") {
           True -> Pocket(..pocket, status: PocketParked)
           False -> pocket
         }
       }),
     )
-  assert revive.guard(state, "idle")
-  assert !revive.guard(parked, "idle")
+  assert revive.guard(state, PocketKey("idle"))
+  assert !revive.guard(parked, PocketKey("idle"))
   []
 }
 
@@ -1487,7 +1705,7 @@ fn revive_without_pocket() -> List(String) {
       [Row(revive.name, fn(_state, _pocket_key) { True }, revive.effect)],
       NothingHappens,
     )
-  assert core.run(unguarded, "nowhere", with_idle())
+  assert core.run(unguarded, PocketKey("nowhere"), with_idle())
     == Done(
       Error(Defect(
         "PocketTouched",

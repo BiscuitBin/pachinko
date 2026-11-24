@@ -14,6 +14,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
+import pachinko_double/ids.{
+  type LeaseId, type PocketKey, type RecordKey, LeaseId, RecordKey,
+}
 import pachinko_double/internal/domain.{type Event, type Row, type Table, Freed}
 import pachinko_double/internal/rules.{Defective, Finish, Impossible, Row, Table}
 import pachinko_double/model.{
@@ -75,7 +78,7 @@ pub fn end(
 /// and one that does not has no record left. The rules that end a lease
 /// split on it; the ending records are some of the pocket's records, so
 /// where this does not hold the two counts are equal.
-pub fn outlasts(state: State, pocket_key: String) -> Bool {
+pub fn outlasts(state: State, pocket_key: PocketKey) -> Bool {
   let records = model.records_of(state.records, pocket_key)
   list.length(records) > list.length(model.ending(records))
 }
@@ -83,7 +86,7 @@ pub fn outlasts(state: State, pocket_key: String) -> Bool {
 /// The input of `Freed(lease, record_key, ended_at)`. `lease` is the lease's
 /// id.
 pub type Freeing {
-  Freeing(lease: String, record_key: String, ended_at: Timestamp)
+  Freeing(lease: LeaseId, record_key: RecordKey, ended_at: Timestamp)
 }
 
 /// `Freed(lease, record_key, ended_at)`. The specification gives it six
@@ -125,13 +128,11 @@ fn free(
   effect: fn(HeldRecord) -> domain.Plan,
 ) -> domain.Plan {
   case held(state, freeing) {
-    Error(Nil) ->
-      Impossible(
-        "no held record "
-        <> freeing.record_key
-        <> " under lease "
-        <> freeing.lease,
-      )
+    Error(Nil) -> {
+      let RecordKey(key) = freeing.record_key
+      let LeaseId(lease) = freeing.lease
+      Impossible("no held record " <> key <> " under lease " <> lease)
+    }
     Ok(held) -> effect(held)
   }
 }
@@ -152,10 +153,10 @@ fn without(state: State, record: Record) -> State {
 /// wrong guard could bring about, the outcome is a defect.
 fn arrival(held: HeldRecord, effect: fn(Int) -> domain.Plan) -> domain.Plan {
   case held.deferred_position {
-    None ->
-      Impossible(
-        "held record " <> held.record.key <> " has no deferred_position",
-      )
+    None -> {
+      let RecordKey(key) = held.record.key
+      Impossible("held record " <> key <> " has no deferred_position")
+    }
     Some(arrival_position) -> effect(arrival_position)
   }
 }
@@ -167,8 +168,10 @@ fn nack_time(
   effect: fn(Timestamp) -> domain.Plan,
 ) -> domain.Plan {
   case held.nacked_at {
-    None ->
-      Impossible("nacked record " <> held.record.key <> " has no nacked_at")
+    None -> {
+      let RecordKey(key) = held.record.key
+      Impossible("nacked record " <> key <> " has no nacked_at")
+    }
     Some(nacked_at) -> effect(nacked_at)
   }
 }

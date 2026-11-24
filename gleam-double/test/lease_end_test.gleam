@@ -14,6 +14,10 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import pachinko_double/config
 import pachinko_double/failure.{Defect, EffectFailed, NoRuleHeld}
+import pachinko_double/ids.{
+  type LeaseId, type RecordKey, ConsumerId, LeaseId, PocketKey, PublisherId,
+  RecordKey,
+}
 import pachinko_double/internal/core
 import pachinko_double/internal/domain.{type Step, Freed}
 import pachinko_double/internal/lease_end.{Freeing, Lapse, Release}
@@ -128,11 +132,18 @@ fn held(record: Record, mark: Mark, nacked_at: Option(Int)) -> Record {
 /// of position: `n` at 8, `u` at 6, `a` at 3, `m` at 5 and `q` at 11.
 fn plain() -> #(Record, Record, Record, Record, Record) {
   #(
-    Record("pk", "n", 45, <<"en":utf8>>, 8, RecordQueued),
-    Record("pk", "u", 44, <<"you":utf8>>, 6, RecordQueued),
-    Record("pk", "a", 46, <<"ay":utf8>>, 3, RecordQueued),
-    Record("pk", "m", 43, <<"em":utf8>>, 5, RecordQueued),
-    Record("pk", "q", 42, <<"queue":utf8>>, 11, RecordQueued),
+    Record(PocketKey("pk"), RecordKey("n"), 45, <<"en":utf8>>, 8, RecordQueued),
+    Record(PocketKey("pk"), RecordKey("u"), 44, <<"you":utf8>>, 6, RecordQueued),
+    Record(PocketKey("pk"), RecordKey("a"), 46, <<"ay":utf8>>, 3, RecordQueued),
+    Record(PocketKey("pk"), RecordKey("m"), 43, <<"em":utf8>>, 5, RecordQueued),
+    Record(
+      PocketKey("pk"),
+      RecordKey("q"),
+      42,
+      <<"queue":utf8>>,
+      11,
+      RecordQueued,
+    ),
   )
 }
 
@@ -142,12 +153,26 @@ fn plain() -> #(Record, Record, Record, Record, Record) {
 fn theirs() -> #(Record, Record) {
   #(
     held(
-      Record("other", "a", 48, <<"oa":utf8>>, 12, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("a"),
+        48,
+        <<"oa":utf8>>,
+        12,
+        RecordQueued,
+      ),
       Unsettled,
       None,
     ),
     held(
-      Record("other", "n", 47, <<"on":utf8>>, 10, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("n"),
+        47,
+        <<"on":utf8>>,
+        10,
+        RecordQueued,
+      ),
       Nacked,
       Some(520),
     ),
@@ -171,12 +196,12 @@ fn ending(ended: LeaseStatus) -> State {
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 20),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1"), Consumer("c2")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [Consumer(ConsumerId("c1")), Consumer(ConsumerId("c2"))],
     pockets: [
-      Pocket("other", PocketLeased, 9, 0),
-      Pocket("pk", PocketLeased, 2, 0),
-      Pocket("done", PocketIdle, 1, 1),
+      Pocket(PocketKey("other"), PocketLeased, 9, 0),
+      Pocket(PocketKey("pk"), PocketLeased, 2, 0),
+      Pocket(PocketKey("done"), PocketIdle, 1, 1),
     ],
     records: [
       held(n, Nacked, Some(700)),
@@ -189,25 +214,25 @@ fn ending(ended: LeaseStatus) -> State {
     ],
     leases: [
       Lease(
-        id: "lease-0",
-        pocket: "pk",
-        consumer: "c2",
+        id: LeaseId("lease-0"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c2"),
         status: ended,
         granted_at: 100,
         expires_at: 100 + ttl,
       ),
       Lease(
-        id: "lease-2",
-        pocket: "other",
-        consumer: "c2",
+        id: LeaseId("lease-2"),
+        pocket: PocketKey("other"),
+        consumer: ConsumerId("c2"),
         status: LeaseActive,
         granted_at: 500,
         expires_at: 500 + ttl,
       ),
       Lease(
-        id: "lease-1",
-        pocket: "pk",
-        consumer: "c1",
+        id: LeaseId("lease-1"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseActive,
         granted_at: 600,
         expires_at: 600 + ttl,
@@ -215,8 +240,8 @@ fn ending(ended: LeaseStatus) -> State {
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "a",
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
         rank: 40,
         payload: <<"stale":utf8>>,
         reason: Stale,
@@ -226,11 +251,11 @@ fn ending(ended: LeaseStatus) -> State {
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "pk",
-        key: "k0",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k0"),
         rank: 39,
         payload: <<"zero":utf8>>,
-        nacked_by: "c2",
+        nacked_by: ConsumerId("c2"),
         nacked_at: 120,
         expires_at: 150 + config.defaults().dead_letter_ttl,
       ),
@@ -246,7 +271,7 @@ const released = LeaseReleased(150)
 const ended_at = 777
 
 /// One `Freed` as its own outcome: the `Freed` table, then the checker.
-fn freed(state: State, lease: String, record_key: String) -> Step {
+fn freed(state: State, lease: LeaseId, record_key: RecordKey) -> Step {
   core.run(lease_end.freed(), Freeing(lease:, record_key:, ended_at:), state)
 }
 
@@ -266,7 +291,7 @@ fn end_exactly() -> List(String) {
   let assert [lease_0, lease_2, lease_1] = state.leases
   let events = fn(at) {
     list.map(["a", "m", "u", "n"], fn(key) {
-      Freed(lease: "lease-1", record_key: key, ended_at: at)
+      Freed(lease: LeaseId("lease-1"), record_key: RecordKey(key), ended_at: at)
     })
   }
   assert lease_end.end(state, lease_1, Release, 900)
@@ -306,12 +331,15 @@ fn outlasts() -> List(String) {
   let state = ending(released)
   let assert [n, their_n, u, a, their_a, m, q] = state.records
   let with = fn(records) { State(..state, records:) }
-  assert lease_end.outlasts(state, "pk")
-  assert lease_end.outlasts(state, "other")
-  assert !lease_end.outlasts(with([n, their_n, a, their_a, m]), "pk")
-  assert lease_end.outlasts(with([n, their_n, a, their_a, m]), "other")
-  assert lease_end.outlasts(with([n, a, m, u]), "pk")
-  assert lease_end.outlasts(with([n, a, m, q]), "pk")
+  assert lease_end.outlasts(state, PocketKey("pk"))
+  assert lease_end.outlasts(state, PocketKey("other"))
+  assert !lease_end.outlasts(with([n, their_n, a, their_a, m]), PocketKey("pk"))
+  assert lease_end.outlasts(
+    with([n, their_n, a, their_a, m]),
+    PocketKey("other"),
+  )
+  assert lease_end.outlasts(with([n, a, m, u]), PocketKey("pk"))
+  assert lease_end.outlasts(with([n, a, m, q]), PocketKey("pk"))
   let #(plain_n, _, plain_a, _, _) = plain()
   let deferred = fn(record: Record, mark, nacked_at) {
     Record(
@@ -325,16 +353,22 @@ fn outlasts() -> List(String) {
       ),
     )
   }
-  assert lease_end.outlasts(with([deferred(plain_a, Acked, None)]), "pk")
-  assert lease_end.outlasts(with([deferred(plain_n, Nacked, Some(700))]), "pk")
+  assert lease_end.outlasts(
+    with([deferred(plain_a, Acked, None)]),
+    PocketKey("pk"),
+  )
+  assert lease_end.outlasts(
+    with([deferred(plain_n, Nacked, Some(700))]),
+    PocketKey("pk"),
+  )
   assert lease_end.outlasts(
     with([a, deferred(plain_n, Nacked, Some(700))]),
-    "pk",
+    PocketKey("pk"),
   )
-  assert !lease_end.outlasts(with([n, a, m]), "other")
-  assert !lease_end.outlasts(with([their_n]), "other")
-  assert !lease_end.outlasts(state, "done")
-  assert !lease_end.outlasts(state, "nowhere")
+  assert !lease_end.outlasts(with([n, a, m]), PocketKey("other"))
+  assert !lease_end.outlasts(with([their_n]), PocketKey("other"))
+  assert !lease_end.outlasts(state, PocketKey("done"))
+  assert !lease_end.outlasts(state, PocketKey("nowhere"))
   []
 }
 
@@ -346,7 +380,7 @@ fn requeue_exactly() -> List(String) {
   let state = ending(released)
   let assert [n, their_n, held_u, a, their_a, m, q] = state.records
   let #(_, u, _, _, _) = plain()
-  assert freed(state, "lease-1", "u")
+  assert freed(state, LeaseId("lease-1"), RecordKey("u"))
     == Done(
       Ok(Applied(
         State(..state, records: [n, their_n, u, a, their_a, m, q]),
@@ -357,7 +391,7 @@ fn requeue_exactly() -> List(String) {
   // `other`'s unsettled `a`, under `c2`'s lease: `pk`'s `a`, which is acked,
   // is not touched.
   let #(their_plain, _) = plain_theirs()
-  assert freed(state, "lease-2", "a")
+  assert freed(state, LeaseId("lease-2"), RecordKey("a"))
     == Done(
       Ok(Applied(
         State(..state, records: [n, their_n, held_u, a, their_plain, m, q]),
@@ -371,8 +405,22 @@ fn requeue_exactly() -> List(String) {
 /// `other`'s two records as they are before either is held.
 fn plain_theirs() -> #(Record, Record) {
   #(
-    Record("other", "a", 48, <<"oa":utf8>>, 12, RecordQueued),
-    Record("other", "n", 47, <<"on":utf8>>, 10, RecordQueued),
+    Record(
+      PocketKey("other"),
+      RecordKey("a"),
+      48,
+      <<"oa":utf8>>,
+      12,
+      RecordQueued,
+    ),
+    Record(
+      PocketKey("other"),
+      RecordKey("n"),
+      47,
+      <<"on":utf8>>,
+      10,
+      RecordQueued,
+    ),
   )
 }
 
@@ -383,7 +431,7 @@ fn plain_theirs() -> #(Record, Record) {
 fn consume_exactly() -> List(String) {
   let state = ending(released)
   let assert [n, their_n, u, _, their_a, m, q] = state.records
-  assert freed(state, "lease-1", "a")
+  assert freed(state, LeaseId("lease-1"), RecordKey("a"))
     == Done(
       Ok(Applied(
         State(..state, records: [n, their_n, u, their_a, m, q]),
@@ -408,7 +456,7 @@ fn dead_letter_exactly() -> List(String) {
   let state = ending(released)
   let assert [n, their_n, u, a, their_a, m, q] = state.records
   let ttl = config.defaults().dead_letter_ttl
-  assert freed(state, "lease-1", "m")
+  assert freed(state, LeaseId("lease-1"), RecordKey("m"))
     == Done(
       Ok(Applied(
         State(
@@ -416,11 +464,11 @@ fn dead_letter_exactly() -> List(String) {
           records: [n, their_n, u, a, their_a, q],
           dead_letters: list.append(state.dead_letters, [
             DeadLetter(
-              pocket: "pk",
-              key: "m",
+              pocket: PocketKey("pk"),
+              key: RecordKey("m"),
               rank: 43,
               payload: <<"em":utf8>>,
-              nacked_by: "c1",
+              nacked_by: ConsumerId("c1"),
               nacked_at: 650,
               expires_at: ended_at + ttl,
             ),
@@ -430,7 +478,7 @@ fn dead_letter_exactly() -> List(String) {
         None,
       )),
     )
-  assert freed(state, "lease-2", "n")
+  assert freed(state, LeaseId("lease-2"), RecordKey("n"))
     == Done(
       Ok(Applied(
         State(
@@ -438,11 +486,11 @@ fn dead_letter_exactly() -> List(String) {
           records: [n, u, a, their_a, m, q],
           dead_letters: list.append(state.dead_letters, [
             DeadLetter(
-              pocket: "other",
-              key: "n",
+              pocket: PocketKey("other"),
+              key: RecordKey("n"),
               rank: 47,
               payload: <<"on":utf8>>,
-              nacked_by: "c2",
+              nacked_by: ConsumerId("c2"),
               nacked_at: 520,
               expires_at: ended_at + ttl,
             ),
@@ -464,15 +512,15 @@ fn dead_letter_zero_ttl() -> List(String) {
     config.new(config.Settings(..config.defaults(), dead_letter_ttl: 0))
   let state = State(..ending(released), config: zero)
   let assert Done(Ok(Applied(after, [rule], None))) =
-    freed(state, "lease-1", "m")
+    freed(state, LeaseId("lease-1"), RecordKey("m"))
   assert rule == dead_letter
   assert list.last(after.dead_letters)
     == Ok(DeadLetter(
-      pocket: "pk",
-      key: "m",
+      pocket: PocketKey("pk"),
+      key: RecordKey("m"),
       rank: 43,
       payload: <<"em":utf8>>,
-      nacked_by: "c1",
+      nacked_by: ConsumerId("c1"),
       nacked_at: 650,
       expires_at: ended_at,
     ))
@@ -492,15 +540,16 @@ fn dead_letter_held_version() -> List(String) {
   let assert [n, their_n, u, a, their_a, m, q] = state.records
   let newer = Record(..m, rank: 50, payload: <<"newer":utf8>>)
   let before = State(..state, records: [n, their_n, u, a, their_a, newer, q])
-  let assert Done(Ok(applied)) = freed(before, "lease-1", "m")
+  let assert Done(Ok(applied)) =
+    freed(before, LeaseId("lease-1"), RecordKey("m"))
   assert applied.fired == [dead_letter]
   assert list.last(applied.state.dead_letters)
     == Ok(DeadLetter(
-      pocket: "pk",
-      key: "m",
+      pocket: PocketKey("pk"),
+      key: RecordKey("m"),
       rank: 43,
       payload: <<"em":utf8>>,
-      nacked_by: "c1",
+      nacked_by: ConsumerId("c1"),
       nacked_at: 650,
       expires_at: ended_at + config.defaults().dead_letter_ttl,
     ))
@@ -570,7 +619,7 @@ fn deferred_ending(ended: LeaseStatus) -> State {
 fn supersede_held_exactly() -> List(String) {
   let state = deferred_ending(released)
   let assert [their_n, their_a, n, _, a, m, q] = state.records
-  assert freed(state, "lease-1", "u")
+  assert freed(state, LeaseId("lease-1"), RecordKey("u"))
     == Done(
       Ok(Applied(
         State(
@@ -579,15 +628,22 @@ fn supersede_held_exactly() -> List(String) {
             their_n,
             their_a,
             n,
-            Record("pk", "u", 54, <<"newer":utf8>>, 6, RecordQueued),
+            Record(
+              PocketKey("pk"),
+              RecordKey("u"),
+              54,
+              <<"newer":utf8>>,
+              6,
+              RecordQueued,
+            ),
             a,
             m,
             q,
           ],
           superseded: list.append(state.superseded, [
             SupersededRecord(
-              pocket: "pk",
-              key: "u",
+              pocket: PocketKey("pk"),
+              key: RecordKey("u"),
               rank: 44,
               payload: <<"you":utf8>>,
               reason: Superseded,
@@ -612,7 +668,7 @@ fn supersede_held_exactly() -> List(String) {
 fn consume_deferred_exactly() -> List(String) {
   let state = deferred_ending(released)
   let assert [their_n, their_a, n, u, _, m, q] = state.records
-  assert freed(state, "lease-1", "a")
+  assert freed(state, LeaseId("lease-1"), RecordKey("a"))
     == Done(
       Ok(Applied(
         State(..state, records: [
@@ -620,7 +676,14 @@ fn consume_deferred_exactly() -> List(String) {
           their_a,
           n,
           u,
-          Record("pk", "a", 56, <<"newer":utf8>>, 15, RecordQueued),
+          Record(
+            PocketKey("pk"),
+            RecordKey("a"),
+            56,
+            <<"newer":utf8>>,
+            15,
+            RecordQueued,
+          ),
           m,
           q,
         ]),
@@ -642,7 +705,7 @@ fn consume_deferred_exactly() -> List(String) {
 fn dead_letter_deferred_exactly() -> List(String) {
   let state = deferred_ending(released)
   let assert [their_n, their_a, _, u, a, m, q] = state.records
-  assert freed(state, "lease-1", "n")
+  assert freed(state, LeaseId("lease-1"), RecordKey("n"))
     == Done(
       Ok(Applied(
         State(
@@ -650,7 +713,14 @@ fn dead_letter_deferred_exactly() -> List(String) {
           records: [
             their_n,
             their_a,
-            Record("pk", "n", 55, <<"newer":utf8>>, 16, RecordQueued),
+            Record(
+              PocketKey("pk"),
+              RecordKey("n"),
+              55,
+              <<"newer":utf8>>,
+              16,
+              RecordQueued,
+            ),
             u,
             a,
             m,
@@ -658,11 +728,11 @@ fn dead_letter_deferred_exactly() -> List(String) {
           ],
           dead_letters: list.append(state.dead_letters, [
             DeadLetter(
-              pocket: "pk",
-              key: "n",
+              pocket: PocketKey("pk"),
+              key: RecordKey("n"),
               rank: 45,
               payload: <<"en":utf8>>,
-              nacked_by: "c1",
+              nacked_by: ConsumerId("c1"),
               nacked_at: 700,
               expires_at: ended_at + letter_ttl,
             ),
@@ -686,47 +756,64 @@ fn dead_letter_deferred_exactly() -> List(String) {
 fn however_the_lease_ended() -> List(String) {
   list.flat_map([released, LeaseExpired(150)], fn(ended) {
     let state = ending(ended)
-    let assert Done(Ok(requeued)) = freed(state, "lease-0", "u")
-    let assert Done(Ok(consumed)) = freed(state, "lease-0", "a")
-    let assert Done(Ok(lettered)) = freed(state, "lease-0", "n")
+    let assert Done(Ok(requeued)) =
+      freed(state, LeaseId("lease-0"), RecordKey("u"))
+    let assert Done(Ok(consumed)) =
+      freed(state, LeaseId("lease-0"), RecordKey("a"))
+    let assert Done(Ok(lettered)) =
+      freed(state, LeaseId("lease-0"), RecordKey("n"))
     assert #(requeued.fired, consumed.fired, lettered.fired)
       == #([requeue], [consume], [dead_letter])
     assert list.last(lettered.state.dead_letters)
       == Ok(DeadLetter(
-        pocket: "pk",
-        key: "n",
+        pocket: PocketKey("pk"),
+        key: RecordKey("n"),
         rank: 45,
         payload: <<"en":utf8>>,
-        nacked_by: "c2",
+        nacked_by: ConsumerId("c2"),
         nacked_at: 700,
         expires_at: ended_at + config.defaults().dead_letter_ttl,
       ))
     assert lettered.state.leases == state.leases
     let deferred = deferred_ending(ended)
-    let assert Done(Ok(superseded)) = freed(deferred, "lease-0", "u")
-    let assert Done(Ok(queued)) = freed(deferred, "lease-0", "a")
-    let assert Done(Ok(deferred_lettered)) = freed(deferred, "lease-0", "n")
+    let assert Done(Ok(superseded)) =
+      freed(deferred, LeaseId("lease-0"), RecordKey("u"))
+    let assert Done(Ok(queued)) =
+      freed(deferred, LeaseId("lease-0"), RecordKey("a"))
+    let assert Done(Ok(deferred_lettered)) =
+      freed(deferred, LeaseId("lease-0"), RecordKey("n"))
     assert #(superseded.fired, queued.fired, deferred_lettered.fired)
       == #([supersede_held], [consume_deferred], [dead_letter_deferred])
     assert list.last(superseded.state.superseded)
       == Ok(SupersededRecord(
-        pocket: "pk",
-        key: "u",
+        pocket: PocketKey("pk"),
+        key: RecordKey("u"),
         rank: 44,
         payload: <<"you":utf8>>,
         reason: Superseded,
         shed_at: ended_at,
         expires_at: ended_at + shed_ttl,
       ))
-    assert model.record(queued.state.records, pocket: "pk", key: "a")
-      == Ok(Record("pk", "a", 56, <<"newer":utf8>>, 15, RecordQueued))
+    assert model.record(
+        queued.state.records,
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
+      )
+      == Ok(Record(
+        PocketKey("pk"),
+        RecordKey("a"),
+        56,
+        <<"newer":utf8>>,
+        15,
+        RecordQueued,
+      ))
     assert list.last(deferred_lettered.state.dead_letters)
       == Ok(DeadLetter(
-        pocket: "pk",
-        key: "n",
+        pocket: PocketKey("pk"),
+        key: RecordKey("n"),
         rank: 45,
         payload: <<"en":utf8>>,
-        nacked_by: "c2",
+        nacked_by: ConsumerId("c2"),
         nacked_at: 700,
         expires_at: ended_at + letter_ttl,
       ))
@@ -744,10 +831,10 @@ fn however_the_lease_ended() -> List(String) {
 
 /// Whether the guard of the `Freed` rule with this name holds for this
 /// record under `c1`'s lease.
-fn guard_holds(rule: String, state: State, record_key: String) -> Bool {
+fn guard_holds(rule: String, state: State, record_key: RecordKey) -> Bool {
   let assert Ok(row) =
     list.find(lease_end.freed().rows, fn(row) { row.name == rule })
-  row.guard(state, Freeing(lease: "lease-1", record_key:, ended_at:))
+  row.guard(state, Freeing(lease: LeaseId("lease-1"), record_key:, ended_at:))
 }
 
 /// Each rule's `requires: record.mark = ...` and its `requires:
@@ -794,11 +881,13 @@ fn freed_guards() -> List(String) {
   list.each(rows, fn(own) {
     let #(rule, own_key, deferred) = own
     list.each(["u", "a", "n"], fn(key) {
-      assert guard_holds(rule, state, key) == { key == own_key && !deferred }
-      assert guard_holds(rule, behind, key) == { key == own_key && deferred }
+      assert guard_holds(rule, state, RecordKey(key))
+        == { key == own_key && !deferred }
+      assert guard_holds(rule, behind, RecordKey(key))
+        == { key == own_key && deferred }
     })
-    assert !guard_holds(rule, state, "q")
-    assert !guard_holds(rule, behind, "q")
+    assert !guard_holds(rule, state, RecordKey("q"))
+    assert !guard_holds(rule, behind, RecordKey("q"))
   })
   []
 }
@@ -809,13 +898,13 @@ fn freed_guards() -> List(String) {
 fn freed_defect() -> List(String) {
   let state = ending(released)
   let defect = Done(Error(Defect("Freed", NoRuleHeld)))
-  assert freed(state, "lease-1", "q") == defect
-  assert freed(state, "lease-1", "absent") == defect
-  assert freed(state, "lease-9", "u") == defect
-  assert freed(state, "pk", "u") == defect
+  assert freed(state, LeaseId("lease-1"), RecordKey("q")) == defect
+  assert freed(state, LeaseId("lease-1"), RecordKey("absent")) == defect
+  assert freed(state, LeaseId("lease-9"), RecordKey("u")) == defect
+  assert freed(state, LeaseId("pk"), RecordKey("u")) == defect
   // `m` is held in `pk` and `other` has no `m`: the record is looked up in
   // the lease's own pocket.
-  assert freed(state, "lease-2", "m") == defect
+  assert freed(state, LeaseId("lease-2"), RecordKey("m")) == defect
   []
 }
 
@@ -845,7 +934,11 @@ fn freed_without_record() -> List(String) {
   list.each(lease_end.freed().rows, fn(row) {
     assert core.run(
         unguarded(row),
-        Freeing(lease: "lease-1", record_key: "q", ended_at:),
+        Freeing(
+          lease: LeaseId("lease-1"),
+          record_key: RecordKey("q"),
+          ended_at:,
+        ),
         state,
       )
       == Done(
@@ -868,7 +961,7 @@ fn freed_without_record() -> List(String) {
       q,
     ])
   assert m != held(plain_m, Nacked, None)
-  assert freed(timeless, "lease-1", "m")
+  assert freed(timeless, LeaseId("lease-1"), RecordKey("m"))
     == Done(
       Error(Defect(
         "Freed",
@@ -885,7 +978,7 @@ fn freed_without_record() -> List(String) {
       behind(held(plain_m, Nacked, None), 16),
       q,
     ])
-  assert freed(timeless_behind, "lease-1", "m")
+  assert freed(timeless_behind, LeaseId("lease-1"), RecordKey("m"))
     == Done(
       Error(Defect(
         "Freed",
@@ -898,7 +991,11 @@ fn freed_without_record() -> List(String) {
       list.find(lease_end.freed().rows, fn(row) { row.name == rule })
     assert core.run(
         unguarded(row),
-        Freeing(lease: "lease-1", record_key: key, ended_at:),
+        Freeing(
+          lease: LeaseId("lease-1"),
+          record_key: RecordKey(key),
+          ended_at:,
+        ),
         state,
       )
       == Done(

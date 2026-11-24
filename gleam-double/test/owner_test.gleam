@@ -8,6 +8,9 @@ import pachinko_double.{Outcome, PartialTick}
 import pachinko_double/answers.{TickReport}
 import pachinko_double/config.{Settings}
 import pachinko_double/failure.{BrokenInvariant, Refused}
+import pachinko_double/ids.{
+  ConsumerId, LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/inspection.{type Snapshot, Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -44,22 +47,22 @@ pub fn tests() -> List(Test) {
 
 fn refusal_keeps_state() -> List(String) {
   let double = harness.start(config.default())
-  assert harness.publisher_joins(double, "q")
+  assert harness.publisher_joins(double, PublisherId("q"))
     == Ok(Outcome(["PublisherJoins"], None))
   let before = harness.inspect(double)
   assert before
     == Snapshot(..inspection.empty(config.defaults()), publishers: [
-      Publisher("q"),
+      Publisher(PublisherId("q")),
     ])
-  assert harness.publisher_joins(double, "q")
-    == Error(Refused(PublisherAlreadyJoined("q")))
+  assert harness.publisher_joins(double, PublisherId("q"))
+    == Error(Refused(PublisherAlreadyJoined(PublisherId("q"))))
   assert harness.inspect(double) == before
-  assert harness.publisher_joins(double, "r")
+  assert harness.publisher_joins(double, PublisherId("r"))
     == Ok(Outcome(["PublisherJoins"], None))
   assert harness.inspect(double)
     == Snapshot(..inspection.empty(config.defaults()), publishers: [
-      Publisher("q"),
-      Publisher("r"),
+      Publisher(PublisherId("q")),
+      Publisher(PublisherId("r")),
     ])
   assert harness.clock_reads(double.clock) == 0
   assert harness.lease_id_draws(double.lease_ids) == 0
@@ -75,7 +78,7 @@ fn competing_joins() -> List(String) {
   let replies = process.new_subject()
   list.each(list.repeat(Nil, callers), fn(_) {
     process.spawn(fn() {
-      process.send(replies, harness.publisher_joins(double, "q"))
+      process.send(replies, harness.publisher_joins(double, PublisherId("q")))
     })
   })
   let answers =
@@ -85,12 +88,12 @@ fn competing_joins() -> List(String) {
       reply
     })
   let joined = Ok(Outcome(["PublisherJoins"], None))
-  let refused = Error(Refused(PublisherAlreadyJoined("q")))
+  let refused = Error(Refused(PublisherAlreadyJoined(PublisherId("q"))))
   assert list.count(answers, fn(answer) { answer == joined }) == 1
   assert list.count(answers, fn(answer) { answer == refused }) == callers - 1
   assert harness.inspect(double)
     == Snapshot(..inspection.empty(config.defaults()), publishers: [
-      Publisher("q"),
+      Publisher(PublisherId("q")),
     ])
   harness.fired(double)
 }
@@ -109,7 +112,7 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   let draw = harness.lease_ids(ids)
   let lease_id = fn() {
     case draw() {
-      "lease-3" -> "lease-2"
+      LeaseId("lease-3") -> LeaseId("lease-2")
       id -> id
     }
   }
@@ -118,26 +121,36 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   let assert Ok(started) =
     pachinko_double.start(config, harness.clock(clock), lease_id)
   let queue = started.data
-  let assert Ok(_) = pachinko_double.publisher_joins(queue, "p")
+  let assert Ok(_) = pachinko_double.publisher_joins(queue, PublisherId("p"))
   list.each(["c1", "c2", "c3"], fn(consumer) {
-    let assert Ok(_) = pachinko_double.consumer_joins(queue, consumer)
+    let assert Ok(_) =
+      pachinko_double.consumer_joins(queue, ConsumerId(consumer))
     Nil
   })
   list.each(["a", "b", "c"], fn(key) {
     let assert Ok(_) =
-      pachinko_double.publish(queue, "p", key, key <> "1", 1, <<key:utf8>>)
+      pachinko_double.publish(
+        queue,
+        PublisherId("p"),
+        PocketKey(key),
+        RecordKey(key <> "1"),
+        1,
+        <<
+          key:utf8,
+        >>,
+      )
     Nil
   })
-  let assert Ok(_) = pachinko_double.pull(queue, "c1", 1)
+  let assert Ok(_) = pachinko_double.pull(queue, ConsumerId("c1"), 1)
   harness.set_time(clock, 5)
-  let assert Ok(_) = pachinko_double.pull(queue, "c2", 1)
-  let assert Ok(_) = pachinko_double.pull(queue, "c3", 1)
+  let assert Ok(_) = pachinko_double.pull(queue, ConsumerId("c2"), 1)
+  let assert Ok(_) = pachinko_double.pull(queue, ConsumerId("c3"), 1)
   let before = pachinko_double.inspect(queue)
   let twins = fn(snapshot: Snapshot) {
-    list.filter(snapshot.leases, fn(lease) { lease.id == "lease-2" })
+    list.filter(snapshot.leases, fn(lease) { lease.id == LeaseId("lease-2") })
   }
   assert list.map(twins(before), fn(lease) { #(lease.pocket, lease.status) })
-    == [#("b", LeaseActive), #("c", LeaseActive)]
+    == [#(PocketKey("b"), LeaseActive), #(PocketKey("c"), LeaseActive)]
   harness.set_time(clock, 15)
   let reads = harness.clock_reads(clock)
   let assert Error(PartialTick(report, BrokenInvariant(broken))) =
@@ -145,7 +158,7 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   assert harness.clock_reads(clock) == reads + 1
   assert list.contains(broken, "LeasedHasOneActiveLease")
   let after = pachinko_double.inspect(queue)
-  let assert Ok(first) = model.lease(after.leases, "lease-1")
+  let assert Ok(first) = model.lease(after.leases, LeaseId("lease-1"))
   assert first.status == LeaseExpired(ended_at: 15)
   assert report.lapsed == [first]
   assert report.fired
@@ -159,7 +172,11 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   // they were, and their pockets are still leased.
   assert twins(after) == twins(before)
   assert list.map(after.pockets, fn(pocket) { #(pocket.key, pocket.status) })
-    == [#("a", PocketQueued), #("b", PocketLeased), #("c", PocketLeased)]
+    == [
+      #(PocketKey("a"), PocketQueued),
+      #(PocketKey("b"), PocketLeased),
+      #(PocketKey("c"), PocketLeased),
+    ]
   // A second tick meets the same failure and changes nothing more.
   let assert Error(PartialTick(again, BrokenInvariant(_))) =
     pachinko_double.tick(queue)
@@ -181,15 +198,17 @@ fn clock_set_back_after_a_nack() -> List(String) {
   let assert Ok(config) =
     config.new(Settings(..config.defaults(), lease_ttl: 10, dead_letter_ttl: 0))
   let double = harness.start(config)
-  let assert Ok(_) = harness.publisher_joins(double, "p")
-  let assert Ok(_) = harness.consumer_joins(double, "c1")
-  let assert Ok(_) = harness.publish(double, "pk", "k", 1, "v1")
-  let lease = harness.batch(double, "c1", 1).lease
+  let assert Ok(_) = harness.publisher_joins(double, PublisherId("p"))
+  let assert Ok(_) = harness.consumer_joins(double, ConsumerId("c1"))
+  let assert Ok(_) =
+    harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
+  let lease = harness.batch(double, ConsumerId("c1"), 1).lease
   harness.set_time(double.clock, 100)
-  assert harness.nack(double, "c1", lease, "k")
+  assert harness.nack(double, ConsumerId("c1"), lease, RecordKey("k"))
     == Ok(Outcome(["NackMarksRecord"], None))
   harness.set_time(double.clock, 1)
-  assert harness.renew(double, "c1", lease) == Ok(Outcome(["Renew"], None))
+  assert harness.renew(double, ConsumerId("c1"), lease)
+    == Ok(Outcome(["Renew"], None))
   harness.set_time(double.clock, 11)
   let before = harness.inspect(double)
   assert invariants.check(before) == []
@@ -198,7 +217,7 @@ fn clock_set_back_after_a_nack() -> List(String) {
   assert broken == ["NackedBeforeExpiry"]
   assert report == TickReport([], [], [], [])
   assert harness.inspect(double) == before
-  assert harness.release(double, "c1", lease)
+  assert harness.release(double, ConsumerId("c1"), lease)
     == Error(BrokenInvariant(["NackedBeforeExpiry"]))
   assert harness.inspect(double) == before
   harness.fired(double)

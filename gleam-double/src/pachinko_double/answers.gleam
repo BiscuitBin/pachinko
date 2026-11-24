@@ -2,6 +2,9 @@
 //// view the `Consuming` surface exposes to a consumer. The owner hands each
 //// back as it is; none of them is a trigger.
 
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type RecordKey,
+}
 import pachinko_double/model.{
   type DeadLetter, type Lease, type Mark, type SupersededRecord,
 }
@@ -15,20 +18,20 @@ pub type Answer {
   /// key. It carries no expiry: the specification's `Batch` has none.
   /// `records` is the batch, smallest position first.
   Batch(
-    consumer: String,
-    lease: String,
-    pocket: String,
+    consumer: ConsumerId,
+    lease: LeaseId,
+    pocket: PocketKey,
     records: List(BatchRecord),
   )
   /// The consumer holds no lease and no pocket is queued. An answer, not a
   /// refusal.
-  NoPocketAvailable(consumer: String)
+  NoPocketAvailable(consumer: ConsumerId)
 }
 
 /// One version a pull handed out: the record's key, and the rank and payload
 /// it had when the batch was computed.
 pub type BatchRecord {
-  BatchRecord(key: String, rank: Int, payload: BitArray)
+  BatchRecord(key: RecordKey, rank: Int, payload: BitArray)
 }
 
 /// What a tick did. `fired` is the names of the rules every outcome that
@@ -49,11 +52,15 @@ pub type TickReport {
 /// `lease.expires_at`, and the pocket's held records. It carries no lease
 /// id: the surface exposes none.
 pub type LeaseView {
-  LeaseView(pocket_key: String, expires_at: Timestamp, records: List(HeldView))
+  LeaseView(
+    pocket_key: PocketKey,
+    expires_at: Timestamp,
+    records: List(HeldView),
+  )
 }
 
 /// One held record as the surface exposes it: `record.key`,
 /// `record.held_rank`, `record.held_payload` and `record.mark`.
 pub type HeldView {
-  HeldView(key: String, held_rank: Int, held_payload: BitArray, mark: Mark)
+  HeldView(key: RecordKey, held_rank: Int, held_payload: BitArray, mark: Mark)
 }

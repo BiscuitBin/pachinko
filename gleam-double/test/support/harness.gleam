@@ -15,6 +15,10 @@ import pachinko_double/answers.{
 }
 import pachinko_double/config.{type Config, type Settings, Settings}
 import pachinko_double/failure.{Refused}
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type PublisherId,
+  type RecordKey, ConsumerId, LeaseId, PublisherId,
+}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/internal/domain.{type Applied, type Failure, type Step}
 import pachinko_double/internal/publish.{type Publication, Publication}
@@ -91,7 +95,7 @@ pub fn clock_reads(clock: Clock) -> Int {
 }
 
 type LeaseIdsMessage {
-  Draw(reply: Subject(String))
+  Draw(reply: Subject(LeaseId))
   Draws(reply: Subject(Int))
 }
 
@@ -108,7 +112,7 @@ pub fn start_lease_ids() -> LeaseIds {
     |> actor.on_message(fn(draws, message) {
       case message {
         Draw(reply) -> {
-          process.send(reply, "lease-" <> int.to_string(draws + 1))
+          process.send(reply, LeaseId("lease-" <> int.to_string(draws + 1)))
           actor.continue(draws + 1)
         }
         Draws(reply) -> {
@@ -122,7 +126,7 @@ pub fn start_lease_ids() -> LeaseIds {
 }
 
 /// The function to inject: each call is one counted draw.
-pub fn lease_ids(lease_ids: LeaseIds) -> fn() -> String {
+pub fn lease_ids(lease_ids: LeaseIds) -> fn() -> LeaseId {
   fn() { process.call(lease_ids.subject, call_timeout, Draw) }
 }
 
@@ -202,10 +206,10 @@ pub fn fixture_with(settings: Settings) -> Double {
   let assert Ok(config) = config.new(settings)
   let double = start(config)
   set_time(double.clock, t0)
-  let assert Ok(_) = publisher_joins(double, "p")
-  let assert Ok(_) = consumer_joins(double, "c1")
-  let assert Ok(_) = consumer_joins(double, "c2")
-  let assert Ok(_) = consumer_joins(double, "c3")
+  let assert Ok(_) = publisher_joins(double, PublisherId("p"))
+  let assert Ok(_) = consumer_joins(double, ConsumerId("c1"))
+  let assert Ok(_) = consumer_joins(double, ConsumerId("c2"))
+  let assert Ok(_) = consumer_joins(double, ConsumerId("c3"))
   double
 }
 
@@ -223,11 +227,11 @@ fn logged(double: Double, reply: Reply) -> Reply {
   reply
 }
 
-pub fn publisher_joins(double: Double, publisher_id: String) -> Reply {
+pub fn publisher_joins(double: Double, publisher_id: PublisherId) -> Reply {
   logged(double, pachinko_double.publisher_joins(double.owner, publisher_id))
 }
 
-pub fn consumer_joins(double: Double, consumer_id: String) -> Reply {
+pub fn consumer_joins(double: Double, consumer_id: ConsumerId) -> Reply {
   logged(double, pachinko_double.consumer_joins(double.owner, consumer_id))
 }
 
@@ -235,20 +239,20 @@ pub fn consumer_joins(double: Double, consumer_id: String) -> Reply {
 /// Rust fixture's `publish` does.
 pub fn publish(
   double: Double,
-  pocket_key: String,
-  record_key: String,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
   rank: Int,
   payload: String,
 ) -> Reply {
-  publish_as(double, "p", pocket_key, record_key, rank, payload)
+  publish_as(double, PublisherId("p"), pocket_key, record_key, rank, payload)
 }
 
 /// A publish by any publisher id, joined or not.
 pub fn publish_as(
   double: Double,
-  publisher: String,
-  pocket_key: String,
-  record_key: String,
+  publisher: PublisherId,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
   rank: Int,
   payload: String,
 ) -> Reply {
@@ -292,7 +296,7 @@ pub fn tick(double: Double) -> Result(TickReport, PartialTick) {
 }
 
 /// A pull, as the Rust fixture's `try_pull`: whatever the owner replies.
-pub fn pull(double: Double, consumer: String, limit: Int) -> Reply {
+pub fn pull(double: Double, consumer: ConsumerId, limit: Int) -> Reply {
   logged(double, pachinko_double.pull(double.owner, consumer, limit))
 }
 
@@ -304,15 +308,15 @@ pub fn pull(double: Double, consumer: String, limit: Int) -> Reply {
 pub type Pulled {
   Pulled(
     fired: List(String),
-    lease: String,
-    pocket_key: String,
+    lease: LeaseId,
+    pocket_key: PocketKey,
     records: List(BatchRecord),
   )
 }
 
 /// A pull that must return a batch, as the Rust fixture's `pull`. The test
 /// fails on any other reply, and on a batch that names another consumer.
-pub fn batch(double: Double, consumer: String, limit: Int) -> Pulled {
+pub fn batch(double: Double, consumer: ConsumerId, limit: Int) -> Pulled {
   let assert Ok(Outcome(
     fired,
     Some(Batch(consumer: named, lease:, pocket: pocket_key, records:)),
@@ -322,20 +326,20 @@ pub fn batch(double: Double, consumer: String, limit: Int) -> Pulled {
 }
 
 /// The records' keys, in order, as the Rust fixture's `keys`.
-pub fn keys(records: List(BatchRecord)) -> List(String) {
+pub fn keys(records: List(BatchRecord)) -> List(RecordKey) {
   list.map(records, fn(record) { record.key })
 }
 
-pub fn renew(double: Double, consumer: String, lease: String) -> Reply {
+pub fn renew(double: Double, consumer: ConsumerId, lease: LeaseId) -> Reply {
   logged(double, pachinko_double.renew(double.owner, consumer, lease))
 }
 
 /// An ack, as the Rust fixture's `ack`: whatever the owner replies.
 pub fn ack(
   double: Double,
-  consumer: String,
-  lease: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  record_key: RecordKey,
 ) -> Reply {
   logged(double, pachinko_double.ack(double.owner, consumer, lease, record_key))
 }
@@ -343,9 +347,9 @@ pub fn ack(
 /// A nack, as the Rust fixture's `nack`: whatever the owner replies.
 pub fn nack(
   double: Double,
-  consumer: String,
-  lease: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  record_key: RecordKey,
 ) -> Reply {
   logged(
     double,
@@ -354,7 +358,7 @@ pub fn nack(
 }
 
 /// A release, as the Rust fixture's `release`: whatever the owner replies.
-pub fn release(double: Double, consumer: String, lease: String) -> Reply {
+pub fn release(double: Double, consumer: ConsumerId, lease: LeaseId) -> Reply {
   logged(double, pachinko_double.release(double.owner, consumer, lease))
 }
 
@@ -390,14 +394,14 @@ pub fn at(double: Double, millis: Duration) -> Timestamp {
 /// hands back the owner's reply whole, so that a test can read a refusal.
 pub fn lease_view(
   double: Double,
-  consumer: String,
+  consumer: ConsumerId,
 ) -> Result(Option(LeaseView), Failure) {
   pachinko_double.lease_view(double.owner, consumer)
 }
 
 /// The lease view's records' keys, in order, as the Rust fixture's
 /// `marked_keys`.
-pub fn marked_keys(records: List(HeldView)) -> List(String) {
+pub fn marked_keys(records: List(HeldView)) -> List(RecordKey) {
   list.map(records, fn(record) { record.key })
 }
 
@@ -415,14 +419,14 @@ pub type Driven {
 /// answering every request for the time with `now` and every request for a
 /// lease id with `lease_id`, and counting both. For a test over a state
 /// built by hand, where no owner and no fake is involved.
-pub fn drive(step: Step, now: Timestamp, lease_id: String) -> Driven {
+pub fn drive(step: Step, now: Timestamp, lease_id: LeaseId) -> Driven {
   drive_on(step, now, lease_id, 0, 0)
 }
 
 fn drive_on(
   step: Step,
   now: Timestamp,
-  lease_id: String,
+  lease_id: LeaseId,
   clock_reads: Int,
   lease_id_draws: Int,
 ) -> Driven {
@@ -441,7 +445,7 @@ pub fn inspect(double: Double) -> Snapshot {
 
 /// The pocket with this key, read from a fresh snapshot, as the Rust
 /// fixture's `pocket` does. The test fails if there is none.
-pub fn pocket(double: Double, pocket_key: String) -> Pocket {
+pub fn pocket(double: Double, pocket_key: PocketKey) -> Pocket {
   let assert Ok(pocket) = model.pocket(inspect(double).pockets, pocket_key)
   pocket
 }
@@ -451,8 +455,8 @@ pub fn pocket(double: Double, pocket_key: String) -> Pocket {
 /// test fails if there is no such pocket, or no such record in it.
 pub fn record(
   double: Double,
-  pocket_key: String,
-  record_key: String,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
 ) -> Record {
   let snapshot = inspect(double)
   let assert Ok(pocket) = model.pocket(snapshot.pockets, pocket_key)
@@ -465,7 +469,7 @@ pub fn record(
 /// `order` gives them. The double stores no such order: it is the queued
 /// pockets by position, smallest first, which is the specification's
 /// definition of it.
-pub fn order(double: Double) -> List(String) {
+pub fn order(double: Double) -> List(PocketKey) {
   inspect(double).pockets
   |> list.filter(fn(pocket) { pocket.status == PocketQueued })
   |> list.sort(fn(a, b) { int.compare(a.position, b.position) })

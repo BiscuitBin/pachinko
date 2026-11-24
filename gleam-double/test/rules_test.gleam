@@ -6,6 +6,7 @@ import gleam/option.{None, Some}
 import pachinko_double/failure.{
   Defect, EffectFailed, GuardOverlap, NoRuleHeld, Refused,
 }
+import pachinko_double/ids
 import pachinko_double/internal/rules.{
   type Cursor, type Plan, type Row, type Step, type Table, type World, Applied,
   Defective, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Refuses,
@@ -135,7 +136,7 @@ fn no_guard(otherwise) -> ScratchTable {
 }
 
 fn drive(step: ScratchStep) {
-  rules.drive(step, fn() { 0 }, fn() { "unused" })
+  rules.drive(step, fn() { 0 }, fn() { ids.LeaseId("unused") })
 }
 
 fn otherwise_refuses() -> List(String) {
@@ -164,7 +165,9 @@ fn emitting(name: String) -> ScratchRow {
 
 fn chained() -> List(String) {
   let table = Table("Scratch", [emitting("First")], NothingHappens)
-  assert rules.drive(begin(table, "x"), fn() { 5 }, fn() { "unused" })
+  assert rules.drive(begin(table, "x"), fn() { 5 }, fn() {
+      ids.LeaseId("unused")
+    })
     == Ok(Applied(
       Scratch(7, ["x!@5", "x@5", "First"]),
       ["First", "EchoRow", "EchoRow"],
@@ -230,7 +233,9 @@ fn timed_twice() -> List(String) {
   let clock = harness.start_clock()
   harness.set_time(clock, 40)
   let table = Table("Scratch", [timed("First")], NothingHappens)
-  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() { "unused" })
+  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() {
+      ids.LeaseId("unused")
+    })
     == Ok(Applied(Scratch(7, ["x@40", "First@40"]), ["First", "EchoRow"], None))
   assert harness.clock_reads(clock) == 1
   []
@@ -241,7 +246,8 @@ fn lease_id() -> List(String) {
   let granting =
     Row("Granting", fn(_state, input) { input == "grant" }, fn(state, _input) {
       use id <- LeaseId
-      Finish(note(state, id), [], None)
+      let ids.LeaseId(text) = id
+      Finish(note(state, text), [], None)
     })
   let other =
     Row("Other", fn(_state, input) { input != "grant" }, plain("Other").effect)
@@ -296,7 +302,9 @@ fn impossible_late() -> List(String) {
       Impossible("gone")
     })
   let table = Table("Scratch", [row], NothingHappens)
-  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() { "unused" })
+  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() {
+      ids.LeaseId("unused")
+    })
     == Error(Defect("Scratch", EffectFailed("Late", "gone")))
   assert harness.clock_reads(clock) == 1
   []
@@ -312,7 +320,9 @@ fn impossible_chained() -> List(String) {
       Finish(note(state, "First"), [Echo("bad"), Echo("after")], Some("First"))
     })
   let table = Table("Scratch", [row], NothingHappens)
-  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() { "unused" })
+  assert rules.drive(begin(table, "x"), harness.clock(clock), fn() {
+      ids.LeaseId("unused")
+    })
     == Error(Defect("Echo", EffectFailed("BadEcho", "bad")))
   assert harness.clock_reads(clock) == 0
   []

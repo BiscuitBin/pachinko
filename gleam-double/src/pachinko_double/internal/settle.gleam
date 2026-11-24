@@ -8,6 +8,10 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import pachinko_double/config
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type RecordKey, ConsumerId,
+  LeaseId, RecordKey,
+}
 import pachinko_double/internal/domain.{type Plan, type Row, type Table}
 import pachinko_double/internal/lease_end
 import pachinko_double/internal/rules.{
@@ -26,25 +30,25 @@ import pachinko_double/time.{type Timestamp}
 /// The input of `Ack(consumer, lease, record_key)`. `consumer` is the
 /// consumer's id and `lease` the lease's id.
 pub type Ack {
-  Ack(consumer: String, lease: String, record_key: String)
+  Ack(consumer: ConsumerId, lease: LeaseId, record_key: RecordKey)
 }
 
 /// The input of `Nack(consumer, lease, record_key)`. `consumer` is the
 /// consumer's id and `lease` the lease's id.
 pub type Nack {
-  Nack(consumer: String, lease: String, record_key: String)
+  Nack(consumer: ConsumerId, lease: LeaseId, record_key: RecordKey)
 }
 
 /// The input of `Renew(consumer, lease)`. `consumer` is the consumer's id
 /// and `lease` the lease's id.
 pub type Renew {
-  Renew(consumer: String, lease: String)
+  Renew(consumer: ConsumerId, lease: LeaseId)
 }
 
 /// The input of `Release(consumer, lease)`. `consumer` is the consumer's id
 /// and `lease` the lease's id.
 pub type Release {
-  Release(consumer: String, lease: String)
+  Release(consumer: ConsumerId, lease: LeaseId)
 }
 
 /// The lease an action names, where it meets the two requirements every
@@ -53,8 +57,8 @@ pub type Release {
 /// neither.
 fn own_lease(
   state: State,
-  consumer: String,
-  lease_id: String,
+  consumer: ConsumerId,
+  lease_id: LeaseId,
 ) -> Result(Lease, Nil) {
   use lease <- result.try(model.lease(state.leases, lease_id))
   case lease.status == LeaseActive && lease.consumer == consumer {
@@ -76,9 +80,9 @@ fn extend(state: State, lease: Lease, now: Timestamp) -> State {
 /// in the lease's pocket and `record.status = held`.
 fn held(
   state: State,
-  consumer: String,
-  lease_id: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease_id: LeaseId,
+  record_key: RecordKey,
 ) -> Result(HeldRecord, Nil) {
   use lease <- result.try(own_lease(state, consumer, lease_id))
   model.held_under(state.records, lease, record_key)
@@ -89,9 +93,9 @@ fn held(
 /// own mark.
 fn held_as(
   state: State,
-  consumer: String,
-  lease_id: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease_id: LeaseId,
+  record_key: RecordKey,
   mark: Mark,
 ) -> Bool {
   case held(state, consumer, lease_id, record_key) {
@@ -104,14 +108,17 @@ fn held_as(
 /// which only a wrong guard could bring about, the outcome is a defect.
 fn mark(
   state: State,
-  consumer: String,
-  lease_id: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease_id: LeaseId,
+  record_key: RecordKey,
   effect: fn(HeldRecord) -> Plan,
 ) -> Plan {
   case held(state, consumer, lease_id, record_key) {
-    Error(Nil) ->
-      Impossible("no held record " <> record_key <> " under lease " <> lease_id)
+    Error(Nil) -> {
+      let RecordKey(key) = record_key
+      let LeaseId(lease) = lease_id
+      Impossible("no held record " <> key <> " under lease " <> lease)
+    }
     Ok(held) -> effect(held)
   }
 }
@@ -120,7 +127,7 @@ fn mark(
 /// `lease.pocket`: the pocket with that key. The mark rules require nothing
 /// of the pocket, so it is not looked up: no other pocket changes and none
 /// moves.
-fn reset_expiries(state: State, pocket_key: String) -> State {
+fn reset_expiries(state: State, pocket_key: PocketKey) -> State {
   State(
     ..state,
     pockets: list.map(state.pockets, fn(pocket) {
@@ -164,9 +171,9 @@ fn remark(
 fn mark_refusal(
   state: State,
   action: String,
-  consumer: String,
-  lease_id: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease_id: LeaseId,
+  record_key: RecordKey,
 ) -> Refusal {
   case own_lease(state, consumer, lease_id) {
     Error(Nil) -> LeaseFenced(action:, consumer_id: consumer, lease_id:)
@@ -304,13 +311,13 @@ pub fn renew() -> Table(Renew) {
         },
         fn(state, renew) {
           case own_lease(state, renew.consumer, renew.lease) {
-            Error(Nil) ->
+            Error(Nil) -> {
+              let LeaseId(lease) = renew.lease
+              let ConsumerId(consumer) = renew.consumer
               Impossible(
-                "no active lease "
-                <> renew.lease
-                <> " of consumer "
-                <> renew.consumer,
+                "no active lease " <> lease <> " of consumer " <> consumer,
               )
+            }
             Ok(lease) -> {
               use now <- Now
               Finish(extend(state, lease, now), [], None)
@@ -373,14 +380,17 @@ fn releasing(
   effect: fn(Lease, Pocket) -> Plan,
 ) -> Plan {
   case leased(state, release) {
-    Error(Nil) ->
+    Error(Nil) -> {
+      let LeaseId(lease) = release.lease
+      let ConsumerId(consumer) = release.consumer
       Impossible(
         "no active lease "
-        <> release.lease
+        <> lease
         <> " of consumer "
-        <> release.consumer
+        <> consumer
         <> " on a leased pocket",
       )
+    }
     Ok(#(lease, pocket)) -> effect(lease, pocket)
   }
 }

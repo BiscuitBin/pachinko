@@ -3,21 +3,31 @@
 //// mark; `imports_effects` says whether a module imports `gleam/erlang` or
 //// `gleam/otp`, and `reaches_effects` whether it does or holds an
 //// `@external` line; `imported_modules` names the module each import line
-//// takes. All four are pure, so the controls run them on text made by hand.
+//// takes; `defined_types` names the types a module defines, `signatures`
+//// reads each `pub fn`'s signature, and `string_lines` returns the lines
+//// that name `String`. All seven are pure, so the controls run them on text
+//// made by hand.
 //// The assertions read the tree from `gleam-double/`, where the run starts:
 //// the root's items are exactly the seventeen of the interface, the root is
 //// the only module under `src/` that imports an effect or binds an external
 //// function, and `src/` holds at its top level only the root and its
 //// directory. The two vocabulary modules of the replies, `failure` and
 //// `answers`, hold exactly the reply types; `failure` imports nothing, and
-//// `answers` imports only `model` and `time`. The witness, the walkthrough
-//// in `test/guide_test.gleam`, imports no engine module and no rule module.
+//// `answers` imports only `ids`, `model` and `time`. The witness, the
+//// walkthrough in `test/guide_test.gleam`, imports no engine module and no
+//// rule module.
+////
+//// Each id is a type of its own: `ids` holds exactly the five, each with one
+//// constructor of its own name, and imports nothing, and no other module
+//// under `src/` defines a type of one of their names. No `pub fn` of the
+//// root names `String` in its signature, and the lines under `src/` that
+//// name `String` are exactly the 32 of `string_list`, which hold no id.
 //// `test/` holds at its top level only the test modules and the directory
 //// `support`, which holds exactly the coverage check, the fakes and the
 //// runner.
 ////
 //// The layout splits the interface from the engine: `src/pachinko_double/`
-//// holds the eight vocabulary modules and the directory `internal`, which
+//// holds the nine vocabulary modules and the directory `internal`, which
 //// holds the engine, the specification's rules and the `Consuming` surface's
 //// lease-view read. Each vocabulary module holds exactly its interface
 //// unmarked and the rest marked `@internal`, and only `model`, `inspection`
@@ -52,6 +62,13 @@
 ////   list from the code, so without its comments;
 //// - a qualified use `module.function` is read in the code, so a comment,
 ////   whole or trailing, and a string name nothing;
+//// - a type is defined by a line of the code that starts at column 0 with
+////   `type`, `pub type` or `pub opaque type` and a space, and its name is
+////   the word that follows, so a private type and an alias count;
+//// - a `pub fn`'s signature is its line and the lines after it, up to and
+////   including the first line of the code that ends with `{`;
+//// - a line names `String` when its code holds `String` with no letter,
+////   digit or `_` directly before or after it;
 //// - a mark is a line that is `@internal` once trimmed, wherever it sits;
 //// - a directory's listing leaves out the entries whose names start with
 ////   `.`, such as `.DS_Store` or an editor's swap file;
@@ -87,6 +104,9 @@ pub const source_directory = "src"
 pub const failure_path = "src/pachinko_double/failure.gleam"
 
 pub const answers_path = "src/pachinko_double/answers.gleam"
+
+/// The vocabulary module of the ids, from `gleam-double/`.
+pub const ids_path = "src/pachinko_double/ids.gleam"
 
 pub const witness_path = "test/guide_test.gleam"
 
@@ -136,7 +156,7 @@ pub fn tests() -> List(Test) {
     Test("failure holds exactly Failure and Cause", [], failure_items),
     Test("failure imports nothing", [], failure_imports),
     Test("answers holds exactly the five reply types", [], answers_items),
-    Test("answers imports only model and time", [], answers_imports),
+    Test("answers imports only ids, model and time", [], answers_imports),
     Test(
       "the walkthrough imports no engine module and no rule module",
       [],
@@ -154,7 +174,7 @@ pub fn tests() -> List(Test) {
       reads_aliased_imports,
     ),
     Test(
-      "src/pachinko_double/ holds the eight vocabulary modules and internal/",
+      "src/pachinko_double/ holds the nine vocabulary modules and internal/",
       [],
       vocabulary_top_level,
     ),
@@ -187,6 +207,32 @@ pub fn tests() -> List(Test) {
     Test("invariants holds its interface, and its two marked items", [], fn() {
       holds(invariants_vocabulary())
     }),
+    Test("ids holds its interface, and nothing marked", [], fn() {
+      holds(ids_vocabulary())
+    }),
+    Test("ids imports nothing", [], ids_imports),
+    Test(
+      "a type is defined by a type line at column 0, public, opaque or private",
+      [],
+      reads_defined_types,
+    ),
+    Test("only ids defines a type named like an id", [], ids_alone),
+    Test(
+      "a signature runs from its pub fn line to the line that ends with {",
+      [],
+      reads_signatures,
+    ),
+    Test("no pub fn of the root takes or returns a String", [], root_signatures),
+    Test(
+      "a line names String when its code holds the whole word",
+      [],
+      reads_string_lines,
+    ),
+    Test(
+      "the lines under src/ that name String are the 32 that hold no id",
+      [],
+      string_lines_held,
+    ),
     Test(
       "no vocabulary module imports a module under internal/",
       [],
@@ -419,16 +465,16 @@ fn module_name(text: String) -> String {
 
 /// Whether the witness may import a module: one under `gleam/`,
 /// `simplifile`, the support modules `support/harness` and `support/runner`,
-/// the root, or one of the eight vocabulary modules.
+/// the root, or one of the nine vocabulary modules.
 pub fn witness_allows(module: String) -> Bool {
   string.starts_with(module, "gleam/")
   || list.contains(
     [
       "simplifile", "support/harness", "support/runner", "pachinko_double",
-      "pachinko_double/config", "pachinko_double/time", "pachinko_double/model",
-      "pachinko_double/refusals", "pachinko_double/failure",
-      "pachinko_double/answers", "pachinko_double/inspection",
-      "pachinko_double/invariants",
+      "pachinko_double/ids", "pachinko_double/config", "pachinko_double/time",
+      "pachinko_double/model", "pachinko_double/refusals",
+      "pachinko_double/failure", "pachinko_double/answers",
+      "pachinko_double/inspection", "pachinko_double/invariants",
     ],
     module,
   )
@@ -722,7 +768,10 @@ fn answers_imports() -> List(String) {
     |> result.map(fn(source) {
       list.sort(imported_modules(source), string.compare)
     })
-  assert found == Ok(["pachinko_double/model", "pachinko_double/time"])
+  assert found
+    == Ok([
+      "pachinko_double/ids", "pachinko_double/model", "pachinko_double/time",
+    ])
   []
 }
 
@@ -831,10 +880,10 @@ fn reads_aliased_imports() -> List(String) {
   []
 }
 
-/// The eight vocabulary modules, by name.
+/// The nine vocabulary modules, by name.
 fn vocabulary_modules() -> List(String) {
   [
-    "answers", "config", "failure", "inspection", "invariants", "model",
+    "answers", "config", "failure", "ids", "inspection", "invariants", "model",
     "refusals", "time",
   ]
 }
@@ -1054,6 +1103,25 @@ fn invariants_vocabulary() -> Vocabulary {
     Item("Invariant", ["Invariant"], True),
     marked("registry"),
   ])
+}
+
+/// The five id types, each with one constructor of its own name.
+fn id_types() -> List(String) {
+  ["PublisherId", "ConsumerId", "PocketKey", "RecordKey", "LeaseId"]
+}
+
+fn ids_vocabulary() -> Vocabulary {
+  Vocabulary(
+    ids_path,
+    [
+      Item("PublisherId", ["PublisherId"], False),
+      Item("ConsumerId", ["ConsumerId"], False),
+      Item("PocketKey", ["PocketKey"], False),
+      Item("RecordKey", ["RecordKey"], False),
+      Item("LeaseId", ["LeaseId"], False),
+    ],
+    [],
+  )
 }
 
 fn vocabulary_imports() -> List(String) {
@@ -1702,5 +1770,279 @@ fn test_top_level() -> List(String) {
 fn support_top_level() -> List(String) {
   assert result.map(simplifile.read_directory(support_directory), listing)
     == Ok(support_modules())
+  []
+}
+
+/// No line of `ids` starts with `import`.
+fn ids_imports() -> List(String) {
+  assert result.map(coverage.read(ids_path), fn(source) {
+      list.filter(string.split(source, "\n"), string.starts_with(_, "import"))
+    })
+    == Ok([])
+  []
+}
+
+/// The names a module's code defines as types, in the file's order: from
+/// each line of its `code` that starts at column 0 with `type`, `pub type`
+/// or `pub opaque type` and a space, the word that follows. So a
+/// constructor, which is indented, a function, and a `type` line in a
+/// comment or a string define none.
+pub fn defined_types(source: String) -> List(String) {
+  list.filter_map(string.split(code(source), "\n"), fn(line) {
+    case line {
+      "type " <> rest | "pub type " <> rest | "pub opaque type " <> rest ->
+        Ok(word(rest))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// A public type with a body, an alias, an opaque type, a private type and a
+/// parameterised one are each defined; an indented constructor named like an
+/// id, an indented `type` line, a function, and a `type` line in a comment
+/// or a string are not.
+fn reads_defined_types() -> List(String) {
+  let source =
+    string.join(
+      [
+        "pub type Shape {", "  Circle(radius: Int)", "}", "pub type Alias =",
+        "  Result(Shape, Nil)", "pub opaque type Hidden {", "  Hidden(Int)", "}",
+        "type Private {", "  Private", "}", "pub type ConsumerId(a) {",
+        "  ConsumerId(a)", "}", "pub type Request(state, event, answer) {",
+        "  LeaseId(next: fn(ids.LeaseId) -> Plan(state, event, answer))",
+        "  type Indented", "}", "pub fn typed() -> Nil {", "  Nil", "}",
+        "// type Commented {", "pub const text = \"", "type InString {", "\"",
+      ],
+      "\n",
+    )
+  assert defined_types(source)
+    == ["Shape", "Alias", "Hidden", "Private", "ConsumerId", "Request"]
+  []
+}
+
+/// `ids` defines exactly the five types, and no other module under `src/`
+/// defines a type or an alias of one of their names, public or private.
+fn ids_alone() -> List(String) {
+  assert result.map(coverage.read(ids_path), defined_types) == Ok(id_types())
+  assert result.map(source_modules(), fn(modules) {
+      list.flat_map(modules, fn(found) {
+        case found.0 == ids_path {
+          True -> []
+          False ->
+            defined_types(found.1)
+            |> list.filter(list.contains(id_types(), _))
+            |> list.map(fn(name) { found.0 <> ": " <> name })
+        }
+      })
+    })
+    == Ok([])
+  []
+}
+
+/// Each `pub fn` of a module, by name, with its signature in the file's
+/// order: its line and the lines after it, up to and including the first
+/// line of the code that ends with `{`. The lines are the module's `code`,
+/// so they hold no comment and no string's contents.
+pub fn signatures(source: String) -> List(#(String, List(String))) {
+  signatures_in(string.split(code(source), "\n"), [])
+}
+
+fn signatures_in(
+  lines: List(String),
+  found: List(#(String, List(String))),
+) -> List(#(String, List(String))) {
+  case lines {
+    [] -> list.reverse(found)
+    [line, ..rest] ->
+      case line {
+        "pub fn " <> after -> {
+          let #(signature, rest) = up_to_brace([line, ..rest], [])
+          signatures_in(rest, [#(word(after), signature), ..found])
+        }
+        _ -> signatures_in(rest, found)
+      }
+  }
+}
+
+/// The lines up to and including the first that ends with `{`, and the
+/// lines after it.
+fn up_to_brace(
+  lines: List(String),
+  taken: List(String),
+) -> #(List(String), List(String)) {
+  case lines {
+    [] -> #(list.reverse(taken), [])
+    [line, ..rest] ->
+      case string.ends_with(string.trim_end(line), "{") {
+        True -> #(list.reverse([line, ..taken]), rest)
+        False -> up_to_brace(rest, [line, ..taken])
+      }
+  }
+}
+
+/// Whether a line of code names `String`: it holds the word with no letter,
+/// digit or `_` directly before or after it.
+fn names_string(line: String) -> Bool {
+  list.any(list.window_by_2(string.split(line, "String")), fn(pair) {
+    !ends_with_word(pair.0) && !starts_with_word(pair.1)
+  })
+}
+
+/// The `pub fn`s of a module whose signatures name `String`, each with
+/// those lines, trimmed.
+pub fn string_signatures(source: String) -> List(#(String, List(String))) {
+  list.filter_map(signatures(source), fn(signature) {
+    case list.filter(signature.1, names_string) {
+      [] -> Error(Nil)
+      lines -> Ok(#(signature.0, list.map(lines, string.trim)))
+    }
+  })
+}
+
+/// A one-line signature, a signature over several lines and a function's
+/// result each name `String`; a body, a private `fn`, `StringTree`,
+/// `String2`, a comment and a string do not. The comments and the string
+/// sit inside `f`'s signature, where only the code's blanking keeps them
+/// out.
+fn reads_signatures() -> List(String) {
+  let source =
+    string.join(
+      [
+        "pub fn a(owner: Subject(Message), consumer: String) -> Reply {",
+        "  body(String)", "}", "pub fn b(", "  owner: Subject(Message),",
+        "  lease: gleam.String,", ") -> Reply {", "  body(String)", "}",
+        "pub fn c() -> fn() -> String {", "  body", "}",
+        "fn d(x: String) -> Nil {", "  Nil", "}",
+        "pub fn e(tree: StringTree, count: String2) -> Nil {", "  Nil", "}",
+        "pub fn f(", "  // consumer: String,", "  label: Int, \"String\",",
+        ") -> Nil { // String", "  Nil", "}",
+      ],
+      "\n",
+    )
+  assert list.map(signatures(source), fn(signature) { signature.0 })
+    == ["a", "b", "c", "e", "f"]
+  assert list.map(signatures(source), fn(signature) { list.length(signature.1) })
+    == [1, 4, 1, 1, 4]
+  assert string_signatures(source)
+    == [
+      #("a", ["pub fn a(owner: Subject(Message), consumer: String) -> Reply {"]),
+      #("b", ["lease: gleam.String,"]),
+      #("c", ["pub fn c() -> fn() -> String {"]),
+    ]
+  []
+}
+
+/// The root's twelve `pub fn` signatures name no `String`.
+fn root_signatures() -> List(String) {
+  let source = coverage.read(root_path)
+  assert result.map(source, fn(text) { list.length(signatures(text)) })
+    == Ok(12)
+  assert result.map(source, string_signatures) == Ok([])
+  []
+}
+
+/// A module's code lines that name `String`, in the file's order, trimmed.
+pub fn string_lines(source: String) -> List(String) {
+  string.split(code(source), "\n")
+  |> list.filter(names_string)
+  |> list.map(string.trim)
+}
+
+/// A field of a private type and of an opaque one, a labelled argument, a
+/// function's result, a type's parameter and a qualified `String` are each
+/// taken; `StringTree`, `MyString`, `String2`, a doc comment, a trailing
+/// comment and a string literal are not.
+fn reads_string_lines() -> List(String) {
+  let source =
+    string.join(
+      [
+        "/// A doc comment that names String.", "type Private {",
+        "  Private(name: String)", "}", "pub opaque type Hidden {",
+        "  Hidden(text: String)", "}",
+        "pub fn pull(pocket pocket_key: String) -> Nil {", "  Nil", "}",
+        "pub fn start(", "  lease_id: fn() -> String,", "  tree: StringTree,",
+        "  name: MyString,", "  count: String2,",
+        "  limit: Int, // not a String", ") -> Table(String) {",
+        "  let text = \"a String\"", "  let key: gleam.String = text", "}",
+      ],
+      "\n",
+    )
+  assert string_lines(source)
+    == [
+      "Private(name: String)", "Hidden(text: String)",
+      "pub fn pull(pocket pocket_key: String) -> Nil {",
+      "lease_id: fn() -> String,", ") -> Table(String) {",
+      "let key: gleam.String = text",
+    ]
+  []
+}
+
+fn internal_path(module: String) -> String {
+  internal_directory <> "/" <> module <> ".gleam"
+}
+
+/// The lines under `src/` that name `String`, by module in the order of the
+/// modules' paths, each module's in the file's order and trimmed: the 32 that
+/// hold no id.
+fn string_list() -> List(#(String, List(String))) {
+  [
+    #(root_path, ["Outcome(fired: List(String), answer: Option(Answer))"]),
+    #(vocabulary_path("answers"), ["fired: List(String),"]),
+    #(vocabulary_path("config"), [
+      "fn broken(settings: Settings) -> List(String) {",
+    ]),
+    #(vocabulary_path("failure"), [
+      "GuardOverlap(trigger: String, rules: List(String))",
+      "Defect(trigger: String, cause: Cause)",
+      "BrokenInvariant(invariants: List(String))",
+      "EffectFailed(rule: String, reason: String)",
+    ]),
+    #(vocabulary_path("ids"), [
+      "PublisherId(String)", "ConsumerId(String)", "PocketKey(String)",
+      "RecordKey(String)", "LeaseId(String)",
+    ]),
+    #(internal_path("core"), [
+      "Ran(state: State, fired: List(List(String)), failure: Option(Failure))",
+      "fired: List(List(String)),",
+      "fn applied(inputs: List(a), fired: List(List(String))) -> List(a) {",
+      "pub fn registry() -> List(#(String, List(String))) {",
+      "fn entry(table: Table(input)) -> #(String, List(String)) {",
+    ]),
+    #(internal_path("publish"), [
+      "fn revive(name: String, from: PocketStatus) -> Row(PocketKey) {",
+    ]),
+    #(internal_path("rules"), [
+      "Impossible(reason: String)", "name: String,", "trigger: String,",
+      "Applied(state: state, fired: List(String), answer: Option(answer))",
+      "Cursor(state: state, now: Option(Timestamp), fired: List(String))",
+      ") -> List(String) {", "defect: fn(String) -> Failure(refusal),",
+    ]),
+    #(internal_path("settle"), ["action: String,"]),
+    #(vocabulary_path("invariants"), [
+      "Invariant(name: String, holds: fn(Snapshot, Views) -> Bool)",
+      "pub fn check(snapshot: Snapshot) -> List(String) {",
+    ]),
+    #(vocabulary_path("refusals"), [
+      "ConfigRefused(invariants: List(String))",
+      "LeaseFenced(action: String, consumer_id: ConsumerId, lease_id: LeaseId)",
+      "RecordNotHeld(action: String, lease_id: LeaseId, record_key: RecordKey)",
+      "MarkConflict(action: String, lease_id: LeaseId, record_key: RecordKey)",
+    ]),
+  ]
+}
+
+/// For every module under `src/`, its `string_lines` are its rows of the
+/// list, and a module the list does not name has none.
+fn string_lines_held() -> List(String) {
+  assert list.length(list.flat_map(string_list(), fn(row) { row.1 })) == 32
+  assert result.map(source_modules(), fn(modules) {
+      list.filter_map(modules, fn(found) {
+        case string_lines(found.1) {
+          [] -> Error(Nil)
+          lines -> Ok(#(found.0, lines))
+        }
+      })
+    })
+    == Ok(string_list())
   []
 }

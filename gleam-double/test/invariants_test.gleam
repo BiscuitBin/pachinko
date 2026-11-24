@@ -16,6 +16,10 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import pachinko_double/config.{Settings}
+import pachinko_double/ids.{
+  type LeaseId, type PocketKey, type RecordKey, ConsumerId, LeaseId, PocketKey,
+  PublisherId, RecordKey,
+}
 import pachinko_double/inspection.{type Snapshot, Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -274,11 +278,11 @@ pub fn tests() -> List(Test) {
 }
 
 // The base's pockets, by key.
-const leased = "pocket-leased"
+const leased = PocketKey("pocket-leased")
 
-const queued = "pocket-queued"
+const queued = PocketKey("pocket-queued")
 
-const idle = "pocket-idle"
+const idle = PocketKey("pocket-idle")
 
 /// A snapshot that breaks nothing. Positions come from one counter, as the
 /// rules allot them: 0 the leased pocket, 1 to 5 its records, 6 the queued
@@ -295,8 +299,11 @@ fn base() -> Snapshot {
   Snapshot(
     config: config.defaults(),
     next_position: 11,
-    publishers: [Publisher("pub-a"), Publisher("pub-b")],
-    consumers: [Consumer("con-a"), Consumer("con-b")],
+    publishers: [
+      Publisher(PublisherId("pub-a")),
+      Publisher(PublisherId("pub-b")),
+    ],
+    consumers: [Consumer(ConsumerId("con-a")), Consumer(ConsumerId("con-b"))],
     pockets: [
       Pocket(
         key: leased,
@@ -320,7 +327,7 @@ fn base() -> Snapshot {
     records: [
       Record(
         pocket: leased,
-        key: "unsettled",
+        key: RecordKey("unsettled"),
         rank: 1,
         payload: <<"u1":utf8>>,
         position: 1,
@@ -334,7 +341,7 @@ fn base() -> Snapshot {
       ),
       Record(
         pocket: leased,
-        key: "nacked",
+        key: RecordKey("nacked"),
         rank: 1,
         payload: <<"n1":utf8>>,
         position: 2,
@@ -348,7 +355,7 @@ fn base() -> Snapshot {
       ),
       Record(
         pocket: leased,
-        key: "deferred",
+        key: RecordKey("deferred"),
         rank: 2,
         payload: <<"d2":utf8>>,
         position: 3,
@@ -362,7 +369,7 @@ fn base() -> Snapshot {
       ),
       Record(
         pocket: leased,
-        key: "acked",
+        key: RecordKey("acked"),
         rank: 3,
         payload: <<"a3":utf8>>,
         position: 4,
@@ -376,7 +383,7 @@ fn base() -> Snapshot {
       ),
       Record(
         pocket: leased,
-        key: "waiting",
+        key: RecordKey("waiting"),
         rank: 1,
         payload: <<"w1":utf8>>,
         position: 5,
@@ -384,7 +391,7 @@ fn base() -> Snapshot {
       ),
       Record(
         pocket: queued,
-        key: "waiting",
+        key: RecordKey("waiting"),
         rank: 1,
         payload: <<"q1":utf8>>,
         position: 7,
@@ -393,25 +400,25 @@ fn base() -> Snapshot {
     ],
     leases: [
       Lease(
-        id: "lease-1",
+        id: LeaseId("lease-1"),
         pocket: queued,
-        consumer: "con-b",
+        consumer: ConsumerId("con-b"),
         status: LeaseReleased(ended_at: 150),
         granted_at: 100,
         expires_at: 400,
       ),
       Lease(
-        id: "lease-2",
+        id: LeaseId("lease-2"),
         pocket: leased,
-        consumer: "con-b",
+        consumer: ConsumerId("con-b"),
         status: LeaseExpired(ended_at: 500),
         granted_at: 200,
         expires_at: 500,
       ),
       Lease(
-        id: "lease-3",
+        id: LeaseId("lease-3"),
         pocket: leased,
-        consumer: "con-a",
+        consumer: ConsumerId("con-a"),
         status: LeaseActive,
         granted_at: 600,
         expires_at: 900,
@@ -420,7 +427,7 @@ fn base() -> Snapshot {
     superseded: [
       SupersededRecord(
         pocket: queued,
-        key: "waiting",
+        key: RecordKey("waiting"),
         rank: 0,
         payload: <<"q0":utf8>>,
         reason: Superseded,
@@ -431,10 +438,10 @@ fn base() -> Snapshot {
     dead_letters: [
       DeadLetter(
         pocket: leased,
-        key: "gone",
+        key: RecordKey("gone"),
         rank: 1,
         payload: <<"g1":utf8>>,
-        nacked_by: "con-b",
+        nacked_by: ConsumerId("con-b"),
         nacked_at: 300,
         expires_at: 1500,
       ),
@@ -458,7 +465,7 @@ fn empty_breaks_nothing() -> List(String) {
 
 fn with_pocket(
   snapshot: Snapshot,
-  key: String,
+  key: PocketKey,
   change: fn(Pocket) -> Pocket,
 ) -> Snapshot {
   let pockets =
@@ -473,7 +480,7 @@ fn with_pocket(
 
 fn with_lease(
   snapshot: Snapshot,
-  id: String,
+  id: LeaseId,
   change: fn(Lease) -> Lease,
 ) -> Snapshot {
   let leases =
@@ -488,8 +495,8 @@ fn with_lease(
 
 fn with_record(
   snapshot: Snapshot,
-  pocket: String,
-  key: String,
+  pocket: PocketKey,
+  key: RecordKey,
   change: fn(Record) -> Record,
 ) -> Snapshot {
   let records =
@@ -565,7 +572,7 @@ fn hold(record: Record) -> Record {
 /// The leased pocket's one active lease has ended, so it has none.
 fn leased_without_active_lease() -> List(String) {
   let snapshot =
-    with_lease(base(), "lease-3", fn(lease) {
+    with_lease(base(), LeaseId("lease-3"), fn(lease) {
       Lease(..lease, status: LeaseReleased(ended_at: 800))
     })
   assert invariants.check(snapshot) == ["LeasedHasOneActiveLease"]
@@ -578,19 +585,19 @@ fn leased_without_active_lease() -> List(String) {
 /// none of, breaks nothing while its lease stays ended.
 fn unleased_with_active_lease() -> List(String) {
   let active = fn(lease) { Lease(..lease, status: LeaseActive) }
-  let snapshot = with_lease(base(), "lease-1", active)
+  let snapshot = with_lease(base(), LeaseId("lease-1"), active)
   assert invariants.check(snapshot) == ["UnleasedHasNoActiveLease"]
   let over_idle = fn(lease) {
     Lease(..lease, pocket: idle, status: LeaseActive)
   }
-  let snapshot = with_lease(base(), "lease-1", over_idle)
+  let snapshot = with_lease(base(), LeaseId("lease-1"), over_idle)
   assert invariants.check(snapshot) == ["UnleasedHasNoActiveLease"]
   let parked =
     with_pocket(base(), queued, fn(pocket) {
       Pocket(..pocket, status: PocketParked)
     })
   assert invariants.check(parked) == []
-  assert invariants.check(with_lease(parked, "lease-1", active))
+  assert invariants.check(with_lease(parked, LeaseId("lease-1"), active))
     == ["UnleasedHasNoActiveLease"]
   []
 }
@@ -604,12 +611,17 @@ fn idle_with_record() -> List(String) {
       Pocket(..pocket, status: PocketIdle)
     })
   assert invariants.check(snapshot) == ["IdleHasNoRecords"]
-  assert invariants.check(with_record(snapshot, queued, "waiting", hold))
+  assert invariants.check(with_record(
+      snapshot,
+      queued,
+      RecordKey("waiting"),
+      hold,
+    ))
     == ["IdleHasNoRecords", "OutstandingOnlyWhileLeased"]
   []
 }
 
-fn expiries(snapshot: Snapshot, key: String, count: Int) -> Snapshot {
+fn expiries(snapshot: Snapshot, key: PocketKey, count: Int) -> Snapshot {
   with_pocket(snapshot, key, fn(pocket) {
     Pocket(..pocket, consecutive_expiries: count)
   })
@@ -647,11 +659,14 @@ fn expiries_at_limit() -> List(String) {
 /// The same of the nacked record, and of the acked one, whose rank is 3:
 /// the invariant is every held record's, whatever its mark.
 fn held_version_newer() -> List(String) {
-  let snapshot = with_record(base(), leased, "unsettled", held_rank(_, 2))
+  let snapshot =
+    with_record(base(), leased, RecordKey("unsettled"), held_rank(_, 2))
   assert invariants.check(snapshot) == ["HeldVersionNotNewer"]
-  let snapshot = with_record(base(), leased, "nacked", held_rank(_, 2))
+  let snapshot =
+    with_record(base(), leased, RecordKey("nacked"), held_rank(_, 2))
   assert invariants.check(snapshot) == ["HeldVersionNotNewer"]
-  let snapshot = with_record(base(), leased, "acked", held_rank(_, 4))
+  let snapshot =
+    with_record(base(), leased, RecordKey("acked"), held_rank(_, 4))
   assert invariants.check(snapshot) == ["HeldVersionNotNewer"]
   []
 }
@@ -660,9 +675,11 @@ fn held_version_newer() -> List(String) {
 /// a newer version deferred behind it and no nack time, is nacked: a
 /// deferred version excuses nothing.
 fn nacked_without_time() -> List(String) {
-  let snapshot = with_record(base(), leased, "nacked", nacked_at(_, None))
+  let snapshot =
+    with_record(base(), leased, RecordKey("nacked"), nacked_at(_, None))
   assert invariants.check(snapshot) == ["NackedHasItsTime"]
-  let snapshot = with_record(base(), leased, "acked", mark(_, Nacked))
+  let snapshot =
+    with_record(base(), leased, RecordKey("acked"), mark(_, Nacked))
   assert invariants.check(snapshot) == ["NackedHasItsTime"]
   []
 }
@@ -670,9 +687,14 @@ fn nacked_without_time() -> List(String) {
 /// `mark != nacked` is unsettled and acked alike.
 fn nack_time_without_nack() -> List(String) {
   let timed = nacked_at(_, Some(700))
-  assert invariants.check(with_record(base(), leased, "unsettled", timed))
+  assert invariants.check(with_record(
+      base(),
+      leased,
+      RecordKey("unsettled"),
+      timed,
+    ))
     == ["OnlyNackedHasNackTime"]
-  assert invariants.check(with_record(base(), leased, "acked", timed))
+  assert invariants.check(with_record(base(), leased, RecordKey("acked"), timed))
     == ["OnlyNackedHasNackTime"]
   []
 }
@@ -684,12 +706,12 @@ fn nack_time_without_nack() -> List(String) {
 /// whatever its mark.
 fn deferred_without_arrival_position() -> List(String) {
   let newer = fn(record) { Record(..record, rank: 2) }
-  let snapshot = with_record(base(), leased, "unsettled", newer)
+  let snapshot = with_record(base(), leased, RecordKey("unsettled"), newer)
   assert invariants.check(snapshot) == ["DeferredHasArrivalPosition"]
-  let snapshot = with_record(base(), leased, "nacked", newer)
+  let snapshot = with_record(base(), leased, RecordKey("nacked"), newer)
   assert invariants.check(snapshot) == ["DeferredHasArrivalPosition"]
   let snapshot =
-    with_record(base(), leased, "nacked", fn(record) {
+    with_record(base(), leased, RecordKey("nacked"), fn(record) {
       newer(record) |> mark(Acked) |> nacked_at(None)
     })
   assert invariants.check(snapshot) == ["DeferredHasArrivalPosition"]
@@ -701,12 +723,12 @@ fn deferred_without_arrival_position() -> List(String) {
 /// held rank, 2: the invariant is every held record's, whatever its mark.
 fn arrival_position_without_deferred() -> List(String) {
   let snapshot =
-    with_record(base(), leased, "deferred", fn(record) {
+    with_record(base(), leased, RecordKey("deferred"), fn(record) {
       Record(..record, rank: 1)
     })
   assert invariants.check(snapshot) == ["OnlyDeferredHasArrivalPosition"]
   let snapshot =
-    with_record(base(), leased, "acked", fn(record) {
+    with_record(base(), leased, RecordKey("acked"), fn(record) {
       Record(..record, rank: 2)
     })
   assert invariants.check(snapshot) == ["OnlyDeferredHasArrivalPosition"]
@@ -717,10 +739,16 @@ fn arrival_position_without_deferred() -> List(String) {
 /// where no record stands. Then the acked record, which stands at 4.
 fn deferred_arrived_before_held() -> List(String) {
   let snapshot =
-    with_record(base(), leased, "deferred", deferred_position(_, Some(0)))
+    with_record(base(), leased, RecordKey("deferred"), deferred_position(
+      _,
+      Some(0),
+    ))
   assert invariants.check(snapshot) == ["DeferredArrivedAfterHeld"]
   let snapshot =
-    with_record(base(), leased, "acked", deferred_position(_, Some(0)))
+    with_record(base(), leased, RecordKey("acked"), deferred_position(
+      _,
+      Some(0),
+    ))
   assert invariants.check(snapshot) == ["DeferredArrivedAfterHeld"]
   []
 }
@@ -730,10 +758,20 @@ fn deferred_arrived_before_held() -> List(String) {
 /// unsettled record, then of the nacked one.
 fn held_copies_differ() -> List(String) {
   let snapshot =
-    with_record(base(), leased, "unsettled", held_payload(_, <<"u0":utf8>>))
+    with_record(
+      base(),
+      leased,
+      RecordKey("unsettled"),
+      held_payload(_, <<"u0":utf8>>),
+    )
   assert invariants.check(snapshot) == ["HeldCopiesAgree"]
   let snapshot =
-    with_record(base(), leased, "nacked", held_payload(_, <<"n0":utf8>>))
+    with_record(
+      base(),
+      leased,
+      RecordKey("nacked"),
+      held_payload(_, <<"n0":utf8>>),
+    )
   assert invariants.check(snapshot) == ["HeldCopiesAgree"]
   []
 }
@@ -760,7 +798,7 @@ fn letter_expiring_at(expires_at: Timestamp) -> Snapshot {
   Snapshot(..base(), dead_letters:)
 }
 
-fn lease_expiring_at(id: String, expires_at: Timestamp) -> Snapshot {
+fn lease_expiring_at(id: LeaseId, expires_at: Timestamp) -> Snapshot {
   with_lease(base(), id, fn(lease) { Lease(..lease, expires_at:) })
 }
 
@@ -778,11 +816,11 @@ fn nacked_after_expiry() -> List(String) {
 /// expired one at 200: the invariant is every lease's, ended or not. The
 /// expired lease still ended, at 500, after its grant.
 fn granted_after_expiry() -> List(String) {
-  assert invariants.check(lease_expiring_at("lease-3", 599))
+  assert invariants.check(lease_expiring_at(LeaseId("lease-3"), 599))
     == ["GrantedBeforeExpiry"]
-  assert invariants.check(lease_expiring_at("lease-1", 99))
+  assert invariants.check(lease_expiring_at(LeaseId("lease-1"), 99))
     == ["GrantedBeforeExpiry"]
-  assert invariants.check(lease_expiring_at("lease-2", 199))
+  assert invariants.check(lease_expiring_at(LeaseId("lease-2"), 199))
     == ["GrantedBeforeExpiry"]
   []
 }
@@ -791,12 +829,12 @@ fn granted_after_expiry() -> List(String) {
 /// and the expired one at 200.
 fn ended_before_grant() -> List(String) {
   let released =
-    with_lease(base(), "lease-1", fn(lease) {
+    with_lease(base(), LeaseId("lease-1"), fn(lease) {
       Lease(..lease, status: LeaseReleased(ended_at: 99))
     })
   assert invariants.check(released) == ["EndedAfterGrant"]
   let expired =
-    with_lease(base(), "lease-2", fn(lease) {
+    with_lease(base(), LeaseId("lease-2"), fn(lease) {
       Lease(..lease, status: LeaseExpired(ended_at: 199))
     })
   assert invariants.check(expired) == ["EndedAfterGrant"]
@@ -809,14 +847,14 @@ fn ended_before_grant() -> List(String) {
 fn equal_timestamps() -> List(String) {
   assert invariants.check(shed_expiring_at(650)) == []
   assert invariants.check(letter_expiring_at(300)) == []
-  assert invariants.check(lease_expiring_at("lease-3", 600)) == []
+  assert invariants.check(lease_expiring_at(LeaseId("lease-3"), 600)) == []
   let released =
-    with_lease(base(), "lease-1", fn(lease) {
+    with_lease(base(), LeaseId("lease-1"), fn(lease) {
       Lease(..lease, status: LeaseReleased(ended_at: 100))
     })
   assert invariants.check(released) == []
   let expired =
-    with_lease(base(), "lease-2", fn(lease) {
+    with_lease(base(), LeaseId("lease-2"), fn(lease) {
       Lease(..lease, status: LeaseExpired(ended_at: 200))
     })
   assert invariants.check(expired) == []
@@ -898,7 +936,8 @@ fn smallest_config() -> List(String) {
 /// A second publisher equal to the first in every field. Compared by
 /// value the two would be one publisher, and nothing would break.
 fn two_publishers_one_id() -> List(String) {
-  let publishers = list.append(base().publishers, [Publisher("pub-a")])
+  let publishers =
+    list.append(base().publishers, [Publisher(PublisherId("pub-a"))])
   assert invariants.check(Snapshot(..base(), publishers:))
     == ["UniquePublisherId"]
   []
@@ -907,7 +946,7 @@ fn two_publishers_one_id() -> List(String) {
 /// A second consumer equal to the first. Each of the two has the one
 /// active lease that names `con-a`, so `OneActiveLeasePerConsumer` holds.
 fn two_consumers_one_id() -> List(String) {
-  let consumers = list.append(base().consumers, [Consumer("con-a")])
+  let consumers = list.append(base().consumers, [Consumer(ConsumerId("con-a"))])
   assert invariants.check(Snapshot(..base(), consumers:))
     == ["UniqueConsumerId"]
   []
@@ -949,11 +988,11 @@ fn two_records_one_key() -> List(String) {
     Snapshot(..base(), next_position: 12, records:)
   }
   let stays_queued = fn(record) { record }
-  assert invariants.check(second(queued, "waiting", stays_queued))
+  assert invariants.check(second(queued, RecordKey("waiting"), stays_queued))
     == ["OneRecordPerKeyPerPocket"]
-  assert invariants.check(second(leased, "nacked", hold))
+  assert invariants.check(second(leased, RecordKey("nacked"), hold))
     == ["OneRecordPerKeyPerPocket"]
-  assert invariants.check(second(leased, "nacked", stays_queued))
+  assert invariants.check(second(leased, RecordKey("nacked"), stays_queued))
     == ["OneRecordPerKeyPerPocket"]
   []
 }
@@ -969,16 +1008,17 @@ fn two_records_one_key() -> List(String) {
 /// has one.
 fn two_active_leases_one_key() -> List(String) {
   let snapshot =
-    with_lease(base(), "lease-1", fn(lease) {
-      Lease(..lease, pocket: "pocket-gone", status: LeaseActive)
+    with_lease(base(), LeaseId("lease-1"), fn(lease) {
+      Lease(..lease, pocket: PocketKey("pocket-gone"), status: LeaseActive)
     })
-  let consumers = list.append(snapshot.consumers, [Consumer("con-c")])
+  let consumers =
+    list.append(snapshot.consumers, [Consumer(ConsumerId("con-c"))])
   let leases =
     list.append(snapshot.leases, [
       Lease(
-        id: "lease-4",
-        pocket: "pocket-gone",
-        consumer: "con-c",
+        id: LeaseId("lease-4"),
+        pocket: PocketKey("pocket-gone"),
+        consumer: ConsumerId("con-c"),
         status: LeaseActive,
         granted_at: 600,
         expires_at: 900,
@@ -995,7 +1035,7 @@ fn two_active_leases_one_key() -> List(String) {
 /// must: this is also that invariant's control for two leases, not none.
 fn two_active_leases_one_pocket() -> List(String) {
   let snapshot =
-    with_lease(base(), "lease-2", fn(lease) {
+    with_lease(base(), LeaseId("lease-2"), fn(lease) {
       Lease(..lease, status: LeaseActive)
     })
   assert invariants.check(snapshot)
@@ -1009,8 +1049,8 @@ fn two_active_leases_one_consumer() -> List(String) {
   let snapshot =
     base()
     |> with_pocket(queued, fn(pocket) { Pocket(..pocket, status: PocketLeased) })
-    |> with_lease("lease-1", fn(lease) {
-      Lease(..lease, consumer: "con-a", status: LeaseActive)
+    |> with_lease(LeaseId("lease-1"), fn(lease) {
+      Lease(..lease, consumer: ConsumerId("con-a"), status: LeaseActive)
     })
   assert invariants.check(snapshot) == ["OneActiveLeasePerConsumer"]
   []
@@ -1021,8 +1061,8 @@ fn two_active_leases_one_consumer() -> List(String) {
 /// have ended.
 fn ended_lease_beside_active() -> List(String) {
   let snapshot =
-    with_lease(base(), "lease-2", fn(lease) {
-      Lease(..lease, consumer: "con-a")
+    with_lease(base(), LeaseId("lease-2"), fn(lease) {
+      Lease(..lease, consumer: ConsumerId("con-a"))
     })
   assert invariants.check(snapshot) == []
   []
@@ -1032,10 +1072,10 @@ fn ended_lease_beside_active() -> List(String) {
 /// that record is acked as well: the invariant is every held record's,
 /// whatever its mark, and the pocket has no consecutive expiry.
 fn held_in_queued_pocket() -> List(String) {
-  let snapshot = with_record(base(), queued, "waiting", hold)
+  let snapshot = with_record(base(), queued, RecordKey("waiting"), hold)
   assert invariants.check(snapshot) == ["OutstandingOnlyWhileLeased"]
   let snapshot =
-    with_record(base(), queued, "waiting", fn(record) {
+    with_record(base(), queued, RecordKey("waiting"), fn(record) {
       hold(record) |> mark(Acked)
     })
   assert invariants.check(snapshot) == ["OutstandingOnlyWhileLeased"]
@@ -1048,10 +1088,11 @@ fn held_in_queued_pocket() -> List(String) {
 fn marked_in_pocket_with_expiry() -> List(String) {
   let lapsed = expiries(base(), leased, 1)
   assert invariants.check(lapsed) == ["MarkedPocketHasNoExpiries"]
-  let nacked_alone = with_record(lapsed, leased, "acked", mark(_, Unsettled))
+  let nacked_alone =
+    with_record(lapsed, leased, RecordKey("acked"), mark(_, Unsettled))
   assert invariants.check(nacked_alone) == ["MarkedPocketHasNoExpiries"]
   let acked_alone =
-    with_record(lapsed, leased, "nacked", fn(record) {
+    with_record(lapsed, leased, RecordKey("nacked"), fn(record) {
       record |> mark(Unsettled) |> nacked_at(None)
     })
   assert invariants.check(acked_alone) == ["MarkedPocketHasNoExpiries"]
@@ -1062,10 +1103,10 @@ fn marked_in_pocket_with_expiry() -> List(String) {
 fn unsettled_in_pocket_with_expiry() -> List(String) {
   let snapshot =
     expiries(base(), leased, 1)
-    |> with_record(leased, "nacked", fn(record) {
+    |> with_record(leased, RecordKey("nacked"), fn(record) {
       record |> mark(Unsettled) |> nacked_at(None)
     })
-    |> with_record(leased, "acked", mark(_, Unsettled))
+    |> with_record(leased, RecordKey("acked"), mark(_, Unsettled))
   assert invariants.check(snapshot) == []
   []
 }
@@ -1080,8 +1121,8 @@ fn unsettled_in_pocket_with_expiry() -> List(String) {
 /// an entity.
 fn reference_names_none() -> List(String) {
   let snapshot =
-    with_record(base(), queued, "waiting", fn(record) {
-      Record(..hold(record), pocket: "pocket-gone") |> mark(Acked)
+    with_record(base(), queued, RecordKey("waiting"), fn(record) {
+      Record(..hold(record), pocket: PocketKey("pocket-gone")) |> mark(Acked)
     })
   assert invariants.check(snapshot) == []
   []
@@ -1112,14 +1153,14 @@ fn reference_names_two() -> List(String) {
 
 // Positions ------------------------------------------------
 
-fn pocket_at(snapshot: Snapshot, key: String, position: Int) -> Snapshot {
+fn pocket_at(snapshot: Snapshot, key: PocketKey, position: Int) -> Snapshot {
   with_pocket(snapshot, key, fn(pocket) { Pocket(..pocket, position:) })
 }
 
 fn record_at(
   snapshot: Snapshot,
-  pocket: String,
-  key: String,
+  pocket: PocketKey,
+  key: RecordKey,
   position: Int,
 ) -> Snapshot {
   with_record(snapshot, pocket, key, fn(record) { Record(..record, position:) })
@@ -1138,11 +1179,11 @@ fn two_pockets_one_position() -> List(String) {
 /// nacked record does, so that both are held: the invariant is over every
 /// record, whatever its status.
 fn two_records_one_position() -> List(String) {
-  assert invariants.check(record_at(base(), queued, "waiting", 5))
+  assert invariants.check(record_at(base(), queued, RecordKey("waiting"), 5))
     == ["UniqueRecordPosition"]
-  assert invariants.check(record_at(base(), queued, "waiting", 1))
+  assert invariants.check(record_at(base(), queued, RecordKey("waiting"), 1))
     == ["UniqueRecordPosition"]
-  assert invariants.check(record_at(base(), leased, "nacked", 1))
+  assert invariants.check(record_at(base(), leased, RecordKey("nacked"), 1))
     == ["UniqueRecordPosition"]
   []
 }
@@ -1159,9 +1200,9 @@ fn pocket_at_next_position() -> List(String) {
 
 /// At the next position, 11, and then above it, at 12.
 fn record_at_next_position() -> List(String) {
-  assert invariants.check(record_at(base(), queued, "waiting", 11))
+  assert invariants.check(record_at(base(), queued, RecordKey("waiting"), 11))
     == ["RecordPositionsBelowNext"]
-  assert invariants.check(record_at(base(), queued, "waiting", 12))
+  assert invariants.check(record_at(base(), queued, RecordKey("waiting"), 12))
     == ["RecordPositionsBelowNext"]
   []
 }
@@ -1169,7 +1210,8 @@ fn record_at_next_position() -> List(String) {
 /// 10 is the idle pocket's position and no record's. No invariant compares
 /// a pocket's position with a record's.
 fn record_below_next_position() -> List(String) {
-  assert invariants.check(record_at(base(), queued, "waiting", 10)) == []
+  assert invariants.check(record_at(base(), queued, RecordKey("waiting"), 10))
+    == []
   []
 }
 
@@ -1193,7 +1235,7 @@ fn repeated_in_every_field() -> List(String) {
     list.append(base().records, [
       Record(
         pocket: queued,
-        key: "waiting",
+        key: RecordKey("waiting"),
         rank: 1,
         payload: <<"q1":utf8>>,
         position: 7,
@@ -1209,7 +1251,7 @@ fn repeated_in_every_field() -> List(String) {
 // In the base the deferred record stands at 3 with its newer version's
 // arrival at 8, and the acked record at 4 with its arrival at 9.
 
-fn arrival_at(key: String, position: Int) -> Snapshot {
+fn arrival_at(key: RecordKey, position: Int) -> Snapshot {
   with_record(base(), leased, key, deferred_position(_, Some(position)))
 }
 
@@ -1218,9 +1260,9 @@ fn arrival_at(key: String, position: Int) -> Snapshot {
 /// record's arrival position: the invariant is every held record's,
 /// whatever its mark.
 fn arrival_position_occupied() -> List(String) {
-  assert invariants.check(arrival_at("deferred", 7))
+  assert invariants.check(arrival_at(RecordKey("deferred"), 7))
     == ["ArrivalPositionUnoccupied"]
-  assert invariants.check(arrival_at("acked", 7))
+  assert invariants.check(arrival_at(RecordKey("acked"), 7))
     == ["ArrivalPositionUnoccupied"]
   []
 }
@@ -1231,9 +1273,9 @@ fn arrival_position_occupied() -> List(String) {
 /// `DeferredArrivedAfterHeld`, whose `>` rejects equality, so the two
 /// cannot be separated here.
 fn arrival_position_its_own() -> List(String) {
-  assert invariants.check(arrival_at("deferred", 3))
+  assert invariants.check(arrival_at(RecordKey("deferred"), 3))
     == ["DeferredArrivedAfterHeld", "ArrivalPositionUnoccupied"]
-  assert invariants.check(arrival_at("acked", 4))
+  assert invariants.check(arrival_at(RecordKey("acked"), 4))
     == ["DeferredArrivedAfterHeld", "ArrivalPositionUnoccupied"]
   []
 }
@@ -1250,13 +1292,15 @@ fn arrival_position_its_own() -> List(String) {
 /// arrival position of the leased pocket's deferred record, the invariant
 /// does: it is over every record, not over one pocket's.
 fn two_arrivals_one_position() -> List(String) {
-  assert invariants.check(arrival_at("deferred", 9))
+  assert invariants.check(arrival_at(RecordKey("deferred"), 9))
     == ["UniqueArrivalPosition"]
   let second_pocket = fn(arrival) {
     base()
     |> with_pocket(queued, fn(pocket) { Pocket(..pocket, status: PocketLeased) })
-    |> with_lease("lease-1", fn(lease) { Lease(..lease, status: LeaseActive) })
-    |> with_record(queued, "waiting", fn(record) {
+    |> with_lease(LeaseId("lease-1"), fn(lease) {
+      Lease(..lease, status: LeaseActive)
+    })
+    |> with_record(queued, RecordKey("waiting"), fn(record) {
       Record(..hold(record), rank: 2, payload: <<"q2":utf8>>)
       |> deferred_position(Some(arrival))
     })
@@ -1268,16 +1312,16 @@ fn two_arrivals_one_position() -> List(String) {
 
 /// The next position is 11. Then an arrival above it, at 12.
 fn arrival_at_next_position() -> List(String) {
-  assert invariants.check(arrival_at("acked", 11))
+  assert invariants.check(arrival_at(RecordKey("acked"), 11))
     == ["ArrivalPositionsBelowNext"]
-  assert invariants.check(arrival_at("acked", 12))
+  assert invariants.check(arrival_at(RecordKey("acked"), 12))
     == ["ArrivalPositionsBelowNext"]
   []
 }
 
 /// 10 is the idle pocket's position and no record's.
 fn arrival_below_next_position() -> List(String) {
-  assert invariants.check(arrival_at("acked", 10)) == []
+  assert invariants.check(arrival_at(RecordKey("acked"), 10)) == []
   []
 }
 

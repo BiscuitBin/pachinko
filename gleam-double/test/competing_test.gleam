@@ -28,6 +28,10 @@ import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{
   type BatchRecord, Batch, BatchRecord, NoPocketAvailable,
 }
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, ConsumerId, PocketKey,
+  RecordKey,
+}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{Lease, LeaseActive}
@@ -63,14 +67,21 @@ const hold = "HoldRecord"
 /// One pocket of three records, and a limit above that count: whichever
 /// consumer the mailbox puts first is handed all three, oldest first.
 fn one_pocket() -> List(String) {
-  every_turn(consumers(8), compete(_, ["only"], 3, 10))
+  every_turn(consumers(8), compete(_, [PocketKey("only")], 3, 10))
 }
 
 /// A pocket for each consumer, two records each.
 fn a_pocket_each() -> List(String) {
   every_turn(consumers(6), compete(
     _,
-    ["north", "east", "south", "west", "up", "down"],
+    [
+      PocketKey("north"),
+      PocketKey("east"),
+      PocketKey("south"),
+      PocketKey("west"),
+      PocketKey("up"),
+      PocketKey("down"),
+    ],
     2,
     10,
   ))
@@ -79,7 +90,17 @@ fn a_pocket_each() -> List(String) {
 /// Fewer pockets than consumers, and a limit below a pocket's three
 /// records: each batch is its pocket's two oldest.
 fn more_consumers_than_pockets() -> List(String) {
-  every_turn(consumers(9), compete(_, ["north", "east", "south", "west"], 3, 2))
+  every_turn(consumers(9), compete(
+    _,
+    [
+      PocketKey("north"),
+      PocketKey("east"),
+      PocketKey("south"),
+      PocketKey("west"),
+    ],
+    3,
+    2,
+  ))
 }
 
 /// The consumer ids `c1` to `c<count>`.
@@ -111,12 +132,13 @@ const versions = [#("m", 5), #("z", 9), #("a", 1)]
 /// What the test published into a pocket, oldest first, as a pull hands it
 /// out. Every pocket holds the same keys at the same ranks, and each payload
 /// names its pocket, so a record handed out of another pocket shows.
-fn stocked(pocket_key: String, stock: Int) -> List(BatchRecord) {
+fn stocked(pocket_key: PocketKey, stock: Int) -> List(BatchRecord) {
+  let PocketKey(text) = pocket_key
   list.map(list.take(versions, stock), fn(version) {
     BatchRecord(
-      key: version.0,
+      key: RecordKey(version.0),
       rank: version.1,
-      payload: bit_array.from_string(pocket_key <> " " <> version.0),
+      payload: bit_array.from_string(text <> " " <> version.0),
     )
   })
 }
@@ -124,16 +146,17 @@ fn stocked(pocket_key: String, stock: Int) -> List(BatchRecord) {
 /// Publishes `stock` records into each pocket, one record of every pocket
 /// before the next of any, so that the pockets enter the pocket order in the
 /// order given and one pocket's records do not hold neighbouring positions.
-fn publish(double: Double, pocket_keys: List(String), stock: Int) -> Nil {
+fn publish(double: Double, pocket_keys: List(PocketKey), stock: Int) -> Nil {
   list.each(list.take(versions, stock), fn(version) {
     list.each(pocket_keys, fn(pocket_key) {
+      let PocketKey(text) = pocket_key
       let assert Ok(_) =
         harness.publish(
           double,
           pocket_key,
-          version.0,
+          RecordKey(version.0),
           version.1,
-          pocket_key <> " " <> version.0,
+          text <> " " <> version.0,
         )
     })
   })
@@ -143,9 +166,9 @@ fn publish(double: Double, pocket_keys: List(String), stock: Int) -> Nil {
 /// and the records its answer named.
 type Grant {
   Grant(
-    consumer: String,
-    lease: String,
-    pocket_key: String,
+    consumer: ConsumerId,
+    lease: LeaseId,
+    pocket_key: PocketKey,
     records: List(BatchRecord),
   )
 }
@@ -174,7 +197,7 @@ fn race(
       let gate = process.new_subject()
       process.send(ready, gate)
       process.receive_forever(gate)
-      let reply = harness.pull(double, caller, limit)
+      let reply = harness.pull(double, ConsumerId(caller), limit)
       let _ = harness.fired(double)
       process.send(replies, #(caller, reply))
     })
@@ -208,13 +231,16 @@ fn grants(answers: List(#(String, Reply))) -> List(Grant) {
     let #(caller, reply) = answer
     case reply {
       Ok(Outcome(fired, Some(Batch(consumer:, lease:, pocket:, records:)))) -> {
-        assert consumer == caller
+        assert consumer == ConsumerId(caller)
         assert fired == [claims, ..list.map(records, fn(_) { hold })]
         Ok(Grant(consumer:, lease:, pocket_key: pocket, records:))
       }
       _ -> {
         assert reply
-          == Ok(Outcome([finds_none], Some(NoPocketAvailable(caller))))
+          == Ok(Outcome(
+            [finds_none],
+            Some(NoPocketAvailable(ConsumerId(caller))),
+          ))
         Error(Nil)
       }
     }
@@ -231,7 +257,7 @@ fn distinct(values: List(a)) -> Bool {
 /// pulls at once with the same limit. The clock stands at `t0` throughout.
 fn compete(
   callers: List(String),
-  pocket_keys: List(String),
+  pocket_keys: List(PocketKey),
   stock: Int,
   limit: Int,
 ) -> List(String) {
@@ -240,7 +266,7 @@ fn compete(
     case list.contains(["c1", "c2", "c3"], caller) {
       True -> Nil
       False -> {
-        let assert Ok(_) = harness.consumer_joins(double, caller)
+        let assert Ok(_) = harness.consumer_joins(double, ConsumerId(caller))
         Nil
       }
     }
@@ -269,10 +295,19 @@ fn compete(
   assert distinct(list.map(grants, fn(grant) { grant.lease }))
   assert distinct(list.map(grants, fn(grant) { grant.consumer }))
   assert list.sort(
-      list.map(grants, fn(grant) { grant.pocket_key }),
+      list.map(grants, fn(grant) {
+        let PocketKey(key) = grant.pocket_key
+        key
+      }),
       string.compare,
     )
-    == list.sort(list.take(pocket_keys, granted), string.compare)
+    == list.sort(
+      list.map(list.take(pocket_keys, granted), fn(pocket_key) {
+        let PocketKey(key) = pocket_key
+        key
+      }),
+      string.compare,
+    )
   // Each batch is its own pocket's records, oldest first, up to the limit.
   list.each(grants, fn(grant) {
     assert grant.records == list.take(stocked(grant.pocket_key, stock), limit)
@@ -321,7 +356,7 @@ fn compete(
 fn leases_match(
   after: Snapshot,
   grants: List(Grant),
-  pocket_keys: List(String),
+  pocket_keys: List(PocketKey),
 ) -> Nil {
   list.each(grants, fn(grant) {
     assert model.lease(after.leases, grant.lease)

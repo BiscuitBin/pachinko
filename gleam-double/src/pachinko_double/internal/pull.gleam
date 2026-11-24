@@ -7,6 +7,10 @@ import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/answers.{Batch, BatchRecord, NoPocketAvailable}
 import pachinko_double/config
+import pachinko_double/ids.{
+  type ConsumerId, type PocketKey, type RecordKey, ConsumerId, PocketKey,
+  RecordKey,
+}
 import pachinko_double/internal/domain.{type Plan, type Row, type Table, Handed}
 import pachinko_double/internal/rules.{
   Defective, Finish, Impossible, LeaseId, Now, Refuses, Row, Table,
@@ -19,13 +23,13 @@ import pachinko_double/refusals.{PullRefused}
 
 /// The input of `Pull(consumer, limit)`. `consumer` is the consumer's id.
 pub type Pull {
-  Pull(consumer: String, limit: Int)
+  Pull(consumer: ConsumerId, limit: Int)
 }
 
 /// The input of `Handed(pocket, record_key)`. `pocket_key` is the pocket's
 /// key.
 pub type Handover {
-  Handover(pocket_key: String, record_key: String)
+  Handover(pocket_key: PocketKey, record_key: RecordKey)
 }
 
 /// `Pull`. Three rules share it. In a state that holds the invariants
@@ -117,10 +121,12 @@ fn pull_within_lease() -> Row(Pull) {
     },
     fn(state, pull) {
       case lease_and_pocket(state, pull) {
-        Error(Nil) ->
+        Error(Nil) -> {
+          let ConsumerId(consumer) = pull.consumer
           Impossible(
-            "no active lease of consumer " <> pull.consumer <> " on a pocket",
+            "no active lease of consumer " <> consumer <> " on a pocket",
           )
+        }
         Ok(#(lease, pocket)) -> {
           let batch = batch(state, pocket, pull.limit)
           use now <- Now
@@ -232,13 +238,11 @@ fn hold_record() -> Row(Handover) {
     },
     fn(state, handover) {
       case record(state, handover) {
-        Error(Nil) ->
-          Impossible(
-            "no record "
-            <> handover.record_key
-            <> " in pocket "
-            <> handover.pocket_key,
-          )
+        Error(Nil) -> {
+          let RecordKey(key) = handover.record_key
+          let PocketKey(pocket) = handover.pocket_key
+          Impossible("no record " <> key <> " in pocket " <> pocket)
+        }
         Ok(record) -> {
           let held =
             Record(

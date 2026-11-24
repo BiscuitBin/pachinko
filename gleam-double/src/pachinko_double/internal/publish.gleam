@@ -5,6 +5,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
+import pachinko_double/ids.{
+  type PocketKey, type PublisherId, type RecordKey, PocketKey, RecordKey,
+}
 import pachinko_double/internal/domain.{
   type Plan, type Row, type Table, PocketTouched,
 }
@@ -23,9 +26,9 @@ import pachinko_double/time.{type Timestamp}
 /// `publisher` is the publisher's id.
 pub type Publication {
   Publication(
-    publisher: String,
-    pocket_key: String,
-    record_key: String,
+    publisher: PublisherId,
+    pocket_key: PocketKey,
+    record_key: RecordKey,
     rank: Int,
     payload: BitArray,
   )
@@ -75,13 +78,11 @@ fn stored(
   effect: fn(Record) -> Plan,
 ) -> Plan {
   case record(state, publication) {
-    Error(Nil) ->
-      Impossible(
-        "no record "
-        <> publication.record_key
-        <> " in pocket "
-        <> publication.pocket_key,
-      )
+    Error(Nil) -> {
+      let RecordKey(key) = publication.record_key
+      let PocketKey(pocket) = publication.pocket_key
+      Impossible("no record " <> key <> " in pocket " <> pocket)
+    }
     Ok(record) -> effect(record)
   }
 }
@@ -237,14 +238,13 @@ fn defer_behind_held_version() -> Row(Publication) {
     fn(state, publication) {
       use record <- stored(state, publication)
       case record.status {
-        RecordQueued ->
+        RecordQueued -> {
+          let RecordKey(key) = publication.record_key
+          let PocketKey(pocket) = publication.pocket_key
           Impossible(
-            "record "
-            <> publication.record_key
-            <> " in pocket "
-            <> publication.pocket_key
-            <> " is not held",
+            "record " <> key <> " in pocket " <> pocket <> " is not held",
           )
+        }
         RecordHeld(..) as held -> {
           use position <- Position
           let deferred =
@@ -300,7 +300,7 @@ fn drop_stale_publish() -> Row(Publication) {
 
 /// `PocketTouched(pocket_key)`. The two revive rules answer it only when
 /// the pocket is idle or parked; otherwise nothing happens.
-pub fn pocket_touched() -> Table(String) {
+pub fn pocket_touched() -> Table(PocketKey) {
   Table(
     "PocketTouched",
     [revive_idle_pocket(), revive_parked_pocket()],
@@ -312,7 +312,7 @@ pub fn pocket_touched() -> Table(String) {
 /// pocket is queued again, at a fresh position at the back of the pocket
 /// order, with its count of consecutive expiries reset. The position is
 /// allotted after the one the publish gave its record.
-fn revive_idle_pocket() -> Row(String) {
+fn revive_idle_pocket() -> Row(PocketKey) {
   revive("ReviveIdlePocket", PocketIdle)
 }
 
@@ -321,7 +321,7 @@ fn revive_idle_pocket() -> Row(String) {
 /// position at the back, with its count of consecutive expiries reset. Only
 /// a publish touches a pocket, so nothing else revives a parked one, as the
 /// rules stand (open question 7).
-fn revive_parked_pocket() -> Row(String) {
+fn revive_parked_pocket() -> Row(PocketKey) {
   revive("ReviveParkedPocket", PocketParked)
 }
 
@@ -336,10 +336,10 @@ fn revive_parked_pocket() -> Row(String) {
 /// ensures: pocket.consecutive_expiries = 0
 /// ensures: queue.next_position = position + 1
 /// ```
-fn revive(name: String, from: PocketStatus) -> Row(String) {
+fn revive(name: String, from: PocketStatus) -> Row(PocketKey) {
   Row(
     name,
-    fn(state: State, pocket_key: String) {
+    fn(state: State, pocket_key: PocketKey) {
       case model.pocket(state.pockets, pocket_key) {
         Error(Nil) -> False
         Ok(pocket) -> pocket.status == from
@@ -347,7 +347,10 @@ fn revive(name: String, from: PocketStatus) -> Row(String) {
     },
     fn(state, pocket_key) {
       case model.pocket(state.pockets, pocket_key) {
-        Error(Nil) -> Impossible("no pocket " <> pocket_key)
+        Error(Nil) -> {
+          let PocketKey(key) = pocket_key
+          Impossible("no pocket " <> key)
+        }
         Ok(pocket) -> {
           use position <- Position
           let queued =

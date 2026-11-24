@@ -7,6 +7,10 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import pachinko_double/config.{Settings}
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type RecordKey, ConsumerId,
+  LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/inspection.{
   type Snapshot, ConsumerView, PocketView, Snapshot, Views,
 }
@@ -41,9 +45,9 @@ pub fn tests() -> List(Test) {
 }
 
 // The pockets, by key.
-const busy = "pocket-busy"
+const busy = PocketKey("pocket-busy")
 
-const quiet = "pocket-quiet"
+const quiet = PocketKey("pocket-quiet")
 
 fn busy_pocket() -> Pocket {
   Pocket(key: busy, status: PocketLeased, position: 0, consecutive_expiries: 0)
@@ -53,12 +57,13 @@ fn quiet_pocket() -> Pocket {
   Pocket(key: quiet, status: PocketQueued, position: 6, consecutive_expiries: 0)
 }
 
-fn queued(pocket: String, key: String, position: Int) -> Record {
+fn queued(pocket: PocketKey, key: RecordKey, position: Int) -> Record {
+  let RecordKey(text) = key
   Record(
     pocket:,
     key:,
     rank: 1,
-    payload: <<key:utf8>>,
+    payload: <<text:utf8>>,
     position:,
     status: RecordQueued,
   )
@@ -67,7 +72,7 @@ fn queued(pocket: String, key: String, position: Int) -> Record {
 /// A record of the busy pocket, held at rank 1 with this mark. With a
 /// deferred position, its rank has moved on to 2.
 fn held(
-  key: String,
+  key: RecordKey,
   position: Int,
   mark: Mark,
   deferred_position: Option(Int),
@@ -80,15 +85,16 @@ fn held(
     Nacked -> Some(700)
     Unsettled | Acked -> None
   }
+  let RecordKey(text) = key
   Record(
     pocket: busy,
     key:,
     rank:,
-    payload: <<key:utf8>>,
+    payload: <<text:utf8>>,
     position:,
     status: RecordHeld(
       held_rank: 1,
-      held_payload: <<key:utf8>>,
+      held_payload: <<text:utf8>>,
       mark:,
       nacked_at:,
       deferred_position:,
@@ -99,33 +105,33 @@ fn held(
 // The busy pocket's records, and the quiet pocket's one.
 
 fn waiting() -> Record {
-  queued(busy, "waiting", 1)
+  queued(busy, RecordKey("waiting"), 1)
 }
 
 fn unsettled() -> Record {
-  held("unsettled", 2, Unsettled, None)
+  held(RecordKey("unsettled"), 2, Unsettled, None)
 }
 
 fn elsewhere() -> Record {
-  queued(quiet, "waiting", 7)
+  queued(quiet, RecordKey("waiting"), 7)
 }
 
 fn acked() -> Record {
-  held("acked", 3, Acked, None)
+  held(RecordKey("acked"), 3, Acked, None)
 }
 
 fn nacked() -> Record {
-  held("nacked", 4, Nacked, None)
+  held(RecordKey("nacked"), 4, Nacked, None)
 }
 
 fn acked_with_deferred() -> Record {
-  held("acked-with-deferred", 5, Acked, Some(8))
+  held(RecordKey("acked-with-deferred"), 5, Acked, Some(8))
 }
 
 fn lease(
-  id: String,
-  pocket: String,
-  consumer: String,
+  id: LeaseId,
+  pocket: PocketKey,
+  consumer: ConsumerId,
   status: LeaseStatus,
 ) -> Lease {
   Lease(id:, pocket:, consumer:, status:, granted_at: 100, expires_at: 900)
@@ -135,15 +141,25 @@ fn lease(
 // active one. `con-b` held the quiet pocket once and released it.
 
 fn expired_lease() -> Lease {
-  lease("lease-1", busy, "con-a", LeaseExpired(ended_at: 500))
+  lease(
+    LeaseId("lease-1"),
+    busy,
+    ConsumerId("con-a"),
+    LeaseExpired(ended_at: 500),
+  )
 }
 
 fn released_lease() -> Lease {
-  lease("lease-2", quiet, "con-b", LeaseReleased(ended_at: 150))
+  lease(
+    LeaseId("lease-2"),
+    quiet,
+    ConsumerId("con-b"),
+    LeaseReleased(ended_at: 150),
+  )
 }
 
 fn active_lease() -> Lease {
-  lease("lease-3", busy, "con-a", LeaseActive)
+  lease(LeaseId("lease-3"), busy, ConsumerId("con-a"), LeaseActive)
 }
 
 /// Two pockets and three consumers. The busy pocket holds one record of
@@ -155,7 +171,11 @@ fn snapshot() -> Snapshot {
   Snapshot(
     ..inspection.empty(config.defaults()),
     next_position: 9,
-    consumers: [Consumer("con-a"), Consumer("con-b"), Consumer("con-c")],
+    consumers: [
+      Consumer(ConsumerId("con-a")),
+      Consumer(ConsumerId("con-b")),
+      Consumer(ConsumerId("con-c")),
+    ],
     pockets: [busy_pocket(), quiet_pocket()],
     records: [
       waiting(),
@@ -185,11 +205,14 @@ fn snapshot_of_state() -> List(String) {
     )
   let assert Ok(config) = config.new(settings)
   let seen = snapshot()
-  let publishers = [Publisher("pub-b"), Publisher("pub-a")]
+  let publishers = [
+    Publisher(PublisherId("pub-b")),
+    Publisher(PublisherId("pub-a")),
+  ]
   let superseded = [
     SupersededRecord(
       pocket: busy,
-      key: "waiting",
+      key: RecordKey("waiting"),
       rank: 0,
       payload: <<"lost":utf8>>,
       reason: Superseded,
@@ -198,7 +221,7 @@ fn snapshot_of_state() -> List(String) {
     ),
     SupersededRecord(
       pocket: quiet,
-      key: "waiting",
+      key: RecordKey("waiting"),
       rank: -1,
       payload: <<"late":utf8>>,
       reason: Stale,
@@ -209,19 +232,19 @@ fn snapshot_of_state() -> List(String) {
   let dead_letters = [
     DeadLetter(
       pocket: busy,
-      key: "gone",
+      key: RecordKey("gone"),
       rank: 1,
       payload: <<"gone":utf8>>,
-      nacked_by: "con-a",
+      nacked_by: ConsumerId("con-a"),
       nacked_at: 400,
       expires_at: 3800,
     ),
     DeadLetter(
       pocket: quiet,
-      key: "gone",
+      key: RecordKey("gone"),
       rank: 2,
       payload: <<"gone too":utf8>>,
-      nacked_by: "con-b",
+      nacked_by: ConsumerId("con-b"),
       nacked_at: 120,
       expires_at: 3450,
     ),
@@ -242,8 +265,15 @@ fn snapshot_of_state() -> List(String) {
     == Snapshot(
       config: settings,
       next_position: 9,
-      publishers: [Publisher("pub-b"), Publisher("pub-a")],
-      consumers: [Consumer("con-a"), Consumer("con-b"), Consumer("con-c")],
+      publishers: [
+        Publisher(PublisherId("pub-b")),
+        Publisher(PublisherId("pub-a")),
+      ],
+      consumers: [
+        Consumer(ConsumerId("con-a")),
+        Consumer(ConsumerId("con-b")),
+        Consumer(ConsumerId("con-c")),
+      ],
       pockets: [busy_pocket(), quiet_pocket()],
       records: [
         waiting(),
@@ -301,16 +331,20 @@ fn derived_sets() -> List(String) {
       ],
       consumers: [
         ConsumerView(
-          consumer: Consumer("con-a"),
+          consumer: Consumer(ConsumerId("con-a")),
           leases: [expired_lease(), active_lease()],
           active_leases: [active_lease()],
         ),
         ConsumerView(
-          consumer: Consumer("con-b"),
+          consumer: Consumer(ConsumerId("con-b")),
           leases: [released_lease()],
           active_leases: [],
         ),
-        ConsumerView(consumer: Consumer("con-c"), leases: [], active_leases: []),
+        ConsumerView(
+          consumer: Consumer(ConsumerId("con-c")),
+          leases: [],
+          active_leases: [],
+        ),
       ],
     )
   []
@@ -331,7 +365,7 @@ fn repeated_keys() -> List(String) {
     Snapshot(
       ..snapshot(),
       next_position: 10,
-      consumers: [Consumer("con-a"), Consumer("con-a")],
+      consumers: [Consumer(ConsumerId("con-a")), Consumer(ConsumerId("con-a"))],
       pockets: [busy_pocket(), twin],
     )
   let views = inspection.views(repeated)
@@ -342,7 +376,7 @@ fn repeated_keys() -> List(String) {
   assert first.active_leases == [active_lease()]
   let of_con_a =
     ConsumerView(
-      consumer: Consumer("con-a"),
+      consumer: Consumer(ConsumerId("con-a")),
       leases: [expired_lease(), active_lease()],
       active_leases: [active_lease()],
     )
@@ -357,9 +391,16 @@ fn names_nothing() -> List(String) {
   let strays =
     Snapshot(
       ..snapshot(),
-      records: list.append(snapshot().records, [queued("pocket-gone", "k", 8)]),
+      records: list.append(snapshot().records, [
+        queued(PocketKey("pocket-gone"), RecordKey("k"), 8),
+      ]),
       leases: list.append(snapshot().leases, [
-        lease("lease-4", "pocket-gone", "con-gone", LeaseActive),
+        lease(
+          LeaseId("lease-4"),
+          PocketKey("pocket-gone"),
+          ConsumerId("con-gone"),
+          LeaseActive,
+        ),
       ]),
     )
   assert inspection.views(strays) == inspection.views(snapshot())

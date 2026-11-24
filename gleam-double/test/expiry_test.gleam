@@ -26,6 +26,9 @@ import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
 import pachinko_double/failure
+import pachinko_double/ids.{
+  type LeaseId, ConsumerId, LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/inspection
 import pachinko_double/internal/core
 import pachinko_double/internal/domain.{LeaseLapsed}
@@ -135,10 +138,11 @@ fn short() -> Double {
 /// then pocket `b` holding `b1`, with a 10 ms lease.
 fn two_pockets() -> Double {
   let double = short()
-  assert harness.publish(double, "a", "a1", 1, "a1")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "a1")
     == fired("PublishIntoNewPocket")
-  assert harness.publish(double, "a", "a2", 1, "a2") == fired("PublishNewKey")
-  assert harness.publish(double, "b", "b1", 1, "b1")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a2"), 1, "a2")
+    == fired("PublishNewKey")
+  assert harness.publish(double, PocketKey("b"), RecordKey("b1"), 1, "b1")
     == fired("PublishIntoNewPocket")
   double
 }
@@ -152,7 +156,7 @@ fn tick(double: Double) -> TickReport {
 }
 
 /// The lease with this id, from a fresh snapshot.
-fn lease(double: Double, id: String) -> model.Lease {
+fn lease(double: Double, id: LeaseId) -> model.Lease {
   let assert Ok(lease) = model.lease(harness.inspect(double).leases, id)
   lease
 }
@@ -165,8 +169,8 @@ const lapse_of_a = ["LeaseLapses", keeps, requeue, requeue]
 
 fn lapses_exactly_at_expiry() -> List(String) {
   let double = two_pockets()
-  let batch = harness.batch(double, "c1", 10)
-  assert batch.pocket_key == "a"
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
+  assert batch.pocket_key == PocketKey("a")
   assert lease(double, batch.lease).expires_at == harness.t0 + 10
   harness.at(double, 9)
   let before = harness.inspect(double)
@@ -188,7 +192,7 @@ fn lapses_exactly_at_expiry() -> List(String) {
 
 fn lapse_fires_once() -> List(String) {
   let double = two_pockets()
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   let _ = harness.at(double, 10)
   let assert [lapsed] = tick(double).lapsed
   assert lapsed.id == batch.lease
@@ -199,16 +203,16 @@ fn lapse_fires_once() -> List(String) {
     assert tick(double).lapsed == []
   })
   assert harness.inspect(double) == after
-  assert harness.pocket(double, "a").consecutive_expiries == 1
+  assert harness.pocket(double, PocketKey("a")).consecutive_expiries == 1
   harness.fired(double)
 }
 
 fn zero_ttl_lapses_at_grant() -> List(String) {
   let double =
     harness.fixture_with(Settings(..harness.fixture_settings(), lease_ttl: 0))
-  assert harness.publish(double, "a", "a1", 1, "a1")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "a1")
     == fired("PublishIntoNewPocket")
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert lease(double, batch.lease).expires_at == harness.t0
   // The clock has not moved since the grant.
   let report = tick(double)
@@ -216,7 +220,7 @@ fn zero_ttl_lapses_at_grant() -> List(String) {
   assert lapsed.id == batch.lease
   assert lapsed.status == LeaseExpired(ended_at: harness.t0)
   assert report.fired == ["LeaseLapses", keeps, requeue]
-  assert harness.lease_view(double, "c1") == Ok(None)
+  assert harness.lease_view(double, ConsumerId("c1")) == Ok(None)
   harness.fired(double)
 }
 
@@ -235,9 +239,9 @@ fn tick_reads_once() -> List(String) {
 
   // `a` and `b` leased at t0, and a stale version of `a1` shed at t0, whose
   // superseded_ttl is 5000 ms.
-  let first = harness.batch(double, "c1", 10)
-  let second = harness.batch(double, "c2", 10)
-  assert harness.publish(double, "a", "a1", 0, "stale")
+  let first = harness.batch(double, ConsumerId("c1"), 10)
+  let second = harness.batch(double, ConsumerId("c2"), 10)
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 0, "stale")
     == fired("DropStalePublish")
   let assert [shed] = harness.inspect(double).superseded
   let _ = harness.at(double, 5000)
@@ -263,7 +267,7 @@ fn tick_reads_once() -> List(String) {
 /// complete state is as the lapse left it.
 fn lapses_once() -> List(String) {
   let double = two_pockets()
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   let _ = harness.at(double, 10)
   let report = tick(double)
   assert list.map(report.lapsed, fn(lease) { lease.id }) == [batch.lease]
@@ -289,20 +293,27 @@ fn lapses_once() -> List(String) {
 /// double's.
 fn lapse_order() -> List(String) {
   let double = short()
-  assert harness.consumer_joins(double, "c4") == fired("ConsumerJoins")
+  assert harness.consumer_joins(double, ConsumerId("c4"))
+    == fired("ConsumerJoins")
   list.each(["a", "b", "c", "d"], fn(pocket_key) {
-    assert harness.publish(double, pocket_key, "k", 1, pocket_key)
+    assert harness.publish(
+        double,
+        PocketKey(pocket_key),
+        RecordKey("k"),
+        1,
+        pocket_key,
+      )
       == fired("PublishIntoNewPocket")
   })
-  let l1 = harness.batch(double, "c1", 10)
-  let l2 = harness.batch(double, "c3", 10)
-  let l3 = harness.batch(double, "c2", 10)
+  let l1 = harness.batch(double, ConsumerId("c1"), 10)
+  let l2 = harness.batch(double, ConsumerId("c3"), 10)
+  let l3 = harness.batch(double, ConsumerId("c2"), 10)
   let _ = harness.at(double, 3)
-  let l4 = harness.batch(double, "c4", 10)
+  let l4 = harness.batch(double, ConsumerId("c4"), 10)
   let _ = harness.at(double, 5)
-  assert harness.renew(double, "c1", l1.lease) == fired("Renew")
+  assert harness.renew(double, ConsumerId("c1"), l1.lease) == fired("Renew")
   assert list.map([l1, l2, l3, l4], fn(pulled) { pulled.pocket_key })
-    == ["a", "b", "c", "d"]
+    == [PocketKey("a"), PocketKey("b"), PocketKey("c"), PocketKey("d")]
   assert list.map(harness.inspect(double).leases, fn(lease) { lease.id })
     == [l1.lease, l2.lease, l3.lease, l4.lease]
   let now = harness.at(double, 20)
@@ -325,17 +336,23 @@ fn lapse_order() -> List(String) {
 fn tie_by_creation_not_granted_at() -> List(String) {
   let double = short()
   list.each(["a", "b"], fn(pocket_key) {
-    assert harness.publish(double, pocket_key, "k", 1, pocket_key)
+    assert harness.publish(
+        double,
+        PocketKey(pocket_key),
+        RecordKey("k"),
+        1,
+        pocket_key,
+      )
       == fired("PublishIntoNewPocket")
   })
   let _ = harness.at(double, 10)
-  let first = harness.batch(double, "c1", 10)
+  let first = harness.batch(double, ConsumerId("c1"), 10)
   let _ = harness.at(double, 0)
-  let second = harness.batch(double, "c2", 10)
+  let second = harness.batch(double, ConsumerId("c2"), 10)
   let _ = harness.at(double, 10)
-  assert harness.renew(double, "c2", second.lease) == fired("Renew")
+  assert harness.renew(double, ConsumerId("c2"), second.lease) == fired("Renew")
   assert list.map([first, second], fn(pulled) { pulled.pocket_key })
-    == ["a", "b"]
+    == [PocketKey("a"), PocketKey("b")]
   let created = lease(double, first.lease)
   let renewed = lease(double, second.lease)
   assert created.granted_at == harness.t0 + 10
@@ -364,21 +381,22 @@ fn zero_ttl_entries_decay_in_the_lapse_tick() -> List(String) {
         dead_letter_ttl: 0,
       ),
     )
-  assert harness.publish(double, "a", "n", 1, "n")
+  assert harness.publish(double, PocketKey("a"), RecordKey("n"), 1, "n")
     == fired("PublishIntoNewPocket")
-  assert harness.publish(double, "a", "u", 1, "u") == fired("PublishNewKey")
-  let batch = harness.batch(double, "c1", 10)
-  assert harness.nack(double, "c1", batch.lease, "n")
+  assert harness.publish(double, PocketKey("a"), RecordKey("u"), 1, "u")
+    == fired("PublishNewKey")
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("n"))
     == fired("NackMarksRecord")
-  assert harness.publish(double, "a", "u", 2, "newer")
+  assert harness.publish(double, PocketKey("a"), RecordKey("u"), 2, "newer")
     == fired("DeferBehindHeldVersion")
   let now = harness.at(double, 10)
   let report = tick(double)
   assert report.superseded
     == [
       SupersededRecord(
-        pocket: "a",
-        key: "u",
+        pocket: PocketKey("a"),
+        key: RecordKey("u"),
         rank: 1,
         payload: <<"u":utf8>>,
         reason: Superseded,
@@ -389,11 +407,11 @@ fn zero_ttl_entries_decay_in_the_lapse_tick() -> List(String) {
   assert report.dead_letters
     == [
       DeadLetter(
-        pocket: "a",
-        key: "n",
+        pocket: PocketKey("a"),
+        key: RecordKey("n"),
         rank: 1,
         payload: <<"n":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: harness.t0,
         expires_at: now,
       ),
@@ -432,9 +450,27 @@ fn held(record: Record, mark: Mark, nacked_at: Option(Int)) -> Record {
 /// `n`, nacked at 720.
 fn theirs() -> #(Record, Record) {
   #(
-    held(Record("other", "a", 48, <<"oa":utf8>>, 12, RecordQueued), Acked, None),
     held(
-      Record("other", "n", 47, <<"on":utf8>>, 10, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("a"),
+        48,
+        <<"oa":utf8>>,
+        12,
+        RecordQueued,
+      ),
+      Acked,
+      None,
+    ),
+    held(
+      Record(
+        PocketKey("other"),
+        RecordKey("n"),
+        47,
+        <<"on":utf8>>,
+        10,
+        RecordQueued,
+      ),
       Nacked,
       Some(720),
     ),
@@ -467,35 +503,35 @@ fn lapsing(expiries: Int, records: List(Record)) -> State {
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 20),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1"), Consumer("c2")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [Consumer(ConsumerId("c1")), Consumer(ConsumerId("c2"))],
     pockets: [
-      Pocket("other", PocketLeased, 9, 0),
-      Pocket("pk", PocketLeased, 2, expiries),
-      Pocket("done", PocketIdle, 1, 1),
+      Pocket(PocketKey("other"), PocketLeased, 9, 0),
+      Pocket(PocketKey("pk"), PocketLeased, 2, expiries),
+      Pocket(PocketKey("done"), PocketIdle, 1, 1),
     ],
     records:,
     leases: [
       Lease(
-        id: "lease-0",
-        pocket: "pk",
-        consumer: "c1",
+        id: LeaseId("lease-0"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseReleased(150),
         granted_at: 100,
         expires_at: 100 + ttl,
       ),
       Lease(
-        id: "lease-2",
-        pocket: "other",
-        consumer: "c2",
+        id: LeaseId("lease-2"),
+        pocket: PocketKey("other"),
+        consumer: ConsumerId("c2"),
         status: LeaseActive,
         granted_at: 700,
         expires_at: 700 + ttl,
       ),
       Lease(
-        id: "lease-1",
-        pocket: "pk",
-        consumer: "c1",
+        id: LeaseId("lease-1"),
+        pocket: PocketKey("pk"),
+        consumer: ConsumerId("c1"),
         status: LeaseActive,
         granted_at: 600,
         expires_at: 600 + ttl,
@@ -503,8 +539,8 @@ fn lapsing(expiries: Int, records: List(Record)) -> State {
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "u",
+        pocket: PocketKey("pk"),
+        key: RecordKey("u"),
         rank: 40,
         payload: <<"stale":utf8>>,
         reason: Stale,
@@ -514,11 +550,11 @@ fn lapsing(expiries: Int, records: List(Record)) -> State {
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "pk",
-        key: "k0",
+        pocket: PocketKey("pk"),
+        key: RecordKey("k0"),
         rank: 39,
         payload: <<"zero":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: 120,
         expires_at: 150 + config.defaults().dead_letter_ttl,
       ),
@@ -532,22 +568,27 @@ fn lapsing(expiries: Int, records: List(Record)) -> State {
 fn lapsed(state: State) -> harness.Driven {
   let now = due_at()
   harness.drive(
-    core.run_at(expiry.lease_lapsed(), Lapse("lease-1", now), state, now),
+    core.run_at(
+      expiry.lease_lapsed(),
+      Lapse(LeaseId("lease-1"), now),
+      state,
+      now,
+    ),
     now + 1,
-    "unused",
+    LeaseId("unused"),
   )
 }
 
 /// The rule the `LeaseLapsed` table sends `lease-1`'s lapse at `now` to,
 /// if any.
-fn expiry_rule_at(state: State, lease: String, now: Int) -> Option(String) {
+fn expiry_rule_at(state: State, lease: LeaseId, now: Int) -> Option(String) {
   let assert Ok(row) =
     rules.dispatch(expiry.lease_lapsed(), state, Lapse(lease, now))
   option.map(row, fn(row) { row.name })
 }
 
 fn expiry_rule(state: State) -> Option(String) {
-  expiry_rule_at(state, "lease-1", due_at())
+  expiry_rule_at(state, LeaseId("lease-1"), due_at())
 }
 
 /// The row alone: over `lapsing`, its guard holds, and its effect asks for
@@ -557,35 +598,37 @@ fn expiry_rule(state: State) -> Option(String) {
 /// expired, or for an id no lease has, nothing happens.
 fn lease_lapses_exactly() -> List(String) {
   let #(their_a, their_n) = theirs()
-  let u = Record("pk", "u", 44, <<"you":utf8>>, 6, RecordQueued)
+  let u =
+    Record(PocketKey("pk"), RecordKey("u"), 44, <<"you":utf8>>, 6, RecordQueued)
   let state = lapsing(1, [their_a, held(u, Unsettled, None), their_n])
   let now = due_at()
-  let lapse = Lapse("lease-1", now)
+  let lapse = Lapse(LeaseId("lease-1"), now)
   let assert [row] = expiry.lease_lapses().rows
   assert row.name == "LeaseLapses"
   assert row.guard(state, lapse)
   let assert Now(next) = row.effect(state, lapse)
-  assert next(now) == Finish(state, [LeaseLapsed("lease-1", now)], None)
+  assert next(now)
+    == Finish(state, [LeaseLapsed(LeaseId("lease-1"), now)], None)
 
   let fired = ["LeaseLapses", keeps, requeue]
   let assert Driven(Ok(applied), clock_reads: 0, lease_id_draws: 0) =
     harness.drive(
       core.run_at(expiry.lease_lapses(), lapse, state, now),
       now + 1,
-      "unused",
+      LeaseId("unused"),
     )
   assert applied.fired == fired
-  let assert Ok(ended) = model.lease(applied.state.leases, "lease-1")
+  let assert Ok(ended) = model.lease(applied.state.leases, LeaseId("lease-1"))
   assert ended.status == LeaseExpired(ended_at: now)
 
-  let untouched = fn(state: State, lease: String) {
+  let untouched = fn(state: State, lease: LeaseId) {
     assert !row.guard(state, Lapse(lease, now))
     assert core.run_at(expiry.lease_lapses(), Lapse(lease, now), state, now)
       == Done(Ok(Applied(state, [], None)))
   }
-  untouched(state, "lease-0")
-  untouched(state, "nowhere")
-  untouched(applied.state, "lease-1")
+  untouched(state, LeaseId("lease-0"))
+  untouched(state, LeaseId("nowhere"))
+  untouched(applied.state, LeaseId("lease-1"))
   fired
 }
 
@@ -596,8 +639,17 @@ fn lease_lapses_exactly() -> List(String) {
 /// Nothing else in the complete state changes.
 fn parks_exactly() -> List(String) {
   let #(their_a, their_n) = theirs()
-  let u = Record("pk", "u", 44, <<"you":utf8>>, 6, RecordQueued)
-  let q = Record("pk", "q", 42, <<"queue":utf8>>, 11, RecordQueued)
+  let u =
+    Record(PocketKey("pk"), RecordKey("u"), 44, <<"you":utf8>>, 6, RecordQueued)
+  let q =
+    Record(
+      PocketKey("pk"),
+      RecordKey("q"),
+      42,
+      <<"queue":utf8>>,
+      11,
+      RecordQueued,
+    )
   let state = lapsing(2, [their_a, held(u, Unsettled, None), q, their_n])
   let assert [other, pk, done] = state.pockets
   let assert [lease_0, lease_2, lease_1] = state.leases
@@ -637,8 +689,24 @@ fn parks_exactly() -> List(String) {
 /// it had, 2, the front: the counter stays at 20. Nothing else changes.
 fn keeps_at_front_exactly() -> List(String) {
   let #(their_a, their_n) = theirs()
-  let late = Record("pk", "a", 44, <<"late":utf8>>, 6, RecordQueued)
-  let early = Record("pk", "n", 45, <<"early":utf8>>, 3, RecordQueued)
+  let late =
+    Record(
+      PocketKey("pk"),
+      RecordKey("a"),
+      44,
+      <<"late":utf8>>,
+      6,
+      RecordQueued,
+    )
+  let early =
+    Record(
+      PocketKey("pk"),
+      RecordKey("n"),
+      45,
+      <<"early":utf8>>,
+      3,
+      RecordQueued,
+    )
   let state =
     lapsing(1, [
       their_a,
@@ -685,8 +753,10 @@ fn keeps_at_front_exactly() -> List(String) {
 /// Nothing else changes.
 fn idles_exactly() -> List(String) {
   let #(their_a, their_n) = theirs()
-  let n = Record("pk", "n", 45, <<"en":utf8>>, 8, RecordQueued)
-  let a = Record("pk", "a", 46, <<"ay":utf8>>, 3, RecordQueued)
+  let n =
+    Record(PocketKey("pk"), RecordKey("n"), 45, <<"en":utf8>>, 8, RecordQueued)
+  let a =
+    Record(PocketKey("pk"), RecordKey("a"), 46, <<"ay":utf8>>, 3, RecordQueued)
   let state =
     lapsing(0, [
       held(n, Nacked, Some(700)),
@@ -720,11 +790,11 @@ fn idles_exactly() -> List(String) {
           ],
           dead_letters: list.append(state.dead_letters, [
             DeadLetter(
-              pocket: "pk",
-              key: "n",
+              pocket: PocketKey("pk"),
+              key: RecordKey("n"),
               rank: 45,
               payload: <<"en":utf8>>,
-              nacked_by: "c1",
+              nacked_by: ConsumerId("c1"),
               nacked_at: 700,
               expires_at: now + config.defaults().dead_letter_ttl,
             ),
@@ -747,15 +817,16 @@ fn idles_exactly() -> List(String) {
 /// only by hand (N37). The table answers that nothing happens.
 fn lapse_guards() -> List(String) {
   let #(their_a, their_n) = theirs()
-  let u = Record("pk", "u", 44, <<"you":utf8>>, 6, RecordQueued)
+  let u =
+    Record(PocketKey("pk"), RecordKey("u"), 44, <<"you":utf8>>, 6, RecordQueued)
   let state = lapsing(1, [their_a, held(u, Unsettled, None), their_n])
-  let assert Ok(lease_1) = model.lease(state.leases, "lease-1")
+  let assert Ok(lease_1) = model.lease(state.leases, LeaseId("lease-1"))
   let expires_at = lease_1.expires_at
-  assert expiry_rule_at(state, "lease-1", expires_at - 1) == None
-  assert expiry_rule_at(state, "lease-1", expires_at) == Some(keeps)
+  assert expiry_rule_at(state, LeaseId("lease-1"), expires_at - 1) == None
+  assert expiry_rule_at(state, LeaseId("lease-1"), expires_at) == Some(keeps)
   assert core.run_at(
       expiry.lease_lapsed(),
-      Lapse("lease-1", expires_at - 1),
+      Lapse(LeaseId("lease-1"), expires_at - 1),
       state,
       expires_at - 1,
     )
@@ -773,7 +844,7 @@ fn lapse_guards() -> List(String) {
       State(
         ..state,
         pockets: list.map(state.pockets, fn(pocket) {
-          case pocket.key == "pk" {
+          case pocket.key == PocketKey("pk") {
             True -> Pocket(..pocket, status:)
             False -> pocket
           }
@@ -781,7 +852,7 @@ fn lapse_guards() -> List(String) {
       )
     assert expiry_rule(unleased) == None
   })
-  assert expiry_rule_at(state, "nowhere", due_at()) == None
+  assert expiry_rule_at(state, LeaseId("nowhere"), due_at()) == None
   []
 }
 
@@ -794,14 +865,23 @@ fn lapse_guards() -> List(String) {
 /// reports it, stops there, and runs no decay: the due entry is still in
 /// its queue.
 fn tick_stops_at_a_failed_lapse() -> List(String) {
-  let u = Record("pk", "u", 44, <<"you":utf8>>, 6, RecordQueued)
-  let o = Record("other", "o", 41, <<"oh":utf8>>, 10, RecordQueued)
+  let u =
+    Record(PocketKey("pk"), RecordKey("u"), 44, <<"you":utf8>>, 6, RecordQueued)
+  let o =
+    Record(
+      PocketKey("other"),
+      RecordKey("o"),
+      41,
+      <<"oh":utf8>>,
+      10,
+      RecordQueued,
+    )
   let base = lapsing(1, [held(o, Unsettled, None), held(u, Unsettled, None)])
   let now = 700 + config.defaults().lease_ttl + 1
   let due =
     SupersededRecord(
-      pocket: "pk",
-      key: "u",
+      pocket: PocketKey("pk"),
+      key: RecordKey("u"),
       rank: 30,
       payload: <<"due":utf8>>,
       reason: Stale,
@@ -812,7 +892,7 @@ fn tick_stops_at_a_failed_lapse() -> List(String) {
     State(
       ..base,
       pockets: list.map(base.pockets, fn(pocket) {
-        case pocket.key == "other" {
+        case pocket.key == PocketKey("other") {
           True -> Pocket(..pocket, consecutive_expiries: 3)
           False -> pocket
         }
@@ -822,11 +902,16 @@ fn tick_stops_at_a_failed_lapse() -> List(String) {
   assert invariants.check(inspection.snapshot(state)) == []
   let assert Driven(Ok(first), clock_reads: 0, lease_id_draws: 0) =
     harness.drive(
-      core.run_at(expiry.lease_lapses(), Lapse("lease-1", now), state, now),
+      core.run_at(
+        expiry.lease_lapses(),
+        Lapse(LeaseId("lease-1"), now),
+        state,
+        now,
+      ),
       now,
-      "unused",
+      LeaseId("unused"),
     )
-  let assert Ok(lapsed) = model.lease(first.state.leases, "lease-1")
+  let assert Ok(lapsed) = model.lease(first.state.leases, LeaseId("lease-1"))
   assert lapsed.status == LeaseExpired(now)
   let ticked = core.tick(state, now)
   assert ticked
@@ -847,20 +932,27 @@ fn with_parked() -> State {
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 9),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [Consumer(ConsumerId("c1"))],
     pockets: [
-      Pocket("pk", PocketQueued, 6, 0),
-      Pocket("parked", PocketParked, 0, 3),
+      Pocket(PocketKey("pk"), PocketQueued, 6, 0),
+      Pocket(PocketKey("parked"), PocketParked, 0, 3),
     ],
     records: [
-      Record("pk", "a", 5, <<"x":utf8>>, 7, RecordQueued),
-      Record("parked", "r", 2, <<"r":utf8>>, 4, RecordQueued),
+      Record(PocketKey("pk"), RecordKey("a"), 5, <<"x":utf8>>, 7, RecordQueued),
+      Record(
+        PocketKey("parked"),
+        RecordKey("r"),
+        2,
+        <<"r":utf8>>,
+        4,
+        RecordQueued,
+      ),
     ],
     superseded: [
       SupersededRecord(
-        pocket: "pk",
-        key: "a",
+        pocket: PocketKey("pk"),
+        key: RecordKey("a"),
         rank: 4,
         payload: <<"older":utf8>>,
         reason: Superseded,
@@ -870,11 +962,11 @@ fn with_parked() -> State {
     ],
     dead_letters: [
       DeadLetter(
-        pocket: "parked",
-        key: "gone",
+        pocket: PocketKey("parked"),
+        key: RecordKey("gone"),
         rank: 3,
         payload: <<"dead":utf8>>,
-        nacked_by: "c1",
+        nacked_by: ConsumerId("c1"),
         nacked_at: 350,
         expires_at: 400 + config.defaults().dead_letter_ttl,
       ),
@@ -893,9 +985,9 @@ fn revive_parked_exactly() -> List(String) {
   let assert [pk, parked] = state.pockets
   let revive = "ReviveParkedPocket"
   assert harness.drive(
-      core.run(publish.pocket_touched(), "parked", state),
+      core.run(publish.pocket_touched(), PocketKey("parked"), state),
       harness.t0,
-      "unused",
+      LeaseId("unused"),
     )
     == Driven(
       Ok(Applied(
@@ -918,10 +1010,14 @@ fn revive_parked_exactly() -> List(String) {
   assert harness.drive(
       core.apply(
         state,
-        core.Publish(Publication("p", "parked", "k", 1, <<"v":utf8>>)),
+        core.Publish(
+          Publication(PublisherId("p"), PocketKey("parked"), RecordKey("k"), 1, <<
+            "v":utf8,
+          >>),
+        ),
       ),
       harness.t0,
-      "unused",
+      LeaseId("unused"),
     )
     == Driven(
       Ok(Applied(
@@ -938,7 +1034,14 @@ fn revive_parked_exactly() -> List(String) {
             ),
           ],
           records: list.append(state.records, [
-            Record("parked", "k", 1, <<"v":utf8>>, 9, RecordQueued),
+            Record(
+              PocketKey("parked"),
+              RecordKey("k"),
+              1,
+              <<"v":utf8>>,
+              9,
+              RecordQueued,
+            ),
           ]),
         ),
         fired,
@@ -947,7 +1050,7 @@ fn revive_parked_exactly() -> List(String) {
       clock_reads: 0,
       lease_id_draws: 0,
     )
-  assert core.run(publish.pocket_touched(), "pk", state)
+  assert core.run(publish.pocket_touched(), PocketKey("pk"), state)
     == Done(Ok(Applied(state, [], None)))
   [revive, ..fired]
 }

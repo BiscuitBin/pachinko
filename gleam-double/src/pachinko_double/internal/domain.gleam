@@ -4,6 +4,7 @@
 
 import pachinko_double/answers.{type Answer}
 import pachinko_double/failure
+import pachinko_double/ids.{type LeaseId, type PocketKey, type RecordKey}
 import pachinko_double/internal/rules
 import pachinko_double/model.{type State}
 import pachinko_double/refusals.{type Refusal}
@@ -13,19 +14,19 @@ import pachinko_double/time.{type Timestamp}
 /// outcome.
 pub type Event {
   /// A publish added or raised a record in this pocket.
-  PocketTouched(pocket_key: String)
+  PocketTouched(pocket_key: PocketKey)
   /// A pull handed this record of this pocket out: one for each record of
   /// the batch, in the batch's order.
-  Handed(pocket_key: String, record_key: String)
+  Handed(pocket_key: PocketKey, record_key: RecordKey)
   /// A lease ended while this record of its pocket was held: one for each
   /// record of the held set. `lease` is the lease's id, and `ended_at` the
   /// time the rule that ended the lease wrote to its `ended_at`.
-  Freed(lease: String, record_key: String, ended_at: Timestamp)
+  Freed(lease: LeaseId, record_key: RecordKey, ended_at: Timestamp)
   /// The clock found this lease active with its `expires_at` passed. `lease`
   /// is the lease's id. The specification's `LeaseLapsed(lease)` carries no
   /// time; `now` is the instant of the outcome that emitted it, the `now`
   /// its `Tick` read, which the expiry rules' guards compare against.
-  LeaseLapsed(lease: String, now: Timestamp)
+  LeaseLapsed(lease: LeaseId, now: Timestamp)
 }
 
 pub type Plan =

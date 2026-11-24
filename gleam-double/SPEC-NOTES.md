@@ -22,7 +22,7 @@ read alone.
 The double is one owner actor in front of a pure core. Where a note concerns what the
 actor adds, which the Python double could not show, it says "no `N`-note".
 
-The findings come first. The 67 notes follow, each under one of four headings and in id
+The findings come first. The 68 notes follow, each under one of four headings and in id
 order within it, keeping the id it was written with:
 
 - [where the second reading agrees with an `N`-note](#where-the-second-reading-agrees-with-an-n-note);
@@ -86,7 +86,7 @@ A note that also fits another heading is listed there:
 | --- | --- |
 | Agrees with an `N`-note | 34 |
 | Departs from an `N`-note | 2 |
-| Raises what no `N`-note holds | 21 |
+| Raises what no `N`-note holds | 22 |
 | The `impl-choice` rows | 10 |
 
 ### Where the two readings agree
@@ -200,6 +200,12 @@ serialized stream has a section of its own, below.
    Lease end comment's "one outcome, so the invariants hold after the whole of it" be
    said of a publish and the revival it causes too (G47)?
 8. **A Rust comment.** Should S075's comment in the Rust say which pocket parks (G67)?
+9. **The ids' format.** The specification declares a publisher's id, a consumer's id, a
+   pocket key and a record key each as a `String` and states no format for any of them
+   (`docs/specs/pachinko.allium`); the lease's id is the double's own (G10). The double
+   wraps each in a type of its own and checks nothing, so an empty key is as valid as any
+   other (G68). **The maintainer decides:** do publisher ids, consumer ids, pocket keys,
+   record keys and lease ids have a format, such as non-empty?
 
 G44, G51, G53, G55 and G66 record a reading and leave no question.
 
@@ -420,8 +426,9 @@ under "How the notes are grouped".
     asking the owner, which calls the clock function it was started with, and answers
     every later request in that outcome with the same value. So one outcome has one
     `now`, shared by the rule the trigger reached and the rules its events reach.
-  - A lease id is a `String`, drawn from the owner's injected lease-id function once for
-    each request, and only a rule that creates a lease requests one.
+  - A lease id is a `LeaseId`, which wraps a `String`, drawn from the owner's injected
+    lease-id function once for each request, and only a rule that creates a lease
+    requests one.
   - A `Tick`, from GD06, is the one message that reads the clock before any rule asks:
     once, even when nothing is due. Each outcome it runs has that `now` in hand, so a
     row that asks for the time reads no clock, and a clock trigger's guard reads `now`
@@ -516,7 +523,8 @@ under "How the notes are grouped".
     `requires: exists pocket`. It does not say what the lookup is where there is no
     pocket.
 - **The double does:**
-  - Each field holds the pocket's key or the consumer's id, a `String`.
+  - Each field holds the pocket's key or the consumer's id, a `PocketKey` or a
+    `ConsumerId`, each of which wraps a `String`.
   - Two references are equal when their keys are, whether or not any entity has the key.
   - An entity's collection is every member whose reference holds that entity's key.
   - A field read through a reference is read from every entity that has the key, and
@@ -568,8 +576,8 @@ under "How the notes are grouped".
   `ActionsNameTheirLease` guarantee says one naming an ended lease is rejected "rather
   than landing on a successor lease over the same pocket".
 - **The double does:**
-  - `Lease` has one more field, `id`, a `String`. It is how a caller names a lease, so
-    two leases over the same pocket and consumer stay distinct.
+  - `Lease` has one more field, `id`, a `LeaseId`, which wraps a `String`. It is how a
+    caller names a lease, so two leases over the same pocket and consumer stay distinct.
   - GD02 lands the field so that the model and the snapshot are complete.
     `PullClaimsFrontPocket`, the one rule that creates a lease, lands in GD03 and draws
     the id through the request G05 describes (G27). The invariant controls write their
@@ -2579,6 +2587,32 @@ or could not show it.
   - S066 and S067 are two halves each in separate Rust tests (G63).
 - **`N`-note:** no `N`-note.
 - **Question:** none.
+
+### G68: each id and key is a type of its own, which wraps the specification's `String`
+
+- **Ticket:** GD12.
+- **Concerns:** `Publisher.id`, `Consumer.id`, `Pocket.key`, `Record.key`, the `key` of
+  `SupersededRecord` and `DeadLetter`, the references of G09, the lease's id of G10, and
+  every trigger that carries one of them.
+- **The specification says:** the four ids it declares are each typed `String`, with no
+  format: no length, no character set, nothing about an empty one. It declares the lease
+  no identity (G10).
+- **The double does:**
+  - `ids.gleam` defines five open types, `PublisherId`, `ConsumerId`, `PocketKey`,
+    `RecordKey` and `LeaseId`, each with one constructor that wraps a `String` and checks
+    nothing. Every field, parameter and reply that holds an id takes its type, so passing
+    one id where another is expected does not compile.
+  - The `String` inside is stored unchanged: the caller's, or for a lease id the one in
+    the `LeaseId` that the owner's lease-id function returns (G10). No rule reads it: a
+    guard or a lookup compares two ids with `==`, and a defect text takes the `String`
+    out by matching it. Like G07's payload, this is a type other than the one the
+    specification declares, recorded so that a reader of the specification knows why.
+  - The pin in `interface_test.gleam` holds that no `pub fn` of the root names `String`,
+    and that the lines under `src/` that name it are the 32 that hold no id.
+- **`N`-note:** no `N`-note. N06 holds a reference as the key, a string; this note
+  changes the key's type, not what a reference holds.
+- **Question:** none. Whether an id has a format is item 9 of "What this double raises
+  that no `N`-note holds".
 
 ## The `impl-choice` rows
 

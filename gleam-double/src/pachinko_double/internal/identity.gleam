@@ -2,6 +2,7 @@
 
 import gleam/list
 import gleam/option.{None}
+import pachinko_double/ids.{type ConsumerId, type PublisherId}
 import pachinko_double/internal/domain.{type Table}
 import pachinko_double/internal/rules.{Finish, Refuses, Row, Table}
 import pachinko_double/model.{type State, Consumer, Publisher, State}
@@ -9,7 +10,7 @@ import pachinko_double/refusals.{ConsumerAlreadyJoined, PublisherAlreadyJoined}
 
 /// `PublisherJoins(publisher_id)`. A join with an id already taken is
 /// refused (spec note G03).
-pub fn publisher_joins() -> Table(String) {
+pub fn publisher_joins() -> Table(PublisherId) {
   Table(
     "PublisherJoins",
     [
@@ -31,7 +32,7 @@ pub fn publisher_joins() -> Table(String) {
 
 /// `ConsumerJoins(consumer_id)`. A join with an id already taken is refused
 /// (spec note G03).
-pub fn consumer_joins() -> Table(String) {
+pub fn consumer_joins() -> Table(ConsumerId) {
   Table(
     "ConsumerJoins",
     [

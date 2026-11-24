@@ -11,6 +11,7 @@ import pachinko_double/answers.{
   type Answer, type LeaseView, type TickReport, TickReport,
 }
 import pachinko_double/failure.{BrokenInvariant, Defect, EffectFailed, Refused}
+import pachinko_double/ids.{type ConsumerId, type PublisherId, LeaseId}
 import pachinko_double/inspection
 import pachinko_double/internal/consuming
 import pachinko_double/internal/decay
@@ -39,8 +40,8 @@ import pachinko_double/time.{type Timestamp}
 /// the lapse and the two decays, are not among them: only `tick` reaches
 /// their tables.
 pub type Trigger {
-  PublisherJoins(publisher_id: String)
-  ConsumerJoins(consumer_id: String)
+  PublisherJoins(publisher_id: PublisherId)
+  ConsumerJoins(consumer_id: ConsumerId)
   Publish(publication: Publication)
   Pull(pull: Pull)
   Ack(ack: Ack)
@@ -97,7 +98,7 @@ pub fn apply(state: State, trigger: Trigger) -> Step {
 /// it is for every trigger the surface provides.
 pub fn lease_view(
   state: State,
-  consumer_id: String,
+  consumer_id: ConsumerId,
 ) -> Result(Option(LeaseView), Failure) {
   case joined(state, consumer_id) {
     True -> Ok(consuming.lease_view(state, consumer_id))
@@ -107,7 +108,11 @@ pub fn lease_view(
 
 /// A consumer's trigger, run only where a consumer with this id has joined;
 /// otherwise the refusal.
-fn as_consumer(state: State, consumer_id: String, run: fn() -> Step) -> Step {
+fn as_consumer(
+  state: State,
+  consumer_id: ConsumerId,
+  run: fn() -> Step,
+) -> Step {
   case joined(state, consumer_id) {
     True -> run()
     False -> rules.fail(Refused(UnknownConsumer(consumer_id)))
@@ -115,7 +120,7 @@ fn as_consumer(state: State, consumer_id: String, run: fn() -> Step) -> Step {
 }
 
 /// Whether a consumer with this id has joined.
-fn joined(state: State, consumer_id: String) -> Bool {
+fn joined(state: State, consumer_id: ConsumerId) -> Bool {
   list.contains(state.consumers, Consumer(consumer_id))
 }
 
@@ -283,8 +288,10 @@ fn report(
     })
   let failure = case ran.failure, missing {
     Some(failure), _ -> Some(failure)
-    None, Ok(id) ->
-      Some(Defect("Tick", EffectFailed("LeaseLapses", "no lease " <> id)))
+    None, Ok(id) -> {
+      let LeaseId(lease) = id
+      Some(Defect("Tick", EffectFailed("LeaseLapses", "no lease " <> lease)))
+    }
     None, Error(Nil) -> None
   }
   Ticked(

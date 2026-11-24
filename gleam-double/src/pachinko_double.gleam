@@ -22,16 +22,17 @@
 //// the outcomes of a `tick`.
 ////
 //// A caller's other names live in other modules. What it names when it sends
-//// a trigger or reads a reply is in `config`, `time`, `model` and `refusals`,
-//// and the reply types are in two more: `failure` holds `Failure` and
-//// `Cause`, and `answers` holds `Answer`, `BatchRecord`, `TickReport`,
-//// `LeaseView` and `HeldView`. The snapshot that `inspect` returns, and the
-//// checker of the invariants, are in `inspection` and `invariants`. These
-//// eight modules sit directly under `src/pachinko_double/`, and a name in one
-//// of them that is not part of the interface is marked `@internal`. The
-//// engine, the rule-table machinery and the apply step, the specification's
-//// rules, and the `Consuming` surface's lease-view read sit under
-//// `src/pachinko_double/internal/`, which is no part of the interface.
+//// a trigger or reads a reply is in `ids`, `config`, `time`, `model` and
+//// `refusals`, and the reply types are in two more: `failure` holds
+//// `Failure` and `Cause`, and `answers` holds `Answer`, `BatchRecord`,
+//// `TickReport`, `LeaseView` and `HeldView`. The snapshot that `inspect`
+//// returns, and the checker of the invariants, are in `inspection` and
+//// `invariants`. These nine modules sit directly under
+//// `src/pachinko_double/`, and a name in one of them that is not part of the
+//// interface is marked `@internal`. The engine, the rule-table machinery and
+//// the apply step, the specification's rules, and the `Consuming` surface's
+//// lease-view read sit under `src/pachinko_double/internal/`, which is no part
+//// of the interface.
 
 import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option, None, Some}
@@ -39,6 +40,10 @@ import gleam/otp/actor
 import pachinko_double/answers.{type Answer, type LeaseView, type TickReport}
 import pachinko_double/config.{type Config}
 import pachinko_double/failure.{type Failure}
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type PublisherId,
+  type RecordKey,
+}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/internal/core.{type Trigger}
 import pachinko_double/internal/publish.{Publication}
@@ -82,13 +87,13 @@ pub opaque type Message {
   Tick(reply: Subject(Result(TickReport, PartialTick)))
   Inspect(reply: Subject(Snapshot))
   LeaseView(
-    consumer: String,
+    consumer: ConsumerId,
     reply: Subject(Result(Option(LeaseView), Failure(Refusal))),
   )
 }
 
 type Owner {
-  Owner(state: State, now: fn() -> Timestamp, lease_id: fn() -> String)
+  Owner(state: State, now: fn() -> Timestamp, lease_id: fn() -> LeaseId)
 }
 
 /// Starts an owner over a new, empty queue.
@@ -100,7 +105,7 @@ type Owner {
 pub fn start(
   config: Config,
   now: fn() -> Timestamp,
-  lease_id: fn() -> String,
+  lease_id: fn() -> LeaseId,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new(Owner(state: model.new(config), now:, lease_id:))
   |> actor.on_message(handle)
@@ -142,12 +147,18 @@ fn handle(owner: Owner, message: Message) -> actor.Next(Owner, Message) {
 }
 
 /// `PublisherJoins(publisher_id)`, from the `Publishing` surface.
-pub fn publisher_joins(owner: Subject(Message), publisher_id: String) -> Reply {
+pub fn publisher_joins(
+  owner: Subject(Message),
+  publisher_id: PublisherId,
+) -> Reply {
   act(owner, core.PublisherJoins(publisher_id))
 }
 
 /// `ConsumerJoins(consumer_id)`, from the `Consuming` surface.
-pub fn consumer_joins(owner: Subject(Message), consumer_id: String) -> Reply {
+pub fn consumer_joins(
+  owner: Subject(Message),
+  consumer_id: ConsumerId,
+) -> Reply {
   act(owner, core.ConsumerJoins(consumer_id))
 }
 
@@ -155,9 +166,9 @@ pub fn consumer_joins(owner: Subject(Message), consumer_id: String) -> Reply {
 /// `Publishing` surface. `publisher` is the publisher's id.
 pub fn publish(
   owner: Subject(Message),
-  publisher: String,
-  pocket_key: String,
-  record_key: String,
+  publisher: PublisherId,
+  pocket_key: PocketKey,
+  record_key: RecordKey,
   rank: Int,
   payload: BitArray,
 ) -> Reply {
@@ -175,7 +186,11 @@ pub fn publish(
 
 /// `Pull(consumer, limit)`, from the `Consuming` surface. `consumer` is the
 /// consumer's id.
-pub fn pull(owner: Subject(Message), consumer: String, limit: Int) -> Reply {
+pub fn pull(
+  owner: Subject(Message),
+  consumer: ConsumerId,
+  limit: Int,
+) -> Reply {
   act(owner, core.Pull(Pull(consumer:, limit:)))
 }
 
@@ -183,8 +198,8 @@ pub fn pull(owner: Subject(Message), consumer: String, limit: Int) -> Reply {
 /// consumer's id and `lease` the lease's id.
 pub fn renew(
   owner: Subject(Message),
-  consumer: String,
-  lease: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
 ) -> Reply {
   act(owner, core.Renew(Renew(consumer:, lease:)))
 }
@@ -193,9 +208,9 @@ pub fn renew(
 /// `consumer` is the consumer's id and `lease` the lease's id.
 pub fn ack(
   owner: Subject(Message),
-  consumer: String,
-  lease: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  record_key: RecordKey,
 ) -> Reply {
   act(owner, core.Ack(Ack(consumer:, lease:, record_key:)))
 }
@@ -204,9 +219,9 @@ pub fn ack(
 /// `consumer` is the consumer's id and `lease` the lease's id.
 pub fn nack(
   owner: Subject(Message),
-  consumer: String,
-  lease: String,
-  record_key: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
+  record_key: RecordKey,
 ) -> Reply {
   act(owner, core.Nack(Nack(consumer:, lease:, record_key:)))
 }
@@ -215,8 +230,8 @@ pub fn nack(
 /// the consumer's id and `lease` the lease's id.
 pub fn release(
   owner: Subject(Message),
-  consumer: String,
-  lease: String,
+  consumer: ConsumerId,
+  lease: LeaseId,
 ) -> Reply {
   act(owner, core.Release(Release(consumer:, lease:)))
 }
@@ -227,7 +242,7 @@ pub fn release(
 /// nothing changes. `consumer` is the consumer's id.
 pub fn lease_view(
   owner: Subject(Message),
-  consumer: String,
+  consumer: ConsumerId,
 ) -> Result(Option(LeaseView), Failure(Refusal)) {
   process.call(owner, call_timeout, LeaseView(consumer, _))
 }

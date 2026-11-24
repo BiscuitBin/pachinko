@@ -8,6 +8,7 @@ import gleam/option.{None}
 import gleam/result
 import pachinko_double.{Outcome}
 import pachinko_double/config.{type Settings, Settings}
+import pachinko_double/ids.{ConsumerId, PocketKey, RecordKey}
 import pachinko_double/refusals.{ConfigRefused}
 import pachinko_double/time
 import support/harness
@@ -116,21 +117,21 @@ fn pull_batch_of_one() -> List(String) {
     harness.fixture_with(
       Settings(..harness.fixture_settings(), max_pull_batch: 1),
     )
-  assert harness.publish(double, "pk", "a", 1, "a")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("a"), 1, "a")
     == Ok(Outcome(["PublishIntoNewPocket"], None))
-  assert harness.publish(double, "pk", "b", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("b"), 1, "b")
     == Ok(Outcome(["PublishNewKey"], None))
-  assert harness.publish(double, "pk", "c", 1, "c")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("c"), 1, "c")
     == Ok(Outcome(["PublishNewKey"], None))
-  let first = harness.batch(double, "c1", 100)
+  let first = harness.batch(double, ConsumerId("c1"), 100)
   assert first.fired == ["PullClaimsFrontPocket", "HoldRecord"]
-  assert harness.keys(first.records) == ["a"]
-  let second = harness.batch(double, "c1", 2)
+  assert harness.keys(first.records) == [RecordKey("a")]
+  let second = harness.batch(double, ConsumerId("c1"), 2)
   assert second.fired == ["PullWithinLease", "HoldRecord"]
-  assert harness.keys(second.records) == ["b"]
-  let third = harness.batch(double, "c1", 1)
+  assert harness.keys(second.records) == [RecordKey("b")]
+  let third = harness.batch(double, ConsumerId("c1"), 1)
   assert third.fired == ["PullWithinLease", "HoldRecord"]
-  assert harness.keys(third.records) == ["c"]
+  assert harness.keys(third.records) == [RecordKey("c")]
   harness.fired(double)
 }
 

@@ -7,6 +7,10 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import pachinko_double/config.{type Config}
+import pachinko_double/ids.{
+  type ConsumerId, type LeaseId, type PocketKey, type PublisherId,
+  type RecordKey,
+}
 import pachinko_double/time.{type Timestamp}
 
 /// The deployment's one queue. `next_position` is the position the next
@@ -16,11 +20,11 @@ pub type Queue {
 }
 
 pub type Publisher {
-  Publisher(id: String)
+  Publisher(id: PublisherId)
 }
 
 pub type Consumer {
-  Consumer(id: String)
+  Consumer(id: ConsumerId)
 }
 
 pub type PocketStatus {
@@ -34,7 +38,7 @@ pub type PocketStatus {
 /// `position`, smallest first.
 pub type Pocket {
   Pocket(
-    key: String,
+    key: PocketKey,
     status: PocketStatus,
     position: Int,
     consecutive_expiries: Int,
@@ -65,8 +69,8 @@ pub type RecordStatus {
 /// The one slot a record key has in a pocket. `pocket` is the pocket's key.
 pub type Record {
   Record(
-    pocket: String,
-    key: String,
+    pocket: PocketKey,
+    key: RecordKey,
     rank: Int,
     payload: BitArray,
     position: Int,
@@ -83,8 +87,8 @@ pub type Reason {
 /// stale, kept until it decays. `pocket` is the pocket's key.
 pub type SupersededRecord {
   SupersededRecord(
-    pocket: String,
-    key: String,
+    pocket: PocketKey,
+    key: RecordKey,
     rank: Int,
     payload: BitArray,
     reason: Reason,
@@ -97,11 +101,11 @@ pub type SupersededRecord {
 /// `nacked_by` the consumer's id.
 pub type DeadLetter {
   DeadLetter(
-    pocket: String,
-    key: String,
+    pocket: PocketKey,
+    key: RecordKey,
     rank: Int,
     payload: BitArray,
-    nacked_by: String,
+    nacked_by: ConsumerId,
     nacked_at: Timestamp,
     expires_at: Timestamp,
   )
@@ -120,9 +124,9 @@ pub type LeaseStatus {
 /// and `consumer` the consumer's id.
 pub type Lease {
   Lease(
-    id: String,
-    pocket: String,
-    consumer: String,
+    id: LeaseId,
+    pocket: PocketKey,
+    consumer: ConsumerId,
     status: LeaseStatus,
     granted_at: Timestamp,
     expires_at: Timestamp,
@@ -168,15 +172,15 @@ pub fn new(config: Config) -> State {
 // definition.
 
 /// `Pocket{key: key}`.
-pub fn pocket(pockets: List(Pocket), key: String) -> Result(Pocket, Nil) {
+pub fn pocket(pockets: List(Pocket), key: PocketKey) -> Result(Pocket, Nil) {
   list.find(pockets, fn(pocket) { pocket.key == key })
 }
 
 /// `Record{pocket: pocket, key: key}`.
 pub fn record(
   records: List(Record),
-  pocket pocket_key: String,
-  key key: String,
+  pocket pocket_key: PocketKey,
+  key key: RecordKey,
 ) -> Result(Record, Nil) {
   list.find(records, fn(record) {
     record.pocket == pocket_key && record.key == key
@@ -205,7 +209,7 @@ pub type HeldRecord {
 pub fn held_under(
   records: List(Record),
   lease: Lease,
-  key: String,
+  key: RecordKey,
 ) -> Result(HeldRecord, Nil) {
   use record <- result.try(record(records, pocket: lease.pocket, key:))
   case record.status {
@@ -250,7 +254,7 @@ pub fn replace_pocket(pockets: List(Pocket), pocket: Pocket) -> List(Pocket) {
 
 /// The lease with this id. The id is the double's, and it is how an action
 /// names its lease (spec note G10).
-pub fn lease(leases: List(Lease), id: String) -> Result(Lease, Nil) {
+pub fn lease(leases: List(Lease), id: LeaseId) -> Result(Lease, Nil) {
   list.find(leases, fn(lease) { lease.id == id })
 }
 
@@ -267,7 +271,10 @@ pub fn replace_lease(leases: List(Lease), lease: Lease) -> List(Lease) {
 }
 
 /// A pocket's `records`: `Record with pocket = this`.
-pub fn records_of(records: List(Record), pocket_key: String) -> List(Record) {
+pub fn records_of(
+  records: List(Record),
+  pocket_key: PocketKey,
+) -> List(Record) {
   list.filter(records, fn(record) { record.pocket == pocket_key })
 }
 
@@ -311,7 +318,7 @@ pub fn active(leases: List(Lease)) -> List(Lease) {
 @internal
 pub fn leases_of_pocket(
   leases: List(Lease),
-  pocket_key: String,
+  pocket_key: PocketKey,
 ) -> List(Lease) {
   list.filter(leases, fn(lease) { lease.pocket == pocket_key })
 }
@@ -320,7 +327,7 @@ pub fn leases_of_pocket(
 @internal
 pub fn leases_of_consumer(
   leases: List(Lease),
-  consumer_id: String,
+  consumer_id: ConsumerId,
 ) -> List(Lease) {
   list.filter(leases, fn(lease) { lease.consumer == consumer_id })
 }

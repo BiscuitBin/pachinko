@@ -12,6 +12,9 @@ import pachinko_double.{Outcome}
 import pachinko_double/answers.{HeldView, LeaseView}
 import pachinko_double/config
 import pachinko_double/failure.{Refused}
+import pachinko_double/ids.{
+  ConsumerId, LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/internal/consuming
 import pachinko_double/model.{
   type State, Acked, Consumer, Lease, LeaseActive, LeaseExpired, LeaseReleased,
@@ -65,16 +68,21 @@ fn viewed() -> State {
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 20),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1"), Consumer("c2"), Consumer("c3"), Consumer("c4")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [
+      Consumer(ConsumerId("c1")),
+      Consumer(ConsumerId("c2")),
+      Consumer(ConsumerId("c3")),
+      Consumer(ConsumerId("c4")),
+    ],
     pockets: [
-      Pocket("other", PocketLeased, 9, 0),
-      Pocket("pk", PocketLeased, 1, 0),
+      Pocket(PocketKey("other"), PocketLeased, 9, 0),
+      Pocket(PocketKey("pk"), PocketLeased, 1, 0),
     ],
     records: [
       Record(
-        "pk",
-        "a",
+        PocketKey("pk"),
+        RecordKey("a"),
         9,
         <<"newer":utf8>>,
         8,
@@ -87,8 +95,8 @@ fn viewed() -> State {
         ),
       ),
       Record(
-        "other",
-        "x",
+        PocketKey("other"),
+        RecordKey("x"),
         7,
         <<"ex":utf8>>,
         2,
@@ -100,10 +108,17 @@ fn viewed() -> State {
           deferred_position: None,
         ),
       ),
-      Record("pk", "q", 6, <<"queue":utf8>>, 5, RecordQueued),
       Record(
-        "pk",
-        "z",
+        PocketKey("pk"),
+        RecordKey("q"),
+        6,
+        <<"queue":utf8>>,
+        5,
+        RecordQueued,
+      ),
+      Record(
+        PocketKey("pk"),
+        RecordKey("z"),
         5,
         <<"zed":utf8>>,
         3,
@@ -117,10 +132,38 @@ fn viewed() -> State {
       ),
     ],
     leases: [
-      Lease("lease-0", "pk", "c1", LeaseReleased(150), 100, 400),
-      Lease("lease-3", "other", "c3", LeaseExpired(450), 200, 450),
-      Lease("lease-2", "other", "c2", LeaseActive, 500, 800),
-      Lease("lease-1", "pk", "c1", LeaseActive, 600, expires),
+      Lease(
+        LeaseId("lease-0"),
+        PocketKey("pk"),
+        ConsumerId("c1"),
+        LeaseReleased(150),
+        100,
+        400,
+      ),
+      Lease(
+        LeaseId("lease-3"),
+        PocketKey("other"),
+        ConsumerId("c3"),
+        LeaseExpired(450),
+        200,
+        450,
+      ),
+      Lease(
+        LeaseId("lease-2"),
+        PocketKey("other"),
+        ConsumerId("c2"),
+        LeaseActive,
+        500,
+        800,
+      ),
+      Lease(
+        LeaseId("lease-1"),
+        PocketKey("pk"),
+        ConsumerId("c1"),
+        LeaseActive,
+        600,
+        expires,
+      ),
     ],
   )
 }
@@ -137,17 +180,17 @@ fn viewed() -> State {
 /// view is of `other`.
 fn view_exactly() -> List(String) {
   let state = viewed()
-  assert consuming.lease_view(state, "c1")
+  assert consuming.lease_view(state, ConsumerId("c1"))
     == Some(
-      LeaseView(pocket_key: "pk", expires_at: expires, records: [
-        HeldView("z", 5, <<"zed":utf8>>, Nacked),
-        HeldView("a", 4, <<"held":utf8>>, Acked),
+      LeaseView(pocket_key: PocketKey("pk"), expires_at: expires, records: [
+        HeldView(RecordKey("z"), 5, <<"zed":utf8>>, Nacked),
+        HeldView(RecordKey("a"), 4, <<"held":utf8>>, Acked),
       ]),
     )
-  assert consuming.lease_view(state, "c2")
+  assert consuming.lease_view(state, ConsumerId("c2"))
     == Some(
-      LeaseView(pocket_key: "other", expires_at: 800, records: [
-        HeldView("x", 7, <<"ex":utf8>>, Unsettled),
+      LeaseView(pocket_key: PocketKey("other"), expires_at: 800, records: [
+        HeldView(RecordKey("x"), 7, <<"ex":utf8>>, Unsettled),
       ]),
     )
   []
@@ -159,14 +202,21 @@ fn view_exactly() -> List(String) {
 /// owner's.
 fn no_active_lease() -> List(String) {
   let state = viewed()
-  assert consuming.lease_view(state, "c3") == None
-  assert consuming.lease_view(state, "c4") == None
-  assert consuming.lease_view(state, "cx") == None
+  assert consuming.lease_view(state, ConsumerId("c3")) == None
+  assert consuming.lease_view(state, ConsumerId("c4")) == None
+  assert consuming.lease_view(state, ConsumerId("cx")) == None
   let ended =
     State(..state, leases: [
-      Lease("lease-1", "pk", "c1", LeaseReleased(700), 600, expires),
+      Lease(
+        LeaseId("lease-1"),
+        PocketKey("pk"),
+        ConsumerId("c1"),
+        LeaseReleased(700),
+        600,
+        expires,
+      ),
     ])
-  assert consuming.lease_view(ended, "c1") == None
+  assert consuming.lease_view(ended, ConsumerId("c1")) == None
   []
 }
 
@@ -175,9 +225,9 @@ fn no_active_lease() -> List(String) {
 /// snapshot is as it was, no clock was read and no lease id drawn.
 fn read_changes_nothing() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 1, "v")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v")
     == Ok(Outcome(["PublishIntoNewPocket"], None))
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
   let before = harness.inspect(double)
   let reads = harness.clock_reads(double.clock)
@@ -187,15 +237,15 @@ fn read_changes_nothing() -> List(String) {
     Ok(
       Some(
         LeaseView(
-          pocket_key: "pk",
+          pocket_key: PocketKey("pk"),
           expires_at: harness.t0 + harness.fixture_settings().lease_ttl,
-          records: [HeldView("k", 1, <<"v":utf8>>, Unsettled)],
+          records: [HeldView(RecordKey("k"), 1, <<"v":utf8>>, Unsettled)],
         ),
       ),
     )
-  assert harness.lease_view(double, "c1") == view
-  assert harness.lease_view(double, "c2") == Ok(None)
-  assert harness.lease_view(double, "c1") == view
+  assert harness.lease_view(double, ConsumerId("c1")) == view
+  assert harness.lease_view(double, ConsumerId("c2")) == Ok(None)
+  assert harness.lease_view(double, ConsumerId("c1")) == view
   assert harness.inspect(double) == before
   assert harness.clock_reads(double.clock) == reads
   assert harness.lease_id_draws(double.lease_ids) == draws
@@ -210,16 +260,18 @@ fn read_changes_nothing() -> List(String) {
 fn unknown_consumer() -> List(String) {
   let double = harness.fixture()
   let refused = fn(consumer) { Error(Refused(UnknownConsumer(consumer))) }
-  assert harness.lease_view(double, "cx") == refused("cx")
-  assert harness.publish(double, "pk", "k", 1, "v")
+  assert harness.lease_view(double, ConsumerId("cx"))
+    == refused(ConsumerId("cx"))
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v")
     == Ok(Outcome(["PublishIntoNewPocket"], None))
-  let batch = harness.batch(double, "c1", 10)
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord"]
   let before = harness.inspect(double)
   let reads = harness.clock_reads(double.clock)
   let draws = harness.lease_id_draws(double.lease_ids)
-  assert harness.lease_view(double, "cx") == refused("cx")
-  assert harness.lease_view(double, "p") == refused("p")
+  assert harness.lease_view(double, ConsumerId("cx"))
+    == refused(ConsumerId("cx"))
+  assert harness.lease_view(double, ConsumerId("p")) == refused(ConsumerId("p"))
   assert harness.inspect(double) == before
   assert harness.clock_reads(double.clock) == reads
   assert harness.lease_id_draws(double.lease_ids) == draws

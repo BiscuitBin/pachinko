@@ -26,6 +26,9 @@ import gleam/option.{None}
 import pachinko_double.{Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
+import pachinko_double/ids.{
+  type RecordKey, ConsumerId, LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/internal/core
 import pachinko_double/internal/decay
 import pachinko_double/internal/rules.{Applied, Done}
@@ -111,17 +114,19 @@ fn zero_ttls_decay_at_once() -> List(String) {
         dead_letter_ttl: 0,
       ),
     )
-  assert harness.publish(double, "a", "a1", 1, "old")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "old")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "a", "a2", 1, "a2") == fired(["PublishNewKey"])
-  assert harness.publish(double, "a", "a1", 2, "new") == fired(["Supersede"])
-  let batch = harness.batch(double, "c1", 10)
+  assert harness.publish(double, PocketKey("a"), RecordKey("a2"), 1, "a2")
+    == fired(["PublishNewKey"])
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 2, "new")
+    == fired(["Supersede"])
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
-  assert harness.nack(double, "c1", batch.lease, "a2")
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("a2"))
     == fired(["NackMarksRecord"])
   // Not before the end.
   assert harness.inspect(double).dead_letters == []
-  assert harness.release(double, "c1", batch.lease)
+  assert harness.release(double, ConsumerId("c1"), batch.lease)
     == fired([
       "ReleaseRequeuesPocket", "RequeueUnsettledRecord",
       "DeadLetterNackedRecord",
@@ -147,13 +152,14 @@ fn zero_ttls_decay_at_once() -> List(String) {
 /// `superseded_ttl` later, not before, and each decays once.
 fn superseded_decay_at_ttl() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "a", "a1", 2, "kept")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 2, "kept")
     == fired(["PublishIntoNewPocket"])
   let stale_at = harness.at(double, 3)
-  assert harness.publish(double, "a", "a1", 1, "stale")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "stale")
     == fired(["DropStalePublish"])
   let _ = harness.at(double, 4)
-  assert harness.publish(double, "a", "a1", 3, "newer") == fired(["Supersede"])
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 3, "newer")
+    == fired(["Supersede"])
   // `impl-choice` (spec note G19): the superseded queue in the order its
   // entries were created, the stale `a1` first. The specification gives that
   // queue no order.
@@ -184,13 +190,14 @@ fn superseded_decay_at_ttl() -> List(String) {
 /// several decays due at once.
 fn superseded_decay_in_queue_order() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "a", "a1", 2, "kept")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 2, "kept")
     == fired(["PublishIntoNewPocket"])
   let _ = harness.at(double, 3)
-  assert harness.publish(double, "a", "a1", 1, "stale")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "stale")
     == fired(["DropStalePublish"])
   let _ = harness.at(double, 4)
-  assert harness.publish(double, "a", "a1", 3, "newer") == fired(["Supersede"])
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 3, "newer")
+    == fired(["Supersede"])
   let assert [stale, kept] = harness.inspect(double).superseded
   assert stale != kept
   let Settings(superseded_ttl: ttl, ..) = harness.fixture_settings()
@@ -210,38 +217,40 @@ fn superseded_decay_in_queue_order() -> List(String) {
 /// after the lease's end, not after its nack.
 fn dead_letters_decay_at_ttl() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "a", "a1", 1, "a1")
+  assert harness.publish(double, PocketKey("a"), RecordKey("a1"), 1, "a1")
     == fired(["PublishIntoNewPocket"])
-  assert harness.publish(double, "a", "a2", 1, "a2") == fired(["PublishNewKey"])
-  let batch = harness.batch(double, "c1", 10)
+  assert harness.publish(double, PocketKey("a"), RecordKey("a2"), 1, "a2")
+    == fired(["PublishNewKey"])
+  let batch = harness.batch(double, ConsumerId("c1"), 10)
   assert batch.fired == ["PullClaimsFrontPocket", "HoldRecord", "HoldRecord"]
   let two = harness.at(double, 2)
-  assert harness.nack(double, "c1", batch.lease, "a1")
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("a1"))
     == fired(["NackMarksRecord"])
   let three = harness.at(double, 3)
-  assert harness.nack(double, "c1", batch.lease, "a2")
+  assert harness.nack(double, ConsumerId("c1"), batch.lease, RecordKey("a2"))
     == fired(["NackMarksRecord"])
   // Not before the end.
   assert harness.inspect(double).dead_letters == []
   let ended = harness.at(double, 10)
-  assert harness.release(double, "c1", batch.lease)
+  assert harness.release(double, ConsumerId("c1"), batch.lease)
     == fired([
       "ReleaseIdlesEmptyPocket", "DeadLetterNackedRecord",
       "DeadLetterNackedRecord",
     ])
   let Settings(dead_letter_ttl: ttl, ..) = harness.fixture_settings()
   let letter = fn(key, nacked_at) {
+    let RecordKey(text) = key
     DeadLetter(
-      pocket: "a",
+      pocket: PocketKey("a"),
       key:,
       rank: 1,
-      payload: <<key:utf8>>,
-      nacked_by: "c1",
+      payload: <<text:utf8>>,
+      nacked_by: ConsumerId("c1"),
       nacked_at:,
       expires_at: ended + ttl,
     )
   }
-  let letters = [letter("a1", two), letter("a2", three)]
+  let letters = [letter(RecordKey("a1"), two), letter(RecordKey("a2"), three)]
   assert harness.inspect(double).dead_letters == letters
   let _ = harness.at(double, 3 + ttl)
   // Not at `nacked_at` plus the TTL.
@@ -262,25 +271,27 @@ fn dead_letters_decay_at_ttl() -> List(String) {
 /// The tick's `now` in these tests.
 const now = 50_000
 
-fn shed(key: String, expires_at: Int) -> SupersededRecord {
+fn shed(key: RecordKey, expires_at: Int) -> SupersededRecord {
+  let RecordKey(text) = key
   SupersededRecord(
-    pocket: "pk",
+    pocket: PocketKey("pk"),
     key:,
     rank: 3,
-    payload: <<key:utf8>>,
+    payload: <<text:utf8>>,
     reason: Superseded,
     shed_at: expires_at - 100,
     expires_at:,
   )
 }
 
-fn letter(key: String, expires_at: Int) -> DeadLetter {
+fn letter(key: RecordKey, expires_at: Int) -> DeadLetter {
+  let RecordKey(text) = key
   DeadLetter(
-    pocket: "other",
+    pocket: PocketKey("other"),
     key:,
     rank: 4,
-    payload: <<key:utf8>>,
-    nacked_by: "c1",
+    payload: <<text:utf8>>,
+    nacked_by: ConsumerId("c1"),
     nacked_at: expires_at - 200,
     expires_at:,
   )
@@ -295,15 +306,22 @@ fn shedding(
   State(
     ..model.new(config.default()),
     queue: Queue(next_position: 8),
-    publishers: [Publisher("p")],
-    consumers: [Consumer("c1")],
+    publishers: [Publisher(PublisherId("p"))],
+    consumers: [Consumer(ConsumerId("c1"))],
     pockets: [
-      Pocket("pk", PocketQueued, 5, 0),
-      Pocket("other", PocketQueued, 2, 1),
+      Pocket(PocketKey("pk"), PocketQueued, 5, 0),
+      Pocket(PocketKey("other"), PocketQueued, 2, 1),
     ],
     records: [
-      Record("pk", "a", 5, <<"x":utf8>>, 7, RecordQueued),
-      Record("other", "b", 5, <<"y":utf8>>, 3, RecordQueued),
+      Record(PocketKey("pk"), RecordKey("a"), 5, <<"x":utf8>>, 7, RecordQueued),
+      Record(
+        PocketKey("other"),
+        RecordKey("b"),
+        5,
+        <<"y":utf8>>,
+        3,
+        RecordQueued,
+      ),
     ],
     superseded:,
     dead_letters:,
@@ -311,7 +329,7 @@ fn shedding(
 }
 
 fn decayed(step) -> harness.Driven {
-  harness.drive(step, now + 1, "unused")
+  harness.drive(step, now + 1, LeaseId("unused"))
 }
 
 /// Of three superseded records, `m`, due, is offered: it alone is removed,
@@ -319,10 +337,10 @@ fn decayed(step) -> harness.Driven {
 /// order. Neither dead letter nor any other part of the state changes. An
 /// entry that is not in the queue meets no guard, and nothing happens.
 fn superseded_decays_exactly() -> List(String) {
-  let e = shed("e", now - 5)
-  let m = shed("m", now)
-  let l = shed("l", now + 5)
-  let letters = [letter("d", now), letter("f", now + 9)]
+  let e = shed(RecordKey("e"), now - 5)
+  let m = shed(RecordKey("m"), now)
+  let l = shed(RecordKey("l"), now + 5)
+  let letters = [letter(RecordKey("d"), now), letter(RecordKey("f"), now + 9)]
   let state = shedding([e, m, l], letters)
   let fired = ["SupersededRecordDecays"]
   assert decayed(core.run_at(decay.superseded_record_decays(), m, state, now))
@@ -333,7 +351,7 @@ fn superseded_decays_exactly() -> List(String) {
     )
   assert core.run_at(
       decay.superseded_record_decays(),
-      shed("gone", now),
+      shed(RecordKey("gone"), now),
       state,
       now,
     )
@@ -344,10 +362,10 @@ fn superseded_decays_exactly() -> List(String) {
 /// The same for the dead-letter queue: `m` alone is removed, and the
 /// superseded records are untouched.
 fn dead_letter_decays_exactly() -> List(String) {
-  let e = letter("e", now - 5)
-  let m = letter("m", now)
-  let l = letter("l", now + 5)
-  let superseded = [shed("s", now), shed("t", now + 9)]
+  let e = letter(RecordKey("e"), now - 5)
+  let m = letter(RecordKey("m"), now)
+  let l = letter(RecordKey("l"), now + 5)
+  let superseded = [shed(RecordKey("s"), now), shed(RecordKey("t"), now + 9)]
   let state = shedding(superseded, [e, m, l])
   let fired = ["DeadLetterDecays"]
   assert decayed(core.run_at(decay.dead_letter_decays(), m, state, now))
@@ -358,7 +376,7 @@ fn dead_letter_decays_exactly() -> List(String) {
     )
   assert core.run_at(
       decay.dead_letter_decays(),
-      letter("gone", now),
+      letter(RecordKey("gone"), now),
       state,
       now,
     )
@@ -375,8 +393,8 @@ fn dead_letter_decays_exactly() -> List(String) {
 /// is the double's, since the specification cannot tell equal entries
 /// apart.
 fn one_of_two_equal() -> List(String) {
-  let x = shed("x", now)
-  let y = shed("y", now + 5)
+  let x = shed(RecordKey("x"), now)
+  let y = shed(RecordKey("y"), now + 5)
   let state = shedding([x, y, x], [])
   assert decayed(core.run_at(decay.superseded_record_decays(), x, state, now))
     == Driven(
@@ -388,8 +406,8 @@ fn one_of_two_equal() -> List(String) {
       clock_reads: 0,
       lease_id_draws: 0,
     )
-  let dx = letter("x", now)
-  let dy = letter("y", now + 5)
+  let dx = letter(RecordKey("x"), now)
+  let dy = letter(RecordKey("y"), now + 5)
   let state = shedding([], [dx, dy, dx])
   assert decayed(core.run_at(decay.dead_letter_decays(), dx, state, now))
     == Driven(
@@ -409,11 +427,11 @@ fn one_of_two_equal() -> List(String) {
 /// decays both, each its own outcome, and reports both; the queue is empty.
 fn two_identical_decay_together() -> List(String) {
   let double = harness.fixture()
-  assert harness.publish(double, "pk", "k", 5, "v")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "v")
     == Ok(Outcome(["PublishIntoNewPocket"], None))
-  assert harness.publish(double, "pk", "k", 1, "old")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "old")
     == Ok(Outcome(["DropStalePublish"], None))
-  assert harness.publish(double, "pk", "k", 1, "old")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "old")
     == Ok(Outcome(["DropStalePublish"], None))
   let assert [first, second] = harness.inspect(double).superseded
   assert first == second

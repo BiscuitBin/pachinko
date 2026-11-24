@@ -31,6 +31,9 @@ import gleam/string
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{Batch, BatchRecord, TickReport}
 import pachinko_double/config.{Settings}
+import pachinko_double/ids.{
+  type RecordKey, ConsumerId, LeaseId, PocketKey, PublisherId, RecordKey,
+}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type DeadLetter, type Lease, type Pocket, type Record, type SupersededRecord,
@@ -123,14 +126,15 @@ type Shown {
   )
 }
 
-fn show(double: Double, keys: List(String)) -> Shown {
+fn show(double: Double, keys: List(RecordKey)) -> Shown {
   let snapshot = harness.inspect(double)
-  let assert Ok(pocket) = model.pocket(snapshot.pockets, "pk")
+  let assert Ok(pocket) = model.pocket(snapshot.pockets, PocketKey("pk"))
   Shown(
     next_position: snapshot.next_position,
     pocket:,
     records: list.map(keys, fn(key) {
-      let assert Ok(record) = model.record(snapshot.records, pocket: "pk", key:)
+      let assert Ok(record) =
+        model.record(snapshot.records, pocket: PocketKey("pk"), key:)
       record
     }),
     leases: snapshot.leases,
@@ -145,8 +149,8 @@ fn fired(rules: List(String)) -> Reply {
 }
 
 /// The keys of the batch `c2` is handed when it pulls up to ten records.
-fn c2_pulls(double: Double) -> List(String) {
-  harness.keys(harness.batch(double, "c2", 10).records)
+fn c2_pulls(double: Double) -> List(RecordKey) {
+  harness.keys(harness.batch(double, ConsumerId("c2"), 10).records)
 }
 
 fn setting() -> Double {
@@ -160,9 +164,12 @@ fn setting() -> Double {
       ),
     )
   let double = harness.start(config)
-  assert harness.publisher_joins(double, "p") == fired(["PublisherJoins"])
-  assert harness.consumer_joins(double, "c1") == fired(["ConsumerJoins"])
-  assert harness.consumer_joins(double, "c2") == fired(["ConsumerJoins"])
+  assert harness.publisher_joins(double, PublisherId("p"))
+    == fired(["PublisherJoins"])
+  assert harness.consumer_joins(double, ConsumerId("c1"))
+    == fired(["ConsumerJoins"])
+  assert harness.consumer_joins(double, ConsumerId("c2"))
+    == fired(["ConsumerJoins"])
 
   double
 }
@@ -171,21 +178,21 @@ fn setting() -> Double {
 /// G48): its positions and counter values are absolute.
 fn v3_deferred_behind_v1() -> Double {
   let double = setting()
-  assert harness.publish(double, "pk", "k", 1, "v1")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 1, "v1")
     == fired(["PublishIntoNewPocket"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 2,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
@@ -197,29 +204,29 @@ fn v3_deferred_behind_v1() -> Double {
       dead_letters: [],
     )
 
-  assert harness.publish(double, "pk", "early", 1, "e")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("early"), 1, "e")
     == fired(["PublishNewKey"])
-  assert show(double, ["k", "early"])
+  assert show(double, [RecordKey("k"), RecordKey("early")])
     == Shown(
       next_position: 3,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
           status: RecordQueued,
         ),
         Record(
-          pocket: "pk",
-          key: "early",
+          pocket: PocketKey("pk"),
+          key: RecordKey("early"),
           rank: 1,
           payload: <<"e":utf8>>,
           position: 2,
@@ -231,28 +238,33 @@ fn v3_deferred_behind_v1() -> Double {
       dead_letters: [],
     )
 
-  assert harness.pull(double, "c1", 1)
+  assert harness.pull(double, ConsumerId("c1"), 1)
     == Ok(Outcome(
       ["PullClaimsFrontPocket", "HoldRecord"],
       Some(
-        Batch(consumer: "c1", lease: "lease-1", pocket: "pk", records: [
-          BatchRecord(key: "k", rank: 1, payload: <<"v1":utf8>>),
-        ]),
+        Batch(
+          consumer: ConsumerId("c1"),
+          lease: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          records: [
+            BatchRecord(key: RecordKey("k"), rank: 1, payload: <<"v1":utf8>>),
+          ],
+        ),
       ),
     ))
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 3,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           position: 1,
@@ -267,9 +279,9 @@ fn v3_deferred_behind_v1() -> Double {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -280,21 +292,21 @@ fn v3_deferred_behind_v1() -> Double {
     )
 
   harness.set_time(double.clock, 10)
-  assert harness.publish(double, "pk", "k", 3, "v3")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 3, "v3")
     == fired(["DeferBehindHeldVersion"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -309,9 +321,9 @@ fn v3_deferred_behind_v1() -> Double {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -327,20 +339,26 @@ fn v3_deferred_behind_v1() -> Double {
 fn scenario_a() -> List(String) {
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 20)
-  assert harness.ack(double, "c1", "lease-1", "k") == fired(["AckMarksRecord"])
-  assert show(double, ["k"])
+  assert harness.ack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
+    == fired(["AckMarksRecord"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -355,9 +373,9 @@ fn scenario_a() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -368,21 +386,21 @@ fn scenario_a() -> List(String) {
     )
 
   harness.set_time(double.clock, 50)
-  assert harness.release(double, "c1", "lease-1")
+  assert harness.release(double, ConsumerId("c1"), LeaseId("lease-1"))
     == fired(["ReleaseRequeuesPocket", "ConsumeAckedVersionQueueDeferred"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 4,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 3,
@@ -391,9 +409,9 @@ fn scenario_a() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseReleased(ended_at: 50),
           granted_at: 0,
           expires_at: 1020,
@@ -402,7 +420,7 @@ fn scenario_a() -> List(String) {
       superseded: [],
       dead_letters: [],
     )
-  assert c2_pulls(double) == ["early", "k"]
+  assert c2_pulls(double) == [RecordKey("early"), RecordKey("k")]
 
   harness.fired(double)
 }
@@ -410,21 +428,26 @@ fn scenario_a() -> List(String) {
 fn scenario_b() -> List(String) {
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 20)
-  assert harness.nack(double, "c1", "lease-1", "k")
+  assert harness.nack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
     == fired(["NackMarksRecord"])
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -439,9 +462,9 @@ fn scenario_b() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -454,9 +477,9 @@ fn scenario_b() -> List(String) {
   harness.set_time(double.clock, 1020)
   let expired =
     Lease(
-      id: "lease-1",
-      pocket: "pk",
-      consumer: "c1",
+      id: LeaseId("lease-1"),
+      pocket: PocketKey("pk"),
+      consumer: ConsumerId("c1"),
       status: LeaseExpired(ended_at: 1020),
       granted_at: 0,
       expires_at: 1020,
@@ -474,19 +497,19 @@ fn scenario_b() -> List(String) {
         dead_letters: [],
       ),
     )
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 1,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 3,
@@ -497,17 +520,17 @@ fn scenario_b() -> List(String) {
       superseded: [],
       dead_letters: [
         DeadLetter(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
-          nacked_by: "c1",
+          nacked_by: ConsumerId("c1"),
           nacked_at: 20,
           expires_at: 8020,
         ),
       ],
     )
-  assert c2_pulls(double) == ["early", "k"]
+  assert c2_pulls(double) == [RecordKey("early"), RecordKey("k")]
 
   harness.fired(double)
 }
@@ -515,21 +538,21 @@ fn scenario_b() -> List(String) {
 fn scenario_c() -> List(String) {
   let double = v3_deferred_behind_v1()
   harness.set_time(double.clock, 15)
-  assert harness.publish(double, "pk", "between", 1, "b")
+  assert harness.publish(double, PocketKey("pk"), RecordKey("between"), 1, "b")
     == fired(["PublishNewKey"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -542,8 +565,8 @@ fn scenario_c() -> List(String) {
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -552,9 +575,9 @@ fn scenario_c() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -565,30 +588,31 @@ fn scenario_c() -> List(String) {
     )
 
   harness.set_time(double.clock, 18)
-  assert harness.publish(double, "pk", "k", 5, "v5") == fired(["Supersede"])
+  assert harness.publish(double, PocketKey("pk"), RecordKey("k"), 5, "v5")
+    == fired(["Supersede"])
   let v3 =
     SupersededRecord(
-      pocket: "pk",
-      key: "k",
+      pocket: PocketKey("pk"),
+      key: RecordKey("k"),
       rank: 3,
       payload: <<"v3":utf8>>,
       reason: Superseded,
       shed_at: 18,
       expires_at: 5018,
     )
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 1,
@@ -601,8 +625,8 @@ fn scenario_c() -> List(String) {
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -611,9 +635,9 @@ fn scenario_c() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1000,
@@ -624,21 +648,26 @@ fn scenario_c() -> List(String) {
     )
 
   harness.set_time(double.clock, 20)
-  assert harness.nack(double, "c1", "lease-1", "k")
+  assert harness.nack(
+      double,
+      ConsumerId("c1"),
+      LeaseId("lease-1"),
+      RecordKey("k"),
+    )
     == fired(["NackMarksRecord"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 5,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketLeased,
         position: 0,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 1,
@@ -651,8 +680,8 @@ fn scenario_c() -> List(String) {
           ),
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -661,9 +690,9 @@ fn scenario_c() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseActive,
           granted_at: 0,
           expires_at: 1020,
@@ -674,29 +703,29 @@ fn scenario_c() -> List(String) {
     )
 
   harness.set_time(double.clock, 50)
-  assert harness.release(double, "c1", "lease-1")
+  assert harness.release(double, ConsumerId("c1"), LeaseId("lease-1"))
     == fired(["ReleaseRequeuesPocket", "DeadLetterNackedVersionQueueDeferred"])
-  assert show(double, ["k", "between"])
+  assert show(double, [RecordKey("k"), RecordKey("between")])
     == Shown(
       next_position: 6,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 5,
         consecutive_expiries: 0,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 5,
           payload: <<"v5":utf8>>,
           position: 3,
           status: RecordQueued,
         ),
         Record(
-          pocket: "pk",
-          key: "between",
+          pocket: PocketKey("pk"),
+          key: RecordKey("between"),
           rank: 1,
           payload: <<"b":utf8>>,
           position: 4,
@@ -705,9 +734,9 @@ fn scenario_c() -> List(String) {
       ],
       leases: [
         Lease(
-          id: "lease-1",
-          pocket: "pk",
-          consumer: "c1",
+          id: LeaseId("lease-1"),
+          pocket: PocketKey("pk"),
+          consumer: ConsumerId("c1"),
           status: LeaseReleased(ended_at: 50),
           granted_at: 0,
           expires_at: 1020,
@@ -716,17 +745,18 @@ fn scenario_c() -> List(String) {
       superseded: [v3],
       dead_letters: [
         DeadLetter(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
-          nacked_by: "c1",
+          nacked_by: ConsumerId("c1"),
           nacked_at: 20,
           expires_at: 7050,
         ),
       ],
     )
-  assert c2_pulls(double) == ["early", "k", "between"]
+  assert c2_pulls(double)
+    == [RecordKey("early"), RecordKey("k"), RecordKey("between")]
 
   harness.fired(double)
 }
@@ -736,9 +766,9 @@ fn scenario_d() -> List(String) {
   harness.set_time(double.clock, 1000)
   let expired =
     Lease(
-      id: "lease-1",
-      pocket: "pk",
-      consumer: "c1",
+      id: LeaseId("lease-1"),
+      pocket: PocketKey("pk"),
+      consumer: ConsumerId("c1"),
       status: LeaseExpired(ended_at: 1000),
       granted_at: 0,
       expires_at: 1000,
@@ -756,19 +786,19 @@ fn scenario_d() -> List(String) {
         dead_letters: [],
       ),
     )
-  assert show(double, ["k"])
+  assert show(double, [RecordKey("k")])
     == Shown(
       next_position: 4,
       pocket: Pocket(
-        key: "pk",
+        key: PocketKey("pk"),
         status: PocketQueued,
         position: 0,
         consecutive_expiries: 1,
       ),
       records: [
         Record(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 3,
           payload: <<"v3":utf8>>,
           position: 1,
@@ -778,8 +808,8 @@ fn scenario_d() -> List(String) {
       leases: [expired],
       superseded: [
         SupersededRecord(
-          pocket: "pk",
-          key: "k",
+          pocket: PocketKey("pk"),
+          key: RecordKey("k"),
           rank: 1,
           payload: <<"v1":utf8>>,
           reason: Superseded,
@@ -789,7 +819,7 @@ fn scenario_d() -> List(String) {
       ],
       dead_letters: [],
     )
-  assert c2_pulls(double) == ["k", "early"]
+  assert c2_pulls(double) == [RecordKey("k"), RecordKey("early")]
 
   assert invariants.check(harness.inspect(double)) == []
 
