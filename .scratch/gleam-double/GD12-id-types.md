@@ -82,6 +82,28 @@ The maintainer fixed the first group on 2026-11-23. The builder does not reopen 
   states. No validation: callers construct them and match them. A type alias is not
   enough, because an alias is transparent.
 - **No behaviour changes.** The coverage check stays strict at 93, 32 and 35.
+- **Test support takes the typed ids too.** The maintainer ruled so on 2026-11-23, as
+  this ticket drafted it. `test/support/harness.gleam` stands in for the root in almost
+  every test, so its functions that pass an id to the root take the root's types, and
+  what it reads back keeps them:
+
+  | Harness item | After this ticket |
+  | --- | --- |
+  | `publisher_joins`, `consumer_joins`, `pull`, `batch`, `renew`, `ack`, `nack`, `release`, `lease_view` | Take the typed ids, in the root's order |
+  | `publish`, `publish_as` | Take `PocketKey` and `RecordKey`, and `publish_as` a `PublisherId`; `publish`'s publisher is `PublisherId("p")`. The payload stays text, as the Rust fixture's is |
+  | `Pulled` | `lease: LeaseId`, `pocket_key: PocketKey` |
+  | `keys`, `marked_keys`, `order` | Return `List(RecordKey)`, `List(RecordKey)` and `List(PocketKey)` |
+  | `pocket`, `record` | Take `PocketKey`, and `record` a `RecordKey` |
+  | `lease_ids`, `drive` | `fn() -> LeaseId`, and `drive`'s `lease_id: LeaseId`; the fake hands out `LeaseId("lease-1")`, `LeaseId("lease-2")` and onward |
+
+- **One short spec note, G68, with no question.** The maintainer ruled on 2026-11-23
+  that the ids get a note for parity with G07, which records the payload's `BitArray`:
+  each id is a type of its own that wraps the specification's `String`. Its text and
+  its place are fixed in the second group.
+- **No validation in this ticket, and the ids' format is a finding.** The maintainer
+  ruled on 2026-11-23 that no id is checked here. Whether an id has a format is raised
+  as a "The maintainer decides" finding in `gleam-double/SPEC-NOTES.md`, whose text the
+  second group fixes. The specification is untouched.
 
 The second group is this ticket's own design, written from a scan of the tree at the
 commit Context names. The builder follows it, and reports under Departures if one of
@@ -206,21 +228,6 @@ these cannot hold. Each count's command is in "Files touched".
   `settle_test` 1, `lease_test` 1). Nine give the text as one literal and do not
   change. The tenth, `lease_end_test.gleam:909`, builds it from a variable `key` with
   `<>`; it may match `key` out of a `RecordKey`, and the text it builds is the same.
-- **Test support takes the typed ids too.** `test/support/harness.gleam` stands in for
-  the root in almost every test, so its functions that pass an id to the root take the
-  root's types, and what it reads back keeps them:
-
-  | Harness item | After this ticket |
-  | --- | --- |
-  | `publisher_joins`, `consumer_joins`, `pull`, `batch`, `renew`, `ack`, `nack`, `release`, `lease_view` | Take the typed ids, in the root's order |
-  | `publish`, `publish_as` | Take `PocketKey` and `RecordKey`, and `publish_as` a `PublisherId`; `publish`'s publisher is `PublisherId("p")`. The payload stays text, as the Rust fixture's is |
-  | `Pulled` | `lease: LeaseId`, `pocket_key: PocketKey` |
-  | `keys`, `marked_keys`, `order` | Return `List(RecordKey)`, `List(RecordKey)` and `List(PocketKey)` |
-  | `pocket`, `record` | Take `PocketKey`, and `record` a `RecordKey` |
-  | `lease_ids`, `drive` | `fn() -> LeaseId`, and `drive`'s `lease_id: LeaseId`; the fake hands out `LeaseId("lease-1")`, `LeaseId("lease-2")` and onward |
-
-  The alternative, a harness that keeps `String`s and wraps them, is under Open points
-  with its count.
 - **The tests follow the compiler.** A test writes an id as its constructor around the
   literal it has today, `PocketKey("pk")`, and takes the constructors from
   `pachinko_double/ids` by name, as the tests take `model`'s. Two test modules have a
@@ -263,10 +270,43 @@ these cannot hold. Each count's command is in "Files touched".
 - **The root's header follows.** What a caller names when it sends a trigger or reads a
   reply is in `ids`, `config`, `time`, `model` and `refusals`, and the vocabulary is nine
   modules where it says eight.
-- **No new spec note, and three sentences change.** The double stores the
+- **One new spec note, G68, and three sentences change.** The double stores the
   specification's `String` unchanged inside each type, and no rule reads an id
-  differently, so the change interprets nothing (shared rule 5). Three sentences of
-  `gleam-double/SPEC-NOTES.md` say an id is a `String`, and become:
+  differently, so the change interprets nothing (shared rule 5). The note is written for
+  parity with G07, by the maintainer's ruling, not because the change interprets the
+  specification. G68 is filed last under "Where it raises what no `N`-note holds" in
+  `gleam-double/SPEC-NOTES.md`, after G66 and before "The `impl-choice` rows". Its text
+  is fixed here, so that the builder writes no prose of their own:
+
+  ```markdown
+  ### G68: each id and key is a type of its own, which wraps the specification's `String`
+
+  - **Ticket:** GD12.
+  - **Concerns:** `Publisher.id`, `Consumer.id`, `Pocket.key`, `Record.key`, the `key` of
+    `SupersededRecord` and `DeadLetter`, the references of G09, the lease's id of G10, and
+    every trigger that carries one of them.
+  - **The specification says:** the four ids it declares are each typed `String`, with no
+    format: no length, no character set, nothing about an empty one. It declares the lease
+    no identity (G10).
+  - **The double does:**
+    - `ids.gleam` defines five open types, `PublisherId`, `ConsumerId`, `PocketKey`,
+      `RecordKey` and `LeaseId`, each with one constructor that wraps a `String` and checks
+      nothing. Every field, parameter and reply that holds an id takes its type, so passing
+      one id where another is expected does not compile.
+    - The `String` inside is stored unchanged: the caller's, or for a lease id the one the
+      owner's lease-id function returns (G10). No rule reads it: a guard or a lookup
+      compares two ids with `==`, and a defect text takes the `String` out by matching it.
+      Like G07's payload, this is a type other than the one the specification declares,
+      recorded so that a reader of the specification knows why.
+    - The pin in `interface_test.gleam` holds that no `pub fn` of the root names `String`,
+      and that the lines under `src/` that name it are the 32 that hold no id.
+  - **`N`-note:** no `N`-note. N06 holds a reference as the key, a string; this note
+    changes the key's type, not what a reference holds.
+  - **Question:** none. Whether an id has a format is item 9 of "What this double raises
+    that no `N`-note holds".
+  ```
+
+  Three sentences of `gleam-double/SPEC-NOTES.md` say an id is a `String`, and become:
 
   | Note | Today | After |
   | --- | --- | --- |
@@ -274,7 +314,27 @@ these cannot hold. Each count's command is in "Files touched".
   | G09 | Each field holds the pocket's key or the consumer's id, a `String`. | Each field holds the pocket's key or the consumer's id, a `PocketKey` or a `ConsumerId`, each of which wraps a `String`. |
   | G10 | `Lease` has one more field, `id`, a `String`. | `Lease` has one more field, `id`, a `LeaseId`, which wraps a `String`. |
 
-  The rest of each sentence stays.
+  The rest of each sentence stays. The note count follows: "The 67 notes follow" becomes
+  "The 68 notes follow", and the heading table's row "Raises what no `N`-note holds"
+  counts 22 where it counts 21.
+- **The ids' format is a finding, and nothing checks it.** By the maintainer's ruling, it
+  is item 9 of the numbered list under "What this double raises that no `N`-note holds",
+  in the findings of `gleam-double/SPEC-NOTES.md`, after item 8. It cites
+  `docs/specs/pachinko.allium`, which declares no format, and G68. It is not listed under
+  "Open questions left untouched", which lists only the specification's own open
+  questions. The sentence after the list, "G44, G51, G53, G55 and G66 record a reading
+  and leave no question.", does not change: the finding cites G68. The specification is
+  untouched. Its text is fixed here:
+
+  ```markdown
+  9. **The ids' format.** The specification declares a publisher's id, a consumer's id, a
+     pocket key and a record key each as a `String` and states no format for any of them
+     (`docs/specs/pachinko.allium`); the lease's id is the double's own (G10). The double
+     wraps each in a type of its own and checks nothing, so an empty key is as valid as any
+     other (G68). **The maintainer decides:** do publisher ids, consumer ids, pocket keys,
+     record keys and lease ids have a format, such as non-empty?
+  ```
+
 - **What the pin gains**, in `gleam-double/test/interface_test.gleam`, with the unit
   GD08 fixed. Six new tests:
   - "ids holds its interface, and nothing marked": the five types, each with one
@@ -345,7 +405,9 @@ these cannot hold. Each count's command is in "Files touched".
   and the walkthrough blocks named above.
 - No change to `gleam-double/gleam.toml`, `gleam-double/manifest.toml`, the `Justfile`
   or anything under `docs/specs/`, `docs/decisions/`, `crates/` or `double/`.
-- No new spec note (shared rule 5); only the three sentences above change.
+- No spec note beyond G68, and no finding beyond item 9. No other sentence of
+  `gleam-double/SPEC-NOTES.md` changes beyond the three above, the note count and the
+  heading table's count.
 
 ## Shared rules
 
@@ -390,7 +452,7 @@ with these substitutions:
 | `gleam-double/test/support/harness.gleam` | shared, own lines | The harness table above |
 | The other 20 changed modules under `gleam-double/test/` | shared, own lines | Ids wrapped, imports, helpers' id types |
 | `gleam-double/README.md` | shared, own lines | The 18 blocks, "Where to look", "Entities", the lease-id bullet, the custom-type example |
-| `gleam-double/SPEC-NOTES.md` | shared, own lines | The three sentences of G05, G09 and G10 |
+| `gleam-double/SPEC-NOTES.md` | shared, own lines | The three sentences of G05, G09 and G10; the new note G68; item 9 of the findings; the note count and the heading table |
 | `.scratch/gleam-double/GD12-id-types.md` | ticket | `status:` and the hand-back notes |
 | `.scratch/gleam-double/README.md` | shared, own lines | GD12's Status cell |
 
@@ -532,9 +594,13 @@ goes under `ai_tmp/gd/GD12/`.
    controls on hand-made pairs: a pair that differs only by wrapping shows no
    difference, a pair with two ids swapped shows one, and a pair with a literal changed
    shows one.
-7. **Words.** Update the guide as "Decisions fixed" says, the root's header, and the
-   three sentences of `gleam-double/SPEC-NOTES.md`. Run `just gleam-double`, which checks
-   the guide's blocks against their files, and `just check-docs`.
+7. **Words.** Update the guide as "Decisions fixed" says, and the root's header. In
+   `gleam-double/SPEC-NOTES.md`, change the three sentences of G05, G09 and G10, add G68
+   last under "Where it raises what no `N`-note holds" and item 9 after item 8 of "What
+   this double raises that no `N`-note holds", each as "Decisions fixed" gives it, and
+   make "The 67 notes follow" read 68 and the heading table's 21 read 22. Run
+   `just gleam-double`, which checks the guide's blocks against their files, and
+   `just check-docs`.
 8. **Adversarial review** (checkpoint 1: conformance and breakage, before the final
    commit). Questions for this checkpoint:
    - Does any field, parameter, constructor or `pub fn` under `gleam-double/src/` still
@@ -551,6 +617,8 @@ goes under `ai_tmp/gd/GD12/`.
    - Would the pin fail if one id went back to `String`, in the root, in `model`, in
      `refusals` or under `internal/`?
    - Does the coverage check still collect every test and stay strict at 93, 32 and 35?
+   - Do G68 and item 9 read as "Decisions fixed" gives them, and does no other sentence
+     of `gleam-double/SPEC-NOTES.md` change?
    - Could a probe in Verification print nothing while its claim is false?
 9. **Commit and hand back.** Commit the work on `branch:`. Rerun Verification at that
    commit and quote it, headed by the full commit id. Set `status: done` here and in
@@ -578,6 +646,10 @@ goes under `ai_tmp/gd/GD12/`.
   count is the baseline's plus the pin's six.
 - The diff changes no fenced block of `gleam-double/README.md` beyond the 18, and every
   one of them matches its file.
+- `gleam-double/SPEC-NOTES.md` holds G68, last under "Where it raises what no `N`-note
+  holds", and item 9 with its "The maintainer decides" question, each as "Decisions
+  fixed" gives it. It counts "The 68 notes", and its heading table gives 22 for "Raises
+  what no `N`-note holds". Nothing under `docs/specs/` changes.
 - The checkpoint is recorded as §14's Record asks, with the deltas above.
 - `just check` ends with `All checks passed and the worktree is unchanged.`, and
   `git status --short` prints nothing after the commit.
@@ -701,6 +773,33 @@ for text in 'A lease id is a `String`' 'id, a `String`.' '`id`, a `String`'; do
   if rg -n -F "$text" gleam-double/SPEC-NOTES.md; then exit 1; else test "$?" -eq 1; fi
 done
 
+# The notes hold G68 once, as a heading of its own. The control counts it and
+# neither a longer id, a deeper heading nor another note.
+pattern='^### G68: '
+probe=$(printf '### G68: x\n### G680: x\n#### G68: x\n### G67: x\n' | rg -c "$pattern")
+test "$probe" -eq 1
+notes=$(rg -c "$pattern" gleam-double/SPEC-NOTES.md)
+test "$notes" -eq 1
+# ... and item 9 asks its question once, on one line or wrapped. rg -c exits 1
+# when nothing matches, which stops set -eu in the assignment; that is a failure
+# here too, since each count must be at least 1. The control holds the question
+# on one line, wrapped as item 9 wraps it, and without its last words.
+pattern='\*\*The\s+maintainer\s+decides:\*\*\s+do\s+publisher\s+ids,\s+consumer\s+ids,\s+pocket\s+keys,\s+record\s+keys\s+and\s+lease\s+ids\s+have\s+a\s+format,\s+such\s+as\s+non-empty\?'
+probe=$(printf '**The maintainer decides:** do publisher ids, consumer ids, pocket keys, record keys and lease ids have a format, such as non-empty?\n   other (G68). **The maintainer decides:** do publisher ids, consumer ids, pocket keys,\n   record keys and lease ids have a format, such as non-empty?\n**The maintainer decides:** do publisher ids, consumer ids, pocket keys, record keys and lease ids have a format?\n' | rg -U -c "$pattern")
+test "$probe" -eq 2
+asked=$(rg -U -c "$pattern" gleam-double/SPEC-NOTES.md)
+test "$asked" -eq 1
+# ... and the counts follow: 68 notes, 22 of them under no N-note. The control
+# holds each count and the base's, and each pattern takes only its own.
+counts='The 68 notes follow\nThe 67 notes follow\n| Raises what no `N`-note holds | 22 |\n| Raises what no `N`-note holds | 21 |\n'
+for text in 'The 68 notes follow' 'The 67 notes follow' '| Raises what no `N`-note holds | 22 |'; do
+  probe=$(printf "$counts" | rg -c -F "$text")
+  test "$probe" -eq 1
+done
+rg -q -F 'The 68 notes follow' gleam-double/SPEC-NOTES.md
+if rg -n -F 'The 67 notes follow' gleam-double/SPEC-NOTES.md; then exit 1; else test "$?" -eq 1; fi
+rg -q -F '| Raises what no `N`-note holds | 22 |' gleam-double/SPEC-NOTES.md
+
 # The files changed under src/ are exactly the fifteen. The control: the same
 # command names a file that did change.
 seen=$(git diff --name-only "$base" -- "$src/model.gleam")
@@ -725,8 +824,8 @@ whose text starts with `//` after its indentation, so a doc comment that names `
 such as `ids.gleam`'s header, does not count; a trailing comment would, and fails the
 probe closed. The pin reads the same lines from each module's code, without comments or
 strings, and compares their text, not their count. The guide's pattern takes a harness
-call whose first id is a string literal, so it holds only while the harness takes typed
-ids. The changed-files probe runs after the work commit, when `ids.gleam` is tracked;
+call whose first id is a string literal, which the typed harness no longer accepts. The
+changed-files probe runs after the work commit, when `ids.gleam` is tracked;
 run before it, `git diff` cannot name an untracked file, and the run must add
 `git ls-files --others --exclude-standard -- gleam-double/src` and say so. The builder
 runs each control first, and corrects a pattern, saying so under Departures, if one does
@@ -742,24 +841,6 @@ Verification at the work commit; departures; and what was not run.
 
 ## Open points
 
-- **The harness could keep `String`s.** This ticket gives
-  `test/support/harness.gleam` the typed ids, so that a test reads in the caller's
-  vocabulary and a swapped argument in a test does not compile either. The alternative
-  keeps the harness's `String` parameters, which mirror the Rust fixture's, and wraps
-  them at the call of the root. It would leave about 626 harness call lines in 16 test
-  modules and 53 lines that compare `harness.keys`, `marked_keys` or `order` with a list
-  of literals as they are, roughly half the test diff. The tests would then mix the two
-  vocabularies: a call with `"c1"`, and an expected refusal or snapshot with
-  `ConsumerId("c1")`. The maintainer can choose it before the ticket starts; the guide's
-  probe in Verification then drops its harness alternative.
-- **A spec note, or none.** G07 recorded a type that departs from the specification's
-  `String`: the payload, which the double stores as a `BitArray`. This ticket writes no
-  note for the ids, because each type holds the specification's `String` unchanged,
-  where G07's holds other values. If the maintainer reads the two alike, a short note
-  says that each id is a type of its own that wraps the `String`, with no question.
-- **No id is checked.** An empty `PocketKey("")` is as valid as any other, as the
-  specification states no format. A format would be a product decision, and its
-  validation a behaviour change.
 - **The test diff is large.** Most of it is mechanical, and step 6's residue is what
   the review reads to see that nothing else moved. Splitting the ticket by id would give
   five smaller diffs, each of which builds; the maintainer chose one ticket, and step 4
