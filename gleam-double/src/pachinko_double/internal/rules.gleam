@@ -1,6 +1,6 @@
 //// The rule-table machinery. It knows nothing of the domain: a table is the
 //// rules that share one trigger, each row `(name, guard, effect)`, with what
-//// the table answers when no guard holds. `core` fixes it to the domain's
+//// the table answers when no guard holds. `domain` fixes it to the domain's
 //// state, events, answers and refusals.
 ////
 //// A guard is a pure function of the state and the trigger's input. It

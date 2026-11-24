@@ -353,7 +353,9 @@ test "$probe" -eq 3
 if rg -n "$pattern" gleam-double/src gleam-double/test gleam-double/README.md \
   gleam-double/SPEC-NOTES.md docs/project/repository-map.md; then exit 1; else test "$?" -eq 1; fi
 
-changed=$(git diff --no-renames --name-only "$base" -- gleam-double/src | LC_ALL=C sort | tr '\n' ' ')
+files=$(git diff --no-renames --name-only "$base" -- gleam-double/src)
+sorted=$(printf '%s\n' "$files" | LC_ALL=C sort)
+changed=$(printf '%s\n' "$sorted" | tr '\n' ' ')
 test "$changed" = "gleam-double/src/pachinko_double.gleam gleam-double/src/pachinko_double/owner.gleam "
 patch=$(git diff --no-ext-diff --no-color -M "$base" -- gleam-double/src)
 printf '%s\n' "$patch" | rg -q '^rename to gleam-double/src/pachinko_double\.gleam$'
@@ -694,6 +696,17 @@ Not run:
 Not recorded: the exact `codex exec` command lines, beyond the form in
 `ai_tmp/review/reviewer-subagent.md`; and whether `review-docs` was used for
 `docs/project/repository-map.md`.
+
+- **After the series code review (follow-up commit).** Fix 1: the pin's listing checks
+  of `src/` and `test/` leave out entries whose names start with `.`, through the shared
+  `listing`, with a control holding `.DS_Store` and `.foo.gleam.swp` (red
+  `ai_tmp/gd/series-review/ev-1-red.txt`, green `ev-1-green.txt`). Fix 3: the purity
+  check also faults a line starting `@external` in any module under `src/` but the root,
+  through `reaches_effects` and its control (red `ev-3-red.txt`, green
+  `ev-3-green.txt`). Fix 7: Verification's `changed=` line is split so that `git diff`
+  runs in its own assignment, then `sort`, then `tr`; `ev-7-red.txt` shows the old form
+  passing and the new one stopping when `git` fails. The suite after all fixes:
+  `ev-gleam.txt`.
 
 ## Open points
 

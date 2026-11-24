@@ -1,18 +1,20 @@
 //// The pin on the package's interface. `items` reads a module's source and
 //// returns its public items, each with its constructors and its `@internal`
 //// mark; `imports_effects` says whether a module imports `gleam/erlang` or
-//// `gleam/otp`; `imported_modules` names the module each import line takes.
-//// All three are pure, so the controls run them on text made by hand. The
-//// assertions read the tree from `gleam-double/`, where the run starts: the
-//// root's items are exactly the seventeen of the interface, the root is the
-//// only module under `src/` that imports an effect, and `src/` holds at its
-//// top level only the root and its directory. The two vocabulary modules of
-//// the replies, `failure` and `answers`, hold exactly the reply types;
-//// `failure` imports nothing, and `answers` imports only `model` and `time`.
-//// The witness, the walkthrough in `test/guide_test.gleam`, imports no engine
-//// module and no rule module. `test/` holds at its top level only the test
-//// modules and the directory `support`, which holds exactly the coverage
-//// check, the fakes and the runner.
+//// `gleam/otp`, and `reaches_effects` whether it does or holds an
+//// `@external` line; `imported_modules` names the module each import line
+//// takes. All four are pure, so the controls run them on text made by hand.
+//// The assertions read the tree from `gleam-double/`, where the run starts:
+//// the root's items are exactly the seventeen of the interface, the root is
+//// the only module under `src/` that imports an effect or binds an external
+//// function, and `src/` holds at its top level only the root and its
+//// directory. The two vocabulary modules of the replies, `failure` and
+//// `answers`, hold exactly the reply types; `failure` imports nothing, and
+//// `answers` imports only `model` and `time`. The witness, the walkthrough
+//// in `test/guide_test.gleam`, imports no engine module and no rule module.
+//// `test/` holds at its top level only the test modules and the directory
+//// `support`, which holds exactly the coverage check, the fakes and the
+//// runner.
 ////
 //// The layout splits the interface from the engine: `src/pachinko_double/`
 //// holds the eight vocabulary modules and the directory `internal`, which
@@ -24,7 +26,9 @@
 //// the six of `test_only`, which the guide's table lists too: each is a
 //// `pub fn` under `internal/` or marked that no other module under `src/`
 //// names, and every other `pub fn` and `pub const` under `internal/` or
-//// marked is named by some other module under `src/`.
+//// marked is named by some other module under `src/`. The scan covers
+//// functions and constants, not types: a marked type that only the tests
+//// name, such as `invariants.Invariant`, is not seen.
 ////
 //// The parser reads text, not the compiler's result:
 //// - an item is a line that starts at column 0 with `pub fn`, `pub const`,
@@ -37,10 +41,15 @@
 ////   none;
 //// - an item is internal when the line directly above its `pub` line is
 ////   `@internal`, and a constructor is internal when its type is;
+//// - an `@external` line starts at column 0 with `@external`;
 //// - an import line starts with `import `, and the module it names is the
 ////   text after that, up to the first space or `.`; its name list is read
 ////   without its comments, each line up to its first `//`;
+//// - a qualified use `module.function` is read on each line up to its first
+////   `//`, so a comment, whole or trailing, names nothing;
 //// - a mark is a line that is `@internal` once trimmed, wherever it sits;
+//// - a directory's listing leaves out the entries whose names start with
+////   `.`, such as `.DS_Store` or an editor's swap file;
 //// - a row of the guide's test-only table is a line under its heading that
 ////   starts with `|` once its leading spaces are dropped; past the header
 ////   and the separator, a row's name is its first cell, trimmed and without
@@ -97,9 +106,14 @@ pub fn tests() -> List(Test) {
       [],
       reads_effect_imports,
     ),
+    Test(
+      "a line that starts with @external reaches an effect",
+      [],
+      reads_externals,
+    ),
     Test("the root holds exactly the interface's items", [], root_items),
     Test(
-      "the root is the only module under src/ that imports an effect",
+      "the root is the only module under src/ that imports an effect or holds an @external",
       [],
       effect_importers,
     ),
@@ -189,7 +203,7 @@ pub fn tests() -> List(Test) {
       reads_values,
     ),
     Test(
-      "a module names m.f qualified on a line that is no comment, or unqualified in its import",
+      "a module names m.f qualified outside a comment, or unqualified in its import",
       [],
       reads_names,
     ),
@@ -217,6 +231,11 @@ pub fn tests() -> List(Test) {
       "a support listing with a fourth module, or one missing, differs",
       [],
       reads_support_listing,
+    ),
+    Test(
+      "a listing leaves out the entries whose names start with a dot",
+      [],
+      reads_hidden_entries,
     ),
     Test(
       "test/ holds at its top level only test modules and support/",
@@ -317,6 +336,14 @@ pub fn imports_effects(source: String) -> Bool {
     string.starts_with(line, "import gleam/erlang")
     || string.starts_with(line, "import gleam/otp")
   })
+}
+
+/// Whether a module's source reaches an effect: it imports `gleam/erlang` or
+/// `gleam/otp`, or holds a line that starts with `@external`, which binds a
+/// function to Erlang's own.
+pub fn reaches_effects(source: String) -> Bool {
+  imports_effects(source)
+  || list.any(string.split(source, "\n"), string.starts_with(_, "@external"))
 }
 
 /// The module each line of a source that starts with `import ` names, in the
@@ -448,6 +475,21 @@ fn reads_effect_imports() -> List(String) {
   []
 }
 
+/// A line that starts with `@external` reaches an effect with no effect
+/// import; an indented one and a comment that holds it are read as written,
+/// and an effect import still counts.
+fn reads_externals() -> List(String) {
+  let external =
+    "@external(erlang, \"os\", \"system_time\")\npub fn now() -> Int\n"
+  assert !imports_effects(external)
+  assert reaches_effects(external)
+  assert reaches_effects("import gleam/erlang/process\n")
+  assert !reaches_effects(
+    "  @external(erlang, \"os\", \"system_time\")\n// @external(erlang, \"os\", \"getenv\")\nimport gleam/list\n",
+  )
+  []
+}
+
 /// The interface's seventeen items, by name: none is internal, and only
 /// `Outcome` and `PartialTick` have a constructor, of the type's own name.
 fn interface() -> List(Item) {
@@ -493,7 +535,7 @@ fn effect_importers() -> List(String) {
       |> list.filter_map(fn(file) {
         case coverage.read(file) {
           Ok(source) ->
-            case imports_effects(source) {
+            case reaches_effects(source) {
               True -> Ok(file)
               False -> Error(Nil)
             }
@@ -515,7 +557,7 @@ fn effect_importers() -> List(String) {
 fn source_top_level() -> List(String) {
   let entries =
     simplifile.read_directory(source_directory)
-    |> result.map(list.sort(_, string.compare))
+    |> result.map(listing)
   assert entries == Ok(["pachinko_double", "pachinko_double.gleam"])
   assert simplifile.is_directory(source_directory <> "/pachinko_double")
     == Ok(True)
@@ -748,7 +790,7 @@ fn vocabulary_path(module: String) -> String {
 fn vocabulary_top_level() -> List(String) {
   let entries =
     simplifile.read_directory(vocabulary_directory)
-    |> result.map(list.sort(_, string.compare))
+    |> result.map(listing)
   assert entries
     == Ok(list.sort(
       ["internal", ..list.map(vocabulary_modules(), fn(m) { m <> ".gleam" })],
@@ -761,7 +803,7 @@ fn vocabulary_top_level() -> List(String) {
 fn internal_top_level() -> List(String) {
   let entries =
     simplifile.read_directory(internal_directory)
-    |> result.map(list.sort(_, string.compare))
+    |> result.map(listing)
   assert entries
     == Ok(list.map(internal_modules(), fn(module) { module <> ".gleam" }))
   []
@@ -1119,7 +1161,7 @@ fn reads_values() -> List(String) {
 }
 
 /// Whether a source names `module.function`, where `module` is a module's
-/// last segment: a line that is not a comment holds the text
+/// last segment: a line, up to its first `//`, holds the text
 /// `module.function` with no letter, digit or `_` directly before `module`
 /// or directly after `function`, or the source's import of the module lists
 /// `function` unqualified, outside a comment.
@@ -1127,10 +1169,10 @@ pub fn names(source: String, module: String, function: String) -> Bool {
   let lines = string.split(source, "\n")
   let needle = module <> "." <> function
   list.any(lines, fn(line) {
-    !string.starts_with(string.trim_start(line), "//")
-    && list.any(list.window_by_2(string.split(line, needle)), fn(pair) {
-      !ends_with_word(pair.0) && !starts_with_word(pair.1)
-    })
+    list.any(
+      list.window_by_2(string.split(uncommented(line), needle)),
+      fn(pair) { !ends_with_word(pair.0) && !starts_with_word(pair.1) },
+    )
   })
   || list.contains(unqualified(lines, module, []), function)
 }
@@ -1200,8 +1242,9 @@ fn statement(line: String, rest: List(String)) -> #(String, List(String)) {
   }
 }
 
-/// A line of an import statement up to its comment: an import holds no
-/// string, so its first `//` opens one.
+/// A line up to its first `//`, which opens its comment. An import holds no
+/// string, so there it always does; on any other line a string that holds
+/// `//` cuts the line short there too, and no module under `src/` holds one.
 fn uncommented(line: String) -> String {
   case string.split_once(line, "//") {
     Ok(#(code, _)) -> code
@@ -1245,6 +1288,8 @@ fn reads_names() -> List(String) {
   assert !names("  core.run_at(table, now)\n", "core", "run")
   assert !names("  score.run(table)\n", "core", "run")
   assert !names("  // core.run(table)\n/// core.run\n", "core", "run")
+  assert !names("  |> list.filter(f) // was model.queued\n", "model", "queued")
+  assert names("  model.queued(state) // the queue\n", "model", "queued")
   assert !names("  rules.run(table)\n", "core", "run")
   assert names("import pachinko_double/internal/core.{run}\n", "core", "run")
   assert names(
@@ -1501,9 +1546,12 @@ fn kinds(directory: String, names: List(String)) -> List(#(String, Bool)) {
   })
 }
 
-/// A directory's listing, sorted, so that two listings compare with `==`.
+/// A directory's listing, sorted, so that two listings compare with `==`. It
+/// leaves out the entries whose names start with `.`, such as `.DS_Store` or
+/// an editor's swap file, which a clean tree may hold.
 pub fn listing(entries: List(String)) -> List(String) {
-  list.sort(entries, string.compare)
+  list.filter(entries, fn(name) { !string.starts_with(name, ".") })
+  |> list.sort(string.compare)
 }
 
 /// A top level of test modules and `support` leaves only `support`; one that
@@ -1545,9 +1593,29 @@ fn reads_support_listing() -> List(String) {
   []
 }
 
+/// A listing that also holds `.DS_Store` and an editor's swap file is still
+/// the support listing, and a top level that holds them still leaves only
+/// `support`. A name with a dot past its start stays.
+fn reads_hidden_entries() -> List(String) {
+  assert listing([
+      "runner.gleam", ".DS_Store", "coverage.gleam", ".foo.gleam.swp",
+      "harness.gleam",
+    ])
+    == support_modules()
+  assert not_tests(
+      list.map(listing([".DS_Store", "support", ".a_test.gleam.swp"]), fn(name) {
+        #(name, name != "support")
+      }),
+    )
+    == ["support"]
+  assert listing([".DS_Store", "notes.swp", "a.DS_Store", "helpers.gleam"])
+    == ["a.DS_Store", "helpers.gleam", "notes.swp"]
+  []
+}
+
 fn test_top_level() -> List(String) {
   assert result.map(simplifile.read_directory(test_directory), fn(names) {
-      not_tests(kinds(test_directory, names))
+      not_tests(kinds(test_directory, listing(names)))
     })
     == Ok(["support"])
   assert simplifile.is_directory(support_directory) == Ok(True)

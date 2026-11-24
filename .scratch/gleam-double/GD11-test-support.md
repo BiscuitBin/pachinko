@@ -817,6 +817,13 @@ the form in `ai_tmp/review/reviewer-subagent.md`; the Codex processes' exit stat
 beyond the lead's account; the head of the triage's smoke run; and the models of the
 subagents, beyond the lead's account.
 
+- **After the series code review (follow-up commit).** Fix 1: the listing checks of
+  `test/` and `test/support/` leave out entries whose names start with `.` (red
+  `ai_tmp/gd/series-review/ev-1-red.txt`, green `ev-1-green.txt`). Fix 6:
+  `docs/project/repository-map.md`'s `gleam-double/` row says that the runner, the fakes
+  and the coverage check sit under `test/support/` (`ev-docs.txt`). The suite after all
+  fixes: `ev-gleam.txt`.
+
 ## Open points
 
 - **The engine's tests sit beside the caller's.** After GD10 a reader can tell the

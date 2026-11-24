@@ -1108,6 +1108,16 @@ Not recorded: the exact `codex exec` command lines, beyond the form in
 statuses, beyond the lead's account; and the models of the subagents, beyond the lead's
 account.
 
+- **After the series code review (follow-up commit).** Fix 1: the listing checks of
+  `src/pachinko_double/` and `internal/` leave out entries whose names start with `.`
+  (red `ai_tmp/gd/series-review/ev-1-red.txt`, green `ev-1-green.txt`). Fix 2:
+  `internal/rules.gleam`'s header names `domain`, not `core`, as the module that fixes
+  the machinery to the domain. Fix 4: `names` reads each line up to its first `//`, so a
+  trailing comment names nothing (red `ev-4-red.txt`, green `ev-4-green.txt`). Fix 5:
+  the pin's header and the guide say that the test-only scan covers functions and
+  constants, not types. The suite after all fixes: `ev-gleam.txt`; the lint gate, which
+  reads the guide: `ev-lint.txt`.
+
 ## Open points
 
 - **The compiler's own view is not shown.** That `internal/` hides a module from the

@@ -67,6 +67,8 @@ holds the check that this page still matches them.
 These functions are `pub` so that the tests can reach them, and no other module under
 `src/` names them. Each sits under `internal/` or is marked `@internal`, and
 `test/interface_test.gleam` holds this table against the source in both directions.
+Its scan covers functions and constants, not types, so a marked type that only the tests
+name, such as `invariants.Invariant`, is not in the table.
 
 | Name | What the tests use it for |
 | --- | --- |
