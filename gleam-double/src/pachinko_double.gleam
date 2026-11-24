@@ -29,9 +29,9 @@
 //// checker of the invariants, are in `inspection` and `invariants`. These
 //// eight modules sit directly under `src/pachinko_double/`, and a name in one
 //// of them that is not part of the interface is marked `@internal`. The
-//// engine, the rule-table machinery and the apply step, and the
-//// specification's rules sit under `src/pachinko_double/internal/`, which is
-//// no part of the interface.
+//// engine, the rule-table machinery and the apply step, the specification's
+//// rules, and the `Consuming` surface's lease-view read sit under
+//// `src/pachinko_double/internal/`, which is no part of the interface.
 
 import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option, None, Some}

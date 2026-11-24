@@ -306,14 +306,17 @@ if rg -n "$pattern" gleam-double/README.md gleam-double/SPEC-NOTES.md gleam-doub
 
 # Each moved module is a rename whose changed lines are all import lines.
 # `counts` reads a patch's file headers, its changed lines and its changed
-# import lines; a pure rename has none of any. A removed line that starts with
-# `-- ` reads as a header, so it moves the header count too. The control runs
-# the same counts on a hand-made patch that also changes a body line, and must
-# see it. `--text` keeps git from reporting a module as binary, which hides
-# its changed lines; the second control's line is what git prints then, and
-# the probe stops the script if a patch holds it anyway.
+# import lines; a pure rename has none of any. A file header is a line that
+# starts with `--- ` or `+++ ` before its file's first `@@` line, so a removed
+# body line that starts with `-- `, which git prints as `--- `, is a changed
+# line and no header. The first control runs the same counts on a hand-made
+# patch that also changes a body line, and the second on one whose removed
+# body line starts with `-- a/`; each must see the change. `--text` keeps git
+# from reporting a module as binary, which hides its changed lines; the third
+# control's line is what git prints then, and the probe stops the script if a
+# patch holds it anyway.
 counts() {
-  headers=$(printf '%s\n' "$1" | rg -c '^(\+\+\+|---) ' || test "$?" -eq 1)
+  headers=$(printf '%s\n' "$1" | awk '/^diff --git /{h=0} /^@@ /{h=1} !h && /^(---|\+\+\+) /{n++} END{print n+0}')
   changed=$(printf '%s\n' "$1" | rg -c '^[+-]' || test "$?" -eq 1)
   imported=$(printf '%s\n' "$1" | rg -c '^[+-]import ' || test "$?" -eq 1)
 }
@@ -321,6 +324,10 @@ control=$(printf -- '--- a/m.gleam\n+++ b/m.gleam\n@@ -1,2 +1,2 @@\n-import runn
 counts "$control"
 test "$headers" -eq 2
 test "$imported" -eq 2
+test "$changed" -ne "$((headers + imported))"
+control=$(printf -- 'diff --git a/m.gleam b/m.gleam\n--- a/m.gleam\n+++ b/m.gleam\n@@ -1,2 +1 @@\n-import runner\n+import support/runner\n--- a/m.gleam\n')
+counts "$control"
+test "$headers" -eq 2
 test "$changed" -ne "$((headers + imported))"
 pattern='^Binary files '
 probe=$(printf 'rename from m.gleam\nrename to n.gleam\nBinary files a/m.gleam and b/n.gleam differ\n' | rg -c "$pattern")
@@ -823,6 +830,14 @@ subagents, beyond the lead's account.
   `docs/project/repository-map.md`'s `gleam-double/` row says that the runner, the fakes
   and the coverage check sit under `test/support/` (`ev-docs.txt`). The suite after all
   fixes: `ev-gleam.txt`.
+
+- **After Sol's review of the follow-up commit.** Fix C: the Verification's `counts`
+  takes a file header only before its file's first `@@` line, so a removed body line
+  that starts with `--` and a space is a changed line, and a second control holds that.
+  `ai_tmp/gd/GD11/verification.sh` changes with it below its `base=` line
+  (`ai_tmp/gd/series-review/fix2/ev-C-match.txt`). The old form passes a hand-made
+  patch with such a line and the new one catches it (`ev-C-red.txt`), and the
+  corrected probe still passes on `git diff -M d37b481 421e246` (`ev-C-real.txt`).
 
 ## Open points
 

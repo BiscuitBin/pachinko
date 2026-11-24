@@ -473,11 +473,14 @@ test -z "$untouched"
 
 # The marked modules change only by added `@internal` lines: every changed
 # line of their patch is one of the six file headers or one of the 15 marks.
-# A removed line that starts with `--` reads as a header, so it moves the
-# header count too. The control runs the same counts on a hand-made patch
-# that also changes a body line, and must see it.
+# A file header is a line that starts with `--- ` or `+++ ` before its file's
+# first `@@` line, so a removed body line that starts with `-- `, which git
+# prints as `--- `, is a changed line and no header. The first control runs
+# the same counts on a hand-made patch that also changes a body line, and the
+# second on one whose removed body line starts with `-- a/`; each must see
+# the change.
 counts() {
-  headers=$(printf '%s\n' "$1" | rg -c '^(\+\+\+|---) ' || test "$?" -eq 1)
+  headers=$(printf '%s\n' "$1" | awk '/^diff --git /{h=0} /^@@ /{h=1} !h && /^(---|\+\+\+) /{n++} END{print n+0}')
   changed=$(printf '%s\n' "$1" | rg -c '^[+-]' || test "$?" -eq 1)
   added=$(printf '%s\n' "$1" | rg -c '^\+@internal$' || test "$?" -eq 1)
 }
@@ -485,6 +488,10 @@ control=$(printf -- '--- a/m.gleam\n+++ b/m.gleam\n@@ -1,2 +1,3 @@\n+@internal\n
 counts "$control"
 test "$headers" -eq 2
 test "$added" -eq 1
+test "$changed" -ne "$((headers + added))"
+control=$(printf -- 'diff --git a/m.gleam b/m.gleam\n--- a/m.gleam\n+++ b/m.gleam\n@@ -1,2 +1,2 @@\n+@internal\n--- a/m.gleam\n')
+counts "$control"
+test "$headers" -eq 2
 test "$changed" -ne "$((headers + added))"
 patch=$(git diff "$base" -- "$src/model.gleam" "$src/inspection.gleam" "$src/invariants.gleam")
 counts "$patch"
@@ -505,9 +512,10 @@ does. The `seen` line is the control for the two `git diff --name-only` probes a
 it: the same command names a file that did change. `counts` reads a patch of the
 three marked modules: its file headers, its changed lines and its added `@internal`
 lines. The patch passes when every changed line is a header or a mark, with six headers
-and fifteen marks; the control runs the same counts on a hand-made patch that also
-changes a body line, and must see the change. A removed line that starts with `--`
-reads as a header, so it moves the header count too. `rg -c` prints nothing and exits 1
+and fifteen marks; the first control runs the same counts on a hand-made patch that also
+changes a body line, and the second on one whose removed body line starts with `-- a/`;
+each must see the change. A header is counted only before its file's first `@@` line, so
+such a removed line is a changed line and no header. `rg -c` prints nothing and exits 1
 when it counts zero; `|| test "$?" -eq 1` lets that through and stops on any other
 status, and an empty count then fails the `test` that reads it. The script does not
 show that a moved module changed only in its imports, because `gleam format` may rewrap
@@ -1117,6 +1125,23 @@ account.
   the pin's header and the guide say that the test-only scan covers functions and
   constants, not types. The suite after all fixes: `ev-gleam.txt`; the lint gate, which
   reads the guide: `ev-lint.txt`.
+
+- **After Sol's review of the follow-up commit.** Fix A: the test-only scan and the
+  `@external` check read a module's code, its text with each string's contents blanked
+  and each comment removed, honouring `\"` and `\\`. A `//` inside a string no longer
+  hides a use, and a column-0 `@external` inside a multi-line string is no effect (red
+  `ai_tmp/gd/series-review/fix2/ev-A-red.txt`, green `ev-A-green.txt`; two escape
+  mutants, `ev-A-mutant-no-escape.txt` and `ev-A-mutant-quote-only.txt`, each fail two
+  controls). The import reader is unchanged. Fix B: "Where to look" and the root's
+  header give `consuming.gleam` its own row, the `Consuming` surface's lease-view read,
+  out of the specification's rules, and the pin's header and its `internal_modules`
+  comment say the same. Fix C's `counts` change carries to this ticket's Verification
+  and to `ai_tmp/gd/GD10/verification.sh` below its `base=` line, with its second
+  control (`ev-C10-match.txt`): the old form passes a hand-made patch whose removed
+  line starts with `--` and a space, the new one catches it (`ev-C10-red.txt`), and the
+  corrected probe still passes on `git diff -M 6e87e35 21791e6` (`ev-C10-real.txt`).
+  The suite after all: `ev-gleam-2.txt`; the docs and lint gates: `ev-docs-2.txt` and
+  `ev-lint-2.txt`.
 
 ## Open points
 

@@ -57,7 +57,8 @@ holds the check that this page still matches them.
 | What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam`, under `src/pachinko_double/` |
 | The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam`, under `src/pachinko_double/` |
 | The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam`, under `src/pachinko_double/internal/` |
-| The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam`, under `src/pachinko_double/internal/` |
+| The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam` and `decay.gleam`, under `src/pachinko_double/internal/` |
+| The `Consuming` surface's lease-view read | `consuming.gleam`, under `src/pachinko_double/internal/` |
 | What is `pub` only for the tests | The table below this one |
 | The tests | `test/*_test.gleam`, run from `test/pachinko_double_test.gleam` |
 | Test support: the fakes, the runner and the coverage check | `test/support/harness.gleam`, `test/support/runner.gleam` and `test/support/coverage.gleam` |

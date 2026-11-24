@@ -18,17 +18,17 @@
 ////
 //// The layout splits the interface from the engine: `src/pachinko_double/`
 //// holds the eight vocabulary modules and the directory `internal`, which
-//// holds the engine and the specification's rules. Each vocabulary module
-//// holds exactly its interface unmarked and the rest marked `@internal`, and
-//// only `model`, `inspection` and `invariants` carry a mark; none imports a
-//// module under `internal/`, and no module under `src/` imports a module
-//// under an alias. The names that are `pub` only for the tests are
-//// the six of `test_only`, which the guide's table lists too: each is a
-//// `pub fn` under `internal/` or marked that no other module under `src/`
-//// names, and every other `pub fn` and `pub const` under `internal/` or
-//// marked is named by some other module under `src/`. The scan covers
-//// functions and constants, not types: a marked type that only the tests
-//// name, such as `invariants.Invariant`, is not seen.
+//// holds the engine, the specification's rules and the `Consuming` surface's
+//// lease-view read. Each vocabulary module holds exactly its interface
+//// unmarked and the rest marked `@internal`, and only `model`, `inspection`
+//// and `invariants` carry a mark; none imports a module under `internal/`,
+//// and no module under `src/` imports a module under an alias. The names that
+//// are `pub` only for the tests are the six of `test_only`, which the guide's
+//// table lists too: each is a `pub fn` under `internal/` or marked that no
+//// other module under `src/` names, and every other `pub fn` and `pub const`
+//// under `internal/` or marked is named by some other module under `src/`.
+//// The scan covers functions and constants, not types: a marked type that
+//// only the tests name, such as `invariants.Invariant`, is not seen.
 ////
 //// The parser reads text, not the compiler's result:
 //// - an item is a line that starts at column 0 with `pub fn`, `pub const`,
@@ -41,12 +41,17 @@
 ////   none;
 //// - an item is internal when the line directly above its `pub` line is
 ////   `@internal`, and a constructor is internal when its type is;
-//// - an `@external` line starts at column 0 with `@external`;
+//// - a module's code, which `code` returns, is its text with each string's
+////   contents blanked, keeping its quotes and its line breaks, and each
+////   comment, from a `//` outside a string to the end of its line, removed;
+////   in a string `\"` and `\\` are escapes;
+//// - an `@external` line is a line of the code that starts at column 0 with
+////   `@external`, so a string's line is none;
 //// - an import line starts with `import `, and the module it names is the
-////   text after that, up to the first space or `.`; its name list is read
-////   without its comments, each line up to its first `//`;
-//// - a qualified use `module.function` is read on each line up to its first
-////   `//`, so a comment, whole or trailing, names nothing;
+////   text after that, up to the first space or `.`; `names` reads its name
+////   list from the code, so without its comments;
+//// - a qualified use `module.function` is read in the code, so a comment,
+////   whole or trailing, and a string name nothing;
 //// - a mark is a line that is `@internal` once trimmed, wherever it sits;
 //// - a directory's listing leaves out the entries whose names start with
 ////   `.`, such as `.DS_Store` or an editor's swap file;
@@ -339,11 +344,59 @@ pub fn imports_effects(source: String) -> Bool {
 }
 
 /// Whether a module's source reaches an effect: it imports `gleam/erlang` or
-/// `gleam/otp`, or holds a line that starts with `@external`, which binds a
-/// function to Erlang's own.
+/// `gleam/otp`, or its code holds a line that starts with `@external`, which
+/// binds a function to Erlang's own. A string's line is no such line.
 pub fn reaches_effects(source: String) -> Bool {
   imports_effects(source)
-  || list.any(string.split(source, "\n"), string.starts_with(_, "@external"))
+  || list.any(string.split(code(source), "\n"), string.starts_with(
+    _,
+    "@external",
+  ))
+}
+
+/// A module's code: its text with each string's contents blanked, keeping
+/// the string's quotes and its line breaks, and each comment, from a `//`
+/// outside a string to the end of its line, removed. In a string a `\`
+/// escapes the character after it, so `\"` does not close the string, and
+/// `\\` is one escape that leaves the next `"` to close it. A `"` in a
+/// comment opens no string.
+pub fn code(source: String) -> String {
+  blank(source, InCode, [])
+}
+
+/// Where `blank` is in the text it reads.
+type Reading {
+  InCode
+  InString
+  AfterEscape
+  InComment
+}
+
+fn blank(text: String, reading: Reading, kept: List(String)) -> String {
+  case string.pop_grapheme(text) {
+    Error(Nil) -> string.concat(list.reverse(kept))
+    Ok(#(grapheme, rest)) ->
+      case reading, grapheme {
+        _, "\n" -> {
+          let reading = case reading {
+            InCode | InComment -> InCode
+            InString | AfterEscape -> InString
+          }
+          blank(rest, reading, ["\n", ..kept])
+        }
+        InCode, "\"" -> blank(rest, InString, ["\"", ..kept])
+        InCode, "/" ->
+          case rest {
+            "/" <> _ -> blank(rest, InComment, kept)
+            _ -> blank(rest, InCode, [grapheme, ..kept])
+          }
+        InCode, _ -> blank(rest, InCode, [grapheme, ..kept])
+        InString, "\"" -> blank(rest, InCode, ["\"", ..kept])
+        InString, "\\" -> blank(rest, AfterEscape, kept)
+        InString, _ | AfterEscape, _ -> blank(rest, InString, kept)
+        InComment, _ -> blank(rest, InComment, kept)
+      }
+  }
 }
 
 /// The module each line of a source that starts with `import ` names, in the
@@ -486,6 +539,18 @@ fn reads_externals() -> List(String) {
   assert reaches_effects("import gleam/erlang/process\n")
   assert !reaches_effects(
     "  @external(erlang, \"os\", \"system_time\")\n// @external(erlang, \"os\", \"getenv\")\nimport gleam/list\n",
+  )
+  assert !reaches_effects(
+    "pub fn greet() -> String {\n  let _ = \"hello\n@external\nworld\"\n  \"\"\n}\n",
+  )
+  assert !reaches_effects(
+    "pub fn greet() -> String {\n  \"a\\\"\n@external\nb\"\n}\n",
+  )
+  assert reaches_effects(
+    "pub const path = \"a\\\\\"\n\n@external(erlang, \"os\", \"getenv\")\npub fn getenv() -> String\n",
+  )
+  assert reaches_effects(
+    "// a \"quote\n@external(erlang, \"os\", \"getenv\")\npub fn getenv() -> String\n",
   )
   []
 }
@@ -774,8 +839,8 @@ fn vocabulary_modules() -> List(String) {
   ]
 }
 
-/// The eleven modules under `internal/`: the engine and the specification's
-/// rules.
+/// The eleven modules under `internal/`: the engine, the specification's
+/// rules and the `Consuming` surface's lease-view read.
 fn internal_modules() -> List(String) {
   [
     "consuming", "core", "decay", "domain", "expiry", "identity", "lease_end",
@@ -1161,18 +1226,22 @@ fn reads_values() -> List(String) {
 }
 
 /// Whether a source names `module.function`, where `module` is a module's
-/// last segment: a line, up to its first `//`, holds the text
-/// `module.function` with no letter, digit or `_` directly before `module`
-/// or directly after `function`, or the source's import of the module lists
-/// `function` unqualified, outside a comment.
+/// last segment: a line of its `code` holds the text `module.function` with
+/// no letter, digit or `_` directly before `module` or directly after
+/// `function`, or the code's import of the module lists `function`
+/// unqualified. So a comment, whole or trailing, and a string name nothing.
 pub fn names(source: String, module: String, function: String) -> Bool {
-  let lines = string.split(source, "\n")
+  names_in(string.split(code(source), "\n"), module, function)
+}
+
+/// `names`, on the lines of a source's `code`, so that a scan over many
+/// names reads each module once.
+fn names_in(lines: List(String), module: String, function: String) -> Bool {
   let needle = module <> "." <> function
   list.any(lines, fn(line) {
-    list.any(
-      list.window_by_2(string.split(uncommented(line), needle)),
-      fn(pair) { !ends_with_word(pair.0) && !starts_with_word(pair.1) },
-    )
+    list.any(list.window_by_2(string.split(line, needle)), fn(pair) {
+      !ends_with_word(pair.0) && !starts_with_word(pair.1)
+    })
   })
   || list.contains(unqualified(lines, module, []), function)
 }
@@ -1216,39 +1285,23 @@ fn unqualified(
   }
 }
 
-/// An import statement's text, without its comments, joined over its lines
-/// when it opens a name list it does not close, and the lines after it.
+/// An import statement's text, from lines of code, which hold no comment,
+/// joined over its lines when it opens a name list it does not close, and
+/// the lines after it.
 fn statement(line: String, rest: List(String)) -> #(String, List(String)) {
-  let opening = uncommented(line)
-  case string.contains(opening, "{") && !string.contains(opening, "}") {
-    False -> #(opening, rest)
+  case string.contains(line, "{") && !string.contains(line, "}") {
+    False -> #(line, rest)
     True -> {
       let #(inside, after) =
         list.split_while(rest, fn(next) { !string.starts_with(next, "}") })
       case after {
         [close, ..after] -> #(
-          string.join(
-            [opening, ..list.map(list.append(inside, [close]), uncommented)],
-            " ",
-          ),
+          string.join([line, ..list.append(inside, [close])], " "),
           after,
         )
-        [] -> #(
-          string.join([opening, ..list.map(inside, uncommented)], " "),
-          [],
-        )
+        [] -> #(string.join([line, ..inside], " "), [])
       }
     }
-  }
-}
-
-/// A line up to its first `//`, which opens its comment. An import holds no
-/// string, so there it always does; on any other line a string that holds
-/// `//` cuts the line short there too, and no module under `src/` holds one.
-fn uncommented(line: String) -> String {
-  case string.split_once(line, "//") {
-    Ok(#(code, _)) -> code
-    Error(Nil) -> line
   }
 }
 
@@ -1318,6 +1371,15 @@ fn reads_names() -> List(String) {
     "core",
     "run",
   )
+  assert names(
+    "  let _ = #(\"https://x\", core.registry())\n",
+    "core",
+    "registry",
+  )
+  assert names("  let _ = #(\"a\\\"//\", core.run())\n", "core", "run")
+  assert names("  let _ = #(\"a\\\\\", core.run())\n", "core", "run")
+  assert !names("  let _ = \"core.run\"\n", "core", "run")
+  assert !names("  let _ = \"x\n  core.run()\n\"\n", "core", "run")
   []
 }
 
@@ -1326,15 +1388,16 @@ fn under_internal(path: String) -> Bool {
   string.contains(path, "/internal/")
 }
 
-/// The other modules that name `module.function`, by path.
+/// The other modules that name `module.function`, by path. Each module is
+/// its path and the lines of its `code`.
 fn users(
-  modules: List(#(String, String)),
+  modules: List(#(String, List(String))),
   path: String,
   module: String,
   function: String,
 ) -> List(String) {
   list.filter_map(modules, fn(other) {
-    case other.0 != path && names(other.1, module, function) {
+    case other.0 != path && names_in(other.1, module, function) {
       True -> Ok(other.0)
       False -> Error(Nil)
     }
@@ -1350,6 +1413,10 @@ pub fn test_only_faults(
   modules: List(#(String, String)),
   listed: List(String),
 ) -> List(String) {
+  let read =
+    list.map(modules, fn(found) {
+      #(found.0, string.split(code(found.1), "\n"))
+    })
   let listed_faults =
     list.flat_map(listed, fn(name) {
       case string.split_once(name, ".") {
@@ -1374,7 +1441,7 @@ pub fn test_only_faults(
               }
               list.append(
                 placed,
-                list.map(users(modules, path, module, function), fn(user) {
+                list.map(users(read, path, module, function), fn(user) {
                   name <> " is named by " <> user
                 }),
               )
@@ -1392,7 +1459,7 @@ pub fn test_only_faults(
         !list.contains(listed, module <> "." <> value.name)
       })
       |> list.filter_map(fn(value) {
-        case users(modules, path, module, value.name) {
+        case users(read, path, module, value.name) {
           [] ->
             Ok(
               module
@@ -1474,6 +1541,16 @@ fn scan() -> List(String) {
     == ["model.lookup is neither under internal/ nor marked"]
   assert test_only_faults(scan_modules(), ["core.run", "core.gone"])
     == ["core.gone is no pub fn of src/pachinko_double/internal/core.gleam"]
+  let in_string =
+    scan_with("src/pachinko_double.gleam", fn(source) {
+      string.replace(
+        source,
+        "  core.apply()\n",
+        "  let _ = #(\"https://x\", core.run())\n  core.apply()\n",
+      )
+    })
+  assert test_only_faults(in_string, ["core.run"])
+    == ["core.run is named by src/pachinko_double.gleam"]
   []
 }
 
