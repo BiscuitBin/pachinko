@@ -55,6 +55,7 @@ pub fn empty(settings: Settings) -> Snapshot {
   )
 }
 
+@internal
 pub fn snapshot(state: State) -> Snapshot {
   Snapshot(
     config: config.settings(state.config),

@@ -48,9 +48,11 @@ import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{HeldView}
 import pachinko_double/config.{Settings}
-import pachinko_double/core
 import pachinko_double/failure.{Defect, EffectFailed, Refused}
 import pachinko_double/inspection.{Snapshot}
+import pachinko_double/internal/core
+import pachinko_double/internal/rules.{Applied, Done, Refuses, Row, Table}
+import pachinko_double/internal/settle.{type Ack, type Nack, Ack, Nack, Renew}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type LeaseStatus, type Mark, type Record, type State, Acked, Consumer,
@@ -62,8 +64,6 @@ import pachinko_double/refusals.{
   type Refusal, EqualRankRefused, LeaseFenced, MarkConflict, RecordNotHeld,
   UnknownConsumer,
 }
-import pachinko_double/rules.{Applied, Done, Refuses, Row, Table}
-import pachinko_double/settle.{type Ack, type Nack, Ack, Nack, Renew}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

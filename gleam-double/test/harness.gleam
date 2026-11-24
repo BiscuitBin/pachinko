@@ -14,13 +14,13 @@ import pachinko_double/answers.{
   type BatchRecord, type HeldView, type LeaseView, type TickReport, Batch,
 }
 import pachinko_double/config.{type Config, type Settings, Settings}
-import pachinko_double/domain.{type Applied, type Failure, type Step}
 import pachinko_double/failure.{Refused}
 import pachinko_double/inspection.{type Snapshot}
+import pachinko_double/internal/domain.{type Applied, type Failure, type Step}
+import pachinko_double/internal/publish.{type Publication, Publication}
+import pachinko_double/internal/rules.{Done, NeedsLeaseId, NeedsNow}
 import pachinko_double/model.{type Pocket, type Record, PocketQueued}
-import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{type Refusal}
-import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow}
 import pachinko_double/time.{type Duration, type Timestamp}
 
 /// How long a call to a fake may take, in milliseconds.

@@ -7,15 +7,15 @@ import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/answers.{Batch, BatchRecord, NoPocketAvailable}
 import pachinko_double/config
-import pachinko_double/domain.{type Plan, type Row, type Table, Handed}
+import pachinko_double/internal/domain.{type Plan, type Row, type Table, Handed}
+import pachinko_double/internal/rules.{
+  Defective, Finish, Impossible, LeaseId, Now, Refuses, Row, Table,
+}
 import pachinko_double/model.{
   type Lease, type Pocket, type Record, type State, Lease, LeaseActive, Pocket,
   PocketLeased, PocketQueued, Record, RecordHeld, RecordQueued, State, Unsettled,
 }
 import pachinko_double/refusals.{PullRefused}
-import pachinko_double/rules.{
-  Defective, Finish, Impossible, LeaseId, Now, Refuses, Row, Table,
-}
 
 /// The input of `Pull(consumer, limit)`. `consumer` is the consumer's id.
 pub type Pull {

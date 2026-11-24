@@ -10,7 +10,7 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import pachinko_double/core
+import pachinko_double/internal/core
 import pachinko_double/invariants
 import runner.{
   type Ran, type Report, type Tag, Failed, InvariantControl, Passed, Scenario,

@@ -27,15 +27,15 @@ import harness.{type Double, Driven}
 import pachinko_double.{Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core
-import pachinko_double/decay
+import pachinko_double/internal/core
+import pachinko_double/internal/decay
+import pachinko_double/internal/rules.{Applied, Done}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type DeadLetter, type State, type SupersededRecord, Consumer, DeadLetter,
   Pocket, PocketQueued, Publisher, Queue, Record, RecordQueued, Stale, State,
   Superseded, SupersededRecord,
 }
-import pachinko_double/rules.{Applied, Done}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

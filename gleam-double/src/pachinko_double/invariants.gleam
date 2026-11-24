@@ -49,11 +49,13 @@ import pachinko_double/model.{
 
 /// One invariant: its name in the specification, and whether it holds of a
 /// snapshot and that snapshot's derived sets.
+@internal
 pub type Invariant {
   Invariant(name: String, holds: fn(Snapshot, Views) -> Bool)
 }
 
 /// Every invariant of the specification, in the specification's order.
+@internal
 pub fn registry() -> List(Invariant) {
   [
     Invariant("LeasedHasOneActiveLease", leased_has_one_active_lease),

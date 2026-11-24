@@ -12,8 +12,8 @@ import harness
 import pachinko_double.{Outcome}
 import pachinko_double/answers.{HeldView, LeaseView}
 import pachinko_double/config
-import pachinko_double/consuming
 import pachinko_double/failure.{Refused}
+import pachinko_double/internal/consuming
 import pachinko_double/model.{
   type State, Acked, Consumer, Lease, LeaseActive, LeaseExpired, LeaseReleased,
   Nacked, Pocket, PocketLeased, Publisher, Queue, Record, RecordHeld,

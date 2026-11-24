@@ -4,9 +4,9 @@
 
 import pachinko_double/answers.{type Answer}
 import pachinko_double/failure
+import pachinko_double/internal/rules
 import pachinko_double/model.{type State}
 import pachinko_double/refusals.{type Refusal}
-import pachinko_double/rules
 import pachinko_double/time.{type Timestamp}
 
 /// The events a rule emits for another table to answer within the same

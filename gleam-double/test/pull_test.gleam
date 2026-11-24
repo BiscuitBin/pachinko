@@ -28,19 +28,19 @@ import harness.{type Double, Pulled}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{Batch, BatchRecord, NoPocketAvailable}
 import pachinko_double/config.{Settings}
-import pachinko_double/core
-import pachinko_double/domain.{type Applied, type Failure}
 import pachinko_double/failure.{Defect, NoRuleHeld, Refused}
 import pachinko_double/inspection.{Snapshot}
+import pachinko_double/internal/core
+import pachinko_double/internal/domain.{type Applied, type Failure}
+import pachinko_double/internal/pull.{type Pull, Handover, Pull}
+import pachinko_double/internal/rules.{Applied, Done}
 import pachinko_double/model.{
   type Record, type State, Consumer, DeadLetter, Lease, LeaseActive,
   LeaseExpired, LeaseReleased, Pocket, PocketIdle, PocketLeased, PocketParked,
   PocketQueued, Publisher, Queue, Record, RecordHeld, RecordQueued, State,
   Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/pull.{type Pull, Handover, Pull}
 import pachinko_double/refusals.{PullRefused, UnknownConsumer}
-import pachinko_double/rules.{Applied, Done}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

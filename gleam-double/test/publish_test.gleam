@@ -39,10 +39,15 @@ import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{NoPocketAvailable}
 import pachinko_double/config
-import pachinko_double/core
-import pachinko_double/domain.{type Event, type Plan, PocketTouched}
 import pachinko_double/failure.{Defect, EffectFailed, Refused}
 import pachinko_double/inspection.{Snapshot}
+import pachinko_double/internal/core
+import pachinko_double/internal/domain.{type Event, type Plan, PocketTouched}
+import pachinko_double/internal/publish.{type Publication, Publication}
+import pachinko_double/internal/rules.{
+  Applied, Done, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Row,
+  Table,
+}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type Mark, type Reason, type Record, type State, Acked, Consumer, DeadLetter,
@@ -50,12 +55,7 @@ import pachinko_double/model.{
   PocketQueued, Publisher, Queue, Record, RecordHeld, RecordQueued, Stale, State,
   Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{EqualRankRefused, UnknownPublisher}
-import pachinko_double/rules.{
-  Applied, Done, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Row,
-  Table,
-}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

@@ -14,13 +14,13 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
-import pachinko_double/domain.{type Event, type Row, type Table, Freed}
+import pachinko_double/internal/domain.{type Event, type Row, type Table, Freed}
+import pachinko_double/internal/rules.{Defective, Finish, Impossible, Row, Table}
 import pachinko_double/model.{
   type DeadLetter, type HeldRecord, type Lease, type Record, type State, Acked,
   DeadLetter, Lease, LeaseExpired, LeaseReleased, Nacked, Record, RecordQueued,
   State, Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/rules.{Defective, Finish, Impossible, Row, Table}
 import pachinko_double/time.{type Timestamp}
 
 /// How a lease ended. No rule that answers `Freed` reads it.

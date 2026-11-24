@@ -131,6 +131,7 @@ pub type Lease {
 
 /// Everything the owner holds. Each collection is in the order its members
 /// were created, and a member that is changed keeps its place.
+@internal
 pub type State {
   State(
     config: Config,
@@ -147,6 +148,7 @@ pub type State {
 
 /// A new queue: nothing has joined, nothing is stored, and the first
 /// position is 0 (spec note G04).
+@internal
 pub fn new(config: Config) -> State {
   State(
     config:,
@@ -184,6 +186,7 @@ pub fn record(
 /// A held record as a rule reads it: the lease it is held under, for
 /// `lease.pocket` and `lease.consumer`, the record, and the five fields only
 /// a held record has.
+@internal
 pub type HeldRecord {
   HeldRecord(
     lease: Lease,
@@ -198,6 +201,7 @@ pub type HeldRecord {
 
 /// `Record{pocket: lease.pocket, key: key}`, where it `exists` and
 /// `record.status = held`. The lease is the caller's, whatever its status.
+@internal
 pub fn held_under(
   records: List(Record),
   lease: Lease,
@@ -222,6 +226,7 @@ pub fn held_under(
 /// The records with `record` in the place of the one it replaces, the
 /// record of its pocket and key. No other record changes and none moves: a
 /// changed entity keeps its place in its list.
+@internal
 pub fn replace_record(records: List(Record), record: Record) -> List(Record) {
   list.map(records, fn(stored) {
     case stored.pocket == record.pocket && stored.key == record.key {
@@ -233,6 +238,7 @@ pub fn replace_record(records: List(Record), record: Record) -> List(Record) {
 
 /// The pockets with `pocket` in the place of the one it replaces, the pocket
 /// of its key. No other pocket changes and none moves.
+@internal
 pub fn replace_pocket(pockets: List(Pocket), pocket: Pocket) -> List(Pocket) {
   list.map(pockets, fn(stored) {
     case stored.key == pocket.key {
@@ -250,6 +256,7 @@ pub fn lease(leases: List(Lease), id: String) -> Result(Lease, Nil) {
 
 /// The leases with `lease` in the place of the one it replaces, the lease of
 /// its id. No other lease changes and none moves.
+@internal
 pub fn replace_lease(leases: List(Lease), lease: Lease) -> List(Lease) {
   list.map(leases, fn(stored) {
     case stored.id == lease.id {
@@ -265,6 +272,7 @@ pub fn records_of(records: List(Record), pocket_key: String) -> List(Record) {
 }
 
 /// `records where status = queued`.
+@internal
 pub fn queued(records: List(Record)) -> List(Record) {
   list.filter(records, fn(record) { record.status == RecordQueued })
 }
@@ -276,12 +284,14 @@ pub fn held(records: List(Record)) -> List(Record) {
 
 /// The records smallest position first: the order a pull hands them out in,
 /// and the order a lease's end frees them in.
+@internal
 pub fn oldest_first(records: List(Record)) -> List(Record) {
   list.sort(records, fn(a, b) { int.compare(a.position, b.position) })
 }
 
 /// A pocket's `ending_records`: `records where status = held and mark !=
 /// unsettled and deferred_position = null`.
+@internal
 pub fn ending(records: List(Record)) -> List(Record) {
   list.filter(records, fn(record) {
     case record.status {
@@ -298,6 +308,7 @@ pub fn active(leases: List(Lease)) -> List(Lease) {
 }
 
 /// A pocket's `leases`: `Lease with pocket = this`.
+@internal
 pub fn leases_of_pocket(
   leases: List(Lease),
   pocket_key: String,
@@ -306,6 +317,7 @@ pub fn leases_of_pocket(
 }
 
 /// A consumer's `leases`: `Lease with consumer = this`.
+@internal
 pub fn leases_of_consumer(
   leases: List(Lease),
   consumer_id: String,

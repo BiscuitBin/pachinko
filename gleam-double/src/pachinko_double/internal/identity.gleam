@@ -2,10 +2,10 @@
 
 import gleam/list
 import gleam/option.{None}
-import pachinko_double/domain.{type Table}
+import pachinko_double/internal/domain.{type Table}
+import pachinko_double/internal/rules.{Finish, Refuses, Row, Table}
 import pachinko_double/model.{type State, Consumer, Publisher, State}
 import pachinko_double/refusals.{ConsumerAlreadyJoined, PublisherAlreadyJoined}
-import pachinko_double/rules.{Finish, Refuses, Row, Table}
 
 /// `PublisherJoins(publisher_id)`. A join with an id already taken is
 /// refused (spec note G03).

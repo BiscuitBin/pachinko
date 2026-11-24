@@ -12,6 +12,18 @@
 //// The witness, the walkthrough in `test/guide_test.gleam`, imports no engine
 //// module and no rule module.
 ////
+//// The layout splits the interface from the engine: `src/pachinko_double/`
+//// holds the eight vocabulary modules and the directory `internal`, which
+//// holds the engine and the specification's rules. Each vocabulary module
+//// holds exactly its interface unmarked and the rest marked `@internal`, and
+//// only `model`, `inspection` and `invariants` carry a mark; none imports a
+//// module under `internal/`, and no module under `src/` imports a module
+//// under an alias. The names that are `pub` only for the tests are
+//// the six of `test_only`, which the guide's table lists too: each is a
+//// `pub fn` under `internal/` or marked that no other module under `src/`
+//// names, and every other `pub fn` and `pub const` under `internal/` or
+//// marked is named by some other module under `src/`.
+////
 //// The parser reads text, not the compiler's result:
 //// - an item is a line that starts at column 0 with `pub fn`, `pub const`,
 ////   `pub type` or `pub opaque type`, and its name is the word that follows,
@@ -24,10 +36,17 @@
 //// - an item is internal when the line directly above its `pub` line is
 ////   `@internal`, and a constructor is internal when its type is;
 //// - an import line starts with `import `, and the module it names is the
-////   text after that, up to the first space or `.`.
+////   text after that, up to the first space or `.`; its name list is read
+////   without its comments, each line up to its first `//`;
+//// - a mark is a line that is `@internal` once trimmed, wherever it sits;
+//// - a row of the guide's test-only table is a line under its heading that
+////   starts with `|` once its leading spaces are dropped; past the header
+////   and the separator, a row's name is its first cell, trimmed and without
+////   its backticks.
 ////
-//// The text a control reads is a list of lines, so that no line of this file
-//// other than its own imports starts with `import`.
+//// The text a control reads is a list of lines or a string written with
+//// `\n` escapes, so that no line of this file other than its own imports
+//// starts with `import`.
 
 import coverage
 import gleam/list
@@ -54,6 +73,11 @@ pub const failure_path = "src/pachinko_double/failure.gleam"
 pub const answers_path = "src/pachinko_double/answers.gleam"
 
 pub const witness_path = "test/guide_test.gleam"
+
+/// The vocabulary modules' directory and the engine's, from `gleam-double/`.
+pub const vocabulary_directory = "src/pachinko_double"
+
+pub const internal_directory = "src/pachinko_double/internal"
 
 pub fn tests() -> List(Test) {
   [
@@ -96,6 +120,91 @@ pub fn tests() -> List(Test) {
       "the walkthrough imports no engine module and no rule module",
       [],
       witness_imports,
+    ),
+    Test("a mark gained or lost moves an item between the halves", [], marks),
+    Test(
+      "an internal import starts with import pachinko_double/internal/",
+      [],
+      reads_internal_imports,
+    ),
+    Test(
+      "an aliased import is an import line with as, or a closing } as",
+      [],
+      reads_aliased_imports,
+    ),
+    Test(
+      "src/pachinko_double/ holds the eight vocabulary modules and internal/",
+      [],
+      vocabulary_top_level,
+    ),
+    Test("internal/ holds exactly the eleven modules", [], internal_top_level),
+    Test(
+      "a mark is a line that is @internal once its leading spaces are dropped",
+      [],
+      reads_mark_lines,
+    ),
+    Test(
+      "only model, inspection and invariants carry marks: 12, 1 and 2",
+      [],
+      marks_per_module,
+    ),
+    Test("config holds its interface, and nothing marked", [], fn() {
+      holds(config_vocabulary())
+    }),
+    Test("time holds its interface, and nothing marked", [], fn() {
+      holds(time_vocabulary())
+    }),
+    Test("model holds its interface, and its twelve marked items", [], fn() {
+      holds(model_vocabulary())
+    }),
+    Test("refusals holds its interface, and nothing marked", [], fn() {
+      holds(refusals_vocabulary())
+    }),
+    Test("inspection holds its interface, and its one marked item", [], fn() {
+      holds(inspection_vocabulary())
+    }),
+    Test("invariants holds its interface, and its two marked items", [], fn() {
+      holds(invariants_vocabulary())
+    }),
+    Test(
+      "no vocabulary module imports a module under internal/",
+      [],
+      vocabulary_imports,
+    ),
+    Test(
+      "no module under src/ imports a module under an alias",
+      [],
+      no_aliased_imports,
+    ),
+    Test(
+      "a table's names are its rows' first cells, under its heading",
+      [],
+      reads_table,
+    ),
+    Test(
+      "a value is a pub fn or pub const line, with its mark",
+      [],
+      reads_values,
+    ),
+    Test(
+      "a module names m.f qualified on a line that is no comment, or unqualified in its import",
+      [],
+      reads_names,
+    ),
+    Test(
+      "the test-only scan fails on a new user, a new seam and a list that differs",
+      [],
+      scan,
+    ),
+    Test(
+      "the guide's table lists exactly the names pub only for the tests",
+      [],
+      guide_table,
+    ),
+    Test(
+      "the names pub only for the tests are the six, and no other name is",
+      [],
+      test_only_names,
     ),
   ]
 }
@@ -424,6 +533,7 @@ fn reads_witness() -> List(String) {
     == ["pachinko_double/core", "pachinko_double/core", "pachinko_double/core"]
   assert !witness_allows("pachinko_double/configuration")
   assert !witness_allows("pachinko_double/domain")
+  assert !witness_allows("pachinko_double/internal/core")
   assert !witness_allows("gleam")
   assert witness_allows("gleam/erlang/process")
   []
@@ -490,5 +600,844 @@ fn witness_imports() -> List(String) {
   assert result.map(source, fn(text) { imported_modules(text) != [] })
     == Ok(True)
   assert result.map(source, witness_faults) == Ok([])
+  []
+}
+
+/// A module's items split by their mark, each half sorted by name: first the
+/// unmarked items, which are interface, then the marked ones.
+pub fn by_mark(source: String) -> #(List(Item), List(Item)) {
+  let #(marked, unmarked) =
+    list.partition(items(source), fn(item) { item.internal })
+  #(by_name(unmarked), by_name(marked))
+}
+
+/// The hand-made module's two halves: only `Seam` is marked.
+fn module_halves() -> #(List(Item), List(Item)) {
+  #(by_name(list.filter(module_items(), fn(item) { !item.internal })), [
+    Item("Seam", ["Seam"], True),
+  ])
+}
+
+/// A marked item that loses its mark moves to the unmarked half, and an
+/// unmarked item that gains one moves to the marked half.
+fn marks() -> List(String) {
+  assert by_mark(string.join(module(), "\n")) == module_halves()
+  let lost = list.filter(module(), fn(line) { line != "@internal" })
+  assert by_mark(string.join(lost, "\n"))
+    == #(
+      by_name(
+        list.map(module_items(), fn(item) { Item(..item, internal: False) }),
+      ),
+      [],
+    )
+  let gained =
+    list.flat_map(module(), fn(line) {
+      case line {
+        "pub fn start(limit: Int) -> Int {" -> ["@internal", line]
+        _ -> [line]
+      }
+    })
+  let #(unmarked, marked) = module_halves()
+  assert by_mark(string.join(gained, "\n"))
+    == #(
+      list.filter(unmarked, fn(item) { item.name != "start" }),
+      by_name([Item("start", [], True), ..marked]),
+    )
+  []
+}
+
+/// Whether a source holds a line that starts with
+/// `import pachinko_double/internal/`.
+pub fn imports_internal(source: String) -> Bool {
+  list.any(string.split(source, "\n"), fn(line) {
+    string.starts_with(line, "import pachinko_double/internal/")
+  })
+}
+
+/// An indented import, a comment and a module whose path only starts alike
+/// are no internal import.
+fn reads_internal_imports() -> List(String) {
+  assert imports_internal(
+    "import gleam/list\nimport pachinko_double/internal/core\n",
+  )
+  assert imports_internal(
+    "import pachinko_double/internal/rules.{type Table}\n",
+  )
+  assert !imports_internal(string.join(import_lines(), "\n"))
+  assert !imports_internal(
+    "  import pachinko_double/internal/core\n// import pachinko_double/internal/core\nimport pachinko_double/internals\n",
+  )
+  []
+}
+
+/// The lines of a source that import a module under an alias: an import line
+/// of the package that holds ` as `, or the line `} as ...` that closes an
+/// import's name list.
+pub fn aliased_imports(source: String) -> List(String) {
+  list.filter(string.split(source, "\n"), fn(line) {
+    {
+      string.starts_with(line, "import pachinko_double")
+      && string.contains(line, " as ")
+    }
+    || string.starts_with(line, "} as ")
+  })
+}
+
+/// An alias on one line and an alias after a name list over several lines
+/// are each found; a plain import, a name list's closing `}` and an indented
+/// alias are not.
+fn reads_aliased_imports() -> List(String) {
+  assert aliased_imports(string.join(import_lines(), "\n"))
+    == ["import pachinko_double/core as engine"]
+  assert aliased_imports(
+      "import pachinko_double/internal/rules.{\n  type Table,\n} as table\nimport pachinko_double/model\nimport pachinko_double/time.{\n  type Duration,\n}\n  import pachinko_double/domain as d\n",
+    )
+    == ["} as table"]
+  assert aliased_imports("import pachinko_double/internal/core as engine\n")
+    == ["import pachinko_double/internal/core as engine"]
+  []
+}
+
+/// The eight vocabulary modules, by name.
+fn vocabulary_modules() -> List(String) {
+  [
+    "answers", "config", "failure", "inspection", "invariants", "model",
+    "refusals", "time",
+  ]
+}
+
+/// The eleven modules under `internal/`: the engine and the specification's
+/// rules.
+fn internal_modules() -> List(String) {
+  [
+    "consuming", "core", "decay", "domain", "expiry", "identity", "lease_end",
+    "publish", "pull", "rules", "settle",
+  ]
+}
+
+fn vocabulary_path(module: String) -> String {
+  vocabulary_directory <> "/" <> module <> ".gleam"
+}
+
+fn vocabulary_top_level() -> List(String) {
+  let entries =
+    simplifile.read_directory(vocabulary_directory)
+    |> result.map(list.sort(_, string.compare))
+  assert entries
+    == Ok(list.sort(
+      ["internal", ..list.map(vocabulary_modules(), fn(m) { m <> ".gleam" })],
+      string.compare,
+    ))
+  assert simplifile.is_directory(internal_directory) == Ok(True)
+  []
+}
+
+fn internal_top_level() -> List(String) {
+  let entries =
+    simplifile.read_directory(internal_directory)
+    |> result.map(list.sort(_, string.compare))
+  assert entries
+    == Ok(list.map(internal_modules(), fn(module) { module <> ".gleam" }))
+  []
+}
+
+/// The lines of a source that are a mark: `@internal`, however indented.
+/// They are read as lines, not as items, so that a mark counts wherever it
+/// sits.
+pub fn mark_lines(source: String) -> List(String) {
+  list.filter(string.split(source, "\n"), fn(line) {
+    string.trim(line) == "@internal"
+  })
+}
+
+/// The hand-made module's one mark is found; an indented mark is found too,
+/// and a comment that holds the word is not.
+fn reads_mark_lines() -> List(String) {
+  assert mark_lines(string.join(module(), "\n")) == ["@internal"]
+  assert mark_lines(
+      "pub fn run() -> Nil {\n  Nil\n}\n  @internal\n// @internal\n/// @internal\n",
+    )
+    == ["  @internal"]
+  assert mark_lines("pub fn run() -> Nil {\n  Nil\n}\n") == []
+  []
+}
+
+/// Every module under `src/` that carries a mark, with its count: twelve in
+/// `model`, one in `inspection`, two in `invariants`. The root, `config`,
+/// `time`, `refusals`, `failure`, `answers` and every module under
+/// `internal/` carry none.
+fn marks_per_module() -> List(String) {
+  assert result.map(source_modules(), fn(modules) {
+      list.filter_map(modules, fn(found) {
+        case list.length(mark_lines(found.1)) {
+          0 -> Error(Nil)
+          count -> Ok(#(found.0, count))
+        }
+      })
+    })
+    == Ok([
+      #(vocabulary_path("inspection"), 1),
+      #(vocabulary_path("invariants"), 2),
+      #(vocabulary_path("model"), 12),
+    ])
+  []
+}
+
+/// A vocabulary module, from `gleam-double/`: its unmarked items, which are
+/// interface, and its marked items, which are not.
+type Vocabulary {
+  Vocabulary(path: String, interface: List(Item), marked: List(Item))
+}
+
+/// The module holds exactly its interface unmarked and exactly its marked
+/// items marked. The comparison ignores order.
+fn holds(vocabulary: Vocabulary) -> List(String) {
+  assert result.map(coverage.read(vocabulary.path), by_mark)
+    == Ok(#(by_name(vocabulary.interface), by_name(vocabulary.marked)))
+  []
+}
+
+fn plain(name: String) -> Item {
+  Item(name, [], False)
+}
+
+fn marked(name: String) -> Item {
+  Item(name, [], True)
+}
+
+fn config_vocabulary() -> Vocabulary {
+  Vocabulary(
+    vocabulary_path("config"),
+    [
+      Item("Settings", ["Settings"], False),
+      plain("Config"),
+      plain("defaults"),
+      plain("default"),
+      plain("new"),
+      plain("settings"),
+    ],
+    [],
+  )
+}
+
+fn time_vocabulary() -> Vocabulary {
+  Vocabulary(
+    vocabulary_path("time"),
+    list.map(
+      ["Timestamp", "Duration", "millisecond", "second", "minute", "hour"],
+      plain,
+    ),
+    [],
+  )
+}
+
+/// `model`'s nineteen unmarked items, the entities and the lookups over a
+/// snapshot's lists, and its twelve marked ones.
+fn model_vocabulary() -> Vocabulary {
+  Vocabulary(
+    vocabulary_path("model"),
+    [
+      Item("Queue", ["Queue"], False),
+      Item("Publisher", ["Publisher"], False),
+      Item("Consumer", ["Consumer"], False),
+      Item(
+        "PocketStatus",
+        ["PocketQueued", "PocketLeased", "PocketIdle", "PocketParked"],
+        False,
+      ),
+      Item("Pocket", ["Pocket"], False),
+      Item("Mark", ["Unsettled", "Acked", "Nacked"], False),
+      Item("RecordStatus", ["RecordQueued", "RecordHeld"], False),
+      Item("Record", ["Record"], False),
+      Item("Reason", ["Superseded", "Stale"], False),
+      Item("SupersededRecord", ["SupersededRecord"], False),
+      Item("DeadLetter", ["DeadLetter"], False),
+      Item(
+        "LeaseStatus",
+        ["LeaseActive", "LeaseReleased", "LeaseExpired"],
+        False,
+      ),
+      Item("Lease", ["Lease"], False),
+      plain("pocket"),
+      plain("record"),
+      plain("lease"),
+      plain("records_of"),
+      plain("held"),
+      plain("active"),
+    ],
+    [
+      Item("State", ["State"], True),
+      marked("new"),
+      Item("HeldRecord", ["HeldRecord"], True),
+      marked("held_under"),
+      marked("replace_record"),
+      marked("replace_pocket"),
+      marked("replace_lease"),
+      marked("queued"),
+      marked("oldest_first"),
+      marked("ending"),
+      marked("leases_of_pocket"),
+      marked("leases_of_consumer"),
+    ],
+  )
+}
+
+fn refusals_vocabulary() -> Vocabulary {
+  Vocabulary(
+    vocabulary_path("refusals"),
+    [
+      Item(
+        "Refusal",
+        [
+          "ConfigRefused", "PublisherAlreadyJoined", "ConsumerAlreadyJoined",
+          "UnknownPublisher", "EqualRankRefused", "UnknownConsumer",
+          "PullRefused", "LeaseFenced", "RecordNotHeld", "MarkConflict",
+          "ReleaseRefused",
+        ],
+        False,
+      ),
+    ],
+    [],
+  )
+}
+
+fn inspection_vocabulary() -> Vocabulary {
+  Vocabulary(
+    vocabulary_path("inspection"),
+    [
+      Item("Snapshot", ["Snapshot"], False),
+      plain("empty"),
+      Item("PocketView", ["PocketView"], False),
+      Item("ConsumerView", ["ConsumerView"], False),
+      Item("Views", ["Views"], False),
+      plain("views"),
+    ],
+    [marked("snapshot")],
+  )
+}
+
+fn invariants_vocabulary() -> Vocabulary {
+  Vocabulary(vocabulary_path("invariants"), [plain("check")], [
+    Item("Invariant", ["Invariant"], True),
+    marked("registry"),
+  ])
+}
+
+fn vocabulary_imports() -> List(String) {
+  let importers =
+    list.filter_map(vocabulary_modules(), fn(module) {
+      let path = vocabulary_path(module)
+      case coverage.read(path) {
+        Ok(source) ->
+          case imports_internal(source) {
+            True -> Ok(path)
+            False -> Error(Nil)
+          }
+        Error(fault) -> Ok(fault)
+      }
+    })
+  assert importers == []
+  []
+}
+
+fn no_aliased_imports() -> List(String) {
+  let aliased = case simplifile.get_files(source_directory) {
+    Ok(files) ->
+      list.filter(files, fn(file) { string.ends_with(file, ".gleam") })
+      |> list.sort(string.compare)
+      |> list.flat_map(fn(file) {
+        case coverage.read(file) {
+          Ok(source) ->
+            list.map(aliased_imports(source), fn(line) { file <> ": " <> line })
+          Error(fault) -> [fault]
+        }
+      })
+    Error(error) -> [
+      "cannot list "
+      <> source_directory
+      <> ": "
+      <> simplifile.describe_error(error),
+    ]
+  }
+  assert aliased == []
+  []
+}
+
+/// The names that are `pub` only for the tests: each is a `pub fn` under
+/// `internal/` or marked `@internal`, and no other module under `src/` names
+/// it. The guide's table under `### What is pub only for the tests` lists the
+/// same names.
+fn test_only() -> List(String) {
+  [
+    "core.run", "core.run_at", "core.run_due", "core.registry", "rules.dispatch",
+    "invariants.registry",
+  ]
+}
+
+/// The heading of the guide's table of the names that are `pub` only for the
+/// tests.
+pub const test_only_heading = "### What is pub only for the tests"
+
+/// The first cell of each body row of the guide's table of test-only names.
+/// A row is a line after `test_only_heading`, up to the next heading, that
+/// starts with `|` once its leading spaces are dropped; the first two rows
+/// are the header and the separator. A cell is read between its first two
+/// `|`, trimmed, and without its backticks when it is one name in backticks,
+/// so that a row spelled otherwise still yields its cell and the names
+/// differ.
+pub fn table_names(guide: String) -> List(String) {
+  string.split(guide, "\n")
+  |> list.drop_while(fn(line) { line != test_only_heading })
+  |> list.drop(1)
+  |> list.take_while(fn(line) { !string.starts_with(line, "#") })
+  |> list.filter(fn(line) { string.starts_with(string.trim_start(line), "|") })
+  |> list.drop(2)
+  |> list.map(first_cell)
+}
+
+fn first_cell(row: String) -> String {
+  let cell = case string.split(row, "|") {
+    [_, cell, ..] -> string.trim(cell)
+    _ -> row
+  }
+  case cell {
+    "`" <> rest ->
+      case string.split_once(rest, "`") {
+        Ok(#(name, "")) -> name
+        _ -> cell
+      }
+    _ -> cell
+  }
+}
+
+/// A guide made by hand: the table under its heading, with a line of prose
+/// and a header row above the rows, and a table under the next heading.
+fn guide_lines() -> List(String) {
+  [
+    "## Where to look", "", test_only_heading, "", "Prose about `core.run`.", "",
+    "| Name | What the tests use it for |", "| --- | --- |",
+    "| `core.run` | Running one table |", "| `rules.dispatch` | Asking a row |",
+    "", "## The next section", "", "| `core.apply` | Not this table |",
+  ]
+}
+
+fn reads_table() -> List(String) {
+  assert table_names(string.join(guide_lines(), "\n"))
+    == ["core.run", "rules.dispatch"]
+  let added =
+    list.flat_map(guide_lines(), fn(line) {
+      case line {
+        "| `rules.dispatch` | Asking a row |" -> [line, "| `core.seam` | New |"]
+        _ -> [line]
+      }
+    })
+  assert table_names(string.join(added, "\n"))
+    == ["core.run", "rules.dispatch", "core.seam"]
+  let removed =
+    list.filter(guide_lines(), fn(line) {
+      line != "| `rules.dispatch` | Asking a row |"
+    })
+  assert table_names(string.join(removed, "\n")) == ["core.run"]
+  assert table_names("| `core.run` | No heading above it |\n") == []
+  let spelled =
+    list.flat_map(guide_lines(), fn(line) {
+      case line {
+        "| `rules.dispatch` | Asking a row |" -> [
+          line,
+          " | `core.indented` | A space before the row |",
+          "|`core.tight`|No space in the cells|",
+          "| core.bare | No backticks |",
+        ]
+        _ -> [line]
+      }
+    })
+  assert table_names(string.join(spelled, "\n"))
+    == [
+      "core.run", "rules.dispatch", "core.indented", "core.tight", "core.bare",
+    ]
+  []
+}
+
+/// One public function or constant of a module: its name, whether it is a
+/// function, and whether it is marked `@internal`.
+pub type Value {
+  Value(name: String, function: Bool, internal: Bool)
+}
+
+/// A module's public functions and constants, in the file's order: the lines
+/// that start at column 0 with `pub fn` or `pub const`.
+pub fn values(source: String) -> List(Value) {
+  string.split(source, "\n")
+  |> list.fold(#("", []), fn(state, line) {
+    let #(previous, found) = state
+    let value = case line {
+      "pub fn " <> rest -> [Value(word(rest), True, previous == "@internal")]
+      "pub const " <> rest -> [
+        Value(word(rest), False, previous == "@internal"),
+      ]
+      _ -> []
+    }
+    #(line, list.append(found, value))
+  })
+  |> fn(state) { state.1 }
+}
+
+fn reads_values() -> List(String) {
+  assert values(string.join(module(), "\n"))
+    == [Value("timeout", False, False), Value("start", True, False)]
+  assert values(
+      "@internal\npub fn seam() -> Nil {\n  Nil\n}\n@internal\npub const limit = 1\n  pub fn indented() -> Nil\n",
+    )
+    == [Value("seam", True, True), Value("limit", False, True)]
+  []
+}
+
+/// Whether a source names `module.function`, where `module` is a module's
+/// last segment: a line that is not a comment holds the text
+/// `module.function` with no letter, digit or `_` directly before `module`
+/// or directly after `function`, or the source's import of the module lists
+/// `function` unqualified, outside a comment.
+pub fn names(source: String, module: String, function: String) -> Bool {
+  let lines = string.split(source, "\n")
+  let needle = module <> "." <> function
+  list.any(lines, fn(line) {
+    !string.starts_with(string.trim_start(line), "//")
+    && list.any(list.window_by_2(string.split(line, needle)), fn(pair) {
+      !ends_with_word(pair.0) && !starts_with_word(pair.1)
+    })
+  })
+  || list.contains(unqualified(lines, module, []), function)
+}
+
+fn is_word(grapheme: String) -> Bool {
+  string.contains(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_",
+    grapheme,
+  )
+}
+
+fn ends_with_word(text: String) -> Bool {
+  result.map(string.last(text), is_word) == Ok(True)
+}
+
+fn starts_with_word(text: String) -> Bool {
+  result.map(string.first(text), is_word) == Ok(True)
+}
+
+/// The names that the imports of a module, by its last segment, list
+/// unqualified, leaving out the types.
+fn unqualified(
+  lines: List(String),
+  module: String,
+  found: List(String),
+) -> List(String) {
+  case lines {
+    [] -> found
+    [line, ..rest] ->
+      case line {
+        "import " <> path ->
+          case segment(module_name(path)) == module {
+            True -> {
+              let #(text, rest) = statement(line, rest)
+              unqualified(rest, module, list.append(found, listed(text)))
+            }
+            False -> unqualified(rest, module, found)
+          }
+        _ -> unqualified(rest, module, found)
+      }
+  }
+}
+
+/// An import statement's text, without its comments, joined over its lines
+/// when it opens a name list it does not close, and the lines after it.
+fn statement(line: String, rest: List(String)) -> #(String, List(String)) {
+  let opening = uncommented(line)
+  case string.contains(opening, "{") && !string.contains(opening, "}") {
+    False -> #(opening, rest)
+    True -> {
+      let #(inside, after) =
+        list.split_while(rest, fn(next) { !string.starts_with(next, "}") })
+      case after {
+        [close, ..after] -> #(
+          string.join(
+            [opening, ..list.map(list.append(inside, [close]), uncommented)],
+            " ",
+          ),
+          after,
+        )
+        [] -> #(
+          string.join([opening, ..list.map(inside, uncommented)], " "),
+          [],
+        )
+      }
+    }
+  }
+}
+
+/// A line of an import statement up to its comment: an import holds no
+/// string, so its first `//` opens one.
+fn uncommented(line: String) -> String {
+  case string.split_once(line, "//") {
+    Ok(#(code, _)) -> code
+    Error(Nil) -> line
+  }
+}
+
+/// The names an import statement's text lists between `{` and `}`, leaving
+/// out the types.
+fn listed(text: String) -> List(String) {
+  case string.split_once(text, "{") {
+    Error(Nil) -> []
+    Ok(#(_, after)) -> {
+      let inside = case string.split_once(after, "}") {
+        Ok(#(inside, _)) -> inside
+        Error(Nil) -> after
+      }
+      string.split(inside, ",")
+      |> list.map(string.trim)
+      |> list.filter(fn(entry) {
+        entry != "" && !string.starts_with(entry, "type ")
+      })
+      |> list.map(word)
+    }
+  }
+}
+
+/// The last segment of a module's path or of a file's path, without
+/// `.gleam`.
+fn segment(path: String) -> String {
+  let last = result.unwrap(list.last(string.split(path, "/")), "")
+  case string.ends_with(last, ".gleam") {
+    True -> string.drop_end(last, 6)
+    False -> last
+  }
+}
+
+fn reads_names() -> List(String) {
+  assert names("  core.run(table)\n", "core", "run")
+  assert names("let ran = #(core.run, 1)\n", "core", "run")
+  assert !names("  core.run_at(table, now)\n", "core", "run")
+  assert !names("  score.run(table)\n", "core", "run")
+  assert !names("  // core.run(table)\n/// core.run\n", "core", "run")
+  assert !names("  rules.run(table)\n", "core", "run")
+  assert names("import pachinko_double/internal/core.{run}\n", "core", "run")
+  assert names(
+    "import pachinko_double/internal/core.{\n  type Ran, run_at,\n  run,\n}\n",
+    "core",
+    "run",
+  )
+  assert !names(
+    "import pachinko_double/internal/core.{\n  type run, run_at,\n}\n",
+    "core",
+    "run",
+  )
+  assert !names("import pachinko_double/internal/rules.{run}\n", "core", "run")
+  assert names(
+    "import pachinko_double/internal/core.{\n  type Trigger,\n  // Read the rule tables.\n  registry,\n}\n",
+    "core",
+    "registry",
+  )
+  assert names(
+    "import pachinko_double/internal/core.{ // the engine, }\n  run_at, // the clock, then }\n  run,\n}\n",
+    "core",
+    "run",
+  )
+  assert !names(
+    "import pachinko_double/internal/core.{\n  type Ran,\n  // run,\n  run_at,\n}\n",
+    "core",
+    "run",
+  )
+  []
+}
+
+/// A module's path is under `internal/`.
+fn under_internal(path: String) -> Bool {
+  string.contains(path, "/internal/")
+}
+
+/// The other modules that name `module.function`, by path.
+fn users(
+  modules: List(#(String, String)),
+  path: String,
+  module: String,
+  function: String,
+) -> List(String) {
+  list.filter_map(modules, fn(other) {
+    case other.0 != path && names(other.1, module, function) {
+      True -> Ok(other.0)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// The faults of a list of test-only names against modules, each a path and
+/// its source. A listed name must be a `pub fn` of its module, under
+/// `internal/` or marked, that no other module names. Every other `pub fn`
+/// and `pub const` under `internal/` or marked must be named by some other
+/// module.
+pub fn test_only_faults(
+  modules: List(#(String, String)),
+  listed: List(String),
+) -> List(String) {
+  let listed_faults =
+    list.flat_map(listed, fn(name) {
+      case string.split_once(name, ".") {
+        Error(Nil) -> [name <> " is not written module.function"]
+        Ok(#(module, function)) ->
+          case list.find(modules, fn(found) { segment(found.0) == module }) {
+            Error(Nil) -> [name <> ": no module is named " <> module]
+            Ok(#(path, source)) -> {
+              let defined =
+                list.find(values(source), fn(value) {
+                  value.function && value.name == function
+                })
+              let placed = case defined {
+                Ok(value) ->
+                  case value.internal || under_internal(path) {
+                    True -> []
+                    False -> [
+                      name <> " is neither under internal/ nor marked",
+                    ]
+                  }
+                Error(Nil) -> [name <> " is no pub fn of " <> path]
+              }
+              list.append(
+                placed,
+                list.map(users(modules, path, module, function), fn(user) {
+                  name <> " is named by " <> user
+                }),
+              )
+            }
+          }
+      }
+    })
+  let unlisted =
+    list.flat_map(modules, fn(found) {
+      let #(path, source) = found
+      let module = segment(path)
+      values(source)
+      |> list.filter(fn(value) { value.internal || under_internal(path) })
+      |> list.filter(fn(value) {
+        !list.contains(listed, module <> "." <> value.name)
+      })
+      |> list.filter_map(fn(value) {
+        case users(modules, path, module, value.name) {
+          [] ->
+            Ok(
+              module
+              <> "."
+              <> value.name
+              <> " is pub only for the tests, and the list does not hold it",
+            )
+          _ -> Error(Nil)
+        }
+      })
+    })
+  list.append(listed_faults, unlisted)
+}
+
+/// Modules made by hand: `core.run` is the one test-only name. The root
+/// names `core.apply` qualified and `model.replace` unqualified across
+/// several lines; `model.lookup` is unmarked, so no module need name it.
+fn scan_modules() -> List(#(String, String)) {
+  [
+    #(
+      "src/pachinko_double.gleam",
+      "import pachinko_double/internal/core\nimport pachinko_double/model.{\n  type Pocket,\n  replace,\n}\n\npub fn start() -> Nil {\n  core.apply()\n}\n",
+    ),
+    #(
+      "src/pachinko_double/internal/core.gleam",
+      "pub fn run() -> Nil {\n  Nil\n}\n\npub fn apply() -> Nil {\n  Nil\n}\n",
+    ),
+    #(
+      "src/pachinko_double/model.gleam",
+      "@internal\npub fn replace() -> Nil {\n  Nil\n}\n\npub fn lookup() -> Nil {\n  Nil\n}\n",
+    ),
+  ]
+}
+
+/// Changes one module's source in `scan_modules()`.
+fn scan_with(
+  path: String,
+  change: fn(String) -> String,
+) -> List(#(String, String)) {
+  list.map(scan_modules(), fn(found) {
+    case found.0 == path {
+      True -> #(found.0, change(found.1))
+      False -> found
+    }
+  })
+}
+
+/// The scan's result changes when a second module starts to name a listed
+/// function, when a new function under `internal/` is named by no module,
+/// when a marked function loses its last user, when the list drops a name
+/// and when it holds a name that is not test-only.
+fn scan() -> List(String) {
+  assert test_only_faults(scan_modules(), ["core.run"]) == []
+  let named =
+    scan_with("src/pachinko_double.gleam", fn(source) {
+      source <> "\npub fn go() -> Nil {\n  core.run()\n}\n"
+    })
+  assert test_only_faults(named, ["core.run"])
+    == ["core.run is named by src/pachinko_double.gleam"]
+  let added =
+    scan_with("src/pachinko_double/internal/core.gleam", fn(source) {
+      source <> "\npub fn seam() -> Nil {\n  Nil\n}\n"
+    })
+  assert test_only_faults(added, ["core.run"])
+    == ["core.seam is pub only for the tests, and the list does not hold it"]
+  let unused =
+    scan_with("src/pachinko_double.gleam", fn(source) {
+      string.replace(source, "  replace,\n", "")
+    })
+  assert test_only_faults(unused, ["core.run"])
+    == [
+      "model.replace is pub only for the tests, and the list does not hold it",
+    ]
+  assert test_only_faults(scan_modules(), [])
+    == ["core.run is pub only for the tests, and the list does not hold it"]
+  assert test_only_faults(scan_modules(), ["core.run", "core.apply"])
+    == ["core.apply is named by src/pachinko_double.gleam"]
+  assert test_only_faults(scan_modules(), ["core.run", "model.lookup"])
+    == ["model.lookup is neither under internal/ nor marked"]
+  assert test_only_faults(scan_modules(), ["core.run", "core.gone"])
+    == ["core.gone is no pub fn of src/pachinko_double/internal/core.gleam"]
+  []
+}
+
+/// The guide, from `gleam-double/`.
+pub const guide_path = "README.md"
+
+fn guide_table() -> List(String) {
+  assert result.map(coverage.read(guide_path), fn(guide) {
+      list.sort(table_names(guide), string.compare)
+    })
+    == Ok(list.sort(test_only(), string.compare))
+  []
+}
+
+/// Every module under `src/`, by path, with its source.
+fn source_modules() -> Result(List(#(String, String)), String) {
+  case simplifile.get_files(source_directory) {
+    Ok(files) ->
+      list.filter(files, fn(file) { string.ends_with(file, ".gleam") })
+      |> list.sort(string.compare)
+      |> list.try_map(fn(file) {
+        coverage.read(file) |> result.map(fn(source) { #(file, source) })
+      })
+    Error(error) ->
+      Error(
+        "cannot list "
+        <> source_directory
+        <> ": "
+        <> simplifile.describe_error(error),
+      )
+  }
+}
+
+fn test_only_names() -> List(String) {
+  assert result.map(source_modules(), test_only_faults(_, test_only()))
+    == Ok([])
   []
 }

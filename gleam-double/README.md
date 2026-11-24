@@ -54,12 +54,28 @@ holds the check that this page still matches them.
 | A reader looking for | Opens |
 | --- | --- |
 | The interface: starting the owner, the triggers, the clock and the two reads | `src/pachinko_double.gleam` |
-| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam` |
-| The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam` |
-| The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam` |
-| The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam` |
+| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam`, under `src/pachinko_double/` |
+| The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam`, under `src/pachinko_double/` |
+| The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam`, under `src/pachinko_double/internal/` |
+| The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam`, under `src/pachinko_double/internal/` |
+| What is `pub` only for the tests | The table below this one |
 | The tests | `test/*_test.gleam`, run from `test/pachinko_double_test.gleam` |
 | Test support: the fakes, the runner and the coverage check | `test/harness.gleam`, `test/runner.gleam` and `test/coverage.gleam` |
+
+### What is pub only for the tests
+
+These functions are `pub` so that the tests can reach them, and no other module under
+`src/` names them. Each sits under `internal/` or is marked `@internal`, and
+`test/interface_test.gleam` holds this table against the source in both directions.
+
+| Name | What the tests use it for |
+| --- | --- |
+| `core.run` | Running one table, a test's own included, as a whole outcome |
+| `core.run_at` | The same with `now` already in hand, as a clock trigger's outcome runs |
+| `core.run_due` | Running outcomes a test made by hand, one after another, as a tick does |
+| `core.registry` | The coverage check reads the rules from it |
+| `rules.dispatch` | Asking which row's guard holds, without running its effect |
+| `invariants.registry` | The coverage check, and the positive controls, read the checker's entries |
 
 ## The specification's parts and where they live
 
@@ -138,38 +154,38 @@ trigger, so the double names each of its three clock tables, `LeaseLapses`,
 
 | Rule | Trigger | Table | Function | Module |
 | --- | --- | --- | --- | --- |
-| `PublisherJoins` | `PublisherJoins` | `PublisherJoins` | `publisher_joins()` | `src/pachinko_double/identity.gleam` |
-| `ConsumerJoins` | `ConsumerJoins` | `ConsumerJoins` | `consumer_joins()` | `src/pachinko_double/identity.gleam` |
-| `PublishIntoNewPocket` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/publish.gleam` |
-| `PublishNewKey` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/publish.gleam` |
-| `Supersede` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/publish.gleam` |
-| `DeferBehindHeldVersion` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/publish.gleam` |
-| `DropStalePublish` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/publish.gleam` |
-| `ReviveIdlePocket` | `PocketTouched` | `PocketTouched` | `pocket_touched()` | `src/pachinko_double/publish.gleam` |
-| `ReviveParkedPocket` | `PocketTouched` | `PocketTouched` | `pocket_touched()` | `src/pachinko_double/publish.gleam` |
-| `PullWithinLease` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/pull.gleam` |
-| `PullClaimsFrontPocket` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/pull.gleam` |
-| `HoldRecord` | `Handed` | `Handed` | `handed()` | `src/pachinko_double/pull.gleam` |
-| `PullFindsNoPocket` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/pull.gleam` |
-| `AckMarksRecord` | `Ack` | `Ack` | `ack()` | `src/pachinko_double/settle.gleam` |
-| `AckRepeats` | `Ack` | `Ack` | `ack()` | `src/pachinko_double/settle.gleam` |
-| `NackMarksRecord` | `Nack` | `Nack` | `nack()` | `src/pachinko_double/settle.gleam` |
-| `NackRepeats` | `Nack` | `Nack` | `nack()` | `src/pachinko_double/settle.gleam` |
-| `Renew` | `Renew` | `Renew` | `renew()` | `src/pachinko_double/settle.gleam` |
-| `ReleaseRequeuesPocket` | `Release` | `Release` | `release()` | `src/pachinko_double/settle.gleam` |
-| `ReleaseIdlesEmptyPocket` | `Release` | `Release` | `release()` | `src/pachinko_double/settle.gleam` |
-| `LeaseLapses` | `Lease.expires_at` | `LeaseLapses` | `lease_lapses()` | `src/pachinko_double/expiry.gleam` |
-| `LeaseExpiryParksPocket` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/expiry.gleam` |
-| `LeaseExpiryKeepsPocketAtFront` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/expiry.gleam` |
-| `LeaseExpiryIdlesEmptyPocket` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/expiry.gleam` |
-| `RequeueUnsettledRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `SupersedeUnsettledHeldVersion` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `ConsumeAckedRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `ConsumeAckedVersionQueueDeferred` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `DeadLetterNackedRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `DeadLetterNackedVersionQueueDeferred` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/lease_end.gleam` |
-| `SupersededRecordDecays` | `SupersededRecord.expires_at` | `SupersededRecordDecays` | `superseded_record_decays()` | `src/pachinko_double/decay.gleam` |
-| `DeadLetterDecays` | `DeadLetter.expires_at` | `DeadLetterDecays` | `dead_letter_decays()` | `src/pachinko_double/decay.gleam` |
+| `PublisherJoins` | `PublisherJoins` | `PublisherJoins` | `publisher_joins()` | `src/pachinko_double/internal/identity.gleam` |
+| `ConsumerJoins` | `ConsumerJoins` | `ConsumerJoins` | `consumer_joins()` | `src/pachinko_double/internal/identity.gleam` |
+| `PublishIntoNewPocket` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/internal/publish.gleam` |
+| `PublishNewKey` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/internal/publish.gleam` |
+| `Supersede` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/internal/publish.gleam` |
+| `DeferBehindHeldVersion` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/internal/publish.gleam` |
+| `DropStalePublish` | `Publish` | `Publish` | `publish()` | `src/pachinko_double/internal/publish.gleam` |
+| `ReviveIdlePocket` | `PocketTouched` | `PocketTouched` | `pocket_touched()` | `src/pachinko_double/internal/publish.gleam` |
+| `ReviveParkedPocket` | `PocketTouched` | `PocketTouched` | `pocket_touched()` | `src/pachinko_double/internal/publish.gleam` |
+| `PullWithinLease` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/internal/pull.gleam` |
+| `PullClaimsFrontPocket` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/internal/pull.gleam` |
+| `HoldRecord` | `Handed` | `Handed` | `handed()` | `src/pachinko_double/internal/pull.gleam` |
+| `PullFindsNoPocket` | `Pull` | `Pull` | `pull()` | `src/pachinko_double/internal/pull.gleam` |
+| `AckMarksRecord` | `Ack` | `Ack` | `ack()` | `src/pachinko_double/internal/settle.gleam` |
+| `AckRepeats` | `Ack` | `Ack` | `ack()` | `src/pachinko_double/internal/settle.gleam` |
+| `NackMarksRecord` | `Nack` | `Nack` | `nack()` | `src/pachinko_double/internal/settle.gleam` |
+| `NackRepeats` | `Nack` | `Nack` | `nack()` | `src/pachinko_double/internal/settle.gleam` |
+| `Renew` | `Renew` | `Renew` | `renew()` | `src/pachinko_double/internal/settle.gleam` |
+| `ReleaseRequeuesPocket` | `Release` | `Release` | `release()` | `src/pachinko_double/internal/settle.gleam` |
+| `ReleaseIdlesEmptyPocket` | `Release` | `Release` | `release()` | `src/pachinko_double/internal/settle.gleam` |
+| `LeaseLapses` | `Lease.expires_at` | `LeaseLapses` | `lease_lapses()` | `src/pachinko_double/internal/expiry.gleam` |
+| `LeaseExpiryParksPocket` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/internal/expiry.gleam` |
+| `LeaseExpiryKeepsPocketAtFront` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/internal/expiry.gleam` |
+| `LeaseExpiryIdlesEmptyPocket` | `LeaseLapsed` | `LeaseLapsed` | `lease_lapsed()` | `src/pachinko_double/internal/expiry.gleam` |
+| `RequeueUnsettledRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `SupersedeUnsettledHeldVersion` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `ConsumeAckedRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `ConsumeAckedVersionQueueDeferred` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `DeadLetterNackedRecord` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `DeadLetterNackedVersionQueueDeferred` | `Freed` | `Freed` | `freed()` | `src/pachinko_double/internal/lease_end.gleam` |
+| `SupersededRecordDecays` | `SupersededRecord.expires_at` | `SupersededRecordDecays` | `superseded_record_decays()` | `src/pachinko_double/internal/decay.gleam` |
+| `DeadLetterDecays` | `DeadLetter.expires_at` | `DeadLetterDecays` | `dead_letter_decays()` | `src/pachinko_double/internal/decay.gleam` |
 
 The function column names the public function of the module that builds the table. Within
 the module, a row is usually a private function whose name is the rule's in snake case:
@@ -340,7 +356,7 @@ below, for `PublisherJoins`, the guard asks that the id is not taken, and the ef
 the publisher and ends with `Finish`, emitting no event and answering `None`. If the guard
 fails, `Refuses` names the refusal.
 
-```gleam src/pachinko_double/identity.gleam
+```gleam src/pachinko_double/internal/identity.gleam
 /// `PublisherJoins(publisher_id)`. A join with an id already taken is
 /// refused (spec note G03).
 pub fn publisher_joins() -> Table(String) {
@@ -371,7 +387,7 @@ otherwise. A `case` tries its patterns in order and evaluates the branch of the 
 that matches. `revive` builds either revive row, and its guard is a `case` over the
 `Result` of finding the pocket:
 
-```gleam src/pachinko_double/publish.gleam
+```gleam src/pachinko_double/internal/publish.gleam
 /// The two revive rules, which differ in the status they require:
 ///
 /// ```text
@@ -429,7 +445,7 @@ for the time and for a lease id the same way. With `result.try`, as in the Publi
 module's lookup of a record below, the rest runs only on an `Ok`, and an `Error` is
 handed back unchanged:
 
-```gleam src/pachinko_double/publish.gleam
+```gleam src/pachinko_double/internal/publish.gleam
 /// `Record{pocket: pocket, key: record_key}`, where `pocket` is
 /// `Pocket{key: pocket_key}`: no pocket, no record.
 fn record(state: State, publication: Publication) -> Result(Record, Nil) {

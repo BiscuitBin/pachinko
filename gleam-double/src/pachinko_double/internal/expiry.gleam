@@ -16,14 +16,16 @@
 import gleam/option.{None}
 import gleam/result
 import pachinko_double/config
-import pachinko_double/domain.{type Plan, type Row, type Table, LeaseLapsed}
-import pachinko_double/lease_end
+import pachinko_double/internal/domain.{
+  type Plan, type Row, type Table, LeaseLapsed,
+}
+import pachinko_double/internal/lease_end
+import pachinko_double/internal/rules.{
+  Finish, Impossible, NothingHappens, Now, Row, Table,
+}
 import pachinko_double/model.{
   type Lease, type Pocket, type PocketStatus, type State, LeaseActive, Pocket,
   PocketIdle, PocketLeased, PocketParked, PocketQueued, State,
-}
-import pachinko_double/rules.{
-  Finish, Impossible, NothingHappens, Now, Row, Table,
 }
 import pachinko_double/time.{type Timestamp}
 

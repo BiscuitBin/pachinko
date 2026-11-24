@@ -5,16 +5,18 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import pachinko_double/config
-import pachinko_double/domain.{type Plan, type Row, type Table, PocketTouched}
+import pachinko_double/internal/domain.{
+  type Plan, type Row, type Table, PocketTouched,
+}
+import pachinko_double/internal/rules.{
+  Finish, Impossible, NothingHappens, Now, Position, Refuses, Row, Table,
+}
 import pachinko_double/model.{
   type Pocket, type PocketStatus, type Reason, type Record, type State, Pocket,
   PocketIdle, PocketParked, PocketQueued, Record, RecordHeld, RecordQueued,
   Stale, State, Superseded, SupersededRecord,
 }
 import pachinko_double/refusals.{EqualRankRefused}
-import pachinko_double/rules.{
-  Finish, Impossible, NothingHappens, Now, Position, Refuses, Row, Table,
-}
 import pachinko_double/time.{type Timestamp}
 
 /// The input of `Publish(publisher, pocket_key, record_key, rank, payload)`.

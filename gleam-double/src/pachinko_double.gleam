@@ -26,22 +26,27 @@
 //// and the reply types are in two more: `failure` holds `Failure` and
 //// `Cause`, and `answers` holds `Answer`, `BatchRecord`, `TickReport`,
 //// `LeaseView` and `HeldView`. The snapshot that `inspect` returns, and the
-//// checker of the invariants, are in `inspection` and `invariants`.
+//// checker of the invariants, are in `inspection` and `invariants`. These
+//// eight modules sit directly under `src/pachinko_double/`, and a name in one
+//// of them that is not part of the interface is marked `@internal`. The
+//// engine, the rule-table machinery and the apply step, and the
+//// specification's rules sit under `src/pachinko_double/internal/`, which is
+//// no part of the interface.
 
 import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import pachinko_double/answers.{type Answer, type LeaseView, type TickReport}
 import pachinko_double/config.{type Config}
-import pachinko_double/core.{type Trigger}
 import pachinko_double/failure.{type Failure}
 import pachinko_double/inspection.{type Snapshot}
+import pachinko_double/internal/core.{type Trigger}
+import pachinko_double/internal/publish.{Publication}
+import pachinko_double/internal/pull.{Pull}
+import pachinko_double/internal/rules
+import pachinko_double/internal/settle.{Ack, Nack, Release, Renew}
 import pachinko_double/model.{type State}
-import pachinko_double/publish.{Publication}
-import pachinko_double/pull.{Pull}
 import pachinko_double/refusals.{type Refusal}
-import pachinko_double/rules
-import pachinko_double/settle.{Ack, Nack, Release, Renew}
 import pachinko_double/time.{type Timestamp}
 
 /// How long a caller waits for the owner's reply, in milliseconds. A caller

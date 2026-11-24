@@ -7,7 +7,7 @@ import harness
 import pachinko_double/failure.{
   Defect, EffectFailed, GuardOverlap, NoRuleHeld, Refused,
 }
-import pachinko_double/rules.{
+import pachinko_double/internal/rules.{
   type Cursor, type Plan, type Row, type Step, type Table, type World, Applied,
   Defective, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Refuses,
   Row, Table, World,

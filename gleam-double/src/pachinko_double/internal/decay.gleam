@@ -15,11 +15,11 @@
 
 import gleam/list
 import gleam/option.{None}
-import pachinko_double/domain.{type Table}
+import pachinko_double/internal/domain.{type Table}
+import pachinko_double/internal/rules.{Finish, NothingHappens, Row, Table}
 import pachinko_double/model.{
   type DeadLetter, type State, type SupersededRecord, State,
 }
-import pachinko_double/rules.{Finish, NothingHappens, Row, Table}
 
 /// The clock trigger `shed: SupersededRecord.expires_at <= now`, with its
 /// one rule.

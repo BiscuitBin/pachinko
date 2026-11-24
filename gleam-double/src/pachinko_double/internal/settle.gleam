@@ -8,8 +8,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import pachinko_double/config
-import pachinko_double/domain.{type Plan, type Row, type Table}
-import pachinko_double/lease_end
+import pachinko_double/internal/domain.{type Plan, type Row, type Table}
+import pachinko_double/internal/lease_end
+import pachinko_double/internal/rules.{
+  Finish, Impossible, Now, Position, Refuses, Row, Table,
+}
 import pachinko_double/model.{
   type HeldRecord, type Lease, type Mark, type Pocket, type State, Acked, Lease,
   LeaseActive, Nacked, Pocket, PocketIdle, PocketLeased, PocketQueued, Record,
@@ -17,9 +20,6 @@ import pachinko_double/model.{
 }
 import pachinko_double/refusals.{
   type Refusal, LeaseFenced, MarkConflict, RecordNotHeld, ReleaseRefused,
-}
-import pachinko_double/rules.{
-  Finish, Impossible, Now, Position, Refuses, Row, Table,
 }
 import pachinko_double/time.{type Timestamp}
 

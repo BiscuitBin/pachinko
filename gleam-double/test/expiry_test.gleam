@@ -26,11 +26,13 @@ import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
 import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core
-import pachinko_double/domain.{LeaseLapsed}
-import pachinko_double/expiry.{Lapse}
 import pachinko_double/failure
 import pachinko_double/inspection
+import pachinko_double/internal/core
+import pachinko_double/internal/domain.{LeaseLapsed}
+import pachinko_double/internal/expiry.{Lapse}
+import pachinko_double/internal/publish.{Publication}
+import pachinko_double/internal/rules.{Applied, Done, Finish, Now}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type Mark, type Record, type State, Acked, Consumer, DeadLetter, Lease,
@@ -38,8 +40,6 @@ import pachinko_double/model.{
   PocketLeased, PocketParked, PocketQueued, Publisher, Queue, Record, RecordHeld,
   RecordQueued, Stale, State, Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/publish.{Publication}
-import pachinko_double/rules.{Applied, Done, Finish, Now}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

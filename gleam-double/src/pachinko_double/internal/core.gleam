@@ -10,27 +10,29 @@ import gleam/option.{type Option, None, Some}
 import pachinko_double/answers.{
   type Answer, type LeaseView, type TickReport, TickReport,
 }
-import pachinko_double/consuming
-import pachinko_double/decay
-import pachinko_double/domain.{
+import pachinko_double/failure.{BrokenInvariant, Defect, EffectFailed, Refused}
+import pachinko_double/inspection
+import pachinko_double/internal/consuming
+import pachinko_double/internal/decay
+import pachinko_double/internal/domain.{
   type Cursor, type Event, type Failure, type Step, type Table, type World,
   Freed, Handed, LeaseLapsed, PocketTouched,
 }
-import pachinko_double/expiry.{Lapse}
-import pachinko_double/failure.{BrokenInvariant, Defect, EffectFailed, Refused}
-import pachinko_double/identity
-import pachinko_double/inspection
+import pachinko_double/internal/expiry.{Lapse}
+import pachinko_double/internal/identity
+import pachinko_double/internal/lease_end.{Freeing}
+import pachinko_double/internal/publish.{type Publication}
+import pachinko_double/internal/pull.{type Pull, Handover}
+import pachinko_double/internal/rules.{Done, NeedsLeaseId, NeedsNow, World}
+import pachinko_double/internal/settle.{
+  type Ack, type Nack, type Release, type Renew,
+}
 import pachinko_double/invariants
-import pachinko_double/lease_end.{Freeing}
 import pachinko_double/model.{
   type DeadLetter, type Lease, type State, type SupersededRecord, Consumer,
   Publisher, Queue, State,
 }
-import pachinko_double/publish.{type Publication}
-import pachinko_double/pull.{type Pull, Handover}
 import pachinko_double/refusals.{UnknownConsumer, UnknownPublisher}
-import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, World}
-import pachinko_double/settle.{type Ack, type Nack, type Release, type Renew}
 import pachinko_double/time.{type Timestamp}
 
 /// The triggers a surface provides, one variant each. The clock's triggers,
