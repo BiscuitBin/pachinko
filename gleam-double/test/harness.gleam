@@ -10,17 +10,17 @@ import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/otp/actor
 import pachinko_double.{type PartialTick, type Reply, Outcome}
-import pachinko_double/config.{type Config, type Settings, Settings}
-import pachinko_double/consuming.{type HeldView, type LeaseView}
-import pachinko_double/core.{type TickReport}
-import pachinko_double/domain.{
-  type Applied, type BatchRecord, type Failure, type Step, Batch,
+import pachinko_double/answers.{
+  type BatchRecord, type HeldView, type LeaseView, type TickReport, Batch,
 }
+import pachinko_double/config.{type Config, type Settings, Settings}
+import pachinko_double/domain.{type Applied, type Failure, type Step}
+import pachinko_double/failure.{Refused}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type Pocket, type Record, PocketQueued}
 import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{type Refusal}
-import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, Refused}
+import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow}
 import pachinko_double/time.{type Duration, type Timestamp}
 
 /// How long a call to a fake may take, in milliseconds.
@@ -266,7 +266,17 @@ pub fn publish_as(
 
 /// A publish of a publication made by hand, for a payload that is not text.
 pub fn publish_publication(double: Double, publication: Publication) -> Reply {
-  logged(double, pachinko_double.publish(double.owner, publication))
+  logged(
+    double,
+    pachinko_double.publish(
+      double.owner,
+      publication.publisher,
+      publication.pocket_key,
+      publication.record_key,
+      publication.rank,
+      publication.payload,
+    ),
+  )
 }
 
 /// A tick, as the Rust fixture's `tick` without its check: the owner reads

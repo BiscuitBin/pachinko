@@ -37,11 +37,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{NoPocketAvailable}
 import pachinko_double/config
 import pachinko_double/core
-import pachinko_double/domain.{
-  type Event, type Plan, NoPocketAvailable, PocketTouched,
-}
+import pachinko_double/domain.{type Event, type Plan, PocketTouched}
+import pachinko_double/failure.{Defect, EffectFailed, Refused}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -53,8 +53,8 @@ import pachinko_double/model.{
 import pachinko_double/publish.{type Publication, Publication}
 import pachinko_double/refusals.{EqualRankRefused, UnknownPublisher}
 import pachinko_double/rules.{
-  Applied, Defect, Done, EffectFailed, Finish, Impossible, LeaseId,
-  NothingHappens, Now, Position, Refused, Row, Table,
+  Applied, Done, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Row,
+  Table,
 }
 import runner.{type Test, Scenario, Test}
 

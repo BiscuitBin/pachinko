@@ -54,7 +54,7 @@ holds the check that this page still matches them.
 | A reader looking for | Opens |
 | --- | --- |
 | The interface: starting the owner, the triggers, the clock and the two reads | `src/pachinko_double.gleam` |
-| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam` and `refusals.gleam`, and for now the reply types in `rules.gleam`, `domain.gleam`, `core.gleam` and `consuming.gleam`, and `Publication` in `publish.gleam` |
+| What a caller names when it sends a trigger or reads a reply | `config.gleam`, `time.gleam`, `model.gleam`, `refusals.gleam`, `failure.gleam` and `answers.gleam` |
 | The snapshot and the invariant checker | `inspection.gleam` and `invariants.gleam` |
 | The engine: the rule-table machinery and the apply step | `rules.gleam`, `domain.gleam` and `core.gleam` |
 | The specification's rules | `identity.gleam`, `publish.gleam`, `pull.gleam`, `settle.gleam`, `lease_end.gleam`, `expiry.gleam`, `decay.gleam` and `consuming.gleam` |
@@ -99,7 +99,7 @@ are disjoint. A table in which no guard holds answers in one of three ways:
 A publish by a publisher id that never joined, and any action by a consumer id that never
 joined, is refused by `core.apply` before a table is consulted, with `UnknownPublisher`
 or `UnknownConsumer` (G12). No outcome panics: every way an outcome can fail is a
-`rules.Failure`, one of `Refused`, `GuardOverlap`, `Defect` and `BrokenInvariant`, and the
+`failure.Failure`, one of `Refused`, `GuardOverlap`, `Defect` and `BrokenInvariant`, and the
 owner answers with it. A call that gets no answer is another matter, under "Its mailbox"
 below.
 
@@ -255,7 +255,7 @@ the double, explicit inputs or explicit messages, so that a run repeats exactly.
   `pachinko_double.publish`, `pachinko_double.ack` and so on, each waiting for the reply
   for at most `pachinko_double.call_timeout`, 1,000 ms. A caller
   that gets no reply in that time, or whose owner has died, crashes; it receives no
-  `rules.Failure`. The trigger it sent may still be applied after it has crashed: while
+  `failure.Failure`. The trigger it sent may still be applied after it has crashed: while
   the owner is held up, by a slow injected clock for instance, a publish
   whose caller has timed out stays in the mailbox and is applied once the owner reaches
   it. In a test the crash fails the test. Success is `Outcome(fired, answer)`, the

@@ -24,10 +24,12 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{type TickReport, TickReport}
+import pachinko_double/core
 import pachinko_double/domain.{LeaseLapsed}
 import pachinko_double/expiry.{Lapse}
+import pachinko_double/failure
 import pachinko_double/inspection
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -831,7 +833,7 @@ fn tick_stops_at_a_failed_lapse() -> List(String) {
     == core.Ticked(
       state: first.state,
       report: TickReport(["LeaseLapses", keeps, requeue], [lapsed], [], []),
-      failure: Some(rules.BrokenInvariant(["ExpiriesWithinLimit"])),
+      failure: Some(failure.BrokenInvariant(["ExpiriesWithinLimit"])),
     )
   assert list.contains(ticked.state.superseded, due)
   first.fired

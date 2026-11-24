@@ -4,10 +4,13 @@
 import gleam/int
 import gleam/option.{None, Some}
 import harness
+import pachinko_double/failure.{
+  Defect, EffectFailed, GuardOverlap, NoRuleHeld, Refused,
+}
 import pachinko_double/rules.{
   type Cursor, type Plan, type Row, type Step, type Table, type World, Applied,
-  Defect, Defective, EffectFailed, Finish, GuardOverlap, Impossible, LeaseId,
-  NoRuleHeld, NothingHappens, Now, Position, Refused, Refuses, Row, Table, World,
+  Defective, Finish, Impossible, LeaseId, NothingHappens, Now, Position, Refuses,
+  Row, Table, World,
 }
 import runner.{type Test, Test}
 

@@ -30,9 +30,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import harness.{type Double}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{Batch, BatchRecord, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{TickReport}
-import pachinko_double/domain.{Batch, BatchRecord}
 import pachinko_double/invariants
 import pachinko_double/model.{
   type DeadLetter, type Lease, type Pocket, type Record, type SupersededRecord,

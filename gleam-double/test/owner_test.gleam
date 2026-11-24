@@ -6,16 +6,15 @@ import gleam/list
 import gleam/option.{None}
 import harness
 import pachinko_double.{Outcome, PartialTick}
+import pachinko_double/answers.{TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{TickReport}
+import pachinko_double/failure.{BrokenInvariant, Refused}
 import pachinko_double/inspection.{type Snapshot, Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
   LeaseActive, LeaseExpired, PocketLeased, PocketQueued, Publisher,
 }
-import pachinko_double/publish.{Publication}
 import pachinko_double/refusals.{PublisherAlreadyJoined}
-import pachinko_double/rules.{BrokenInvariant, Refused}
 import runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {
@@ -126,10 +125,7 @@ fn partial_tick_keeps_what_ran() -> List(String) {
   })
   list.each(["a", "b", "c"], fn(key) {
     let assert Ok(_) =
-      pachinko_double.publish(
-        queue,
-        Publication("p", key, key <> "1", 1, <<key:utf8>>),
-      )
+      pachinko_double.publish(queue, "p", key, key <> "1", 1, <<key:utf8>>)
     Nil
   })
   let assert Ok(_) = pachinko_double.pull(queue, "c1", 1)

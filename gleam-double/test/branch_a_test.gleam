@@ -36,15 +36,15 @@ import gleam/list
 import gleam/option.{None, Some}
 import harness.{type Double}
 import pachinko_double.{type PartialTick, type Reply, Outcome}
+import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{type TickReport, TickReport}
+import pachinko_double/failure.{Refused}
 import pachinko_double/invariants
 import pachinko_double/model.{
   LeaseActive, LeaseExpired, LeaseReleased, PocketLeased, PocketQueued,
   RecordQueued,
 }
 import pachinko_double/refusals.{LeaseFenced}
-import pachinko_double/rules.{Refused}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

@@ -26,11 +26,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import harness.{type Double, Pulled}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{Batch, BatchRecord, NoPocketAvailable}
 import pachinko_double/config.{Settings}
 import pachinko_double/core
-import pachinko_double/domain.{
-  type Applied, type Failure, Batch, BatchRecord, NoPocketAvailable,
-}
+import pachinko_double/domain.{type Applied, type Failure}
+import pachinko_double/failure.{Defect, NoRuleHeld, Refused}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/model.{
   type Record, type State, Consumer, DeadLetter, Lease, LeaseActive,
@@ -40,7 +40,7 @@ import pachinko_double/model.{
 }
 import pachinko_double/pull.{type Pull, Handover, Pull}
 import pachinko_double/refusals.{PullRefused, UnknownConsumer}
-import pachinko_double/rules.{Applied, Defect, Done, NoRuleHeld, Refused}
+import pachinko_double/rules.{Applied, Done}
 import runner.{type Test, Scenario, Test}
 
 pub fn tests() -> List(Test) {

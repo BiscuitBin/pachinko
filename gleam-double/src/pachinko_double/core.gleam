@@ -7,13 +7,17 @@
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import pachinko_double/consuming.{type LeaseView}
+import pachinko_double/answers.{
+  type Answer, type LeaseView, type TickReport, TickReport,
+}
+import pachinko_double/consuming
 import pachinko_double/decay
 import pachinko_double/domain.{
-  type Answer, type Cursor, type Event, type Failure, type Step, type Table,
-  type World, Freed, Handed, LeaseLapsed, PocketTouched,
+  type Cursor, type Event, type Failure, type Step, type Table, type World,
+  Freed, Handed, LeaseLapsed, PocketTouched,
 }
 import pachinko_double/expiry.{Lapse}
+import pachinko_double/failure.{BrokenInvariant, Defect, EffectFailed, Refused}
 import pachinko_double/identity
 import pachinko_double/inspection
 import pachinko_double/invariants
@@ -25,10 +29,7 @@ import pachinko_double/model.{
 import pachinko_double/publish.{type Publication}
 import pachinko_double/pull.{type Pull, Handover}
 import pachinko_double/refusals.{UnknownConsumer, UnknownPublisher}
-import pachinko_double/rules.{
-  BrokenInvariant, Defect, Done, EffectFailed, NeedsLeaseId, NeedsNow, Refused,
-  World,
-}
+import pachinko_double/rules.{Done, NeedsLeaseId, NeedsNow, World}
 import pachinko_double/settle.{type Ack, type Nack, type Release, type Renew}
 import pachinko_double/time.{type Timestamp}
 
@@ -180,20 +181,6 @@ fn run_due_from(
           ))
       }
   }
-}
-
-/// What a tick did. `fired` is the names of the rules every outcome that
-/// succeeded fired, in order. `lapsed` is the leases it lapsed, in the order
-/// they lapsed, as the state keeps them once ended. `superseded` and
-/// `dead_letters` are the entries that decayed, in the order they decayed,
-/// as they stood.
-pub type TickReport {
-  TickReport(
-    fired: List(String),
-    lapsed: List(Lease),
-    superseded: List(SupersededRecord),
-    dead_letters: List(DeadLetter),
-  )
 }
 
 /// A tick's whole result: the state it reached, what it reports, and the

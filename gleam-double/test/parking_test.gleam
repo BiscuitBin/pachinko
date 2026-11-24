@@ -34,9 +34,8 @@ import gleam/list
 import gleam/option.{None, Some}
 import harness.{type Double, type Pulled}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{type TickReport, BatchRecord, NoPocketAvailable}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{type TickReport}
-import pachinko_double/domain.{BatchRecord, NoPocketAvailable}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{

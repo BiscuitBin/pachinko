@@ -22,24 +22,24 @@
 //// the outcomes of a `tick`.
 ////
 //// A caller's other names live in other modules. What it names when it sends
-//// a trigger or reads a reply is in `config`, `time`, `model` and `refusals`.
-//// The snapshot that `inspect` returns, and the checker of the invariants,
-//// are in `inspection` and `invariants`. Some types a caller sends or a reply
-//// carries still sit in engine modules: a reply carries `rules.Failure`,
-//// `domain.Answer`, `core.TickReport` and `consuming.LeaseView`, and
-//// `publish` takes a `publish.Publication`.
+//// a trigger or reads a reply is in `config`, `time`, `model` and `refusals`,
+//// and the reply types are in two more: `failure` holds `Failure` and
+//// `Cause`, and `answers` holds `Answer`, `BatchRecord`, `TickReport`,
+//// `LeaseView` and `HeldView`. The snapshot that `inspect` returns, and the
+//// checker of the invariants, are in `inspection` and `invariants`.
 
 import gleam/erlang/process.{type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
+import pachinko_double/answers.{type Answer, type LeaseView, type TickReport}
 import pachinko_double/config.{type Config}
-import pachinko_double/consuming.{type LeaseView}
-import pachinko_double/core.{type TickReport, type Trigger}
-import pachinko_double/domain.{type Answer, type Failure}
+import pachinko_double/core.{type Trigger}
+import pachinko_double/failure.{type Failure}
 import pachinko_double/inspection.{type Snapshot}
 import pachinko_double/model.{type State}
-import pachinko_double/publish.{type Publication}
+import pachinko_double/publish.{Publication}
 import pachinko_double/pull.{Pull}
+import pachinko_double/refusals.{type Refusal}
 import pachinko_double/rules
 import pachinko_double/settle.{Ack, Nack, Release, Renew}
 import pachinko_double/time.{type Timestamp}
@@ -57,13 +57,13 @@ pub type Outcome {
 }
 
 pub type Reply =
-  Result(Outcome, Failure)
+  Result(Outcome, Failure(Refusal))
 
 /// What a tick answers when one of its outcomes failed: what the outcomes
 /// before it did, which the owner keeps, and the failure that stopped it.
 /// The outcomes after it never ran.
 pub type PartialTick {
-  PartialTick(report: TickReport, failure: Failure)
+  PartialTick(report: TickReport, failure: Failure(Refusal))
 }
 
 /// The owner's mailbox. `Act` carries any one trigger a surface provides,
@@ -78,7 +78,7 @@ pub opaque type Message {
   Inspect(reply: Subject(Snapshot))
   LeaseView(
     consumer: String,
-    reply: Subject(Result(Option(LeaseView), Failure)),
+    reply: Subject(Result(Option(LeaseView), Failure(Refusal))),
   )
 }
 
@@ -148,8 +148,24 @@ pub fn consumer_joins(owner: Subject(Message), consumer_id: String) -> Reply {
 
 /// `Publish(publisher, pocket_key, record_key, rank, payload)`, from the
 /// `Publishing` surface. `publisher` is the publisher's id.
-pub fn publish(owner: Subject(Message), publication: Publication) -> Reply {
-  act(owner, core.Publish(publication))
+pub fn publish(
+  owner: Subject(Message),
+  publisher: String,
+  pocket_key: String,
+  record_key: String,
+  rank: Int,
+  payload: BitArray,
+) -> Reply {
+  act(
+    owner,
+    core.Publish(Publication(
+      publisher:,
+      pocket_key:,
+      record_key:,
+      rank:,
+      payload:,
+    )),
+  )
 }
 
 /// `Pull(consumer, limit)`, from the `Consuming` surface. `consumer` is the
@@ -207,7 +223,7 @@ pub fn release(
 pub fn lease_view(
   owner: Subject(Message),
   consumer: String,
-) -> Result(Option(LeaseView), Failure) {
+) -> Result(Option(LeaseView), Failure(Refusal)) {
   process.call(owner, call_timeout, LeaseView(consumer, _))
 }
 

@@ -25,8 +25,9 @@
 import gleam/option.{None}
 import harness.{type Double, Driven}
 import pachinko_double.{Outcome}
+import pachinko_double/answers.{type TickReport, TickReport}
 import pachinko_double/config.{Settings}
-import pachinko_double/core.{type TickReport, TickReport}
+import pachinko_double/core
 import pachinko_double/decay
 import pachinko_double/invariants
 import pachinko_double/model.{

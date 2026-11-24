@@ -5,10 +5,9 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import pachinko_double/answers.{Batch, BatchRecord, NoPocketAvailable}
 import pachinko_double/config
-import pachinko_double/domain.{
-  type Plan, type Row, type Table, Batch, BatchRecord, Handed, NoPocketAvailable,
-}
+import pachinko_double/domain.{type Plan, type Row, type Table, Handed}
 import pachinko_double/model.{
   type Lease, type Pocket, type Record, type State, Lease, LeaseActive, Pocket,
   PocketLeased, PocketQueued, Record, RecordHeld, RecordQueued, State, Unsettled,

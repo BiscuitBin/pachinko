@@ -46,9 +46,10 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import harness.{type Double, Driven}
 import pachinko_double.{type Reply, Outcome}
+import pachinko_double/answers.{HeldView}
 import pachinko_double/config.{Settings}
-import pachinko_double/consuming.{HeldView}
 import pachinko_double/core
+import pachinko_double/failure.{Defect, EffectFailed, Refused}
 import pachinko_double/inspection.{Snapshot}
 import pachinko_double/invariants
 import pachinko_double/model.{
@@ -61,9 +62,7 @@ import pachinko_double/refusals.{
   type Refusal, EqualRankRefused, LeaseFenced, MarkConflict, RecordNotHeld,
   UnknownConsumer,
 }
-import pachinko_double/rules.{
-  Applied, Defect, Done, EffectFailed, Refused, Refuses, Row, Table,
-}
+import pachinko_double/rules.{Applied, Done, Refuses, Row, Table}
 import pachinko_double/settle.{type Ack, type Nack, Ack, Nack, Renew}
 import runner.{type Test, Scenario, Test}
 
@@ -300,7 +299,7 @@ const consume_deferred = "ConsumeAckedVersionQueueDeferred"
 const dead_letter_deferred = "DeadLetterNackedVersionQueueDeferred"
 
 /// The Rust test file's `marked`: a lease view's record for `key` at rank 1.
-fn marked(key: String, payload: String, mark: Mark) -> consuming.HeldView {
+fn marked(key: String, payload: String, mark: Mark) -> answers.HeldView {
   HeldView(key:, held_rank: 1, held_payload: <<payload:utf8>>, mark:)
 }
 

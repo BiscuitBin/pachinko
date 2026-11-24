@@ -1,11 +1,16 @@
 //// The pin on the package's interface. `items` reads a module's source and
 //// returns its public items, each with its constructors and its `@internal`
 //// mark; `imports_effects` says whether a module imports `gleam/erlang` or
-//// `gleam/otp`. Both are pure, so the controls run them on text made by
-//// hand. The three assertions read the tree from `gleam-double/`, where the
-//// run starts: the root's items are exactly the seventeen of the interface,
-//// the root is the only module under `src/` that imports an effect, and
-//// `src/` holds at its top level only the root and its directory.
+//// `gleam/otp`; `imported_modules` names the module each import line takes.
+//// All three are pure, so the controls run them on text made by hand. The
+//// assertions read the tree from `gleam-double/`, where the run starts: the
+//// root's items are exactly the seventeen of the interface, the root is the
+//// only module under `src/` that imports an effect, and `src/` holds at its
+//// top level only the root and its directory. The two vocabulary modules of
+//// the replies, `failure` and `answers`, hold exactly the reply types;
+//// `failure` imports nothing, and `answers` imports only `model` and `time`.
+//// The witness, the walkthrough in `test/guide_test.gleam`, imports no engine
+//// module and no rule module.
 ////
 //// The parser reads text, not the compiler's result:
 //// - an item is a line that starts at column 0 with `pub fn`, `pub const`,
@@ -17,7 +22,9 @@
 ////   two spaces and an uppercase letter; an opaque type and an alias have
 ////   none;
 //// - an item is internal when the line directly above its `pub` line is
-////   `@internal`, and a constructor is internal when its type is.
+////   `@internal`, and a constructor is internal when its type is;
+//// - an import line starts with `import `, and the module it names is the
+////   text after that, up to the first space or `.`.
 ////
 //// The text a control reads is a list of lines, so that no line of this file
 //// other than its own imports starts with `import`.
@@ -39,6 +46,14 @@ pub type Item {
 pub const root_path = "src/pachinko_double.gleam"
 
 pub const source_directory = "src"
+
+/// The two vocabulary modules of the replies, and the witness, from
+/// `gleam-double/`.
+pub const failure_path = "src/pachinko_double/failure.gleam"
+
+pub const answers_path = "src/pachinko_double/answers.gleam"
+
+pub const witness_path = "test/guide_test.gleam"
 
 pub fn tests() -> List(Test) {
   [
@@ -63,6 +78,25 @@ pub fn tests() -> List(Test) {
       effect_importers,
     ),
     Test("src/ holds only the root and its directory", [], source_top_level),
+    Test(
+      "an import line names the module up to the first space or dot",
+      [],
+      reads_imports,
+    ),
+    Test(
+      "the witness allows gleam/, the root, the vocabulary and test support",
+      [],
+      reads_witness,
+    ),
+    Test("failure holds exactly Failure and Cause", [], failure_items),
+    Test("failure imports nothing", [], failure_imports),
+    Test("answers holds exactly the five reply types", [], answers_items),
+    Test("answers imports only model and time", [], answers_imports),
+    Test(
+      "the walkthrough imports no engine module and no rule module",
+      [],
+      witness_imports,
+    ),
   ]
 }
 
@@ -152,6 +186,46 @@ pub fn imports_effects(source: String) -> Bool {
     string.starts_with(line, "import gleam/erlang")
     || string.starts_with(line, "import gleam/otp")
   })
+}
+
+/// The module each line of a source that starts with `import ` names, in the
+/// file's order: the text after `import `, up to the first space or `.`.
+pub fn imported_modules(source: String) -> List(String) {
+  list.filter_map(string.split(source, "\n"), fn(line) {
+    case line {
+      "import " <> rest -> Ok(module_name(rest))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+fn module_name(text: String) -> String {
+  text
+  |> string.to_graphemes
+  |> list.take_while(fn(grapheme) { grapheme != " " && grapheme != "." })
+  |> string.concat
+}
+
+/// Whether the witness may import a module: one under `gleam/`,
+/// `simplifile`, the support modules `harness` and `runner`, the root, or
+/// one of the eight vocabulary modules.
+pub fn witness_allows(module: String) -> Bool {
+  string.starts_with(module, "gleam/")
+  || list.contains(
+    [
+      "simplifile", "harness", "runner", "pachinko_double",
+      "pachinko_double/config", "pachinko_double/time", "pachinko_double/model",
+      "pachinko_double/refusals", "pachinko_double/failure",
+      "pachinko_double/answers", "pachinko_double/inspection",
+      "pachinko_double/invariants",
+    ],
+    module,
+  )
+}
+
+/// The modules a source imports that the witness may not.
+pub fn witness_faults(source: String) -> List(String) {
+  list.filter(imported_modules(source), fn(module) { !witness_allows(module) })
 }
 
 /// A module made by hand: a function, a constant, a type with two
@@ -314,5 +388,107 @@ fn source_top_level() -> List(String) {
   assert entries == Ok(["pachinko_double", "pachinko_double.gleam"])
   assert simplifile.is_directory(source_directory <> "/pachinko_double")
     == Ok(True)
+  []
+}
+
+/// Import lines made by hand. The engine's `core` is taken whole, with
+/// unqualified names and under an alias, and a module is taken across
+/// several lines. An indented import and a comment are no import line.
+fn import_lines() -> List(String) {
+  [
+    "//// A test module made by hand.", "", "import gleam/list",
+    "import gleam/option.{type Option, None}", "import harness.{type Double}",
+    "import pachinko_double", "import pachinko_double.{type Reply, Outcome}",
+    "import pachinko_double/core", "import pachinko_double/core.{TickReport}",
+    "import pachinko_double/core as engine", "import pachinko_double/model.{",
+    "  type Mark,", "}", "  import pachinko_double/domain",
+    "// import pachinko_double/rules", "import runner.{type Test, Test}",
+    "import simplifile",
+  ]
+}
+
+fn reads_imports() -> List(String) {
+  assert imported_modules(string.join(import_lines(), "\n"))
+    == [
+      "gleam/list", "gleam/option", "harness", "pachinko_double",
+      "pachinko_double", "pachinko_double/core", "pachinko_double/core",
+      "pachinko_double/core", "pachinko_double/model", "runner", "simplifile",
+    ]
+  []
+}
+
+/// The three lines that take `core` are each a fault; a module whose name
+/// only starts like an allowed one is not allowed.
+fn reads_witness() -> List(String) {
+  assert witness_faults(string.join(import_lines(), "\n"))
+    == ["pachinko_double/core", "pachinko_double/core", "pachinko_double/core"]
+  assert !witness_allows("pachinko_double/configuration")
+  assert !witness_allows("pachinko_double/domain")
+  assert !witness_allows("gleam")
+  assert witness_allows("gleam/erlang/process")
+  []
+}
+
+/// `failure`'s two types and their six constructors, none internal.
+fn failure_vocabulary() -> List(Item) {
+  [
+    Item(
+      "Failure",
+      ["Refused", "GuardOverlap", "Defect", "BrokenInvariant"],
+      False,
+    ),
+    Item("Cause", ["NoRuleHeld", "EffectFailed"], False),
+  ]
+}
+
+/// `answers`'s five types and their six constructors, none internal.
+fn answers_vocabulary() -> List(Item) {
+  [
+    Item("Answer", ["Batch", "NoPocketAvailable"], False),
+    Item("BatchRecord", ["BatchRecord"], False),
+    Item("TickReport", ["TickReport"], False),
+    Item("LeaseView", ["LeaseView"], False),
+    Item("HeldView", ["HeldView"], False),
+  ]
+}
+
+fn failure_items() -> List(String) {
+  let found =
+    coverage.read(failure_path)
+    |> result.map(fn(source) { by_name(items(source)) })
+  assert found == Ok(by_name(failure_vocabulary()))
+  []
+}
+
+fn failure_imports() -> List(String) {
+  assert result.map(coverage.read(failure_path), imported_modules) == Ok([])
+  []
+}
+
+fn answers_items() -> List(String) {
+  let found =
+    coverage.read(answers_path)
+    |> result.map(fn(source) { by_name(items(source)) })
+  assert found == Ok(by_name(answers_vocabulary()))
+  []
+}
+
+fn answers_imports() -> List(String) {
+  let found =
+    coverage.read(answers_path)
+    |> result.map(fn(source) {
+      list.sort(imported_modules(source), string.compare)
+    })
+  assert found == Ok(["pachinko_double/model", "pachinko_double/time"])
+  []
+}
+
+/// The witness reads at least one import line, and every module they name
+/// is one it may import.
+fn witness_imports() -> List(String) {
+  let source = coverage.read(witness_path)
+  assert result.map(source, fn(text) { imported_modules(text) != [] })
+    == Ok(True)
+  assert result.map(source, witness_faults) == Ok([])
   []
 }

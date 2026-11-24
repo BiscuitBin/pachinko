@@ -15,6 +15,7 @@ import gleam/option.{type Option, None, Some}
 import pachinko_double/config
 import pachinko_double/core
 import pachinko_double/domain.{type Step, Freed}
+import pachinko_double/failure.{Defect, EffectFailed, NoRuleHeld}
 import pachinko_double/lease_end.{Freeing, Lapse, Release}
 import pachinko_double/model.{
   type LeaseStatus, type Mark, type Record, type State, Acked, Consumer,
@@ -22,9 +23,7 @@ import pachinko_double/model.{
   PocketIdle, PocketLeased, Publisher, Queue, Record, RecordHeld, RecordQueued,
   Stale, State, Superseded, SupersededRecord, Unsettled,
 }
-import pachinko_double/rules.{
-  Applied, Defect, Defective, Done, EffectFailed, NoRuleHeld, Row, Table,
-}
+import pachinko_double/rules.{Applied, Defective, Done, Row, Table}
 import runner.{type Test, Test}
 
 pub fn tests() -> List(Test) {

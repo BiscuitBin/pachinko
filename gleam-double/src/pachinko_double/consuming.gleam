@@ -4,22 +4,9 @@
 
 import gleam/list
 import gleam/option.{type Option}
+import pachinko_double/answers.{type LeaseView, HeldView, LeaseView}
 import pachinko_double/inspection
-import pachinko_double/model.{type Mark, type State, RecordHeld, RecordQueued}
-import pachinko_double/time.{type Timestamp}
-
-/// The consumer's active lease as the surface exposes it: `lease.pocket.key`,
-/// `lease.expires_at`, and the pocket's held records. It carries no lease
-/// id: the surface exposes none.
-pub type LeaseView {
-  LeaseView(pocket_key: String, expires_at: Timestamp, records: List(HeldView))
-}
-
-/// One held record as the surface exposes it: `record.key`,
-/// `record.held_rank`, `record.held_payload` and `record.mark`.
-pub type HeldView {
-  HeldView(key: String, held_rank: Int, held_payload: BitArray, mark: Mark)
-}
+import pachinko_double/model.{type State, RecordHeld, RecordQueued}
 
 /// The view of the consumer's active lease, or `None` when it has none:
 /// `Leases where consumer = consumer and status = active`, which the

@@ -26,7 +26,7 @@ import gleam/option.{Some}
 import gleam/string
 import harness.{type Double}
 import pachinko_double.{type Reply, Outcome}
-import pachinko_double/domain.{
+import pachinko_double/answers.{
   type BatchRecord, Batch, BatchRecord, NoPocketAvailable,
 }
 import pachinko_double/inspection.{type Snapshot}
