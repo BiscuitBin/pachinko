@@ -490,11 +490,14 @@ plan-spec module:
 # that jar in place of the one in .quint/; BASH_ENV, since the launcher's
 # bash would source that file and could change PATH; and CDPATH, since the
 # launcher finds its jar with `cd` on the relative path Quint passes it, which
-# CDPATH could send to another checkout's .quint/. TMPDIR defaults to /tmp,
+# CDPATH could send to another checkout's .quint/. JVM_ARGS and JVM_GC_ARGS,
+# which the launcher passes to java, and JAVA_TOOL_OPTIONS, JDK_JAVA_OPTIONS and
+# _JAVA_OPTIONS, which the JVM reads, are unset too, since any of them can load
+# an agent; the guard refuses an exported bash function. TMPDIR defaults to /tmp,
 # since an unset one makes the launcher create tmp/ in this directory.
 quint *args:
     sh scripts/install-apalache.sh --check -- "$@"
-    env -u APALACHE_JAR -u BASH_ENV -u CDPATH TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/@informalsystems/quint/dist/src/cli.js "$@"
+    env -u APALACHE_JAR -u BASH_ENV -u CDPATH -u JVM_ARGS -u JVM_GC_ARGS -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u _JAVA_OPTIONS TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/@informalsystems/quint/dist/src/cli.js "$@"
 
 # Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
 # which owns their layout and words: edit the script, never an SVG. It writes

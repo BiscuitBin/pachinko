@@ -86,16 +86,29 @@ read_pin() {
 }
 
 check_cli() {
-    # The `quint` recipe runs this file; node resolves a symlinked entry point
-    # to its target, which could be another CLI than the one read below.
-    [ -f "$cli/dist/src/cli.js" ] && [ ! -L "$cli/dist/src/cli.js" ] ||
-        fail "$cli/dist/src/cli.js, the entry point the quint recipe runs, is missing or a symlink; run just install-quint"
+    # The `quint` recipe runs this file; node resolves a symlinked entry point,
+    # or a linked package directory, to its target, which could be another CLI
+    # than the one read below.
+    for link in tools/quint/node_modules tools/quint/node_modules/@informalsystems "$cli" "$cli/dist" "$cli/dist/src" "$cli/dist/src/cli.js"; do
+        [ ! -L "$link" ] ||
+            fail "$link is a symlink, so the quint recipe could run another CLI than the one checked; run just install-quint"
+    done
+    [ -f "$cli/dist/src/cli.js" ] ||
+        fail "$cli/dist/src/cli.js, the entry point the quint recipe runs, is missing; run just install-quint"
+    # The launcher is bash, which imports exported functions: one named java,
+    # or any command it runs, would replace that command.
+    if env | grep -q '^BASH_FUNC_'; then
+        fail "the environment exports a bash function (BASH_FUNC_...), which Apalache's bash launcher would import; unset it before just quint"
+    fi
     installed=$(python -I -B -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$cli/package.json") ||
         fail "cannot read the installed Quint CLI's version from $cli/package.json; run just install-quint"
     [ "$installed" = "$quint" ] ||
         fail "the installed Quint CLI is $installed, not quint=$quint from $pin; run just install-quint"
     tag=$(sed -n "s/^exports\.DEFAULT_APALACHE_VERSION_TAG = '\(.*\)';\$/\1/p" "$cli/dist/src/apalache.js") ||
         fail "cannot read DEFAULT_APALACHE_VERSION_TAG from $cli/dist/src/apalache.js"
+    # sed matches nothing and still exits 0 when a later CLI writes the line otherwise.
+    [ -n "$tag" ] ||
+        fail "cannot read DEFAULT_APALACHE_VERSION_TAG from $cli/dist/src/apalache.js; read it by hand (docs/how-to/maintain-dependencies.md, \"The Quint CLI\")"
     [ "$tag" = "$apalache" ] ||
         fail "the installed Quint CLI $installed runs Apalache '$tag' (DEFAULT_APALACHE_VERSION_TAG), but $pin pins apalache=$apalache; see docs/how-to/maintain-dependencies.md, \"The Quint CLI\""
 }
@@ -309,9 +322,11 @@ install_mode() {
 
     mkdir -p "$qh"
     paths
-    tmp=$(mktemp -d "$qh/install-apalache.XXXXXX")
-    trap 'rm -rf -- "${tmp:?}"' EXIT
+    # The traps go first, so a signal right after mktemp still removes its directory.
+    tmp=''
+    trap '[ -z "$tmp" ] || rm -rf -- "${tmp:?}"' EXIT
     trap 'exit 1' HUP INT TERM
+    tmp=$(mktemp -d "$qh/install-apalache.XXXXXX")
 
     url=https://github.com/apalache-mc/apalache/releases/download/v$apalache/apalache.tgz
     say "downloading $url"
