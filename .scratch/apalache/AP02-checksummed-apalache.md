@@ -76,12 +76,13 @@ whose SHA-256 this repository records. While that install is in place, `just qui
 verify` uses it and downloads nothing. The installer refuses a pin that disagrees with
 the installed CLI's Apalache version. Gate 2, `just lock-check`, fails offline, in CI as
 locally, on any move of the Quint CLI's pin until the pin file records that its
-Apalache pin was reviewed against the new CLI.
+Apalache pin was reviewed against the new CLI. `just quint` refuses `verify`, and
+`compile` with `--target tlaplus`, unless that stamped install is in place, and refuses
+`--apalache-version` outright, so Quint never downloads Apalache itself through the
+recipe.
 
-What stays open, and the pages say so: Quint downloads Apalache unchecked when `.quint/`
-holds no install (a deleted directory, or a worktree where `just install-apalache` never
-ran), and when a run passes `--apalache-version`. Gate 2 checks that the review was
-recorded, not that it was right. The installer and Open points cover both gaps.
+What stays open, and the pages say so: gate 2 checks that the review was recorded, not
+that it was right. Open points covers it.
 
 ## Design proposed in this ticket
 
@@ -134,6 +135,23 @@ that the pin was reviewed, and the installer checks the tag.
   6. Every `rm -rf` names its path through `"${var:?}"`, and a trap removes the
      temporary directory on every exit.
 - **`just initialize` runs `just install-apalache` after `just install-quint`.**
+- **A guard in `just quint`** (maintainer ruling, 2026-11-24, moved here from Non-goals
+  and Open points). Before the CLI runs, the recipe scans every argument:
+  1. It refuses `--apalache-version` and `--apalache-version=<v>`, naming the pin file.
+  2. When any argument is `verify`, or one is `compile` and the target is `tlaplus`
+     (`--target tlaplus` or `--target=tlaplus`), it runs
+     `scripts/install-apalache.sh --check`. That mode is offline and read-only: it runs
+     the installer's checks 1 and 2 and step 3's skip test, and exits 0 only when that
+     test would skip. Otherwise it fails, naming `just install-apalache`. It also fails,
+     naming `just sync`, unless pixi's `java` (`.pixi/envs/default/lib/jvm/bin/java`,
+     which the recipe puts first on `PATH`) is executable: without it the launcher's
+     bare `java` falls through to whatever else is on `PATH` (handed over by AP01's
+     checkpoint 2).
+  3. Every other command, `typecheck`, `run`, `test` and the REPL among them, runs as
+     before, with no check.
+
+  The scan matches any argument, not only the subcommand, so a file named `verify`
+  triggers the check too. That fails closed, and the message says why.
 - **Renovate does not track Apalache.** No manager reads `tools/quint/apalache.txt`. The
   `quint` rule's description says that its pull request fails `lock-check` until the pin
   file is reviewed, and how to review it.
@@ -154,8 +172,6 @@ that the pin was reviewed, and the installer checks the tag.
   saying so.
 - No gate or CI job that runs `quint verify`, and no `just install-apalache` in CI. There
   is no `.qnt` module yet.
-- No guard in `just quint` that refuses `verify` without a stamped install or with
-  `--apalache-version`. Open points holds it, recommended as the next ticket.
 - No change to how Quint picks its server endpoint.
 - No custom Renovate manager for Apalache.
 - No `CHANGELOG.md` entry. It records the crates' changes.
@@ -175,9 +191,9 @@ recipes do. Each such sentence is brought into line, keeping the gaps under Goal
 | Path | Class | Content |
 | --- | --- | --- |
 | `tools/quint/apalache.txt` | new | the pin file, with a comment naming decision 0021 and the bump how-to |
-| `scripts/install-apalache.sh` | new | the installer, POSIX `sh` |
+| `scripts/install-apalache.sh` | new | the installer, POSIX `sh`, with a `--check` mode for the guard that reuses its offline skip test |
 | `scripts/check-apalache-pin.sh` | new | the gate's check, POSIX `sh` |
-| `Justfile` | shared, own lines | `install-apalache`, with a comment; a line in `lock-check`, and its comment; the `QUINT_HOME` and `quint` comments |
+| `Justfile` | shared, own lines | `install-apalache`, with a comment; a line in `lock-check`, and its comment; the guard in the `quint` recipe, with its comment; the `QUINT_HOME` and `quint` comments |
 | `scripts/initialize.sh` | shared, own lines | `just install-apalache` after `just install-quint`, with a comment; the comments that count the first-run downloads no lockfile accounts for, and the one on the Quint CLI's downloads |
 | `renovate.json` | shared, own lines | the `quint` rule's description |
 | `.gitignore` | shared, own lines | the comment over `/.quint/` |
@@ -253,6 +269,20 @@ recipes do. Each such sentence is brought into line, keeping the gaps under Goal
      prints both hashes, leaves no `apalache/` and no `.quint/install-apalache.*`;
    - restore the pin file and run `just install-apalache` once more (network,
      authorised), so a stamped install is in place for step 6.
+
+   Then add the guard to the `quint` recipe, and show, quoting each:
+   - with the stamp moved to `ai_tmp/ap02/stamp.saved`, `just quint verify` and
+     `just quint compile --target tlaplus` on `ai_tmp/ap02/smoke.qnt` each fail, naming
+     `just install-apalache`, and `.quint/apalache-dist-0.62.4/` is unchanged (no
+     download started), while `just quint typecheck` and
+     `just quint run --max-steps=3` on the same module pass;
+   - with one file under the installed `apalache/` changed, `just quint verify` fails
+     the same way (the guard recomputes the digest); reinstall afterwards;
+   - with the stamp restored (`cmp` exits 0), `just quint verify --apalache-version=0.62.4`
+     fails, naming the pin file, and `--apalache-version 0.62.4` does too;
+   - with `.pixi/envs/default/lib/jvm/bin/java` moved to `ai_tmp/ap02/java.saved` and
+     back afterwards (`just sync` restores it if the move back fails), `just quint verify`
+     fails, naming `just sync`, and `just quint typecheck` still passes.
 6. **Quint uses the checked copy.** With AP01's port probe showing port 8822 free, run
    `just quint verify --verbosity=4 --invariant=inRange --max-steps=5
    ai_tmp/ap02/smoke.qnt`. Quote the `Using existing Apalache distribution` line, and
@@ -286,6 +316,9 @@ recipes do. Each such sentence is brought into line, keeping the gaps under Goal
   tree, a tree whose launcher is not executable, skips a stamped one, and refuses a mismatched tag, a mismatched CLI and a wrong
   hash, leaving no tree and no temporary directory after the last, each quoted.
 - `just initialize` runs `just install-apalache` after `just install-quint`.
+- `just quint` refuses `verify` and `compile --target tlaplus` without a stamped install
+  and with a changed tree, refuses `--apalache-version` in both spellings, and runs
+  `typecheck` and `run` untouched, each quoted.
 - `just quint verify --verbosity=4` logs `Using existing Apalache distribution` and no
   download line.
 - `just install-apalache` over a stamped install exits 0 under the network denial, with
@@ -330,6 +363,19 @@ just quint verify --verbosity=4 --invariant=inRange --max-steps=5 ai_tmp/ap02/sm
 grep -F 'Using existing Apalache distribution' ai_tmp/ap02/verify.log
 if grep -F 'Downloading Apalache distribution' ai_tmp/ap02/verify.log; then exit 1; else test "$?" -eq 1; fi
 
+# The guard: refuse without the stamp, refuse --apalache-version, pass the rest.
+stamp=.quint/apalache-dist-0.62.4/apalache/.pachinko-stamp
+mv "$stamp" ai_tmp/ap02/stamp.saved
+if just quint verify --invariant=inRange --max-steps=5 ai_tmp/ap02/smoke.qnt; then mv ai_tmp/ap02/stamp.saved "$stamp"; exit 1; fi
+if just quint compile --target tlaplus ai_tmp/ap02/smoke.qnt; then mv ai_tmp/ap02/stamp.saved "$stamp"; exit 1; fi
+just quint typecheck ai_tmp/ap02/smoke.qnt
+just quint run --max-steps=3 ai_tmp/ap02/smoke.qnt
+mv ai_tmp/ap02/stamp.saved "$stamp"
+grep -Fx "archive=$pin" "$stamp"
+if just quint verify --apalache-version=0.62.4 --invariant=inRange --max-steps=5 ai_tmp/ap02/smoke.qnt; then exit 1; fi
+if just quint verify --apalache-version 0.62.4 --invariant=inRange --max-steps=5 ai_tmp/ap02/smoke.qnt; then exit 1; fi
+just quint verify --invariant=inRange --max-steps=5 ai_tmp/ap02/smoke.qnt
+
 just check-docs
 just check-agents
 just check
@@ -337,8 +383,9 @@ status=$(git status --short)
 test -z "$status"
 ```
 
-The script runs after the commit, so `git diff --exit-code` compares the committed pin
-file. `grep -F 'Using existing…'` is the positive control for the silent probe after it:
+The guard's refusals are the red tests and the last `verify` the green one: a refusal
+that also refused a stamped install would fail that line. The script runs after the
+commit, so `git diff --exit-code` compares the committed pin file. `grep -F 'Using existing…'` is the positive control for the silent probe after it:
 both read the same log. Steps 4 to 6 hold the other mutations and the network denial,
 whose output is quoted there.
 
@@ -364,12 +411,6 @@ whose output is quoted there.
 
 ## Open points
 
-- **A guard in `just quint`, recommended next.** Without one, Quint downloads Apalache
-  unchecked when `.quint/` holds no stamped install, and whenever a run passes
-  `--apalache-version`. A guard would run before the CLI when any argument is `verify`,
-  or `compile` with `--target tlaplus`. It would check the stamp offline, as the
-  installer's skip path does, and refuse `--apalache-version`. It is left out because it
-  parses the CLI's arguments in a recipe, and the maintainer should choose that.
 - **Checking the tag in CI.** Gate 2 checks that the review was recorded, not that
   `apalache=` equals the CLI's tag. Adding `just install-quint` to the gate job would
   let CI check the tag too, at the cost of a network step in that job.
