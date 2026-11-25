@@ -640,17 +640,18 @@ pub(crate) mod invariants {
             .collect()
     }
 
+    /// No other record stands at a deferred version's arrival position. The
+    /// invariant pairs two records (`a != b`): a record's arrival position
+    /// against its own position is `DeferredArrivedAfterHeld`'s.
     pub(crate) fn arrival_position_unoccupied(s: &Snapshot) {
-        let occupied: BTreeSet<Position> = s
-            .pockets
-            .iter()
-            .flat_map(|p| p.records.iter().map(|r| r.position))
-            .collect();
-        for (arrival, key) in arrivals(s) {
-            assert!(
-                !occupied.contains(&arrival),
-                "ArrivalPositionUnoccupied: {key}"
-            );
+        for (_, record, held) in held(s) {
+            let Some(arrival) = held.deferred_position else {
+                continue;
+            };
+            let unoccupied = (s.pockets.iter())
+                .flat_map(|p| p.records.iter())
+                .all(|other| std::ptr::eq(other, record) || other.position != arrival);
+            assert!(unoccupied, "ArrivalPositionUnoccupied: {}", record.key);
         }
     }
 

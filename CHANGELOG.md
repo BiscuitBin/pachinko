@@ -19,6 +19,14 @@ and version, dated on the UTC day its tag is pushed. The release process is desc
   reclaimed, superseded records are removed first and dead letters after them, oldest
   first, with no record removed or bounded and no publish refused. No behaviour of the
   library changes.
+- The specification takes four rulings on the Python double's findings, none of which
+  changes the library's behaviour. `ArrivalPositionUnoccupied` pairs two distinct
+  records. A new `Consuming` guarantee, `HeldRecordsOldestFirst`, states the order the
+  library already kept: the lease read lists held records smallest position first, and
+  one lease end creates its superseded records and dead letters smallest held position
+  first. A comment on `SupersededRecord` says `shed_at` does not order a key's versions.
+  The `requires` lines that restate a selection or an invariant are labelled as such.
+  The rulings that do change behaviour are tickets T40 to T47.
 - The crate root is the caller's interface, and one `use libpachinko::{…}` names it:
   `Queue`, `Config`, the names and values, `Timestamp`, `LeaseId`, `ParseLeaseIdError`,
   `HeldRecord`, every outcome and every error enum moved there, and `ids`, `config`,

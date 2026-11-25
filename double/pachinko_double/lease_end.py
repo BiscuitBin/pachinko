@@ -37,10 +37,9 @@ one, at its arrival position, `deferred_position`. No row allots a position:
 the arrival position was allotted when the newer version arrived
 (DeferBehindHeldVersion), and the counter does not advance again here.
 
-The `Freed` events of one end go out smallest held position first. The
-specification sends them as `for record in pocket.held_records`, in no stated
-order; the order decides the order of the entries one end creates (spec note
-N25).
+The `Freed` events of one end go out smallest held position first, as the
+Lease end comment and the `HeldRecordsOldestFirst` guarantee state. That order
+decides the order of the entries one end creates (spec notes N25 and N29).
 """
 
 from dataclasses import dataclass, replace

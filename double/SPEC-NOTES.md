@@ -16,8 +16,8 @@ order within it, keeping the id it was written with. By the ticket that wrote it
 | --- | --- | --- | --- | --- |
 | PD01 | — | [N02](#n02-a-payload-is-bytes)†, [N06](#n06-a-reference-to-an-entity-is-that-entitys-key)†, [N07](#n07-a--b-in-an-invariant-compares-entities-not-their-fields), [N08](#n08-a-field-declared-when-status---is-the-entitys-shape-not-an-invariant)†, [N12](#n12-a-join-with-an-id-already-taken-is-refused) | [N01](#n01-timestamps-and-durations-are-whole-milliseconds), [N03](#n03-a-rank-is-an-unbounded-integer), [N05](#n05-a-lease-has-an-id-which-the-specification-does-not-declare), [N11](#n11-the-equal-rank-publish-is-the-publish-tables-refusal-equalrankrefused) | [N04](#n04-the-queues-first-position-is-0-s011-s014-and-s016-are-impl-choice), [N09](#n09-a-config-that-breaks-a-config-invariant-is-refused-when-it-is-made-s005-is-impl-choice), [N10](#n10-a-publish-by-a-publisher-that-never-joined-is-refused-impl-choice) |
 | PD02 | [N13](#n13-a-batch-names-its-lease-and-pocket-by-key-and-carries-no-expiry) | [N14](#n14-the-pull-tables-refusal-is-unreachable) | [N15](#n15-a-pull-draws-a-lease-id-only-when-it-creates-a-lease)†, [N17](#n17-s019s-large-ranks-are-a-64-bit-integers-extremes-not-the-doubles), [N19](#n19-a-pull-whose-limit-is-not-positive-still-claims-a-pocket), [N20](#n20-renews-refusal-is-leasefenced-and-an-unknown-lease-id-meets-it) | [N16](#n16-s012-s015-and-s022-assert-absolute-positions-impl-choice), [N18](#n18-a-pull-or-a-renew-by-a-consumer-that-never-joined-is-refused-impl-choice) |
-| PD03 | [N24](#n24-an-ended-lease-stays-in-the-state-and-a-release-and-a-mark-answer-nothing) | [N21](#n21-the-refusals-of-a-mark-are-the-doubles-leasefenced-recordnotheld-markconflict), [N26](#n26-the-release-tables-refusal-past-fencing-is-unreachable), [N28](#n28-a-refused-action-reads-no-clock-s085) | [N25](#n25-one-lease-end-sends-freed-smallest-held-position-first), [N27](#n27-an-idle-pocket-keeps-its-position) | [N22](#n22-an-ack-nack-release-or-lease-read-by-a-consumer-that-never-joined-is-refused-impl-choice), [N23](#n23-s090s-lease-view-lists-the-held-records-smallest-position-first-impl-choice) |
-| PD04 | [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour), [N32](#n32-a-deferral-answers-nothing-where-the-rust-answers-superseded) | — | [N30](#n30-a-deferred-version-shed-by-a-later-publish-takes-the-publishs-now) | [N29](#n29-s091-pins-the-order-of-the-entries-one-lease-end-creates-impl-choice) |
+| PD03 | [N24](#n24-an-ended-lease-stays-in-the-state-and-a-release-and-a-mark-answer-nothing) | [N21](#n21-the-refusals-of-a-mark-are-the-doubles-leasefenced-recordnotheld-markconflict), [N26](#n26-the-release-tables-refusal-past-fencing-is-unreachable), [N28](#n28-a-refused-action-reads-no-clock-s085) | [N25](#n25-one-lease-end-sends-freed-smallest-held-position-first), [N27](#n27-an-idle-pocket-keeps-its-position) | [N22](#n22-an-ack-nack-release-or-lease-read-by-a-consumer-that-never-joined-is-refused-impl-choice), [N23](#n23-s090s-lease-view-lists-the-held-records-smallest-position-first) |
+| PD04 | [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour), [N32](#n32-a-deferral-answers-nothing-where-the-rust-answers-superseded) | — | [N30](#n30-a-deferred-version-shed-by-a-later-publish-takes-the-publishs-now) | [N29](#n29-s091-pins-the-order-of-the-entries-one-lease-end-creates) |
 | PD05 | [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) | [N35](#n35-an-entry-a-lapse-creates-with-a-zero-ttl-decays-in-the-same-tick), [N37](#n37-the-expiry-rules-answer-when-no-guard-holds-is-unreachable-through-tick) | [N33](#n33-tick-is-the-doubles-only-clock-and-it-reports-what-it-did), [N34](#n34-one-tick-lapses-in-expires_at-order-then-decays-in-queue-order), [N36](#n36-only-a-publish-revives-a-parked-pocket-open-question-7-closed) | — |
 
 † records a reading and leaves no question of its own.
@@ -28,17 +28,24 @@ double's classes, tables and checker entries.
 ## Findings
 
 Each finding is a question for the maintainer, with the notes that hold its evidence.
-None of them has been applied to the specification, and none answers one of its open
-questions. A note whose question is "none" is not a finding; it records a reading, and is
-listed at the end of this section.
+The maintainer has ruled on all fifteen: finding 1 on 2026-11-20 and the other fourteen
+on 2026-11-24. Four rulings change no behaviour and are in the specification: findings
+15 and 8, and the parts of findings 6 and 7 that a tick does not decide. Every other
+ruling adds or changes behaviour, or asks for an investigation first, and is written up
+as a ticket, T40 to T47 under `tickets/`; until its ticket lands, the specification and
+the double stand as the notes describe them. None of the findings answers one of the
+specification's open questions. A note whose question is "none" is not a finding; it
+records a reading, and is listed at the end of this section.
 
 ### The maintainer's rulings so far
 
-The maintainer accepted three sets of ports for now. Each keeps the specification as it
-stands and treats the Rust's assertion as its inspection shape, not as behaviour. None
-of the three settled a question about the specification. The fourth and fifth, and
+The maintainer first accepted three sets of ports for now. Each keeps the specification
+as it stands and treats the Rust's assertion as its inspection shape, not as behaviour.
+None of the three settled a question about the specification. The fourth and fifth, and
 what the fifth leaves, are drawn below; the fifth rests on
-`.scratch/python-double/PD07-inspection-contract.md`.
+`.scratch/python-double/PD07-inspection-contract.md`. On 2026-11-24 the maintainer
+walked the fourteen findings then open, smallest change first, and ruled on each or
+sent it to a ticket; the rows dated 2026-11-24 below record them.
 
 ```mermaid
 flowchart LR
@@ -48,9 +55,12 @@ flowchart LR
     r5["2026-11-20<br/>finding 1 answered:<br/>the ports stand"]
     left["left: the letter keeps<br/>every ended lease, so<br/>the Open points propose<br/>it say one may be<br/>forgotten, and that a<br/>lease's identity is<br/>never reused"]
     f3["finding 3"]
-    f7["not answered: orders that<br/>reach a caller (finding 7)"]
+    f7["not answered then: orders that<br/>reach a caller (finding 7)"]
     r3["2026-11-19, PD06's review<br/>a publish answers nothing<br/>(N32)"]
-    f2["finding 2 stays open"]
+    f2["finding 2 stayed open"]
+    r6["2026-11-24<br/>findings 2 to 15 ruled"]
+    now["in the specification:<br/>findings 15 and 8, and 6 and 7<br/>but for a tick's part"]
+    tix[["tickets T40 to T47"]]
     r1 --> pd07
     r2 --> pd07
     pd07 --> r5
@@ -58,6 +68,11 @@ flowchart LR
     left -- "identity never reused" --> f3
     r5 --> f7
     r3 --> f2
+    f2 --> r6
+    f3 --> r6
+    f7 --> r6
+    r6 --> now
+    r6 --> tix
 ```
 
 | Date | Ruling | Rows | Note |
@@ -67,15 +82,27 @@ flowchart LR
 | 2026-11-19 | The three ports stand as the Rust's inspection shape, and PD07's scope gains them. | S066's release half, S093, S075's stored pocket order | [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) |
 | 2026-11-19 | A publish answers nothing, as the specification states. The ported rows assert that answer and do not port the Rust's outcomes; whether the specification should name one stays open. | Every ported publish row the Rust checks for an outcome | [N32](#n32-a-deferral-answers-nothing-where-the-rust-answers-superseded) |
 | 2026-11-20 | The three inspection shapes are the implementation's, not the specification's. An implementation may keep an ended lease or forget it. A pocket's records are a set, read by key. The pocket order is only derived from positions. The ports stand. | S053, S066's release half, S075, S091, S093 | [N24](#n24-an-ended-lease-stays-in-the-state-and-a-release-and-a-mark-answer-nothing), [N31](#n31-s091s-record-order-is-the-rusts-inspection-shape-not-behaviour), [N38](#n38-pd05s-ports-of-the-rusts-inspection-shapes) |
+| 2026-11-24 | Finding 15, applied. `ArrivalPositionUnoccupied` gains `a != b`, so a record paired with itself is `DeferredArrivedAfterHeld`'s alone. | none | N07 |
+| 2026-11-24 | Finding 8, applied. A comment on `SupersededRecord` says `shed_at` does not order a key's versions and `rank` does. | S045, S082, S091 | N30 |
+| 2026-11-24 | Finding 6, applied in part. The `requires` that restate a selection or `UnleasedHasNoActiveLease` stay, each labelled as a restatement that cannot fail in a valid state. The expiry rules' guards wait on the clock ticket, T42. | none | N14, N26, N37 |
+| 2026-11-24 | Finding 7, applied in part. The lease view lists held records smallest position first, and one lease end creates its entries smallest held position first: the `HeldRecordsOldestFirst` guarantee. S090 and S091 lose `impl-choice` for those orders. The order of work within one tick is investigated by T41. | S090, S091 | N23, N25, N29, N34 |
+| 2026-11-24 | Finding 12, not ruled as asked. The maintainer asks instead whether the pocket order belongs on the Pocket or on the Queue; T40 explores it. If position stays on the Pocket, the leaning is to clear it on idling. | S055 | N27 |
+| 2026-11-24 | Findings 9 and 10, and finding 13's time question. The specification is to model the clock: `now` never decreases, a refusal does not advance it, and a tick drains everything due at its `now`. T42 explores the model. | S007, S085 | N01, N28, N33, N35 |
+| 2026-11-24 | Findings 2, 3 and 5. Pull, renew, ack and nack answer the lease's `expires_at`. A lease has an id, a UUIDv7, never reused and exposed. The specification names its refusals and fixes their order. T43 works out the rest of the caller contract. | S053, S070 and the rows that read an answer | N05, N11, N13, N15, N20, N21, N23, N24, N32 |
+| 2026-11-24 | Finding 4, and finding 5's second join. Joining is dropped for publishers and consumers; a caller-supplied consumer id stays, accepted on first use. T45 lands it. | S009, S010, S042, S049 | N10, N12, N18, N22 |
+| 2026-11-24 | Finding 11. No claim without records: a pull with a limit below 1 by a consumer with no lease claims no pocket. T46 lands it. | S031, S032 | N19 |
+| 2026-11-24 | Finding 14, and finding 13's first position. Starting a deployment becomes a rule whose `requires` are the config bounds. T47 lands it, and settles the first position after T40. | S003, S004, S005, S011, S012, S014, S015, S016, S022 | N04, N09, N16 |
+| 2026-11-24 | Finding 13's rank. A rank is to be bounded, after T44 researches the width against primary sources. No bound is stated until the maintainer rules on it. | S019 | N03, N17 |
 
 ### Questions for the maintainer
 
-The first two weigh most: they decide what an implementation must show a caller. The
-first is answered, and it leaves a proposal.
+The first two weigh most: they decide what an implementation must show a caller. Each
+question stands as it was asked, with what the maintainer ruled under it. "Answered"
+marks a ruling that is in the specification; "Ruled" marks one that a ticket lands.
 
 The matrix shows which notes each finding rests on.
 
-![A matrix of the 15 findings against the 38 notes, grouped by heading. Finding 1 (answered): N24, N31, N38. Finding 2: N13, N24, N32, N33. Finding 3: N05, N15, N23. Finding 4: N10, N18, N22. Finding 5: N11, N12, N20, N21. Finding 6: N14, N26, N37. Finding 7: N23, N25, N29, N34. Finding 8: N30. Finding 9: N33, N35. Finding 10: N28. Finding 11: N19. Finding 12: N27. Finding 13: N01, N03, N04, N16, N17. Finding 14: N09. Finding 15: N07. No finding cites N02, N06, N08 or N36. N24, N31, N32 and N38 carry a ruling.](diagrams/findings-notes.svg)
+![A matrix of the 15 findings against the 38 notes, grouped by heading. Finding 1 (answered): N24, N31, N38. Finding 2 (ruled): N13, N24, N32, N33. Finding 3 (ruled): N05, N15, N23. Finding 4 (ruled): N10, N18, N22. Finding 5 (ruled): N11, N12, N20, N21. Finding 6 (answered in part): N14, N26, N37. Finding 7 (answered in part): N23, N25, N29, N34. Finding 8 (answered): N30. Finding 9 (ruled): N33, N35. Finding 10 (ruled): N28. Finding 11 (ruled): N19. Finding 12 (widened): N27. Finding 13 (ruled): N01, N03, N04, N16, N17. Finding 14 (ruled): N09. Finding 15 (answered): N07. No finding cites N02, N06, N08 or N36. Every note a finding cites carries a ruling.](diagrams/findings-notes.svg)
 
 1. **Is the inspection shape part of the contract?** Five Rust tests assert facts about
    the Rust's snapshot that the specification does not state. S053's and S066's empty
@@ -91,25 +118,48 @@ The matrix shows which notes each finding rests on.
      derived. `.scratch/python-double/PD07-inspection-contract.md` holds the evidence.
    - **What it leaves:** the specification's letter keeps every ended lease, and says
      nowhere that one may be forgotten or that a lease's identity is never reused. The
-     ticket's Open points propose that it say both. The second belongs with finding 3.
+     ticket's Open points propose that it say both. The second belongs with finding 3. On
+     2026-11-24 the maintainer ruled both under finding 3, and `tickets/T43-caller-contract.md`
+     lands them.
    - **What it does not answer:** the orders that reach a caller or behaviour, which are
-     finding 7's.
+     finding 7's, ruled on 2026-11-24.
 2. **Should the surfaces name what each trigger answers?** The specification's rules
    answer a pull with `Batch` or `NoPocketAvailable` and every other trigger with
    nothing. A `Batch` carries no `expires_at`, which a consumer needs in order to renew
    in time (N13). A publish answers nothing, where decision 0020 gives a deferral the
    answer `superseded` (N32). A release and a mark answer nothing (N24). What a tick
    reports is the implementation's choice (N33).
+   - **Ruled (2026-11-24), in part:** every action that works under a lease and extends it
+     answers the lease's `expires_at`: pull, renew, ack and nack. The maintainer's reason
+     for ack and nack: they operate under the lease and implicitly renew it.
+   - **Not yet ruled:** what a publish and a release answer, and whether an ack or a nack
+     tells a first mark from a repeat. T43 puts each to the maintainer with examples. What
+     a tick reports stays with the clock ticket, T42.
+   - **Lands in:** `tickets/T43-caller-contract.md`.
 3. **Should a lease have an identity in the specification, and should the `Consuming`
    surface expose it?** Every action names its lease, and fencing has to tell an ended
    lease from its successor over the same pocket and consumer. The double adds `Lease.id`,
    and the surface's lease view exposes no id (N05, N15, N23).
+   - **Ruled (2026-11-24):** yes. A lease has an id in the specification: unique for the
+     deployment's life, never reused, and exposed in the `Batch` and the lease view. The
+     id is a UUIDv7. An implementation may forget an ended lease, since an id that matches
+     no active lease is refused either way; this is what finding 1 left.
+   - **Lands in:** `tickets/T43-caller-contract.md`, which works out where the UUIDv7's
+     timestamp and random bits come from.
 4. **Should a publish, a pull, a renew, an ack, a nack and a release require a joined
    publisher or consumer?** Each trigger takes a `Publisher` or a `Consumer` entity, which
    only a join creates, and nothing says what an id that never joined does. No Publish
    rule reads the publisher at all. The consumer rules compare it with a lease's
    consumer, which says nothing of a consumer that never joined. The double refuses such
    an id before any rule runs, and every such test is `impl-choice` (N10, N18, N22).
+   - **Ruled (2026-11-24):** joining is dropped, for publishers and for consumers. The
+     maintainer's reason: it was never wanted, nothing plans to use it, the first use is
+     one consumer with many workers and one or a few publishers, and it can be added later
+     with intent. A caller-supplied consumer id stays on pull, renew, ack, nack and
+     release, accepted on first use. Two workers that send the same id then share one
+     lease, and nothing catches that mistake.
+   - **Lands in:** `tickets/T45-drop-joining.md`. Until it lands, the double's
+     `UnknownPublisher` and `UnknownConsumer` refusals stand.
 5. **Should the specification name its refusals, and the order in which an action's
    `requires` are checked?** The specification names none of its rejections, so the
    double's `EqualRankRefused`, `LeaseFenced`, `RecordNotHeld`, `MarkConflict` and the
@@ -118,6 +168,13 @@ The matrix shows which notes each finding rests on.
    the lease first (N11, N20, N21). And should a second join with a taken id be refused,
    as the double and the Rust do, or succeed and change nothing, which the words also
    allow (N12)?
+   - **Ruled (2026-11-24):** yes. The specification names its refusals and fixes the order
+     in which they are checked. The second join (N12) is moot once joining is dropped
+     (finding 4).
+   - **Not yet ruled:** the names (one lease refusal, as the double's `LeaseFenced`, or
+     two, as the Rust's `LeaseNotActive` and `LeaseNotYours`), the order, and how Allium
+     states them. T43 puts them to the maintainer.
+   - **Lands in:** `tickets/T43-caller-contract.md`.
 6. **Is a `requires` that restates an invariant a guard in its own right, or a
    restatement?** Pull's and Release's `requires: pocket.status = ...` cannot fail in a
    state that holds `UnleasedHasNoActiveLease`, so the Pull and Release refusals left
@@ -130,6 +187,16 @@ The matrix shows which notes each finding rests on.
    each lapse in the outcome that found it due, so the `LeaseLapsed` table's answer when
    no guard holds is reached only by a hand-built dispatch too. N37 asks whether, in that
    chain, they are guards in their own right or restatements of `LeaseLapses`.
+   - **Answered (2026-11-24), for N14 and N26:** they are restatements, and they stay.
+     `PullClaimsFrontPocket`'s `pocket.status = queued` restates its selection, and
+     `pocket.status = leased` in `PullWithinLease` and the two Release rules restates
+     `UnleasedHasNoActiveLease`. Each now carries a comment that says what it restates and
+     that it cannot fail in a valid state. Only comments changed; the double's
+     `PullRefused` and `ReleaseRefused` and their hand-built tests stay.
+   - **Ruled (2026-11-24), for N37:** the expiry rules' two guards wait on the clock
+     ticket. Its definition of a tick decides whether noticing a lapse and applying it are
+     one step, so that the guards are restatements, or two, so that they are guards. Lands
+     in `tickets/T42-clock-model.md`.
 7. **Should the specification order the entries one lease end, or one tick, creates, or
    say that their order is not observable?** The double sends one lease end's `Freed`
    smallest held position first, and S091 pins that order as `impl-choice`; decision 0020
@@ -137,38 +204,97 @@ The matrix shows which notes each finding rests on.
    One tick lapses in `expires_at` order, which a test with no scenario tag pins (N34).
    The lease view's order of held records, smallest position first in S090, is the same
    kind of question (N23).
+   - **Answered (2026-11-24), for N23, N25 and N29:** by position. The held records a
+     lease view lists are smallest position first, and one lease end sends `Freed`
+     smallest held position first, so the entries it creates are created in that order.
+     The specification states both as the `Consuming` guarantee `HeldRecordsOldestFirst`
+     and in the Lease end comment. Both implementations already did this, so S090 and S091
+     lose `impl-choice` for these orders and nothing else moves. The positions S091's kept
+     records hold are still read by key, under finding 1.
+   - **Ruled (2026-11-24), for N34:** the order of work within one tick is investigated
+     before the maintainer rules on it. Lands in
+     `tickets/T41-tick-order-investigation.md`, which feeds the clock ticket.
 8. **Should a reader of the superseded queue be told that `shed_at` does not order a
    key's versions?** A deferred version shed by a publish takes the publish's `now`, and a
    held version shed at the lease's end takes `ended_at`, so a key's lowest rank can be
    shed last (N30).
+   - **Answered (2026-11-24):** yes. A comment on `entity SupersededRecord` says that
+     `shed_at` is the time the version was shed and does not order a key's versions, and
+     that `rank` does. The operator listing of T39 must not present `shed_at` order as
+     version order.
 9. **How are the temporal triggers processed?** The specification names no process that
    notices a due trigger (N33). Is "nothing is due once a tick returns" intended, so that
    an entry a lapse creates with a zero TTL decays in the same tick (N35)? PD05's
    hand-back also asks whether a tick should be atomic as a whole; the double commits each
    lapse and each decay as it goes.
+   - **Ruled (2026-11-24):** a tick drains: one `now`, every due lapse, then every due
+     decay, until nothing is due at that `now`. So an entry a lapse creates with a zero
+     TTL decays in the same tick, as both implementations already do.
+   - **Not yet ruled:** whether a tick is atomic as a whole, and whether a tick with
+     nothing due advances the latest time.
+   - **Lands in:** `tickets/T42-clock-model.md`.
 10. **Does a rejected action have a `now`?** S085 says a changed mark "reads no clock".
     The double reads the clock at most once per outcome and only when a rule reads `now`,
     so a refusal reads none. Is that behaviour the specification should state, or a
     property of the Rust's clock (N28)?
+    - **Ruled (2026-11-24):** the specification is to model the clock. The maintainer's
+      reason: the clock is central to correct behaviour, so the specification should model
+      it and so account for ordering anomalies. Time never runs back, and a refusal does
+      not advance it. The starting position for the source is a wall-clock reading taken
+      once at start plus monotonic time elapsed since.
+    - **Lands in:** `tickets/T42-clock-model.md`, designed together with finding 9.
 11. **Is a claim that hands nothing intended?** A pull with a limit that is not positive
     claims the front pocket and hands an empty batch, so a consumer probing with
     `limit = 0` takes the pocket from every other consumer until its lease ends (N19).
+    - **Ruled (2026-11-24):** no. A pull with a limit below 1 by a consumer with no lease
+      claims no pocket and hands nothing. Inside a held lease it still extends the lease
+      with an empty batch, as today. What the pull answers in the first case is settled
+      with findings 2 and 5.
+    - **Lands in:** `tickets/T46-no-claim-without-records.md`. It is a behaviour change,
+      and S031 and S032 move with it.
 12. **Does an idle pocket's position mean anything?** An idle pocket keeps the position
     it had, which no rule reads and a revival replaces (N27).
+    - **Not ruled as asked (2026-11-24):** the maintainer asks a wider question: should
+      `position` be a property of the Pocket at all, or a concern of the Queue the pockets
+      sit in? If it stays on the Pocket, the leaning is to clear it on idling, so that it
+      is null while the pocket is idle. The specification is unchanged for now.
+    - **Lands in:** `tickets/T40-pocket-order-model.md`, which explores the two models for
+      pockets only and changes no behaviour itself.
 13. **Should the specification fix its numeric domains?** Is the queue's first position
     meant to be unspecified, given that six rows assert absolute positions that hold only
     because the double starts at 0 (N04, N16)? Should a rank be bounded, so that S019's
     64-bit extremes are every implementation's boundary (N03, N17)? Does any rule depend
     on a time resolution finer than a millisecond, or on two events never sharing a
     timestamp (N01)?
+    - **Ruled (2026-11-24), the first position:** it is settled by the start-rule ticket,
+      after the pocket-order decision. The six rows stay `impl-choice` until then. Lands
+      in `tickets/T47-start-rule-and-config-bounds.md`.
+    - **Ruled (2026-11-24), a rank:** a rank is to be bounded, and the width is researched
+      first, against primary sources. No bound is stated until the maintainer rules on the
+      options. Lands in `tickets/T44-rank-width-research.md`.
+    - **Ruled (2026-11-24), time:** `now` never decreases and may repeat, so two events
+      can share a timestamp; no rule depends on a resolution, and milliseconds is each
+      implementation's choice. The clock ticket checks each rule for the equal-timestamp
+      case. Lands in `tickets/T42-clock-model.md`.
 14. **Is "refused at configuration" the intended reading of "the model is defined
     for"?** The double refuses a config that breaks a config invariant when it is made,
     and S005's compile-time refusal becomes a run-time one (N09).
+    - **Ruled (2026-11-24):** the refusal becomes a rule. Starting a deployment is a
+      trigger whose `requires` are the five config bounds, and it creates the Queue.
+    - **Lands in:** `tickets/T47-start-rule-and-config-bounds.md`, which also settles
+      whether the Rust's compile-time refusal of a negative `Duration` satisfies a rule
+      that refuses at run time.
 15. **Is `ArrivalPositionUnoccupied` meant to range over a record paired with itself?**
     It has no `a != b`, so it overlaps `DeferredArrivedAfterHeld`. That is harmless, but
     the two then name the same state (N07).
+    - **Answered (2026-11-24):** no. `ArrivalPositionUnoccupied` gains `a != b`, so a
+      record paired with itself is `DeferredArrivedAfterHeld`'s alone. The double's
+      checker and the Rust's test fixture changed with it; no reachable state is judged
+      differently.
 
-What each trigger answers, the subject of finding 2, as the notes record it:
+What each trigger answers, the subject of finding 2, as the notes record it. The table
+is the state before T43 lands; the ruling of 2026-11-24 gives pull, renew, ack and nack
+the lease's `expires_at` as their answer:
 
 | Trigger | The specification | The double | The Rust | Note |
 | --- | --- | --- | --- | --- |
@@ -256,6 +382,9 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
     through `Queue.pull`'s return value, since it is an answer, not state.
 - **Question:** should `Batch` carry the lease's `expires_at`? A consumer needs it to
   know when to renew, and the `Consuming` surface exposes it only through the lease.
+- **Ruling (2026-11-24):** under finding 2, yes: a pull answers the lease's `expires_at`,
+  and so do a renew, an ack and a nack, since each works under the lease and extends it.
+  `tickets/T43-caller-contract.md` lands it.
 
 ### N24: an ended lease stays in the state, and a release and a mark answer nothing
 
@@ -293,6 +422,11 @@ fenced lease into two refusals, is ambiguous, and N33, the Rust's tick report, i
   showed it does not, and the two lines above now say so. The specification's letter
   still keeps every ended lease, so the ticket's Open points propose that it say one may
   be forgotten, and, with N05, that a lease's identity is never reused.
+- **Ruling (2026-11-24):** under finding 2, an ack and a nack are to answer the lease's
+  `expires_at`. What a release answers, and whether a mark tells a first from a repeat,
+  are put to the maintainer by `tickets/T43-caller-contract.md`. Under finding 3 the
+  specification is to say that an ended lease may be forgotten and that a lease's id is
+  never reused.
 
 ### N31: S091's record order is the Rust's inspection shape, not behaviour
 
@@ -333,6 +467,9 @@ flowchart LR
   read by key, and the by-key port of S091 stands. The Rust's key order is a promise of
   its own `testing` API. The order of the lease view's held records is a different
   question, and stays with N23.
+- **Ruling (2026-11-24):** the ruling of 2026-11-20 stands. Finding 7's ruling makes the
+  order of the entries S091's lease end creates the specification's (N29); the positions
+  its kept records hold are still read by key.
 
 ### N32: a deferral answers nothing, where the Rust answers `Superseded`
 
@@ -359,6 +496,9 @@ flowchart LR
   specification's behaviour. Every ported publish row that the Rust checks for an outcome
   now asserts that the publish answers nothing, through `fixtures.publish_answers_nothing`,
   and the Rust's outcomes are not ported. The question above stays open.
+- **Ruling (2026-11-24):** under finding 2, what a publish answers is put to the
+  maintainer by `tickets/T43-caller-contract.md`, with examples. The ruling of 2026-11-19
+  stands until then.
 
 ### N38: PD05's ports of the Rust's inspection shapes
 
@@ -404,6 +544,10 @@ flowchart LR
   pocket's records is not part of the contract (N31). The pocket order is only derived
   from positions: the Rust's stored order is the index its claim takes from, and checking
   that index is a test of the Rust, with no counterpart in the double.
+- **Ruling (2026-11-24):** the rulings of 2026-11-20 stand. Whether the pocket order
+  belongs on the Pocket or on the Queue is now asked under finding 12, which
+  `tickets/T40-pocket-order-model.md` explores; S075's port is unchanged until it is
+  ruled.
 
 ## Where the specification is ambiguous
 
@@ -441,16 +585,20 @@ and N26 each also label one hand-built test `impl-choice`.
 - **Ticket:** PD01.
 - **Concerns:** the invariants of the form `for a in X: for b in X: a != b implies …`,
   such as `UniquePublisherId`, `OnePocketPerKey` and `UniqueRecordPosition`; and
-  `ArrivalPositionUnoccupied`, which has no `a != b`.
+  `ArrivalPositionUnoccupied`, which had no `a != b` until the ruling below.
 - **The specification says:** `a != b` between two entities of one collection.
 - **The double does:** it reads `a != b` as two distinct members of the collection, so
   two publishers with equal fields still count as two and break `UniquePublisherId`.
-  `ArrivalPositionUnoccupied` ranges over every pair, a record paired with itself
-  included, so a held record whose `deferred_position` equals its own `position` breaks
-  it as well as `DeferredArrivedAfterHeld`.
-- **Question:** is `ArrivalPositionUnoccupied` meant to include `b = a`? It is
-  harmless, since `DeferredArrivedAfterHeld` already rules that state out, but it means
-  the two overlap.
+  Until the ruling below, `ArrivalPositionUnoccupied` ranged over every pair, a record
+  paired with itself included, so a held record whose `deferred_position` equals its own
+  `position` broke it as well as `DeferredArrivedAfterHeld`. It now ranges over distinct
+  pairs like the others, and that state breaks `DeferredArrivedAfterHeld` alone.
+- **Question:** was `ArrivalPositionUnoccupied` meant to include `b = a`? It was
+  harmless, since `DeferredArrivedAfterHeld` already rules that state out, but it meant
+  the two overlapped.
+- **Ruling (2026-11-24):** under finding 15, no. The invariant gains `a != b`, and the
+  double's checker reads it over distinct pairs. A record that defers to its own position
+  breaks `DeferredArrivedAfterHeld` alone, and the test asserts that one name.
 
 ### N08: a field declared `when status = …` is the entity's shape, not an invariant
 
@@ -490,6 +638,9 @@ and N26 each also label one hand-built test `impl-choice`.
 - **Question:** should a second join with the same id be refused, as here, or succeed
   and change nothing, which the specification's words also allow? The Rust refuses it
   (`JoinError::PublisherExists`), and the catalog rows S009 and S010 say "joins once".
+- **Ruling (2026-11-24):** under findings 4 and 5, the question is moot: joining is
+  dropped, and with it both join rules and S009 and S010. `tickets/T45-drop-joining.md`
+  lands it.
 
 ### N14: the Pull table's refusal is unreachable
 
@@ -521,6 +672,12 @@ and N26 each also label one hand-built test `impl-choice`.
 - **Question:** are the two `requires` meant as guards, or as restatements of what the
   invariants already give? If restatements, the specification could say so, or drop
   them.
+- **Ruling (2026-11-24):** under finding 6, the two `requires` are restatements and stay.
+  Each carries a comment in the specification that names what it restates, the selection
+  or `UnleasedHasNoActiveLease`, and says it cannot fail in a valid state. `PullRefused`
+  and its hand-built test stay. `tickets/T46-no-claim-without-records.md` adds a
+  `requires` on the limit to `PullClaimsFrontPocket`, after which a Pull rule no longer
+  always holds; it updates this note.
 
 ### N21: the refusals of a mark are the double's: `LeaseFenced`, `RecordNotHeld`, `MarkConflict`
 
@@ -563,6 +720,10 @@ flowchart TD
 - **Question:** is a refusal's kind the specification's to name at all? If so, should it
   name these three, and the order in which they are checked (S070's `ack` by `c3` of a
   key the lease does not hold is fenced, not "not held")?
+- **Ruling (2026-11-24):** under finding 5, yes: a refusal's kind is the specification's
+  to name, with the order in which the refusals are checked.
+  `tickets/T43-caller-contract.md` puts the names and the order to the maintainer; the
+  double's three and its lease-record-mark order stand until then.
 
 ### N26: the Release table's refusal past fencing is unreachable
 
@@ -584,6 +745,8 @@ The figure under [N14](#n14-the-pull-tables-refusal-is-unreachable) sets this ta
 
 - **Question:** as N14: is `requires: pocket.status = leased` a guard, or a restatement of
   `UnleasedHasNoActiveLease`?
+- **Ruling (2026-11-24):** as N14: a restatement, labelled in both Release rules.
+  `ReleaseRefused` and its hand-built test stay.
 
 ### N28: a refused action reads no clock (S085)
 
@@ -604,6 +767,9 @@ The figure under [N14](#n14-the-pull-tables-refusal-is-unreachable) sets this ta
 - **Question:** is "reads no clock" behaviour the specification should state, for
   instance that a rejected action has no effect at all, time included? Or is it a property
   of the Rust's monotonic clock only?
+- **Ruling (2026-11-24):** under finding 10, the specification is to model the clock: time
+  never runs back, and a refusal does not advance it. `tickets/T42-clock-model.md`
+  explores the model.
 
 ### N35: an entry a lapse creates with a zero TTL decays in the same tick
 
@@ -637,6 +803,8 @@ sequenceDiagram
 
 - **Question:** is "nothing is due once a tick returns" intended? The other reading,
   that an entry made in a tick waits for the next one, also satisfies every rule.
+- **Ruling (2026-11-24):** under finding 9, yes: a tick drains until nothing is due at its
+  `now`. `tickets/T42-clock-model.md` lands the wording.
 
 ### N37: the expiry rules' answer when no guard holds is unreachable through `tick()`
 
@@ -665,6 +833,10 @@ The figure under [N14](#n14-the-pull-tables-refusal-is-unreachable) sets this ta
 - **Question:** as N14 and N26: are the expiry rules' `lease.status = active` and
   `lease.expires_at <= now` guards in their own right, or restatements of what
   `LeaseLapses` already established in the same chain?
+- **Ruling (2026-11-24):** under finding 6, these two guards wait on the clock ticket.
+  `tickets/T42-clock-model.md`'s definition of a tick decides whether noticing and
+  applying a lapse are one step, which makes them restatements and rewrites the Lease
+  expiry comment, or two, which makes them guards.
 
 ## Where the specification is silent
 
@@ -685,6 +857,10 @@ scenarios that rest on it.
   exact, so `expires_at = now + ttl` never rounds. The fake clock starts at 0.
 - **Question:** does any rule depend on a resolution finer than a millisecond, or on two
   events sharing a timestamp being impossible? The double lets them share one.
+- **Ruling (2026-11-24):** under finding 13, `now` never decreases and may repeat, so two
+  events can share a timestamp; no rule depends on a resolution, and milliseconds is each
+  implementation's choice. `tickets/T42-clock-model.md` checks each rule for the
+  equal-timestamp case.
 
 ### N03: a rank is an unbounded integer
 
@@ -697,6 +873,9 @@ scenarios that rest on it.
   and very large ranks all order as integers. Positions are unbounded `int` too.
 - **Question:** should the specification bound a rank? An implementation with a
   fixed-width integer refuses or wraps a rank the double accepts.
+- **Ruling (2026-11-24):** under finding 13, a rank is to be bounded, once
+  `tickets/T44-rank-width-research.md` has researched the width against primary sources
+  and the maintainer has ruled on the options. No bound is stated until then.
 
 ### N05: a lease has an id, which the specification does not declare
 
@@ -713,6 +892,10 @@ scenarios that rest on it.
   distinct.
 - **Question:** should the specification declare a lease's identity, since a caller has
   to be able to name one lease apart from a successor with the same pocket and consumer?
+- **Ruling (2026-11-24):** under finding 3, yes. A lease has an id in the specification, a
+  UUIDv7, unique for the deployment's life, never reused, and exposed in the `Batch` and
+  the lease view. `tickets/T43-caller-contract.md` lands it; the double's injected
+  lease-id source stands until then.
 
 ### N11: the equal-rank publish is the Publish table's refusal, `EqualRankRefused`
 
@@ -752,6 +935,9 @@ flowchart TD
 
 - **Question:** none on the behaviour, which open question 1's closure decided. The
   refusal's name is the double's.
+- **Ruling (2026-11-24):** under finding 5, the specification is to name its refusals.
+  `tickets/T43-caller-contract.md` puts the names to the maintainer; `EqualRankRefused`
+  stays the double's until then.
 
 ### N15: a pull draws a lease id only when it creates a lease
 
@@ -786,6 +972,9 @@ flowchart LR
 
 - **Question:** none, unless the maintainer wants lease identity in the specification
   (N05).
+- **Ruling (2026-11-24):** under finding 3, the maintainer wants lease identity in the
+  specification (N05). `tickets/T43-caller-contract.md` works out what an id draws on: a
+  UUIDv7 carries a timestamp and random bits.
 
 ### N17: S019's large ranks are a 64-bit integer's extremes, not the double's
 
@@ -803,6 +992,7 @@ flowchart LR
     specification's `Integer`.
 - **Question:** as N03: should the specification bound a rank, so that S019's values
   become the boundary for every implementation?
+- **Ruling (2026-11-24):** as N03.
 
 ### N19: a pull whose limit is not positive still claims a pocket
 
@@ -840,6 +1030,11 @@ sequenceDiagram
   `PullWithinLease` explains why an empty batch extends a held lease, but not why a
   non-positive limit claims a new one. A consumer probing with `limit = 0` takes a pocket
   away from every other consumer until it releases it or the lease lapses.
+- **Ruling (2026-11-24):** under finding 11, a claim that hands nothing is not intended.
+  `PullClaimsFrontPocket` gains `requires: limit >= 1`; inside a held lease a pull with
+  a limit below 1 still extends the lease with an empty batch, as today.
+  `tickets/T46-no-claim-without-records.md` lands it, and `tickets/T43-caller-contract.md`
+  settles what the pull answers.
 
 ### N20: Renew's refusal is `LeaseFenced`, and an unknown lease id meets it
 
@@ -867,18 +1062,24 @@ The refusal order of a mark, which reuses `LeaseFenced`, is drawn under [N21](#n
 
 - **Question:** none on the behaviour. The refusal's name is the double's, and whether
   an unknown lease is a distinct refusal is left to PD03.
+- **Ruling (2026-11-24):** under finding 5, the specification is to name its refusals;
+  whether a lease that is not active and a lease that is another consumer's are one
+  refusal or two is put to the maintainer by `tickets/T43-caller-contract.md`. Under
+  finding 3 an implementation may forget an ended lease, so an id never issued and an
+  ended one may be refused alike.
 
 ### N25: one lease end sends `Freed` smallest held position first
 
 - **Ticket:** PD03.
 - **Concerns:** the `Freed(lease, record_key, ended_at)` event, the five rules that end a
   lease (`for record in pocket.held_records: Freed(...)`), and the Lease end comment.
-- **The specification says:** the ending rule sends one `Freed` per held record. A set has
+- **The specification said, until the ruling below:** the ending rule sends one `Freed` per held record. A set has
   no order, and `Freed` names the lease as an entity.
 - **The double does:**
   - `lease_end.end_lease` sends `Freed` in order of the held records' positions, smallest
     first. The order decides the order of the dead letters, and in PD04 of the superseded
-    records, that one end creates. PD04's S091 pins that order as `impl-choice`.
+    records, that one end creates. PD04's S091 pins that order, as `impl-choice` until the
+    ruling below.
   - `Freed.lease` is the lease's id (N05, N06). Each row reads the ended lease from the
     state, for its pocket and consumer.
   - With nothing deferred no scenario can tell the order: S047's and S086's ends create
@@ -888,6 +1089,9 @@ The figure under [N34](#n34-one-tick-lapses-in-expires_at-order-then-decays-in-q
 
 - **Question:** should the specification order the entries one lease end creates, or say
   that their order is not observable?
+- **Ruling (2026-11-24):** under finding 7, the specification orders them: one lease end
+  sends `Freed` smallest held position first. The Lease end comment and the
+  `HeldRecordsOldestFirst` guarantee state it, and the double already did it.
 
 ### N27: an idle pocket keeps its position
 
@@ -912,6 +1116,11 @@ flowchart TD
 
 - **Question:** does an idle pocket's position mean anything? If not, the specification
   might say so, so that no reader orders idle pockets by it.
+- **Ruling (2026-11-24):** under finding 12, not ruled as asked. The maintainer asks
+  whether `position` belongs on the Pocket at all or is the Queue's concern, and
+  `tickets/T40-pocket-order-model.md` explores it. If it stays on the Pocket, the leaning
+  is to make it optional and null while the pocket is idle. The specification is unchanged
+  until then.
 
 ### N30: a deferred version shed by a later publish takes the publish's `now`
 
@@ -946,6 +1155,10 @@ flowchart TD
   20 ms, but `v1`, the lowest rank, is shed only when the lease ends, later. Is that
   intended, and should a reader of the superseded queue be told that `shed_at` does not
   order a key's versions?
+- **Ruling (2026-11-24):** under finding 8, yes. A comment on `entity SupersededRecord`
+  says that `shed_at` is the time the version was shed and does not order a key's
+  versions, and that `rank` does. `tickets/T39-decide-q2-q6.md` carries the same line for
+  the operator listing.
 
 ### N33: `tick()` is the double's only clock, and it reports what it did
 
@@ -974,6 +1187,9 @@ flowchart TD
 - **Question:** should the specification, or a surface, name how the temporal triggers
   are processed and what that processing reports? Today the report is the
   implementation's to choose.
+- **Ruling (2026-11-24):** under findings 9 and 10, the specification is to say how the
+  temporal triggers are processed: a tick that drains at one `now`. What a tick reports is
+  an open point of `tickets/T42-clock-model.md`.
 
 ### N34: one tick lapses in `expires_at` order, then decays in queue order
 
@@ -991,10 +1207,14 @@ flowchart TD
     the report and in the order in which two lapses' `Freed` rows add their entries to
     the shed queues, as N29 says of one end's entries.
 
-![Two orders the double picks. One lease end (N25, N29): end_lease sends Freed smallest held position first, so any entries one end creates are added in that order; in S091 the superseded queue gains z then b and the dead letters y then a, the reverse of key order. One tick (N34): the due lapses, smallest expires_at first and equal ones in the order the leases were granted; then the due superseded records, oldest entry first; then the due dead letters, oldest entry first.](diagrams/ordering.svg)
+![Two orders: one the specification states, one the double picks. One lease end (N25, N29), the specification's since 2026-11-24: end_lease sends Freed smallest held position first, so any entries one end creates are added in that order; in S091 the superseded queue gains z then b and the dead letters y then a, the reverse of key order. One tick (N34), the double's choice: the due lapses, smallest expires_at first and equal ones in the order the leases were granted; then the due superseded records, in the queue's order; then the due dead letters, in the queue's order.](diagrams/ordering.svg)
 
 - **Question:** as N29: should the specification order what several lapses in one tick
   create, or say that the order is not observable?
+- **Ruling (2026-11-24):** under finding 7, not ruled yet.
+  `tickets/T41-tick-order-investigation.md` documents what the double does, verifies what
+  the Rust does and explains, with worked examples, what each order makes visible, so that
+  the maintainer can rule. It feeds `tickets/T42-clock-model.md`.
 
 ### N36: only a publish revives a parked pocket (open question 7, closed)
 
@@ -1034,7 +1254,9 @@ flowchart LR
 ## The `impl-choice` rows
 
 A catalog row the double ports although it asserts more than the specification states.
-Each such test carries the `impl-choice` label and names its note.
+Each such test carries the `impl-choice` label and names its note. N23 and N29 were two
+of them until 2026-11-24, when the maintainer's ruling on finding 7 made their orders the
+specification's. They keep their place here and their tests lose the label.
 
 ### N04: the queue's first position is 0 (S011, S014 and S016 are `impl-choice`)
 
@@ -1055,6 +1277,11 @@ Each such test carries the `impl-choice` label and names its note.
   specification's.
 - **Question:** is the starting value meant to be unspecified? Only order and uniqueness
   are observable through the rules, so any start satisfies them.
+- **Ruling (2026-11-24):** under finding 13, the first position is an open point of
+  `tickets/T47-start-rule-and-config-bounds.md`, settled after the pocket-order decision
+  of `tickets/T40-pocket-order-model.md`. The maintainer notes that the starting value may
+  matter once a write-ahead log and recovery exist. S011, S014 and S016 stay `impl-choice`
+  until then.
 
 ### N09: a config that breaks a config invariant is refused when it is made (S005 is `impl-choice`)
 
@@ -1080,6 +1307,11 @@ Each such test carries the `impl-choice` label and names its note.
     all three TTLs, where the Rust tags only `lease_ttl`'s doctest with S005.
 - **Question:** is "refused at configuration" the intended reading of "the model is
   defined for", or should the specification state the refusal itself?
+- **Ruling (2026-11-24):** under finding 14, the specification is to state the refusal as
+  a rule: starting a deployment is a trigger whose `requires` are the five config bounds,
+  and it creates the Queue. `tickets/T47-start-rule-and-config-bounds.md` lands it and
+  settles whether the Rust's compile-time refusal of a negative `Duration` satisfies it.
+  S005 stays `impl-choice` until then.
 
 ### N10: a publish by a publisher that never joined is refused (`impl-choice`)
 
@@ -1118,6 +1350,10 @@ flowchart LR
 - **Question:** should the specification say that a publish requires a joined
   publisher, for example as a `requires` on each Publish rule or as a surface
   guarantee? As written, the guard of every Publish rule ignores the publisher.
+- **Ruling (2026-11-24):** under finding 4, joining is dropped, so no publish requires a
+  joined publisher: `entity Publisher`, `PublisherJoins` and the publisher argument of
+  `Publish` go. `tickets/T45-drop-joining.md` lands it; `UnknownPublisher` and this test
+  stand until then.
 
 ### N16: S012, S015 and S022 assert absolute positions (`impl-choice`)
 
@@ -1147,6 +1383,7 @@ moves by 10 and the relative facts hold.
 | S022 | the pocket stays at 0 | 10 | N16 |
 
 - **Question:** as N04.
+- **Ruling (2026-11-24):** as N04.
 
 ### N18: a pull or a renew by a consumer that never joined is refused (`impl-choice`)
 
@@ -1169,6 +1406,9 @@ The gate is drawn under [N10](#n10-a-publish-by-a-publisher-that-never-joined-is
 
 - **Question:** should the specification say that a pull and a renew require a joined
   consumer, as N10 asks for a publish?
+- **Ruling (2026-11-24):** under finding 4, no: joining is dropped. A consumer id is
+  supplied by the caller and accepted on first use, with no registration.
+  `tickets/T45-drop-joining.md` lands it; `UnknownConsumer` stands until then.
 
 ### N22: an ack, nack, release or lease read by a consumer that never joined is refused (`impl-choice`)
 
@@ -1185,12 +1425,13 @@ The gate is drawn under [N10](#n10-a-publish-by-a-publisher-that-never-joined-is
 The gate is drawn under [N10](#n10-a-publish-by-a-publisher-that-never-joined-is-refused-impl-choice).
 
 - **Question:** as N18.
+- **Ruling (2026-11-24):** as N18.
 
-### N23: S090's lease view lists the held records smallest position first (`impl-choice`)
+### N23: S090's lease view lists the held records smallest position first
 
 - **Ticket:** PD03.
 - **Concerns:** the `Consuming` surface's `exposes` block and scenario S090.
-- **The specification says:** for the consumer's active lease, the surface exposes
+- **The specification said, until the ruling below:** for the consumer's active lease, the surface exposes
   `lease.pocket.key`, `lease.expires_at`, and for each record of
   `lease.pocket.held_records` its key, `held_rank`, `held_payload` and `mark`. A set has
   no order. The block exposes no lease identity.
@@ -1200,19 +1441,25 @@ The gate is drawn under [N10](#n10-a-publish-by-a-publisher-that-never-joined-is
     no active lease. It reads the committed snapshot only, and no clock.
   - The records are listed smallest position first, which is the order a pull handed
     them out in. S090 publishes `z`, `a` and `m` in that order and pins that order, not
-    key order. That is more than the surface states, so the row is `impl-choice`.
+    key order. That was more than the surface stated, so the row was `impl-choice` until
+    the ruling below.
   - The view carries no lease id, as the surface exposes none. A consumer names its lease
     by the id its batch carried (N05, N13).
 - **Question:** should the surface state an order for the held records? And should it
   expose the lease's identity, which every action it provides takes?
+- **Ruling (2026-11-24):** under finding 7, yes to the order: the `Consuming` surface's
+  `HeldRecordsOldestFirst` guarantee lists the held records smallest position first, so
+  S090 is the specification's and its test loses the `impl-choice` label. Under finding 3,
+  yes to the identity too: the lease view is to expose the lease's id, which
+  `tickets/T43-caller-contract.md` lands.
 
-### N29: S091 pins the order of the entries one lease end creates (`impl-choice`)
+### N29: S091 pins the order of the entries one lease end creates
 
 - **Ticket:** PD04.
 - **Concerns:** the five rules that end a lease (`for record in pocket.held_records:
   Freed(...)`), `SupersedeUnsettledHeldVersion`, `DeadLetterNackedRecord`, the Lease end
   comment, and scenario S091.
-- **The specification says:** the ending rule sends one `Freed` for each held record, a
+- **The specification said, until the ruling below:** the ending rule sends one `Freed` for each held record, a
   set with no order. Each `SupersededRecord.created` and `DeadLetter.created` adds an
   entry to a queue the specification lists in no order either.
 - **The double does:**
@@ -1220,15 +1467,19 @@ The gate is drawn under [N10](#n10-a-publish-by-a-publisher-that-never-joined-is
     records and the dead letters one end creates are added in that order too. S091
     asserts it through `Queue`: `z` then `b` in the superseded queue, `y` then `a` in
     the dead letters, against a key order that is the reverse.
-  - The test carries the `impl-choice` label. The entries themselves, their `shed_at`
-    and `expires_at` at the lease's end, and the kept positions are the
-    specification's.
+  - The test carried the `impl-choice` label until the ruling below. The entries
+    themselves, their `shed_at` and `expires_at` at the lease's end, and the kept
+    positions were the specification's already.
   - S091 is the first scenario that can tell the order, so N25's "no scenario can tell"
     holds only for PD03's rows.
-  - Decision 0020's Consequences say the same: the specification leaves this order
-    open, and the library pins smallest held position first.
+  - Decision 0020's Consequences said the same: the specification left this order
+    open, and the library pins smallest held position first. The record now carries a
+    dated line on the ruling below.
 
 The figure under [N34](#n34-one-tick-lapses-in-expires_at-order-then-decays-in-queue-order) draws this order beside one tick's.
 
 - **Question:** as N25: should the specification order the entries one lease end
   creates, or say that their order is not observable?
+- **Ruling (2026-11-24):** as N25. S091's order of entries is the specification's, and its
+  test loses the `impl-choice` label. The positions its kept records hold are still read
+  by key (N31).

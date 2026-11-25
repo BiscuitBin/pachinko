@@ -254,12 +254,12 @@ class PositionControlsTest(CheckerTestCase):
         moved = replace(IN_QUEUED, position=DEFERRED.deferred_position)
         self.assert_names(replace(BASE, records=swap(BASE.records, IN_QUEUED, moved)), {"ArrivalPositionUnoccupied"})
 
-    def test_a_record_deferring_to_its_own_position_is_unoccupied_too(self) -> None:
-        # The invariant has no `a != b`, so a record is paired with itself; its
-        # own position also breaks DeferredArrivedAfterHeld.
+    def test_a_record_deferring_to_its_own_position_is_not_a_pair(self) -> None:
+        # The invariant has `a != b`, so a record is never paired with itself:
+        # its own position breaks DeferredArrivedAfterHeld alone.
         own = replace(DEFERRED, deferred_position=DEFERRED.position)
         state = replace(BASE, records=swap(BASE.records, DEFERRED, own))
-        self.assert_names(state, {"ArrivalPositionUnoccupied", "DeferredArrivedAfterHeld"})
+        self.assert_names(state, {"DeferredArrivedAfterHeld"})
 
     # invariant-control: UniqueArrivalPosition
     def test_two_deferred_versions_with_one_arrival_position(self) -> None:

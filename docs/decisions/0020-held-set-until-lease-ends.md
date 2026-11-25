@@ -70,6 +70,9 @@ version is a new arrival, queued where it arrived.
 - The specification leaves the order of the entries one lease end creates open; the
   library pins one, smallest held position first
   ([Testing](../reference/testing.md#tests-from-the-specifications)).
+  The maintainer ruled otherwise on 2026-11-24: the specification now states that order,
+  as the `Consuming` guarantee `HeldRecordsOldestFirst`, and the library's pinned order
+  is the one it states.
 
 The lease-end work moved from the ack to the release and the lapse:
 

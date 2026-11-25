@@ -2,7 +2,7 @@
 id: T39
 title: "Land the operator listing of the shed queues (question 2) and new-pocket-first (question 6), both ruled"
 status: todo
-depends_on: [T35]
+depends_on: [T35, T40]
 parallel_with: []
 branch: ticket/t39-decide-q2-q6
 estimated_size: L
@@ -76,13 +76,38 @@ An operator lists both shed queues, read-only. There is no replay and no consumi
 The ruling leaves four things undecided. Step 1 puts each to the maintainer; none is
 assumed:
 
-1. The listing's order.
+1. The listing's order. One thing about it is ruled (2026-11-24, finding 8 of
+   `double/SPEC-NOTES.md`): the listing must not present `shed_at` order as version
+   order. `shed_at` is the time a version was shed and does not order a key's versions;
+   `rank` does, as the comment on `entity SupersededRecord` says.
 2. Whether a listing covers the whole deployment or one pocket.
-3. Whether an Operator is an entity that joins, as `Publisher` and `Consumer` do, or an
-   `actor`.
+3. How an Operator exists in the specification: an `actor`, or an entity. The module's
+   `Publisher` and `Consumer` are entities that a join creates, and the maintainer ruled
+   on 2026-11-24 that joining is dropped (`tickets/T45-drop-joining.md`), so an Operator
+   that joins is not a model to copy. Read what T45 has merged before asking.
 4. The route's transport and authentication under decision 0019
    (`docs/decisions/0019-service-runtime-tokio-and-http.md`), which records that the
    service has no authentication and listens on loopback by default.
+
+### Tickets written after this one
+
+On 2026-11-24 the maintainer ruled on the findings of `double/SPEC-NOTES.md`, and
+tickets T40 to T47 carry the rulings that add behaviour. Four of them touch this one.
+Re-read what each has merged at step 3:
+
+- **T40** (`tickets/T40-pocket-order-model.md`) decides whether the pocket order
+  belongs on the Pocket or on the Queue. This ticket depends on it, so that
+  `new_pocket_first` is designed once, on the model that wins. The suggested model above
+  assumes pocket positions as they are today.
+- **T42** (`tickets/T42-clock-model.md`) owns the Lease expiry comment and may change
+  what a lapse does. This ticket's rewording of that comment and of
+  `ExpiryRecoversWithinTtl`, and its "a lapse keeps the pocket's standing", start from
+  whatever T42 has merged.
+- **T45** (`tickets/T45-drop-joining.md`) drops joining, which changes undecided point
+  3 above.
+- **T46** (`tickets/T46-no-claim-without-records.md`) changes scenarios S031 and S032.
+  "Every existing scenario stays green unchanged" below means the scenarios as they
+  stand on `main` when this ticket starts.
 
 ### The four closures already in the module
 

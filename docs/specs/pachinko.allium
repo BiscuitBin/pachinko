@@ -222,6 +222,10 @@ entity Record {
     }
 }
 
+-- shed_at is the time the version was shed, and it does not order a
+-- key's versions: a held version is shed at its lease's end, after
+-- versions published later were shed, and a stale publish is shed as it
+-- arrives. rank orders a key's versions.
 entity SupersededRecord {
     pocket: Pocket
     key: String
@@ -509,6 +513,8 @@ rule PullWithinLease {
     let lease = Lease{consumer: consumer, status: active}
     requires: exists lease
     let pocket = lease.pocket
+    -- Restates UnleasedHasNoActiveLease: an active lease's pocket is
+    -- leased, so this cannot fail in a state the invariants hold in.
     requires: pocket.status = leased
     let batch = oldest(pocket.queued_records, r => r.position, min(limit, config.max_pull_batch))
     ensures: lease.expires_at = now + config.lease_ttl
@@ -524,6 +530,8 @@ rule PullClaimsFrontPocket {
     let free = Pockets where status = queued
     requires: free.count > 0
     let pocket = min_by(free, p => p.position)
+    -- Restates the selection: pocket is one of the queued pockets, so
+    -- this cannot fail.
     requires: pocket.status = queued
     let batch = oldest(pocket.queued_records, r => r.position, min(limit, config.max_pull_batch))
     ensures: Lease.created(
@@ -662,6 +670,8 @@ rule ReleaseRequeuesPocket {
     requires: lease.status = active
     requires: lease.consumer = consumer
     let pocket = lease.pocket
+    -- Restates UnleasedHasNoActiveLease: an active lease's pocket is
+    -- leased, so this cannot fail in a state the invariants hold in.
     requires: pocket.status = leased
     requires: pocket.records.count > pocket.ending_records.count
     let position = queue.next_position
@@ -684,6 +694,7 @@ rule ReleaseIdlesEmptyPocket {
     requires: lease.status = active
     requires: lease.consumer = consumer
     let pocket = lease.pocket
+    -- Restates UnleasedHasNoActiveLease, as in ReleaseRequeuesPocket.
     requires: pocket.status = leased
     requires: pocket.records.count = pocket.ending_records.count
     ensures: lease.status = released
@@ -810,6 +821,12 @@ rule LeaseExpiryIdlesEmptyPocket {
 -- was processed as nacked_at and decays dead_letter_ttl after the
 -- lease's end, and a superseded record made here has shed_at at the
 -- lease's end. Decided by the maintainer on 2026-11-13.
+--
+-- One lease end sends Freed for its held records smallest position
+-- first, so the SupersededRecords and the DeadLetters that end creates
+-- are created in that order (HeldRecordsOldestFirst). Allium 3 has no
+-- ordered form for the loop that sends them, so the order is stated
+-- here. Decided by the maintainer on 2026-11-24.
 
 rule RequeueUnsettledRecord {
     when: Freed(lease, record_key, ended_at)
@@ -1061,11 +1078,13 @@ invariant RecordPositionsBelowNext {
 -- A deferred version's arrival position came from the same counter as
 -- every position, so no record stands there and no two deferred versions
 -- share one. A record that takes its arrival position when the lease ends
--- therefore keeps UniqueRecordPosition.
+-- therefore keeps UniqueRecordPosition. A record's arrival position
+-- against its own position is DeferredArrivedAfterHeld's, so the pair
+-- here is of two records. Decided by the maintainer on 2026-11-24.
 invariant ArrivalPositionUnoccupied {
     for a in Records:
         for b in Records:
-            a.status = held and a.deferred_position != null
+            a != b and a.status = held and a.deferred_position != null
                 implies a.deferred_position != b.position
 }
 
@@ -1168,6 +1187,12 @@ surface Consuming {
         -- in that order, never more than max_pull_batch and never more
         -- than limit when limit is positive; a limit that is not positive
         -- yields an empty batch, not an error.
+
+    @guarantee HeldRecordsOldestFirst
+        -- The held records exposed for a lease are listed in order of
+        -- position, smallest first. A lease's end takes them in the same
+        -- order, so the SupersededRecords and the DeadLetters one end
+        -- creates are created smallest held position first.
 
     @guarantee OneVisitPerKeyPerLease
         -- A key handed out under a lease is not handed out again under

@@ -61,7 +61,15 @@ snapshot.
 | T36 | Diagram drift: a check that the committed SVGs match the script that draws them, and where that script lives | `T36-diagram-drift-check.md` | T35 | T33 | todo |
 | T37 | Review and ticket hygiene: §14's Codex command, triage at size S, a shell lint over ticket fences, and short shas in typos | `T37-review-command-and-ticket-shell.md` | T35 | T33, T36 | todo |
 | T38 | Slow-client spike: the unbounded connection, and existing ways to bound it | `T38-slow-client-spike.md` | T33 | none | todo |
-| T39 | Land the operator listing of the shed queues (question 2) and new-pocket-first (question 6), both ruled | `T39-decide-q2-q6.md` | T35 | none | todo |
+| T39 | Land the operator listing of the shed queues (question 2) and new-pocket-first (question 6), both ruled | `T39-decide-q2-q6.md` | T35, T40 | none | todo |
+| T40 | Decide where the pocket order lives: a position on the Pocket, or an order the Queue owns | `T40-pocket-order-model.md` | T35 | none | todo |
+| T41 | Tick order: what one tick does first in the double and in the Rust, and what each order lets a caller or an operator see | `T41-tick-order-investigation.md` | none | none | todo |
+| T42 | Explore the clock model (findings 9, 10 and 13c, and finding 6's N37), have it ruled, then create the tickets that land it | `T42-clock-model.md` | T41 | none | todo |
+| T43 | Decide the caller contract: what each action answers, the lease's id, and the named refusals and their order | `T43-caller-contract.md` | none | none | todo |
+| T44 | Research the width of a rank against primary sources, and put the options to the maintainer | `T44-rank-width-research.md` | none | none | todo |
+| T45 | Drop joining for publishers and consumers; a caller-supplied consumer id stays, accepted on first use | `T45-drop-joining.md` | none | none | todo |
+| T46 | No claim without records: a pull with a limit below 1 by a consumer with no lease claims no pocket (finding 11, ruled) | `T46-no-claim-without-records.md` | T43 | none | todo |
+| T47 | State the start of a deployment as a rule that requires the config bounds and creates the Queue, and settle the Queue's first position | `T47-start-rule-and-config-bounds.md` | T40, T43 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -82,9 +90,20 @@ T00 ─┬─ T01 ────────────┐
 The MVP wave, after T19:
 
 ```text
-T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35 ── T39
-                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33 ── T38
+T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ T32 ── T35 ── T40 ─┬─ T39
+                 ├─ T27 ───────┴─ T30 ─┤       ├─ T33 ── T38        └─ T47
                  └─ T29 ───────────────┘       └─ T34
+```
+
+The tickets from the rulings of 2026-11-24 on the Python double's findings. T40 hangs
+from T35 above, and T39 and T47 wait on it; T44 and T45 depend on no ticket:
+
+```text
+T41 ── T42
+T43 ─┬─ T46
+     └─ T47
+T44
+T45
 ```
 
 The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2, then T19 and
@@ -197,6 +216,20 @@ the MVP wave.
   2026-11-24 that add behaviour: an operator's read-only listing of the shed queues
   (the module's question 2) and the `new_pocket_first` switch (question 6). The same
   rulings closed questions 3, 4, 5 and 7 in the module's wording alone.
+- **The findings wave, T40 to T47.** `double/SPEC-NOTES.md` on the branch
+  `build-python-double` put fifteen findings about the module to the maintainer, who
+  ruled on the last fourteen on 2026-11-24. Four rulings changed no behaviour and went
+  into the module with that commit. The rest are these eight tickets. Three explore a
+  model, stop for a ruling and then write the tickets that land it: T40 (where the
+  pocket order lives), T42 (the clock, fed by T41's investigation of the order of work
+  within one tick) and T43 (what each action answers, the lease's id and the named
+  refusals). T44 researches a rank's width against primary sources. Three implement a
+  ruling: T45 drops joining, T46 stops a pull that hands nothing from claiming a pocket,
+  and T47 states the start of a deployment as a rule. T39 now waits on T40, so that
+  `new_pocket_first` is designed once on the pocket-order model that wins. T42, T43's
+  follow-up and T45 each revise decision 0019. The tickets were drafted by one subagent
+  each and reviewed once by two Codex `gpt-6-astra` lenses before the commit; they have
+  not had the two-round review the follow-up set had.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

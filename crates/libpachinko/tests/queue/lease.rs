@@ -769,6 +769,7 @@ fn at_an_expiry_limit_of_one_a_marked_version_with_a_deferred_one_parks_with_it_
 // obligation: rule-success.SupersedeUnsettledHeldVersion
 // obligation: rule-success.DeadLetterNackedRecord
 // obligation: guarantee.HeldSetStableUntilLeaseEnds
+// obligation: guarantee.HeldRecordsOldestFirst
 #[test]
 fn the_entries_one_lease_end_creates_come_out_smallest_held_position_first() {
     let mut fixture = Fixture::new();
