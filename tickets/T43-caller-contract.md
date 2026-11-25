@@ -323,7 +323,7 @@ T47 have the two answers they wait on. No behaviour has changed.
 | --- | --- | --- |
 | `docs/decisions/<nnnn>-caller-contract.md` | new | The decision record: context, the rulings, the drafted specification text, each open point with its options and the maintainer's answer, the consequences, what would reopen it |
 | `docs/manifest.yml`, `docs/decisions/README.md` | shared, own lines | The record's manifest entry and its row; the "next decision" sentence |
-| `tickets/T<nn>-*.md` | new | The follow-up tickets step 6 creates |
+| `tickets/T<nn>-*.md` | new | The follow-up tickets step 6 creates; each that changes the specification carries the Quint model's conditional row and step, written out in full as step 6 says, whether or not this ticket's base holds `quint/pachinko.qnt` |
 | `tickets/README.md` | shared, own lines | The follow-up rows and graph edges; T43's Status cell |
 | `tickets/T43-caller-contract.md` | ticket | `status:` and hand-back notes |
 
@@ -400,6 +400,36 @@ T47 have the two answers they wait on. No behaviour has changed.
    Add each follow-up's row and edges to `tickets/README.md`. Tell the maintainer
    that T46 and T47 can now be given their answers; editing those two tickets is their
    owners' work unless the maintainer asks for it here.
+
+   **The Quint model.** A Quint model derived from the specification,
+   `quint/pachinko.qnt`, may exist when a follow-up runs, whether or not this ticket's
+   base holds it. So each follow-up ticket that changes `docs/specs/pachinko.allium`
+   carries the model's obligation, written out in full and conditional on the tree it
+   lands on, at its base or after its closing merge or rebase, which its closing step
+   reads again: a follow-up never cites a scratch path or this ticket for it. Its Files
+   touched has one row, classed
+   `shared, own lines, if the tree this ticket lands on holds quint/pachinko.qnt`, for
+   `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`,
+   `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`,
+   `crates/libpachinko/tests/queue/walk/model/trace.rs` and
+   `double/tests/test_replay.py`, each only where the base holds it. Its steps have
+   one, under the same condition, that says all of this in its own words: the model
+   moves in the same change wherever it models what the ticket changes (the same-change
+   rule in `AGENTS.md`, and the decision record under `docs/decisions/` that introduced
+   the model); each mutant patch the edit breaks is re-cut, keeping its mutation and the
+   property it names, and listed in the hand-back; if `quint/traces/` exists,
+   `just quint-traces` regenerates it, and each replay that exists stays green, the
+   Rust test in `just test` and `double/tests/test_replay.py` in `just python-double`,
+   with a field or a step the model gained either mapped or added to that replay's own
+   list of what it does not compare, beside the ticket that will map it, and a step
+   only with the maintainer's answer on which ticket that is; then
+   `just check-quint` runs, and
+   `just verify-quint` if the recipe exists, the fixtures first because both gates fail
+   on a model whose hash the fixtures do not record. The step names what the ticket
+   touches in the model: every consumer action, what a step hands back (the model's
+   `answer`), the lease's id and the named refusals; and in the two replays: how each
+   maps a lease, what each compares of an answer, and the two rows of each replay's
+   list that wait for this contract, a refusal's name and a lease id's value.
 7. **Close.** Set `status: done` here and in `tickets/README.md`, and write the
    hand-back notes.
 

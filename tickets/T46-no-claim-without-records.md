@@ -318,6 +318,7 @@ now true, and catalog rows S031 and S032 pin the new behaviour.
 | `double/pachinko_double/pull.py`, `refusals.py`, `queue.py`, `exceptions.py` | shared, own lines, if the base holds `double/` | The claim guard; the Pull table's answer for the gap; the docstrings that say a Pull rule always holds |
 | `double/tests/test_pull.py`, `test_publish.py`, `test_interface.py` | shared, own lines, if the base holds `double/` | S031, S032, `PullGuardsTest`, the N14 hand-built test, S022's last line |
 | `double/SPEC-NOTES.md`, `double/README.md`, `double/diagrams/unreachable-answers.svg` | shared, own lines, if the base holds `double/` | Finding 11, N19, N14, N15's flowchart, the rulings table; the guide's Pull table; the figure's text if made false |
+| `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`, `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`, `crates/libpachinko/tests/queue/walk/model/trace.rs`, `double/tests/test_replay.py` | shared, own lines, if the tree this ticket lands on holds `quint/pachinko.qnt`, at the base or after the closing merge or rebase, and each path only where that tree holds it | `guard_PullClaimsFrontPocket` with `limit >= 1`, the rule or refusal T43 decided for the gap, and the `OldestFirst` property's wording; each mutant patch the edit breaks, re-cut; the trace fixtures, regenerated if they exist, with their generator and the two replays that read them, where the gap's answer changes what a step hands back |
 | `tickets/README.md` | shared, own lines | T46's Status cell |
 | `tickets/T46-no-claim-without-records.md` | ticket | `status:` and hand-back notes |
 
@@ -354,6 +355,8 @@ now true, and catalog rows S031 and S032 pin the new behaviour.
      or by a new row.
    - The base branch. If `main` does not hold `double/`, say so and ask whether the
      double moves here or in a follow-up.
+   - The Quint model. Step 7's paragraph "The Quint model" names three cases, which
+     step 0 checks beside the baseline; if one holds, put its question here.
 
    Stop until the maintainer answers, and quote the answers in the hand-back, dated. An
    answer that names something outside these points is a new design: record it and stop
@@ -406,6 +409,47 @@ now true, and catalog rows S031 and S032 pin the new behaviour.
    reachable and which answer, if any, is still met only on a hand-built state; N15's
    flowchart and the `unreachable-answers` figure's text are corrected where they say a
    Pull row always holds. Cite notes by N-id and finding number.
+
+   **The Quint model**, if the tree this ticket lands on holds `quint/pachinko.qnt`, at
+   the base or after the closing merge or rebase onto `main`: that model is derived
+   from this specification, so the same change updates it wherever it models what this
+   ticket changes. Read the condition again after that merge: if it brought in the
+   model, `quint/traces/` or a replay the base did not hold, this paragraph is done
+   then, before any gate runs, each stop in it included. The rule is the same-change
+   rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
+   the model; both exist wherever the model does.
+   Here that is the claim's guard, the answer T43 decided for the gap, and
+   the `OldestFirst` property. In this order: edit the model; re-cut each mutant patch
+   under `quint/mutants/` that the edit breaks, keeping its mutation and the property it
+   names, and list each in the hand-back; if `quint/traces/` exists, run
+   `just quint-traces` to regenerate it, changing `scripts/quint-traces.py` where a
+   witness changes, and keep each replay that exists green, the Rust test under
+   `crates/libpachinko/tests/queue/walk/` in `just test` and
+   `double/tests/test_replay.py` in `just python-double`, where a field or a step the
+   model gained is either mapped or added to that replay's own list of what it does not
+   compare, with the ticket that will map it, and a step only with the maintainer's
+   answer on which ticket that is; then run `just check-quint`, and
+   `just verify-quint` if the recipe exists. The fixtures come before the two gates
+   because both fail on a model whose hash the fixtures do not record. Where the
+   model's header lists the behaviour under "Not yet modelled", change nothing there
+   and say so in the hand-back.
+
+   **Stop and ask, and decide it before this ticket's first edit, not at this step,**
+   in any of three cases. One: the base holds `quint/pachinko.qnt` and the model has no
+   pull at a positive limit yet, which its header says under "Not yet modelled",
+   whatever the line's words, and which the pull limits of its instance show (-1 and 0
+   only). Two: the base holds no `quint/pachinko.qnt` but holds
+   `.scratch/quint-model/README.md`, and that file's index does not show its ticket
+   QM05 as `done`. In both, the model's only claim, built or planned, is one at a limit
+   that is not positive, which this ticket removes, and `PullClaimsFrontPocket` would be
+   left with no witness there. Three: the base holds neither file. `main` cannot then
+   say whether a Quint model of this specification is being built on another base,
+   which that series allows, so the files' absence is not an answer: ask the
+   maintainer, with step 1's questions, whether one is, and whether its pull at a
+   positive limit has landed there, and go on only with the answer quoted in the
+   hand-back. The maintainer decides whether this ticket waits or the series changes
+   its plan. Run the checks in step 0, beside the baseline, and quote what they
+   found.
 8. **The handbook.** Use the `review-docs` skill for every page in Files touched. Rows
    S031 and S032 in `docs/reference/testing.md` carry their new titles and test names.
    `docs/reference/http-api.md` states the new answer in the route table and in each

@@ -344,7 +344,8 @@ a caller can observe has changed.
 | --- | --- | --- |
 | `docs/decisions/<nnnn>-clock-model.md` | new | The decision record; `<nnnn>` is the next free number when step 5 runs, since T40 and T43 write records too |
 | `docs/manifest.yml`, `docs/decisions/README.md`, `docs/README.md` | shared, own lines | The record's registration, its row in the index, and its link where the other decisions are listed |
-| `tickets/T<nn>-*.md` | new | The follow-up tickets, numbered from the next free id when step 7 runs |
+| `tickets/T<nn>-*.md` | new | The follow-up tickets, numbered from the next free id when step 7 runs; each that changes the specification carries the Quint model's conditional row and step, written out in full as step 7 says, whether or not this ticket's base holds `quint/pachinko.qnt` |
+| `.scratch/quint-model/QM09-clock-timestamps-decay.md`, `.scratch/quint-model/QM11-replay-lapses-and-time.md`, `.scratch/quint-model/README.md` | shared, own lines, if the base holds them, whether or not it holds `quint/pachinko.qnt` | QM09's `depends_on` and its "Blocked by" cell in the index: `T42` replaced by the id of the specification ticket step 7 creates. QM11's `depends_on` and its "Blocked by" cell: the id of the ticket that lands the ruled clock in the Rust, added if it is another ticket |
 | `tickets/README.md` | shared, own lines | T42's Status cell; the follow-up tickets' rows and their place in the graph |
 | `tickets/T42-clock-model.md` | ticket | `status:` and hand-back notes |
 
@@ -477,6 +478,49 @@ a caller can observe has changed.
 
    Each names its dependencies on T39, T40, T43, T45 and T47 as "The other tickets"
    states them. Add their rows and their place in the graph to `tickets/README.md`.
+
+   **The Quint model.** A Quint model derived from the specification,
+   `quint/pachinko.qnt`, may exist when a follow-up runs, whether or not this ticket's
+   base holds it. So each follow-up ticket that changes `docs/specs/pachinko.allium`
+   carries the model's obligation, written out in full and conditional on the tree it
+   lands on, at its base or after its closing merge or rebase, which its closing step
+   reads again: a follow-up never cites a scratch path or this ticket for it. Its Files
+   touched has one row, classed
+   `shared, own lines, if the tree this ticket lands on holds quint/pachinko.qnt`, for
+   `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`,
+   `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`,
+   `crates/libpachinko/tests/queue/walk/model/trace.rs` and
+   `double/tests/test_replay.py`, each only where the base holds it. Its steps have
+   one, under the same condition, that says all of this in its own words: the model
+   moves in the same change wherever it models what the ticket changes (the same-change
+   rule in `AGENTS.md`, and the decision record under `docs/decisions/` that introduced
+   the model); each mutant patch the edit breaks is re-cut, keeping its mutation and the
+   property it names, and listed in the hand-back; if `quint/traces/` exists,
+   `just quint-traces` regenerates it, and each replay that exists stays green, the
+   Rust test in `just test` and `double/tests/test_replay.py` in `just python-double`,
+   with a field or a step the model gained either mapped or added to that replay's own
+   list of what it does not compare, beside the ticket that will map it, and a step
+   only with the maintainer's answer on which ticket that is; then
+   `just check-quint` runs, and
+   `just verify-quint` if the recipe exists, the fixtures first because both gates fail
+   on a model whose hash the fixtures do not record. The step names what the ticket
+   touches in the model: `LeaseLapses`, the lease extensions, the two decay rules and
+   `ExpiryRecoversWithinTtl`. While the model has no clock (no `now` in
+   `quint/pachinko.qnt`), a ticket that only says when something is due changes nothing
+   in the model and says so in its hand-back; the Quint series' own clock ticket adds
+   the clock afterwards.
+
+   **The Quint series' two blockers**, if the base holds the files named here, whether
+   or not it holds `quint/pachinko.qnt`. The series' clock ticket, QM09, waits for the
+   follow-up that changes the specification: replace `T42` with that ticket's id in
+   `depends_on` of `.scratch/quint-model/QM09-clock-timestamps-decay.md` and in QM09's
+   "Blocked by" cell of the index in `.scratch/quint-model/README.md`. The series'
+   ticket QM11 replays the model's timed traces in the Rust, and waits for the follow-up
+   that lands the ruled clock in the Rust: if that is another ticket than the one
+   above, add its id to `depends_on` of
+   `.scratch/quint-model/QM11-replay-lapses-and-time.md` and to QM11's "Blocked by" cell
+   of the same index. If the base does not hold those files, name both ids in the
+   hand-back as owed to the series.
 
    **Adversarial review** (`CONVENTIONS.md` §14), over the recorded ruling and the new
    ticket files. Ask: whether each ticket can be run by an agent with no context;

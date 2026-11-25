@@ -206,6 +206,7 @@ changes nothing.
 | `docs/how-to/work-with-the-specs.md`, `docs/explanation/specifications.md`, `docs/explanation/prior-art.md`, `docs/explanation/security-model.md`, `docs/project/purpose-and-scope.md`, `docs/project/terminology.md` | shared, own lines | The open-question counts and lists, which fall to none; the closures; the operator route's exposure; any new term |
 | `README.md`, `crates/libpachinko/README.md`, `CHANGELOG.md` | shared, own lines | "who reads them is an open question"; the signatures; both Unreleased sections |
 | `double/**` | shared, own lines, if the base holds it | The double's config, rules, tests, guide and `double/SPEC-NOTES.md`, whose "Open questions left untouched" section then lists none |
+| `quint/pachinko.qnt`, `quint/verify.txt`, `quint/mutants/*.patch`, `quint/traces/*`, `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`, `crates/libpachinko/tests/queue/walk/model/trace.rs`, `double/tests/test_replay.py` | shared, own lines, if the tree this ticket lands on holds `quint/pachinko.qnt`, at the base or after the closing merge or rebase, and each path only where that tree holds it | `new_pocket_first` in the configuration, with an instance that sets it and its line in `quint/verify.txt`; the standing step 1 ruled for a new pocket, in `PublishIntoNewPocket`, in the claim's choice of pocket and in each rule that clears it; the properties that transcribe the reworded Lease expiry comment and `ExpiryRecoversWithinTtl`, where the model has them; each mutant patch the edit breaks, re-cut, and one new mutant on the claim of a new pocket; the trace fixtures, regenerated if they exist, with their generator and the two replays that read them |
 | `tickets/README.md` | shared, own lines | T39's Status cell |
 | `tickets/T39-decide-q2-q6.md` | ticket | `status:` and hand-back notes |
 
@@ -250,6 +251,52 @@ changes nothing.
    `just semver` as the change needs them.
 7. **The double**, if the base holds it: the same rules, its tests, its guide and its
    notes, with `just python-double` green.
+
+   **The Quint model**, if the tree this ticket lands on holds `quint/pachinko.qnt`, at
+   the base or after the closing merge or rebase onto `main`: that model is derived
+   from this specification, so the same change updates it wherever it models what this
+   ticket changes. Read the condition again after that merge: if it brought in the
+   model, `quint/traces/` or a replay the base did not hold, this paragraph is done
+   then, before any gate runs, each stop in it included. The rule is the same-change
+   rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
+   the model; both exist wherever the model does.
+   Here that is more than the publish: `new_pocket_first` in the
+   configuration; the standing step 1 ruled for a new pocket, where
+   `PublishIntoNewPocket` gives it, where the claim prefers it and where a release,
+   idling and a revival clear it; and, where the model already has them, the properties
+   that transcribe the Lease expiry comment and `ExpiryRecoversWithinTtl`, reworded as
+   step 4 rewords the module. The operator's listing reads state and changes none.
+
+   Both values of the switch are checked, or the model has not followed the ruling: a
+   model that carries the field and still claims by position alone must not pass. So
+   `just verify-quint` covers an instance with `new_pocket_first` on beside the one
+   with it off, a run on that instance reaches a new pocket claimed ahead of an older
+   one, and one new mutant on that path (the claim ignores the standing) is caught by
+   the property the patch names. If a second instance does not fit the verify job's
+   timeout, **stop and ask**; never drop an instance or shrink a domain.
+
+   That check is owed only where the model has `PublishIntoNewPocket`. An earlier
+   model has the claim and no publish, so no rule gives a pocket the standing and no
+   run can reach a new pocket: there, change only what a rule the model already has
+   reads, leave the rest to the model's own ticket for publish, which reads this
+   specification at its base, and say in the hand-back that the check of both values
+   was not owed and why. If the model has `PublishIntoNewPocket` and the tree has no
+   `just verify-quint` recipe, **stop and ask** how the check is to be shown.
+
+   In this order: edit the model; re-cut each mutant patch under `quint/mutants/` that
+   the edit breaks, keeping its mutation and the property it names, and list each in
+   the hand-back; if `quint/traces/` exists, run `just quint-traces` to regenerate it,
+   changing `scripts/quint-traces.py` where a witness or the start changes, and keep
+   each replay that exists green, the Rust test under
+   `crates/libpachinko/tests/queue/walk/` in `just test` and
+   `double/tests/test_replay.py` in `just python-double`, where a field or a step the
+   model gained is either mapped or added to that replay's own list of what it does not
+   compare, with the ticket that will map it, and a step only with the maintainer's
+   answer on which ticket that is; then run `just check-quint`, and
+   `just verify-quint` if the recipe exists. The fixtures come before the two gates
+   because both fail on a model whose hash the fixtures do not record. Where the
+   model's header lists the behaviour under "Not yet modelled", change nothing there
+   and say so in the hand-back.
 8. **The handbook.** Use the `review-docs` skill for every page in Files touched. Run
    `just check-docs`.
 9. **Close.** Set `status: done` here and in `tickets/README.md`, and write the

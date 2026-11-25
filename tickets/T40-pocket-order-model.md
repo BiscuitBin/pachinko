@@ -271,7 +271,7 @@ crates and the double are byte-for-byte what they were.
 | `docs/decisions/README.md` | shared, own lines | The record's row, and the "next decision is" sentence |
 | `docs/manifest.yml` | shared, own lines | The record's entry, shaped as decision 0020's |
 | `docs/README.md` | shared, own lines | Only if `just check-docs` requires the record to be linked there; decision 0020 is reached through `docs/decisions/README.md` alone |
-| `tickets/T<nn>-<slug>.md`, one per follow-up | new | The update tickets step 7 writes, at the next free ids |
+| `tickets/T<nn>-<slug>.md`, one per follow-up | new | The update tickets step 7 writes, at the next free ids; each that changes the specification carries the Quint model's conditional row and step, written out in full as step 7 says, whether or not this ticket's base holds `quint/pachinko.qnt` |
 | `tickets/README.md` | shared, own lines | T40's Status cell; the follow-up tickets' rows and their place in the graph |
 | `tickets/T39-decide-q2-q6.md`, `tickets/T47-start-rule-and-config-bounds.md` | shared, own lines | Only as step 6 authorises: `depends_on`, and a dated note on what the ruling means for each |
 | `tickets/T40-pocket-order-model.md` | ticket | `status:` and hand-back notes |
@@ -416,6 +416,35 @@ crates and the double are byte-for-byte what they were.
    say so, and name the one-line follow-up that marks finding 12 answered. Add each
    ticket's row to `tickets/README.md` and place it in the graph. Edit T39 and T47 only
    as step 6 authorised.
+
+   **The Quint model.** A Quint model derived from the specification,
+   `quint/pachinko.qnt`, may exist when a follow-up runs, whether or not this ticket's
+   base holds it. So each follow-up ticket that changes `docs/specs/pachinko.allium`
+   carries the model's obligation, written out in full and conditional on the tree it
+   lands on, at its base or after its closing merge or rebase, which its closing step
+   reads again: a follow-up never cites a scratch path or this ticket for it. Its Files
+   touched has one row, classed
+   `shared, own lines, if the tree this ticket lands on holds quint/pachinko.qnt`, for
+   `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`,
+   `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`,
+   `crates/libpachinko/tests/queue/walk/model/trace.rs` and
+   `double/tests/test_replay.py`, each only where the base holds it. Its steps have
+   one, under the same condition, that says all of this in its own words: the model
+   moves in the same change wherever it models what the ticket changes (the same-change
+   rule in `AGENTS.md`, and the decision record under `docs/decisions/` that introduced
+   the model); each mutant patch the edit breaks is re-cut, keeping its mutation and the
+   property it names, and listed in the hand-back; if `quint/traces/` exists,
+   `just quint-traces` regenerates it, and each replay that exists stays green, the
+   Rust test in `just test` and `double/tests/test_replay.py` in `just python-double`,
+   with a field or a step the model gained either mapped or added to that replay's own
+   list of what it does not compare, beside the ticket that will map it, and a step
+   only with the maintainer's answer on which ticket that is; then
+   `just check-quint` runs, and
+   `just verify-quint` if the recipe exists, the fixtures first because both gates fail
+   on a model whose hash the fixtures do not record. The step names what the ticket
+   touches in the model: the section that holds the pocket order, the effects that
+   state a position (a claim's, a release's and a revival's), the two pocket-position
+   invariants, and `pocket_order` in each replay's list of what it does not compare.
 
    **Adversarial review** (`CONVENTIONS.md` §14), checkpoint T40-3, over the new tickets
    and the amended record. Ask: can each ticket be run by an agent with no context; does
