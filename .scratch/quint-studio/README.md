@@ -84,11 +84,13 @@ publishes the MCP endpoint on host loopback and connects Claude Code to it.
 
 ## Adversarial review
 
-Each ticket runs `tickets/CONVENTIONS.md` §14 with Codex (Astra, `gpt-6-astra`) as the
-reviewer, with the deltas `.scratch/apalache/AP01-java-and-verify.md` writes under
-"Adversarial review", since T37, which corrects §14's command, is still todo. QS01 has
-four checkpoints, numbered in its "Adversarial review" section: one before each of its two
-"Authorisation required" stops, run only if the stop is reached; one over the choices
-of steps 3 to 5, which the later steps build on; and one over its hand-back notes before
-its final commit. QS02 to QS05 each have two: over the builder's plan before any
-tracked file changes, and over the diff before the final commit.
+Each ticket runs `tickets/CONVENTIONS.md` §14 with Codex (Sol, `gpt-6.2-sol`) as the
+reviewer, by the maintainer's choice of 2026-11-25, with the deltas
+`.scratch/apalache/AP01-java-and-verify.md` writes under "Adversarial review", since
+T37, which corrects §14's command, is still todo. AP01's command and §14 print
+`gpt-6-astra`; each ticket states the change of model as a delta. QS01 has four
+checkpoints, numbered in its "Adversarial review" section: one before each of its two
+"Authorisation required" stops, run only if the stop is reached; one over the choices of
+steps 3 to 5, which the later steps build on; and one over its hand-back notes before
+its final commit. QS02 to QS05 each have two: over the builder's plan before any tracked
+file changes, and over the diff before the final commit.

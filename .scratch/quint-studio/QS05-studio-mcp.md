@@ -114,7 +114,11 @@ the maintainer rules at step 4, with checkpoint 1's findings in hand.
 
 This ticket follows `tickets/CONVENTIONS.md` §14, with the deltas
 `.scratch/apalache/AP01-java-and-verify.md` writes under "Adversarial review" (T37 is
-still todo). `<id>` is `QS05`. There are two checkpoints, at steps 3 and 8.
+still todo). One delta overrides them: the reviewer is Codex Sol, `-m gpt-6.2-sol`, in
+place of the `-m gpt-6-astra` that AP01's command and §14 print, by the maintainer's
+choice of 2026-11-25. AP01's fallback to a fresh-context `claude-opus-5-5` subagent
+still applies, and the hand-back notes record the model that ran. `<id>` is `QS05`.
+There are two checkpoints, at steps 3 and 8.
 
 ## Files touched
 

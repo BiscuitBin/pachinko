@@ -121,9 +121,13 @@ notes, "Claims", as holds, fails, or holds with a stated change.
 ## Adversarial review
 
 This ticket follows `tickets/CONVENTIONS.md` §14, with the deltas
-`.scratch/apalache/AP01-java-and-verify.md` writes under "Adversarial review" (T37, which
-corrects §14's command, is still todo). `<id>` is `QS01`. There are four checkpoints,
-each with a fixed number, so that `ai_tmp/review/QS01-<n>/` never changes meaning:
+`.scratch/apalache/AP01-java-and-verify.md` writes under "Adversarial review" (T37,
+which corrects §14's command, is still todo). One delta overrides them: the reviewer is
+Codex Sol, `-m gpt-6.2-sol`, in place of the `-m gpt-6-astra` that AP01's command and
+§14 print, by the maintainer's choice of 2026-11-25. AP01's fallback to a fresh-context
+`claude-opus-5-5` subagent still applies, and the hand-back notes record the model that
+ran. `<id>` is `QS01`. There are four checkpoints, each with a fixed number, so that
+`ai_tmp/review/QS01-<n>/` never changes meaning:
 
 1. In step 3, before its "Authorisation required" stop, over what the stop will ask for.
 2. In step 4, before its "Authorisation required" stop, over the Rosetta install.
