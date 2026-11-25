@@ -92,9 +92,13 @@ just lock-check
 
 This runs `cargo update --workspace --locked --offline`, once for the workspace and once
 each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run`,
-and `npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock. None
-rewrites a lockfile or installs a package; npm writes only its log, under its cache
-outside the worktree. It is gate 2 of
+`npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock, and
+`scripts/check-apalache-pin.sh`, which fails unless the `quint=` line of
+`tools/quint/apalache.txt` is the Quint CLI version both npm files pin
+([Moving the Apalache pin](#moving-the-apalache-pin)). None
+rewrites a lockfile, installs a package or fetches anything; npm creates its cache and
+log directories if they are missing and writes its log there, wherever its configuration
+puts them (by default `~/.npm`, outside the worktree). It is gate 2 of
 `just check`, so a manifest edited without relocking fails the gate rather than
 drifting. Being offline, it fails on a cold Cargo cache rather than fetching the
 registry index; `just sync` fills the cache. The npm check needs no cache: a lock that
@@ -306,19 +310,51 @@ just install-quint
 just quint --version
 ```
 
-Read the `package-lock.json` diff before committing it with the manifest. `just lock`
-uses the pixi environment's npm, so no global Node is needed. A Quint release can move
-the versions of the Rust evaluator and Apalache it downloads on first use; read its
-release notes, then run `just quint run` on a module once, so the new evaluator lands in
-`.quint/`. Those downloads are pinned by the CLI's version and checked by nothing else.
+`just lock-check` now fails until the Apalache pin has been reviewed against the new CLI,
+as [Moving the Apalache pin](#moving-the-apalache-pin) describes. Read the
+`package-lock.json` diff before committing it with the manifest and the pin file.
+`just lock` uses the pixi environment's npm, so no global Node is needed. A Quint release
+can move the version of the Rust evaluator it downloads on first use; read its release
+notes, then run `just quint run` on a module once, so the new evaluator lands in
+`.quint/`. That download is pinned by the CLI's version and checked by nothing else.
+
+### Moving the Apalache pin
+
+`tools/quint/apalache.txt` pins the Apalache that `verify` and `compile --target tlaplus`
+run: `quint=` names the Quint CLI version it was reviewed against, `apalache=` the
+Apalache version, and `sha256=` the SHA-256 of that release's `apalache.tgz`. Renovate
+does not track it. After the CLI moves, read the Apalache version the new CLI expects:
+
+```console
+grep DEFAULT_APALACHE_VERSION_TAG tools/quint/node_modules/@informalsystems/quint/dist/src/apalache.js
+```
+
+If it is the `apalache=` version, only `quint=` changes. If it moved, download
+`https://github.com/apalache-mc/apalache/releases/download/v<version>/apalache.tgz` and
+the same release's `sha256sum.txt` into an empty directory under `ai_tmp/`, hash the
+archive with both `sha256sum apalache.tgz` and `shasum -a 256 apalache.tgz`, and compare
+both with the `apalache.tgz` line of `sha256sum.txt`. Only when all three agree, edit
+`quint=`, `apalache=` and `sha256=`, then install and check:
+
+```console
+just install-apalache
+just lock-check
+```
+
+`just install-apalache` refuses a pin the installed CLI's tag disagrees with, and replaces
+the old tree. `just lock-check` checks only that `quint=` was edited, not that the tag was
+read, so the review is the maintainer's.
 
 Apalache runs on the `openjdk` that `pyproject.toml` pins exactly, so `just lock-upgrade`
 never moves it: edit the version by hand, like pixi's other exact pins, then `just lock`
 and `just sync`. A Quint release whose Apalache needs a newer Java needs this pin moved
 with it; run `just quint verify` on a module once to confirm.
 
-Renovate's `quint` group proposes the same move. Approve it on the dashboard, check the
-branch out, and run `just install-quint` and the Quint commands you use before merging.
+Renovate's `quint` group proposes the same move, and gate 2 fails on its branch until the
+Apalache pin is reviewed. Approve it on the dashboard and check the branch out. Run
+`just install-quint` first, so the tag you read is the new CLI's and not the one installed
+before; then read the tag and edit the pin as above, run `just install-apalache` and
+`just lock-check`, and run the Quint commands you use before merging.
 
 ## Actions in the workflows
 

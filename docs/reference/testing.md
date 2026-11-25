@@ -425,7 +425,7 @@ cases: the probe pocket is not the front, no batch landed before `expires_at`, t
 takes more than 60 s, or the queue still holds a pocket after the drain.
 
 The recipe runs `cargo run --locked` against `loadgen/Cargo.lock`, which `just lock-check`
-checks beside the workspace, fuzz, pixi and Quint CLI lockfiles. The gates `fmt-check` and `clippy` cover the crate
+checks beside the workspace, fuzz, pixi and Quint CLI lockfiles and the Apalache pin. The gates `fmt-check` and `clippy` cover the crate
 by `--manifest-path`, as they cover `fuzz/`. `loadgen/Cargo.toml` copies the root lint
 table, so keep it aligned. `just test-loadgen` runs the crate's own unit tests, which
 `just test` cannot reach, and CI's `loadgen` job runs them; they are not a gate in

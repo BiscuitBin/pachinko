@@ -86,11 +86,11 @@ just initialize
 This installs the pixi environment from `pixi.lock`, installs the pinned toolchain,
 refuses a cargo that is not rustup's, installs cargo-hack, cargo-release and cargo-fuzz
 from `tools.txt` and rustqual from `tools-source.txt` into `.tools/bin`, then the Allium
-checker and the Quint CLI, syncs the four Cargo and pixi lockfiles, and installs the
+checker, the Quint CLI and the Apalache it runs, syncs the four Cargo and pixi lockfiles, and installs the
 pre-commit hook with every hook environment. Run it once per clone. It needs the network for the pixi environment, the
 toolchain, the `tools.txt` binaries, rustqual (a signed build if one exists, otherwise a
 build from its crates.io source),
-the Allium checker, the Quint CLI's npm packages, `cargo fetch` and the hook clones. It never formats, stages,
+the Allium checker, the Quint CLI's npm packages, Apalache, `cargo fetch` and the hook clones. It never formats, stages,
 commits, tags or pushes.
 
 The hook is installed from the primary checkout only, because every worktree shares one
@@ -149,7 +149,7 @@ It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.loc
 `fuzz/Cargo.lock` and `loadgen/Cargo.lock` name.
 After `tools.txt` or `tools-source.txt` has moved, run `just install-tools` as well; it
 skips a version that is already there. After `tools/quint/package-lock.json` has moved,
-run `just install-quint`.
+run `just install-quint`, then `just install-apalache`.
 
 ## Quint
 
@@ -165,12 +165,20 @@ just quint run path/to/module.qnt
 ```
 
 `typecheck` works offline. `run`, `test` and the REPL download Quint's Rust evaluator
-the first time, and `verify` and `compile --target tlaplus` download Apalache, which
-runs on the `openjdk` pixi pins; the `quint` recipe alone puts that `java` on `PATH`.
+the first time, unchecked, and so does a `verify` that reports a violation. `verify` and
+`compile --target tlaplus` run Apalache, which
+`just install-apalache` installs from the archive `tools/quint/apalache.txt` pins by
+SHA-256, and which runs on the `openjdk` pixi pins; the `quint` recipe alone puts that
+`java` on `PATH`. The recipe refuses `verify` and every `compile` until that install is in
+place and matches its stamp, and refuses any option naming Apalache except
+`--apalache-config`, so Quint never downloads Apalache itself through it, unless
+`just install-apalache` is replacing the tree while a run starts.
 `verify` and `compile --target tlaplus` use any Apalache server already listening on
-`localhost:8822`, whatever Java it runs on, and start their own only when none answers. Reporting a violation also needs the
-evaluator, downloaded on first use like Apalache. Every recipe sets `QUINT_HOME` to the gitignored `.quint/`,
-so those downloads land in the worktree and `~/.quint` is never written. A bare `quint`
+`localhost:8822`, or the one `--server-endpoint` names, whatever Java it runs on, and
+start their own only when none answers. Reporting a violation also needs the evaluator, which `verify` downloads then on first use.
+Every recipe sets `QUINT_HOME` to `.quint`, the gitignored `.quint/` directory, and it
+must stay exactly that value,
+so both land in the worktree and `~/.quint` is never written. A bare `quint`
 from your shell is not this one, or is nothing at all.
 
 ### Optional: Quint Studio

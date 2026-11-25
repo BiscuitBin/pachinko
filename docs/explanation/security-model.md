@@ -68,11 +68,17 @@ for tests are never a source to use where unpredictability matters.
   ([decision 0012](../decisions/0012-metrics-gate.md)). It also runs with the GitHub
   token unset, so the build scripts it compiles cannot read the token. The Quint CLI is
   the third exception: npm installs it from a lock that holds every package's integrity
-  hash, but on first use it downloads its Rust evaluator, and for `verify` and TLA+ compilation Apalache, from
-  GitHub releases at versions it pins and checks against no checksum
-  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). The Java Apalache
-  runs on comes from conda-forge through `pixi.lock`, like pixi's other tools; Apalache
-  itself is still unchecked. No gate runs those commands.
+  hash, but on first use it downloads its Rust evaluator from GitHub releases at a version
+  it pins and checks against no checksum
+  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). Apalache, for
+  `verify` and TLA+ compilation, is checked: `just install-apalache` installs the
+  archive whose SHA-256 `tools/quint/apalache.txt` pins, and the `quint` recipe refuses
+  those commands without that install. The check holds for non-concurrent use, since a
+  run that starts while the installer is replacing the tree can make Quint download
+  Apalache unchecked; its stamp detects a local change, not a rewrite of tree and stamp
+  together; and it cannot see which Apalache a server already on `localhost:8822`, or
+  one `--server-endpoint` names, runs. The Java Apalache runs on comes from conda-forge
+  through `pixi.lock`, like pixi's other tools. No gate runs those commands.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
   app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
   this one alone, and the one party outside the maintainer and GitHub Actions that holds

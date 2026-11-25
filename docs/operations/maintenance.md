@@ -38,7 +38,8 @@ moves all five lockfiles within the manifests' constraints — `Cargo.lock`,
 the exact tool pins, and `tools/quint/package-lock.json` beneath the Quint CLI's exact
 pin; run `just check` and commit all five. A tool pin itself moves in `pyproject.toml`, then
 `pixi update <name>`, then `pixi.lock` is committed; the Quint CLI's moves in
-`tools/quint/package.json`, then `just lock`, as
+`tools/quint/package.json`, then `just lock`, and the Apalache pin in
+`tools/quint/apalache.txt` is reviewed against it, since gate 2 fails until it is, as
 [The Quint CLI](../how-to/maintain-dependencies.md#the-quint-cli) describes. A line in `tools.txt` or
 `tools-source.txt` moves in Renovate's pull request once approved on the dashboard, and
 takes effect at the next `just install-tools`; a `tools-source.txt` line moves one release

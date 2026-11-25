@@ -81,7 +81,7 @@
       "dependencyDashboardApproval": true
     },
     {
-      "description": "The Quint CLI in tools/quint/package.json, pinned exactly, and package-lock.json relocked with it on the same branch; a stale lock fails lock-check. Quint pins the evaluator and Apalache it downloads on first use, so moving it moves them too (decision 0021). Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "description": "The Quint CLI in tools/quint/package.json, pinned exactly, and package-lock.json relocked with it on the same branch; a stale lock fails lock-check. Quint pins the evaluator it downloads on first use, so moving it moves that too. It also names the Apalache version it expects, which tools/quint/apalache.txt pins by SHA-256 and Renovate does not track: lock-check fails until that file's quint= names the new version, set after reading the new CLI's DEFAULT_APALACHE_VERSION_TAG and moving apalache= and sha256= if it moved (docs/how-to/maintain-dependencies.md, decision 0021). Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchManagers": ["npm"],
       "groupName": "quint",
       "dependencyDashboardApproval": true
