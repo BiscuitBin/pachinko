@@ -1,7 +1,7 @@
 ---
 id: AP01
 title: "A pinned Java runtime, and a working just quint verify"
-status: todo
+status: done
 depends_on: []
 parallel_with: []
 branch: ticket/ap01-java-and-verify
@@ -335,30 +335,334 @@ as written, saying so under Departures.
 
 ### 1. Base and branch
 
+Base `quint-spec` at `79b8cbdc61094c79feb0e38c0e3ac99a5e056939`. The work ran on
+`quint-spec` in this worktree, not on `ticket/ap01-java-and-verify` (Departures, item 1).
+The work landed as `5b74af38761f3f4b582b80a96085ab5d7070bf31`.
+
 ### 2. Baseline
+
+At `79b8cbd`, `just check` on the untouched worktree, exit 0:
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+At `79b8cbd`: `du -sk .pixi/envs/default` gave `345148`. `test -e "$HOME/.quint"` exited
+1, so `~/.quint` was absent and `home_existed=no`. `git status --short --ignored` was
+saved for step 5.
+
+At `5b74af3`, after the pin: `du -sk .pixi/envs/default` gave `686556`, so the
+environment grew from 337 MiB to 670 MiB on macOS. `~/.quint` was still absent.
 
 ### 3. Claims
 
+Read at `79b8cbd` (step 2) and run at the commits named.
+
+1. **Holds.** `pixi search -p linux-64 'openjdk 21.*'` gave `openjdk-21.0.13.1-h1602c4f_2`
+   as the newest build, and `osx-arm64` gave `openjdk-21.0.13.1-h2da27d0_2` (2026-11-23).
+2. **Holds.** Every class file in `apalache.jar` has major version 65 or lower (Java 21),
+   and the main class is 65. The launcher supports 21 explicitly. The v0.62.4 release
+   notes, read with `gh api repos/apalache-mc/apalache/releases/tags/v0.62.4`, list two
+   bug fixes and give no minimum Java. Every run passed on `openjdk version "21.0.13.1"
+   2026-11-17 LTS` (sections 5 and 9).
+3. **Holds.** `tar -tzf apalache.tgz` exited 0 and listed seven entries under one
+   top-level `apalache/`: `apalache/`, `apalache/bin/`, `apalache/bin/apalache-mc`,
+   `apalache/bin/apalache-mc.bat`, `apalache/lib/`, `apalache/lib/apalache.jar` and
+   `apalache/LICENSE`.
+4. **Failed as written.** The launcher runs a bare `java` from `PATH` and never reads
+   `JAVA_HOME`, so that half holds. But conda-forge's `openjdk` installs `java` at
+   `.pixi/envs/default/lib/jvm/bin/java`, and `.pixi/envs/default/bin/java` does not
+   exist. Its activation script would set `JAVA_HOME`, and recipes run no activation. With
+   pixi's `bin/` first on `PATH`, `apalache-mc` would therefore run whatever `java` comes
+   later. The builder stopped. The maintainer ruled that the `quint` recipe alone prefixes
+   `lib/jvm/bin` to `PATH` (Departures, item 3).
+5. **Holds.** After every run the spawned pid was gone within the bounded wait.
+   `lsof -nP -iTCP:8822 -sTCP:LISTEN` and `pgrep -fl apalache` both exited 1, and each
+   followed its positive control (sections 5 and 9).
+
 ### 4. What landed
+
+`5b74af3`, `git show --stat`:
+
+```text
+ .gitignore                                       |   4 ++++
+ Justfile                                         |  13 +++++++++++--
+ docs/decisions/0021-project-managed-quint-cli.md |  19 +++++++++++++++----
+ docs/explanation/security-model.md               |   5 +++--
+ docs/how-to/develop-locally.md                   |   5 ++++-
+ docs/how-to/maintain-dependencies.md             |   5 +++++
+ docs/reference/commands.md                       |   2 +-
+ docs/reference/configuration.md                  |   1 +
+ pixi.lock                                        | Bin 38678 -> 64173 bytes
+ pyproject.toml                                   |   5 +++++
+ 10 files changed, 49 insertions(+), 10 deletions(-)
+```
+
+- `pyproject.toml`: `openjdk = "==21.0.13.1"`, with a comment naming Apalache, the
+  launcher's bare `java`, decision 0021, the class-file ceiling and the day both
+  platforms were checked.
+- `pixi.lock`: `just lock` regenerated it, and every change is an addition. `linux-64`
+  adds `openjdk 21.0.13.1 h1602c4f_2` and 43 other packages (fonts, X11 libraries).
+  `osx-arm64` adds `openjdk 21.0.13.1 h2da27d0_2` alone.
+- `Justfile`: the `QUINT_HOME` comment and a comment on the `quint` recipe, which now
+  reads:
+
+  ```text
+  env -u APALACHE_JAR TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/.bin/quint "$@"
+  ```
+
+  No `JAVA_HOME` is exported.
+- `.gitignore`: `/_apalache-out/`, with a comment (section 5).
+- The five pages in Files touched, as the plan said.
 
 ### 5. The verify runs
 
+These ran at `79b8cbd` plus the uncommitted pin, lock and recipe. At that point the recipe
+had only the `PATH` prefix; checkpoint 2 added `env -u APALACHE_JAR` and the `TMPDIR`
+default. Each ran through the corrected driver, which section 8 describes.
+
+**First attempt, failed.** Run 1 downloaded Apalache and passed
+(`[ok] No violation found (10008ms).`, pid gone, both probes exit 1). Run 2 stopped:
+
+```text
+executable as read: java
+FAIL: ok2: ps gave no absolute executable path for pid 84703: 'java'
+```
+
+On macOS, `ps -o comm=` shows the bare `java` the launcher `exec`s. The builder
+restored a checked `lsof -d txt` read of the executable, removed the distribution that
+attempt had downloaded, and reran from a cold `.quint/`.
+
+**Clean run** (`Apalache before run 1: absent`). Both positive controls passed
+(`control lsof exit 0`, `control pgrep exit 0`), then both probes printed nothing
+(`exit 1`). Per run:
+
+| Run | Result line | Exit | Server |
+| --- | --- | --- | --- |
+| 1, `inRange`, cold | `Downloading Apalache distribution 0.62.4... done.` then `[ok] No violation found (5876ms).` | 0 | pid 86675 gone |
+| 2, `inRange`, live, 20 steps | `[ok] No violation found (3038ms).` | 0 | pid 86764, executable `.pixi/envs/default/lib/jvm/bin/java`, jar `.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar`; gone |
+| 3, as 2 with `JAVA_HOME=/nonexistent` | `[ok] No violation found (3057ms).` | 0 | pid 86885, the same executable and jar; gone |
+| 4, `belowTwo` | `[violation] Found an issue (3135ms).` | 1 | pid 87246 gone |
+| 5, `inRange`, `TMPDIR` unset | `[ok] No violation found (3009ms).` | 0 | pid 87413 gone |
+
+The paths above are worktree-relative; the run printed them absolute. After each run,
+and after all of them, `lsof … exit 1` and `pgrep -fl apalache exit 1`. The home probe
+printed `home probe: ok` (absent stays absent).
+
+- **`_apalache-out/`.** The server writes a run directory per check under the worktree
+  root, for example `_apalache-out/server/<timestamp>/log0.smt`, `detailed.log` and
+  `run.txt`. The ignored-files diff showed `?? _apalache-out/`, a new, untracked path
+  outside `.quint/` and `ai_tmp/`, so it went into `.gitignore`.
+- **`tmp/`.** With `TMPDIR` unset, the launcher created an empty `tmp/` in the worktree
+  root (`before run 5: tmp absent`, `after run 5: tmp exists`, `total 0`). Git omits
+  empty directories, so it was not a `.gitignore` case. The recipe now defaults `TMPDIR`
+  instead (section 7, B5).
+- **Round-2 residual risks.** 20 live steps gave enough time to inspect every live run.
+  `--out-itf` did not suppress the violation line.
+
+Raw logs stay in `ai_tmp/`.
+
 ### 6. Checkpoint 1 record: the plan
+
+**Harness and model.** Codex CLI v0.172.0, `codex exec -m gpt-6.2-sol -s read-only`, in
+the corrected form under Adversarial review. Lenses were conformance and breakage, over
+`plan.md` and the probe driver. Triage and apply were done by fresh Claude subagents,
+one writer at a time. The reviewers rated findings blocker, major or minor, mapped to
+high, medium and low. None was a blocker. The lead rated C1/B1 and C2 high, because
+each let an acceptance criterion pass while false, so a second round ran.
+
+**Round 1.** 15 findings, 13 distinct (C1 = B1, C4 = B8). 15 valid, 0 invalid.
+
+- C1/B1 (high, by the lead), valid: the JVM probe could check another server. Every run
+  now uses `--verbosity=4` and must log Quint's own spawn lines, with no
+  `Connecting with existing Apalache server`. The spawned pid must be the only listener,
+  and its executable and jar are checked.
+- C2 (high, by the lead), valid: the final Verification never proved the runtime or the
+  per-run cleanup. `verify.sh` replaces it (Departures, item 4).
+- C3, valid: the port control could pass after a failed bind. It now requires the
+  control's own pid alone, then that pid gone.
+- C4/B8, valid: the README still says pixi has no Java. Handed back (below).
+- C5, valid: an empty `~/.quint` would fail `test -s`. Now `test -f` plus `cmp`.
+- C6, valid: three plan edits went beyond their evidence. Reworded.
+- C7, valid in part: the archive has seven entries, not five; the release notes were owed
+  (settled at checkpoint 2, C8).
+- B2, valid: a proxy could carry the gRPC call. Runs set `no_grpc_proxy`.
+- B3, valid: the driver could exit 0 after failing. It now runs under `set -eu`, with
+  `die` and bounded polls.
+- B4, valid: `BASH_ENV` could change `PATH`. It is unset, and pixi's `java` is a
+  precondition.
+- B5, valid: an inherited `APALACHE_JAR` swaps the jar. It is unset, and the `-jar`
+  argument is checked.
+- B6, valid: the `tmp/` probe looked in the wrong place. It now reads `tmp/` and
+  `_apalache-out/` directly.
+- B7, valid: the violation run can fetch the Rust evaluator. Its presence is a
+  precondition.
+
+**Round 2** (the last). 13 findings, 10 distinct (RB1 = RC1, RB3 = RC3, RB5 = RC4). 10
+valid, 0 invalid. It ran with the maintainer's claim-4 ruling applied.
+
+- RC1/RB1 (high), valid: a symlinked distribution passed the jar check. `check_dist` now
+  requires regular files at the exact worktree paths.
+- RC2, valid: the `lsof` fallback dropped its status. It was removed. Step 5's first
+  attempt then showed it was needed, and it was restored with its status checked
+  (section 5).
+- RC3/RB3, valid: the `-jar` read split a path with spaces. It now matches the argument
+  whole.
+- RC4/RB5, valid: `wait` had no deadline. Each run now has a watchdog.
+- RC5, valid: run 1 could skip the download. The driver refuses a warm `.quint/`.
+- RC6, valid: an empty `pgrep` came before its control. The control listener carries
+  the word `apalache`.
+- RC7, valid: an empty `tmp/` could trigger a `.gitignore` edit. Recorded as evidence
+  only.
+- RB2, valid: a run could end before it was inspected. Live runs use `--max-steps=20`.
+- RB4, valid: a JVM diagnostic could supply the marker. The match is now whole-line,
+  the JVM option variables are unset, and `belowTwo` must write `--out-itf`.
+- RB6, valid: the plan gave the wrong `mktemp -t` default. Corrected.
+
+**Applied.** All of the above went into `plan.md`, `run-probes.sh` and `verify.sh`,
+before any tracked file changed.
+
+**Handed back.** The README introduction (C4/B8). The release notes (C7) went to the
+lead and were settled at checkpoint 2. B1's client-side connection attribution went to
+Open points.
+
+**Re-run.** The checkpoint's verification is step 5's run (section 5), at `79b8cbd` plus
+the uncommitted work.
 
 ### 7. Checkpoint 2 record: the diff
 
+**Harness and model.** The same as checkpoint 1, over `git diff 79b8cbd` plus the
+uncommitted changes. One round: 14 findings, 11 distinct (C1 = B1, C3 = B2, C2 is B3's
+Java half, C7 is B6's README half). None was high. 13 valid, one valid in part (B4),
+0 invalid, so no second round ran.
+
+- C1/B1, valid: a missing pixi Java falls through to a system `java`. Handed to AP02's
+  approved `just quint` guard.
+- C2 / B3 (Java half), valid: the check accepted any `version "21.`. It now requires the
+  exact pin from `pyproject.toml`. Applied.
+- B3 (Apalache half), valid: the distribution was checked by path only. Every run's log
+  must now hold the `# APALACHE version: 0.62.4` banner. Applied.
+- C3/B2, valid: the violation run was not tied to its server. It now runs live. Applied;
+  the gRPC connection itself is not tied to the pid, which goes to Open points.
+- C4, valid: the recipe inherited `APALACHE_JAR`. It now uses `env -u APALACHE_JAR`,
+  which the commands page mentions. Applied.
+- C5, valid: run 1 inherited the caller's `JAVA_HOME`. It now unsets it. Applied.
+- C6, valid: `compile --target tlaplus` shares `connect`. The port caveat now covers
+  both commands. Applied.
+- C7 / B6 (README half), valid: the README introduction. Handed back to the maintainer.
+- B6 (ticket half), valid: this ticket's Context still uses the present tense. Handed
+  back.
+- C8, valid and settled: the release notes give no minimum Java (claim 2).
+- B4, valid in part: an evaluator fetch went unchecked. The driver now rejects the
+  `Fetching Rust evaluator` line; a network-denied run goes to Open points.
+- B5, valid: an unset `TMPDIR` creates `tmp/`. The recipe passes `TMPDIR="${TMPDIR:-/tmp}"`.
+  Applied.
+
+**Applied** to the `Justfile` recipe, `docs/how-to/develop-locally.md`,
+`docs/reference/commands.md` and `verify.sh`, before `5b74af3`.
+
+**Re-run.** Section 9, at `5b74af3`.
+
+**Handed back to the maintainer (§11).** `.scratch/apalache/README.md:3-7` and this
+ticket's Context (lines 41-43) still describe the pre-AP01 machine in the present tense,
+saying the pixi environment has no Java. Both are outside the record lines this ticket
+may edit.
+
+**Handed to AP02.** A refusal in `just quint` for `verify` and `compile --target tlaplus`
+when pixi's Java is missing. Without it, a worktree that pulled this commit without
+running `just sync` falls through to a system `java`. AP02's approved guard covers the
+same two commands, so the refusal belongs there.
+
 ### 8. Departures
 
+1. **Branch and worktree.** The work ran on `quint-spec`, in this worktree, with no
+   ticket branch, no new worktree and no rerun of `just initialize`. The maintainer
+   ruled this on 2026-11-24.
+2. **Reviewer model.** `gpt-6.2-sol`, not `gpt-6-astra`, by the user's choice. The
+   harness is still Codex, as this ticket prefers.
+3. **Claim 4 and the `PATH` prefix.** Claim 4 failed (section 3). Under the maintainer's
+   ruling, the `quint` recipe alone puts `.pixi/envs/default/lib/jvm/bin` first on
+   `PATH`, so no other recipe sees a Java. The `Justfile` row's "a `JAVA_HOME` export"
+   does not apply: the launcher never reads `JAVA_HOME`, and no `JAVA_HOME` is exported.
+4. **Verification corrected.** The checkpoints required it (C1/B1, C2 and their round-2
+   and checkpoint-2 sequels). The ticket's script is replaced by `verify.sh`, which adds
+   the following:
+   - each run at `--verbosity=4`, with its log required to hold Quint's own spawn lines
+     and not `Connecting with existing Apalache server`;
+   - the spawned pid as the only listener on 8822, its executable resolved to pixi's
+     `lib/jvm/bin/java`, and its jar to this worktree's
+     `.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar`;
+   - `java -version` checked against the exact `openjdk` pin, and the
+     `APALACHE version: 0.62.4` banner required;
+   - no Apalache download line and no evaluator fetch line in the logs;
+   - port and process cleanup after each run, not only at the end;
+   - `APALACHE_JAR`, `BASH_ENV` and the JVM option variables unset, and `no_grpc_proxy`
+     set;
+   - a watchdog on every run;
+   - live runs at `--max-steps=20`, and `belowTwo` writing `--out-itf`.
+5. **Probe order.** The positive controls (the control listener's own pid, alone on 8822
+   and listed by `pgrep`) run before the first empty probe. The executable, which step 5
+   set beside the second run, is read during every live run. Step 5 added run 5 at the
+   end.
+6. **The recipe's `env -u APALACHE_JAR` and `TMPDIR` default.** Both were added at
+   checkpoint 2 (C4, B5). They sit within the `Justfile` row as the `quint` recipe's own
+   lines.
+7. **The unset-`TMPDIR` probe.** Step 5's run 5 is extra. It found the launcher's `tmp/`
+   fallback (section 5).
+
 ### 9. Verification
+
+`verify.sh` ran at `5b74af3` with `home_existed=no` and exited 0. Excerpts:
+
+```text
+5b74af38761f3f4b582b80a96085ab5d7070bf31
+openjdk version "21.0.13.1" 2026-11-17 LTS
+control lsof exit 0
+control pgrep exit 0
+lsof -iTCP:8822 -sTCP:LISTEN exit 1
+pgrep -fl apalache exit 1
+ok: server pid 4876; executable …/.pixi/envs/default/lib/jvm/bin/java -> …/.pixi/envs/default/lib/jvm/bin/java; jar …/.quint/apalache-dist-0.62.4/apalache/bin/../lib/apalache.jar -> …/.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar
+# APALACHE version: 0.62.4 | build: 7954daf
+[ok] No violation found (3342ms).
+ok: server pid 4876 gone
+ok-javahome: server pid 5085; executable …/.pixi/envs/default/lib/jvm/bin/java -> …/.pixi/envs/default/lib/jvm/bin/java; jar … -> …/.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar
+[ok] No violation found (3026ms).
+ok-javahome: server pid 5085 gone
+violation: server pid 5206; executable …/.pixi/envs/default/lib/jvm/bin/java -> …/.pixi/envs/default/lib/jvm/bin/java; jar … -> …/.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar
+violation exit 1
+[violation] Found an issue (3110ms).
+violation: server pid 5206 gone
+lsof -iTCP:8822 -sTCP:LISTEN exit 1
+pgrep -fl apalache exit 1
+home probe (no): ok
+✔ Lock-file was already up-to-date
+Validated 49 pages and 50 canonical topics.
+All checks passed and the worktree is unchanged.
+Verification passed.
+```
+
+`…` stands for the worktree path. Each run printed `# APALACHE version: 0.62.4` and
+`openjdk` reported `version "21.0.13.1"`, the pin. The Linux branch of the executable and
+`-jar` reads (`/proc/<pid>/exe`, `/proc/<pid>/cmdline`) was checked by `sh -n` only:
+every run here was on macOS. The raw logs stay in `ai_tmp/`.
 
 ## Open points
 
 - **Java in every CI job.** `just sync` runs `pixi install --frozen` in every CI job, so
   the default environment's Java is downloaded and cached in jobs that never run Quint.
-  Step 6's two sizes show the cost. A pixi feature with an environment of its own would
+  Step 6's two sizes show the cost: the default environment grew from 337 MiB to
+  670 MiB on macOS, and `linux-64` locks 43 more packages beside `openjdk`. A pixi feature with an environment of its own would
   keep Java out of the default environment, at the price of a second `PATH` entry in the
   `Justfile`. The maintainer decides if the cost matters.
 - **Port 8822.** A server another worktree started answers this worktree's
   `just quint verify`, with that worktree's Apalache and Java. Passing a free
   `--server-endpoint` per run, or refusing to run while the port is taken, would close it.
   Neither is in scope.
+- **Quint's connection and the spawned pid.** Verification proves that the pid Quint
+  spawned is the only listener on 8822, but not that Quint's gRPC connection reached that
+  pid (checkpoint 1 B1, checkpoint 2 C3/B2). An `lsof -i` read of the node process's
+  client socket would tie them. It sits beside "Port 8822".
+- **A network-denied Verification.** Verification rejects Quint's download and fetch
+  lines but does not deny the network (checkpoint 2 B4). macOS has no simple per-process
+  network denial without new tooling. A run under §11's denial, with its negative
+  control, would show that a warm `.quint/` needs no network.
