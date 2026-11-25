@@ -95,11 +95,6 @@ check_cli() {
     done
     [ -f "$cli/dist/src/cli.js" ] ||
         fail "$cli/dist/src/cli.js, the entry point the quint recipe runs, is missing; run just install-quint"
-    # The launcher is bash, which imports exported functions: one named java,
-    # or any command it runs, would replace that command.
-    if env | grep -q '^BASH_FUNC_'; then
-        fail "the environment exports a bash function (BASH_FUNC_...), which Apalache's bash launcher would import; unset it before just quint"
-    fi
     installed=$(python -I -B -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$cli/package.json") ||
         fail "cannot read the installed Quint CLI's version from $cli/package.json; run just install-quint"
     [ "$installed" = "$quint" ] ||
@@ -306,6 +301,11 @@ check_mode() {
     stamped_ok ||
         fail "Apalache $apalache is not installed as $pin pins it ($reason); run just install-apalache. Checked because $why"
     java_ok
+    # The launcher is bash, which imports exported functions: one named java,
+    # or any command it runs, would replace that command.
+    if env | grep -q '^BASH_FUNC_'; then
+        fail "the environment exports a bash function (BASH_FUNC_...), which Apalache's bash launcher would import; unset it before just quint"
+    fi
     exit 0
 }
 
