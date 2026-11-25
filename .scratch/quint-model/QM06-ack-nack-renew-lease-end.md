@@ -556,7 +556,12 @@ apply, and every ticket of the series carries them word for word.
    control from Verification, and run `just verify-quint` on the untouched worktree:
    quote its exit status and its wall time. That time is the figure step 6 compares
    with.
-2. **Read before writing.** Read every path under "Read these". From the model and QM05's
+2. **Read before writing.** Read every path under "Read these". Count the variants of
+   `Rule` in the base's model: 12, as this ticket counts them. If the count differs,
+   name the T ticket behind the difference (README, "The T tickets that touch the
+   model"), and have the plan recompute each trace, each step count and the bound,
+   which is still never lowered.
+   From the model and QM05's
    hand-back, record in `ai_tmp/qm06/plan.md`: the record's type and whether `mark`
    exists; the name and text of `oldest`; how the release folds today; the domain of
    `release`'s `lease` argument; the text of `OneVisitPerKeyPerLease`,
@@ -654,10 +659,18 @@ apply, and every ticket of the series carries them word for word.
      in position order, and choose its own rule by `ending_records`?
    - Is there a reachable state after one action in which an idle pocket holds a
      record, or a step that no rule answers and that changes something?
+   - Does `step` offer `ack`, `nack`, `renew` and `release` for every consumer, every
+     lease "Which leases an action may name" lists (the consumer's own, another
+     consumer's, an ended one and one never issued) and, where the action takes one,
+     every record key, whatever the state holds? A `renew` offered only for an active
+     lease leaves the refusal of an ended one in no trace, and no property or witness
+     shows that.
    - Does `FiredMatchesGuards` cover the three chained rules, and does each chained
      guard read only fields the rule before it leaves alone?
    - Could `just verify-quint` pass with a witness of this ticket not reached, or a
      mutant of this ticket uncaught, or caught by another property?
+   - Is the body of each `witness_<Rule>` this ticket adds `fired.contains(<Rule>)` and
+     nothing else? The recipe reaches a witness and never reads its body.
    - Does any effect compare a whole lease, so that QM09 must remove a clause?
    - Did any earlier property or patch change, other than what the hand-back lists?
 9. **Commit and hand back.** Commit the work. Rerun Verification and quote it, headed by
@@ -695,6 +708,8 @@ apply, and every ticket of the series carries them word for word.
   by quoting it.
 - The hand-back says whether `staleReleaseRefused` was kept or deleted, and if kept
   quotes it observed.
+- Checkpoint 2's reviewers answered the question on what `step` offers: each of the
+  four lease actions over every consumer, lease and key it may name, in every state.
 - The release's wall time (claim B) and the whole recipe's wall time are quoted beside
   the `quint` job's `timeout-minutes`.
 - The header's "Not yet modelled" list holds the three lines of "Design proposed", no

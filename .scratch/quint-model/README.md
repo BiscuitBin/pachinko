@@ -58,6 +58,11 @@ them as fixed. A ticket that finds one cannot hold stops and asks.
 - **The records under `.scratch/apalache/` are tracked.** A ticket of this series may
   cite them for what was run, where `tickets/CONVENTIONS.md` §11 bars a scratch
   citation. A command a step needs is still written out in the ticket.
+- **A red control of the hash check is not a gate run.** Shared rule 11 has the
+  fixtures regenerated before any gate runs, so that no gate is read against stale
+  fixtures. A control a ticket states, which runs `just check-quint`,
+  `just quint-traces check` or `just verify-quint` for its failure on stale fixtures, is
+  not such a run, as in QM11's step 4. It is never quoted as a pass.
 - **Commit these files first.** An untracked file does not appear in a new worktree.
   Before step 1, `git ls-files .scratch/quint-model/` in the new worktree must list this
   README and the ticket being run.
@@ -140,9 +145,9 @@ block to the maintainer.
   with one variant per top-level action, plus `Init`. `answer` is what the step handed
   back: a batch, with its lease, its pocket and its records in order, or
   `NoPocketAvailable`, or nothing. `prev` is the state before the step. `step` writes
-  `last` from the arguments it chose, and no action does, so that an action cannot
-  report a step other than the one taken. No guard and no effect on the state reads a
-  ghost.
+  `last` from the arguments it chose, and from QM10 `replayStep` does the same for the
+  actions it offers. No action writes it, so that an action cannot report a step other
+  than the one taken. No guard and no effect on the state reads a ghost.
 - **A guard and an effect per rule.** `guard_<Rule>` is a pure definition over a state
   and the arguments of the trigger the rule answers. `effect_<Rule>` is an invariant: if
   `fired` holds the rule, then what the Allium's `ensures` says holds between `prev` and
@@ -444,16 +449,16 @@ from the one below is a design change: the ticket stops and brings it back to th
 | 5 | An instance that sets a module's `const`s is checked by naming it with `--main`, with that instance's `init` and `step` | not read | QM02 |
 | 6 | `typecheck` exits non-zero on an ill-typed module and needs no network | not read | QM02 |
 | 7 | The properties a `verify` checks are the ones named on its command line; with none named it falls back to the definitions declared with the `invariant` qualifier, and the model declares none. A run can therefore pass having checked nothing, so a pass means something only after `Canary` was violated through the same instance | `cliHelpers.js`, `cliCommands.js`, `verify.js` | QM02 by hand, QM03 in the recipe |
-| 8 | Quint tries an Apalache server already listening on `localhost:8822` before it starts its own, so a stamped install does not say which server answered | `apalache.js` | QM02 by hand, QM03 in the recipe |
+| 8 | Quint tries an Apalache server already listening on `localhost:8822` before it starts its own, so a stamped install does not say which server answered | `apalache.js` | Not run: shared rule 10 forbids the run. QM02 by hand and QM03 in the recipe show the other half, the port free and Quint launching its own server; QM03 matches the connecting line in `apalache.js` and refuses a busy port |
 | 9 | A single `--observation` passes when reached and fails when not. `--search-observations` only warns on one it does not reach, and several stopping observations pass when one is reached | `verify.js`, `cliCommands.js` | QM03 |
-| 10 | A syntax error, a type error and a real counterexample all exit 1, and a deadlock is reported as a violation. The exit status therefore does not say that a mutant was caught | `cliCommands.js`, `apalache.js`, `cliReporting.js` | QM03 |
+| 10 | A syntax error, a type error and a real counterexample all exit 1, and a deadlock, if Apalache reports one under the configuration Quint builds (QM03's claim F), is reported as a violation. The exit status therefore does not say that a mutant was caught | `cliCommands.js`, `apalache.js`, `cliReporting.js` | QM03 |
 | 11 | The output names the violated invariant only when the reporter can evaluate the counterexample | `cliReporting.js` | QM03 |
 | 12 | The whole of `verify-quint` (every instance, witness and mutant, with setup) finishes inside the CI job's timeout. Each run being fast is not enough | not read | QM03, and every ticket that adds a run |
 | 13 | An `assume` over a `const` is not among the properties a `verify` selects, and one that is false can leave no start state, which passes vacuously | `parsing/ToIrListener.js`, `cliHelpers.js` | QM05 |
 | 14 | `run --seed` repeats a trace for a fixed seed and CLI, but the ITF output carries wall-clock metadata, so two runs differ byte for byte | `cliHelpers.js`, `cliReporting.js`, `itf.js` | QM10 |
 | 15 | ITF holds states and values, not a log of actions with arguments. `--mbt` adds the action's name and the named `nondet` picks, which depend on how the action is written. The ghost `last` is what a replay reads | `itf.js`, `runtime/impl/builder.js`, `runtime/impl/builtins.js`, `runtime/impl/nondet.js` | QM10 |
 | 16 | `verify --inductive-invariant` checks the start and the step, and then that the invariant implies the ordinary invariants named with it. Which check failed is read from the progress lines, not from the exit status | `verify.js`, `cliHelpers.js` | QM13 |
-| 17 | An `init` that no state satisfies leaves a `verify` with nothing to violate, as a false `assume` does, so a mutant that breaks a requirement of the start cannot be caught by a property | not read | T47, on a config-bound mutant, if it makes the bounds the start's requirements |
+| 17 | An `init` that no state satisfies leaves a `verify` with nothing to violate, as a false `assume` does, so a mutant that breaks a requirement of the start cannot be caught by a property | not read | T47, at its stop on a config-bound mutant, on scratch copies whose `init` requires the bounds, before the maintainer chooses; or, where T47 lands before any such mutant exists or its hand-back quotes no such run, QM05, QM08 or QM09, on a scratch module at its step 2 |
 
 ## Shared rules (QM01 to QM13)
 
@@ -637,23 +642,26 @@ have the design lens.
 
 Ruling 3 puts an obligation on tickets outside this series. A ticket's agent edits only
 the files its ticket lists, so the obligation is written into each of these tickets as a
-conditional step and a conditional row in Files touched: if the base holds
-`quint/pachinko.qnt` and it models what the ticket changes, the ticket updates the model
-in the same change, as shared rule 11 says.
+conditional step and a conditional row in Files touched: if the tree the ticket lands
+on holds `quint/pachinko.qnt`, at its base or after its closing merge or rebase, and it
+models what the ticket changes, the ticket updates the model in the same change, as
+shared rule 11 says.
 
 | Ticket | What it does | What it touches in the model |
 | --- | --- | --- |
-| T39 | Lands the operator listing and `new_pocket_first` in the Allium | `PublishIntoNewPocket`, the claim's choice of pocket, the rules that clear a new pocket's standing (a release, idling and a revival), the properties for the reworded Lease expiry comment and `ExpiryRecoversWithinTtl`, and an instance with `new_pocket_first` on (QM04, QM08, QM09) |
+| T39 | Lands the operator listing and `new_pocket_first` in the Allium | `PublishIntoNewPocket`, the claim's choice of pocket, the rules that clear a new pocket's standing (a release, idling and a revival), the properties for the reworded Lease expiry comment and `ExpiryRecoversWithinTtl`, and, where the model has `PublishIntoNewPocket`, an instance with `new_pocket_first` on (QM04, QM08, QM09) |
 | T40 | Rules on where the pocket order lives, then creates tickets | The pocket's position in claim, release and revive, and two position invariants. The model keeps the pocket order in one section, so that this is that section, the two position invariants and the effects that state a position. T40 carries the obligation into the tickets it creates |
 | T41 | Investigates the order of work in a tick | Nothing. It blocks QM09 |
-| T42 | Explores the clock model, has it ruled, then creates tickets | Nothing itself. The specification ticket it creates blocks QM09, and T42 carries the obligation into it. While the model has no clock, that ticket changes nothing in the model (shared rule 7); QM09 adds the clock |
+| T42 | Explores the clock model, has it ruled, then creates tickets | Nothing itself. The specification ticket it creates blocks QM09, and T42 carries the obligation into it. While the model has no clock, that ticket changes nothing in the model where it only says when something is due and the untimed lapse still covers it (shared rule 7); a change to a lapse rule the model already has moves the model in the same change. QM09 adds the clock |
 | T43 | Rules on the caller contract, then creates tickets | Every consumer action, `answer`, and QM10's mapping: the lease's id and the named refusals. T43 carries the obligation into the tickets it creates |
 | T44 | Researches the width of a rank | Nothing. A bound on ranks lies outside the small domains |
 | T45 | Drops joining | `PublisherJoins`, `ConsumerJoins`, `UniquePublisherId` and `UniqueConsumerId` (QM04), the start of every fixture, the generator's witness list, and the joins in both replays |
 | T46 | Adds `limit >= 1` to the claim | `guard_PullClaimsFrontPocket`, the rule or refusal T43 decided for the gap, and `OldestFirst`. It lands after QM05. Before QM05 the model's only claim is one at a limit that is not positive, which T46 removes, so a T46 that is ready first stops and asks, whether or not the model exists yet |
-| T47 | States the start as a rule that requires the config bounds | `init`, the Queue's first position (in every fixture's first state and in both replays), and the five config-bound invariants. A mutant that breaks a config bound loses its start state once the bounds are the start rule's requirements, so the maintainer rules on those mutants |
+| T47 | States the start as a rule that requires the config bounds | `init`, the Queue's first position (in every fixture's first state and in both replays), and the five config-bound invariants. A mutant that breaks a config bound is expected to lose its start state once the bounds are the start rule's requirements (claim 17, not run), so T47 probes it and the maintainer rules on those mutants |
 
-Only QM09 is blocked by a T ticket. The rest of the series models today's
+Only QM09 and QM11 are blocked by a T ticket: QM09 by T41 and by the specification
+ticket T42 creates, and QM11 by the ticket that lands the ruled clock in the Rust, where
+that is another ticket ("Dependencies"). The rest of the series models today's
 specification, and each T ticket above that lands later changes the model with it.
 
 On 2026-11-25 the maintainer ruled on three points the tickets above had left open, and
@@ -662,8 +670,8 @@ ready first stops and asks. T39 verifies a second instance with `new_pocket_firs
 owed only where the model has `PublishIntoNewPocket`, and stops and asks if that
 instance does not fit the verify job's timeout. T45 and T47 stop and ask before they
 touch a mutant patch that cannot stand as it is: in T45 one whose rule or property the
-ticket removes, in T47 one that sets a config value out of its bound and so loses its
-start state.
+ticket removes, in T47 one that sets a config value out of its bound and so is expected
+to lose its start state, which T47 shows on a scratch copy before it asks.
 
 A T ticket that lands between two QM tickets changes the model and not the text of the
 QM tickets still to run. Each of those reads its counts and its traces against the

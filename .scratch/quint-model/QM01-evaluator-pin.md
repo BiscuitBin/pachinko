@@ -303,7 +303,7 @@ answers no README row.
   Alternative: leave the recipe as it is. QM03's script then unsets the three
   lower-case names for its own runs (QM03, "Design proposed", point 4), and every
   by-hand `verify` before it, this ticket's and QM02's, unsets them on its own command
-  line.
+  line, apart from step 7's red run, which sets `grpc_proxy` on purpose.
 - **`just initialize` runs `just install-quint-evaluator` after `just install-apalache`.**
   Both follow `just install-quint`, since each refuses a pin the installed CLI disagrees
   with.
@@ -328,7 +328,7 @@ one below is a design change: **stop** and bring it back.
 
 | # | Claim | Check |
 | --- | --- | --- |
-| 1 | A plain `verify` that passes does not start the Rust evaluator. A `verify` that reports a violation does, and so does an `--observation` that is reached. Read in `verify.js` lines 248 to 262, `cliReporting.js` lines 230 to 257 and `rust/invariantsReporter.js`. Read more narrowly than the README words it: a trace starts the evaluator only when the run named an invariant and the trace has a last state (`cliReporting.js` lines 242 to 251), so a trace returned with no invariant named, as for a deadlock, prints `[violation]` and starts nothing | step 7: three `verify` runs at `--verbosity=4`, each log searched for `Starting Rust evaluator with command:`. They show the path of a named invariant and the path of an observation, and no other |
+| 1 | A plain `verify` that passes does not start the Rust evaluator. A `verify` that names an invariant and reports a violation does, and so does an `--observation` that is reached. Read in `verify.js` lines 248 to 262, `cliReporting.js` lines 230 to 257 and `rust/invariantsReporter.js`. Read to its conditions: a trace starts the evaluator only when the run named an invariant, every name parsed as an expression (`verify.js` lines 191 to 196) and the trace has a last state (`cliReporting.js` lines 242 to 251), so a trace returned with no invariant named, as for a deadlock, prints `[violation]` and starts nothing | step 7: three `verify` runs at `--verbosity=4`, each log searched for `Starting Rust evaluator with command:`. They show the path of a named invariant and the path of an observation, and no other |
 | 2 | The executable at `<QUINT_HOME>/rust-evaluator-<version>/quint_evaluator` is used when it exists and nothing is downloaded. The CLI checks that it exists, not what it is. QM01 runs this probe before it adds the guard, which would refuse a changed binary. Read in `rust/binaryManager.js` lines 32 to 46 and 157 to 162, and `config.js` lines 45 to 47 | first half: step 7, a `run` under the network denial. Second half: step 5's last case, a stand-in executable that the unguarded recipe runs |
 | 3 | Whether the evaluator's releases publish checksums. The CLI's source cannot say; the release's asset list can. Not read | step 2: the release's asset list, and each asset's `digest` field; if neither exists, say so, and the pin rests on downloads over TLS |
 | 4 | `run --backend typescript` evaluates in process and downloads nothing. QM01 says whether the guard reads the option or fails closed on every `run`. Read in `cliCommands.js` lines 340 to 364, and for a violation `cliReporting.js` lines 182 to 193 | step 5's last case, with the stand-in in place, and step 7 under the network denial. The guard's answer is under "Design proposed": it fails closed |
@@ -786,9 +786,10 @@ the line numbers below are as at commit `cf1f3f3`.
      ruling, add the six `-u` flags and the comment's sentence to the recipe. Green:
      the same command, `env -u` of the two names included, and once more with all six
      names set to that address, exits 0 and prints `[ok] No violation found`.
-     Under the alternative, change nothing in the recipe, and run every `verify` of
-     this ticket, the three below and Verification's, under
-     `env -u grpc_proxy -u https_proxy -u http_proxy`;
+     Under the alternative, change nothing in the recipe, and run every other `verify`
+     of this ticket, the three below and Verification's, under
+     `env -u grpc_proxy -u https_proxy -u http_proxy`. The red run above is then the
+     one `verify` with `grpc_proxy` set;
    - then the three `verify` runs of claim 1, not under a denial, since a `verify`
      talks to its own Apalache server over loopback. Before each, show nothing listens
      on `localhost:8822`, with the probe and its positive control from Verification.
@@ -866,7 +867,7 @@ the line numbers below are as at commit `cf1f3f3`.
   line.
 - With `grpc_proxy` pointing at a port where nothing listens, a `verify` through the
   recipe failed before the recipe unset the proxy variables and passes after, each
-  quoted; or, under the alternative ruling, the failing run is quoted and every
+  quoted; or, under the alternative ruling, the failing run is quoted and every other
   `verify` of this ticket ran with the three lower-case names unset.
 - Each of claims 1 to 4 and A to G has its outcome recorded, with the output it rests
   on. For claim 1 that is the violating run's cross-mark line and the observing run's

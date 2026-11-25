@@ -169,12 +169,14 @@ delivers" and QM11's ticket are written against the recommended answers here. A 
 at step 3 for an alternative changes some of them: with no second instance, for
 example, nothing can be run on `pachinko_zero_ttl`. The README gives that work to the
 ruling ticket ("Later tickets are written against recommended answers"). So before step
-4 this ticket edits its own Goal, steps, acceptance lines and Verification, the
+4 this ticket edits its own Goal, claims table, steps, acceptance lines and
+Verification, the
 README's sentences and the later tickets' sentences that the ruling changes, and lists
 each edit under Departures. It never drops a step or a criterion the ruling leaves
 standing. Ruled without the second instance, for example: the Goal names one instance;
-step 6 becomes the line in decision 0022; step 8's observation of claim C has no
-instance and is recorded as not run; and Verification loses `pachinko_zero_ttl` from
+step 6 becomes the line in decision 0022; claims C and D have no instance, so step
+8's observation of C and step 6's witnesses for D are each recorded as not run; and
+Verification loses `pachinko_zero_ttl` from
 its three lists.
 
 ### How the clock moves
@@ -204,7 +206,19 @@ depends on T42's open point 1, where "`now` never decreases" lives.
   or after `now`, and the step then sets `now` to `clock`. When `clock` is behind, no
   rule answers: the state is unchanged and `fired` is empty. Each guard gains that
   conjunct in the Allium's words. It is the Allium's `requires`, not a guard the model
-  adds.
+  adds. **This row is not complete, in two respects, and nothing here settles either.**
+  Earlier properties say a step is answered whatever the clock reads. QM04's
+  `PublishAnsweredByOneRule` and QM07's `NeverRefusedForCapacity` count exactly one
+  publish guard for a publish not at the stored rank, and clause 2 of
+  `MarksStandHoweverLeaseEnds` and QM06's `MarksStandHoweverLeaseEnds_release` have a
+  repeated ack or nack fire its rule. With `clock` behind `now`, each fails as written
+  wherever the rule that would answer carries the conjunct. And `TickIsItsStages`
+  below asks that nothing is due after a tick: a tick whose read is refused while a
+  lease is due at `now` changes nothing and leaves it due, and the property has no
+  case for it. If step 2 selects this row, the plan lists every such property with the
+  trace on which it fails, and quotes what the landed Allium says of a tick taken at
+  such a reading. No property is edited and no conjunct is left out to make the run
+  pass: both go to the **Stop** in step 3 (Open points).
 - **If the Allium only states that `now` never decreases** and keeps no latest time
   (form 1(b)). Recommended: one
   value, `now`, and `advance(millis)` adds a non-negative amount. An `advance` by a
@@ -274,14 +288,23 @@ depends on T42's open point 1, where "`now` never decreases" lives.
   module, where QM03's helper refuses an upper-case `val`. Each has a committed mutant
   that makes the constant negative in `pachinko_walk`. If
   `tickets/T47-start-rule-and-config-bounds.md` has landed and made the bounds the
-  start rule's requirements, such a patch leaves the model no start state: nothing is
-  violated, and the property it names cannot catch it. Step 2 reads T47's hand-back,
+  start rule's requirements, such a patch is expected to leave the model no start
+  state, so that nothing is violated and the property it names cannot catch it. That
+  is expected and not shown: it is the README's claim 17, not read and not run, and
+  T47 checks it on the patch it finds. Step 2 reads T47's hand-back,
   and the three mutants then take the control T47's ruling named, as QM05's
-  `qm05-zero-pull-batch` does. The lines here that name the three patches change with
-  them: their rows in the mutants table and in Files touched, the count of eleven, and
-  in Verification the count and the three header checks. Each is brought to the ruled
-  control before step 4 and recorded under Departures; none is dropped without its
-  replacement.
+  `qm05-zero-pull-batch` does; the checker's answer is the run that hand-back quotes,
+  not this bullet. If the hand-back quotes no such run, or names no control that covers
+  a config-bound mutant written after it, step 2 runs the probe on its scratch module
+  (an `init` that requires a constant's bound, an instance that breaks the bound and a
+  twin that keeps it, each verified with a property that is false on purpose) and
+  quotes it, and the question of which control the three take goes to the maintainer
+  at the **Stop** in step 3. The lines here that name the three patches, or count them
+  among the eleven, change with the ruled control, whichever section holds them: their
+  rows in the mutants table and in Files touched, the count of eleven, and
+  in Verification the count and the three header checks among them. Each is brought to
+  the ruled control before step 4 and recorded under Departures; none is dropped
+  without its replacement.
 - **A second instance, `pachinko_zero_ttl`.** Recommended: equal to `pachinko_walk` but
   with all three TTLs at 0, which the Allium admits. At 0 a lease is due the moment it is
   granted and an entry the moment it is made, so this is where "a tick drains" and the
@@ -326,12 +349,18 @@ depends on T42's open point 1, where "`now` never decreases" lives.
   `UnansweredStepChangesNothing` lets such a tick make. Every lapse stage comes before
   every decay stage, and the lapse stages
   are the leases of `prev` that are due at that `now`, each once. The order `last`
-  records is the action's own
-  account of what it did, so the property does not take it on trust. Where the landed
+  records is written by `step`, as the README has it for every step, and by no
+  action. By itself that order shows neither that it is the Allium's nor that the
+  action took its stages in it, so the property takes neither on trust. Where the
+  landed
   Allium fixes an order, among the lapses, among the decays or between the two queues,
   the property states that order over the stages from the Allium's text and from the
   states of the walk: each stage takes the one the Allium puts first among those still
   due in the state it starts from. It never reads the definition the action sorts with.
+  That the action followed the order is shown only by the walk's last state being the
+  state. Two orders that end in the same state, `fired` and `answer`, as two decays do
+  when no report names them, are told apart by no property; checkpoint 2 reads `tick`
+  for it (Open points).
   The plan shows the walk is written with the same definitions the three
   actions use, and checkpoint 2 asks it again of the diff.
 - **A tick against every property that compares `prev` with the state.** After a tick
@@ -582,8 +611,8 @@ Notes on the table.
 | 12 | The whole of `verify-quint` (every instance, witness and mutant, with setup) finishes inside the CI job's timeout. Each run being fast is not enough | steps 2, 5, 6 and 7: the wall time of `just verify-quint`, with the setup and install durations from QM03's hand-back added, quoted beside the `quint` job's `timeout-minutes` and the head-room QM03's ruling set |
 | A | A `verify` accepts a step that chooses an integer from a range of 241 values and compares sums of it with other integers. Not read, not run | step 2, on a scratch module under `ai_tmp/qm09/`; step 5 for the cost |
 | B | A `verify` accepts a walk over a list whose order is computed from the state (the due leases, by `expires_at` and then by grant). Not read, not run | step 2, on the same scratch module |
-| C | On `pachinko_zero_ttl` one tick can create a dead letter and decay it, so the entry is in neither `prev` nor the state. Reasoned from T42's ruling 3, not run | step 2: the plan writes the trace; step 6: observed by hand on the instance |
-| D | Each of the 32 rules is reachable with all three TTLs at 0. Reasoned, not run | step 6: 32 witnesses observed on `pachinko_zero_ttl` |
+| C | On `pachinko_zero_ttl` one tick can create a dead letter and decay it, so the entry is in neither `prev` nor the state. Reasoned from T42's ruling 3, not run | step 2: the plan writes the trace; step 8: observed by hand on the instance, if step 3 kept it. If step 3 ruled against the instance, the outcome recorded is "not run" |
+| D | Each of the 32 rules is reachable with all three TTLs at 0. Reasoned, not run | step 6: 32 witnesses observed on `pachinko_zero_ttl`, if step 3 kept the instance. If it did not, the outcome recorded is "not run" |
 | E | The step counts in the mutants table and under `--max-steps` are the shortest. Counted by hand, not run | steps 5 and 7: each witness and counterexample has its length. A shorter one is recorded; one outside the bound is a finding |
 | F | Every witness QM02 to QM08 reached is still reached on `pachinko_walk` once a lapse must wait for its `expires_at` | step 5: all 32 observed |
 
@@ -794,7 +823,7 @@ apply, and every ticket of the series carries them word for word.
 | `crates/libpachinko/tests/queue/walk/model/trace.rs` | shared, own lines | on the same condition, and only if the decoder refuses a state with the new fields: the fields accepted and not read. Created by QM10 |
 | `double/tests/test_replay.py` | shared, own lines | only if the tree this ticket lands on holds `double/tests/test_replay.py`, at the base or after the closing merge or rebase: the timestamps leave its exclusion list and are compared, and the double's clock starts where QM12's ticket says for the clock that landed: at the first state's `clock` under either two-value clock, and at its `now` under one value. Created by QM12 |
 | `docs/decisions/` | shared, own lines | in the record QM02 wrote as decision 0022 only: how the model's clock follows the landed Allium; `ExpiryRecoversWithinTtl`'s fragments and the sentences not checked; the zero-TTL instance and the mixed settings checked nowhere; how each kind of property is read on a tick, and for any exemption a ruling grants, what it leaves unchecked; how `UnansweredStepChangesNothing` reads a step that moves the clock |
-| `.scratch/quint-model/QM09-clock-timestamps-decay.md` | ticket | `status:` and the hand-back notes; and, only if a ruling at step 3 differs from a recommended answer or T47's ruling replaced the config-bound control, the sentences of the Goal, "Design proposed", Files touched, the steps, acceptance and Verification it changes, each recorded under Departures |
+| `.scratch/quint-model/QM09-clock-timestamps-decay.md` | ticket | `status:` and the hand-back notes; and, only if a ruling at step 3 differs from a recommended answer or T47's ruling replaced the config-bound control, the sentences of the Goal, "Design proposed", "Claims this ticket checks", Files touched, the steps, acceptance and Verification it changes, each recorded under Departures |
 | `.scratch/quint-model/README.md` | shared, own lines | QM09's Status cell; and, only if a ruling at step 3 differs from a recommended answer or from the README's own sentence on the clock's exception, the sentences it changes, the row for QM09 under "What each ticket delivers" among them |
 | `.scratch/quint-model/QM*.md` | shared, own lines | Only if a ruling at step 3 differs from a recommended answer: the sentences it changes in the later tickets the README's index names. QM11 is written against all three clocks and the recommended `tick` |
 
@@ -825,6 +854,14 @@ apply, and every ticket of the series carries them word for word.
      the latest time does, each beside the Allium's line; what `now` is before any
      step reads the clock, and what `advance` does at 0; and
      `UnansweredStepChangesNothing` as the README words it, by the step `last` names;
+   - if the selected row has two values: the property that fails when an answered step
+     that reads the clock leaves `now` as `prev` had it although `clock` was ahead of
+     it, with its trace (a forward `advance`, then the step); if no planned property
+     fails on it, the plan says so, for the **Stop** in step 3 (Open points). Under
+     the one-value row nothing is owed here: `now` is the clock;
+   - if the selected row refuses a reading behind the latest time: every property that
+     says a step is answered, and `TickIsItsStages`, each with the trace on which it
+     fails as written, and the Allium's line on a tick taken at such a reading;
    - each of the two owned rules and each rule that gains a stamp, the Allium's text
      beside the planned action, `guard_` and `effect_`;
    - `tick`, its stages, their order, and `TickIsItsStages`, with the clause that states
@@ -844,6 +881,11 @@ apply, and every ticket of the series carries them word for word.
    - Does `ai_tmp/qm09/landed.md` or the plan state anything about the clock that the
      Allium at the base does not say? Can `now` decrease on any planned step, or a
      refused step move it?
+   - Under either two-value row, with `clock` ahead of `now` after a forward `advance`,
+     would a pull, an ack, a nack or a renew that is answered and leaves `now` at
+     `prev`'s value fail a planned property, and which one? If the selected row
+     refuses a reading behind the latest time, which planned properties fail on a
+     publish, a repeated ack or a tick that the clock alone refuses?
    - Take a tick on `pachinko_zero_ttl` that lapses a lease with a nacked record. Which
      properties of the model read `prev`, the state, `last` or the entries a step
      added in a way that fails on it, and does the plan list every one?
@@ -943,7 +985,14 @@ apply, and every ticket of the series carries them word for word.
     - Is any `effect_`, or any other property, not checked on a stage of a tick, so
       that a broken `lapse` or decay could hide inside one? Does `TickIsItsStages` take
       the order from `last` alone where the Allium fixes one? Are
-      the tick's stages the definitions the single actions call?
+      the tick's stages the definitions the single actions call? Does `tick` apply
+      its stages in the order `last` records, and work out no other order of its own?
+    - Does `step` offer `advance` for every amount from -120 to 120, `tick`, and
+      `lapse` and the two decays for every lease and every place they may name,
+      whatever the state holds?
+    - Under either two-value row, with `clock` ahead of `now` in `prev`, does a
+      property fail on an answered pull, ack, nack or renew that leaves `now` as `prev`
+      had it?
     - With `fired` empty, does `UnansweredStepChangesNothing` let anything change but
       the clock, and the clock by anything but the amount an `advance` names?
     - Does each re-cut patch still make the mutation its name says, against the
@@ -954,6 +1003,8 @@ apply, and every ticket of the series carries them word for word.
       decay rules?
     - Does decision 0022 say which sentences of the guarantee are not checked, and
       which TTL settings no instance has?
+    - Is the body of each `witness_<Rule>` this ticket adds `fired.contains(<Rule>)` and
+      nothing else? The recipe reaches a witness and never reads its body.
 11. **Commit and hand back.** Commit the work. Rerun Verification and quote it, headed
     by the full commit id. Set `status: done` here and in
     `.scratch/quint-model/README.md`, write the hand-back notes, with each patch re-cut
@@ -969,14 +1020,19 @@ apply, and every ticket of the series carries them word for word.
     merge brought `StateInRange` in, add its clauses for the clock and every timestamp
     now, as step 5 does; that is an edit of the model, so re-cut and regenerate as at
     step 4. If it brought the fixtures or the double's replay in, do
-    step 8's replay work now, regenerating the fixtures before any gate. Then rerun
+    step 8's replay work now, regenerating the fixtures before any gate. Commit what
+    these edits changed, as work and apart from the record, before the reruns:
+    Verification runs after a commit and ends on an empty `git status --short`, which
+    a tree holding those edits uncommitted fails. Then rerun
     `just check`
     and Verification, and requote both (`tickets/CONVENTIONS.md` §11, "Green"; shared
     rule 13). If the base had moved, the quotes already committed are stale
     (§11, "Quoted evidence names its commit"): put the fresh ones in the hand-back,
-    headed by the merged commit, commit that record, and run `just check` on it once
+    headed by the commit they ran at, which is the merged commit or the work committed
+    on top of it, commit that record, and run `just check` on it once
     more, with an empty `git status --short`, as after the first record.
-    If the merge or rebase changed a file under Files touched, checkpoint 2
+    If the merge or rebase changed a file under Files touched, or work was committed
+    after it, checkpoint 2
     did not see that change: show its diff at the stop and ask whether it is reviewed
     before the push. **Stop** before pushing or opening a pull request: both need
     authorisation (`tickets/CONVENTIONS.md` §11, "Separately authorised actions").
@@ -1016,6 +1072,12 @@ apply, and every ticket of the series carries them word for word.
   says. `qm09-refused-action-moves-clock` is caught by it.
 - The hand-back says what `now` is before any step reads the clock and what `advance`
   does at 0, as ruled, and what that leaves QM11 able to replay.
+- Under either two-value row, the hand-back names, as ruled at step 3, the property
+  that fails when an answered step leaves `now` as `prev` had it although `clock` was
+  ahead of it, or records the ruling that none is required. Under the one-value row
+  nothing is owed here. If the selected row refuses a reading behind the latest time,
+  the hand-back lists each property that says a step is answered, and
+  `TickIsItsStages`, with the ruling on each.
 - `EveryDropIsVisible` no longer holds QM07's "no step removes one", and its clause on
   removal counts places, shown by quoting it.
 - If the tree this ticket lands on holds QM13's `StateInRange`, at the base or after
@@ -1197,6 +1259,32 @@ are not rerun here.
   clock, and whether the clock stops at 0, are the Allium's to say and, where it is
   silent, the maintainer's at step 3. The recommended answers are the ones a replay
   over a negative advance needs; under the alternatives QM11 replays forwards only.
+- **The clock that refuses, and the properties that say a step is answered.** Under
+  the row that refuses a reading behind the latest time, a publish, a repeated ack or
+  nack and a tick can each go unanswered because of the clock alone.
+  `PublishAnsweredByOneRule`, `NeverRefusedForCapacity`, clause 2 of
+  `MarksStandHoweverLeaseEnds` with QM06's part, and `TickIsItsStages` are written as
+  if none could, so a faithful model fails them, and a builder who must reach green
+  could leave the conjunct out or weaken a property. Whether each gains the clock's
+  condition in the Allium's words, or the landed Allium answers such a step another
+  way, is the maintainer's at the **Stop** in step 3. The first four are properties of
+  QM04, QM07, QM08 and QM06, and "Design proposed" names no edit to them.
+- **An answered step that does not read the clock.** Fragment 2 and each extension's
+  effect compare `expires_at` with the state's `now`, and the exact clock checks cover
+  `advance`, an empty tick and a refused step. Apart from a tick, whose walk starts
+  from the read, nothing written here fails when, under either two-value row, an
+  answered step skips its read and stamps from a stale `now`: after a forward
+  `advance`, such a renew passes fragment 2 and `effect_Renew`, and none of the eleven
+  mutants is that fault. What states the read, a clause in each
+  effect in the form the selected row gives it or something else, is the maintainer's
+  at the **Stop** in step 3, with the plan's answer to step 2's bullet in hand.
+- **The order a tick records and the order it takes.** `step` writes the order into
+  `last`, and `TickIsItsStages` checks that order against the Allium and replays it.
+  Where two orders end in the same state, `fired` and `answer`, as two decays do when
+  no report names them, a `tick` that took the other order passes every property, and
+  the order `last` shows a reader or a fixture is then not the one taken. Checkpoint 2
+  reads `tick` for it. Whether that reading is enough is the maintainer's at the
+  **Stop** in step 3.
 - **A T ticket that lands first.** The counts and traces here are the Allium's at
   `cf1f3f3`. T45 changes both. Step 2 reconciles them; nothing in T45 or in the README
   edits this ticket when T45 lands.

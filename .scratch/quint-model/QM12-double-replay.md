@@ -216,7 +216,10 @@ point for QM12, so every item below is this ticket's own.
      since the snapshot's listing order is not a claim about the specification
      (`double/README.md`, lines 459 to 470). The two shed queues are compared as lists,
      in order: the model keeps them in creation order and so does the double
-     (`queue.py`, lines 62 to 63 and 192 to 195). Leases are compared in full, ended
+     (`queue.py`, lines 62 to 63 and 192 to 195). The entries that two lapses of one
+     tick add to one shed queue stand in the order of those lapses, so they are
+     compared in order only where the tick's `lapsed` is ("Time", "What a tick
+     answers"), and otherwise as that same ruling says. Leases are compared in full, ended
      ones included, through the lease map. What is not compared is named in one list
      in the test, the not-compared list, as shared rule 11 asks: each entry is a field
      or a step, with the ticket that will map it. With QM10 alone in the base the list
@@ -302,8 +305,14 @@ point for QM12, so every item below is this ticket's own.
   tick"). The report is compared with the two states, and a difference is an `answer`
   mismatch: `lapsed` against the leases whose status went from active to expired
   between the state before and the state after, each in full through the lease map,
-  and in order only where the fixture records one, in `last` (QM11, the order of
-  lapses); `decayed_superseded` and `decayed_dead_letters` against the entries that
+  and in order only where QM11's rule compares it in order (QM11, "What is compared
+  for a tick"): where the Allium at the base fixes the order and `last` records it,
+  or, where the Allium fixes none, as the maintainer ruled at QM11's step 3, read
+  under "Design rulings" in the hand-back of
+  `.scratch/quint-model/QM11-replay-lapses-and-time.md`. An order
+  in `last` is not enough by itself: where the Allium fixes none, `last` holds the
+  order the model chose, the double holds its own, and both may be legal.
+  `decayed_superseded` and `decayed_dead_letters` are compared with the entries that
   left each shed queue between the two states, entry by entry in the queue's order. If
   the model's `answer` after a tick holds something, the report is compared with that
   as well.
@@ -703,6 +712,12 @@ the hand-back names the file as it is.
    QM09, QM11 or a T ticket landed meanwhile, rerun step 2's listing, and do what
    steps 5 and 6 owe for what the fixtures now hold (a field that left or joined the
    not-compared list, `consecutive_expiries` among them, the time case, a new step).
+   If the merge changed anything under `double/pachinko_double/`, because a follow-up
+   of `tickets/T42-clock-model.md` or another T ticket landed meanwhile, read again
+   how the double reads its clock and whether it keeps a latest instant, as step 2
+   does, whether or not a fixture changed. An entry of the not-compared list that
+   names a ticket the merged tree now holds is mapped and removed, the model's `now`
+   among them, and steps 5 and 6 are done again for it.
    Show the merge's diff at the push stop (the review deltas, "After the last
    checkpoint"). Run `just check` and
    `just python-double`. Commit the work. Rerun Verification and quote it, headed by

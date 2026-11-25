@@ -256,8 +256,10 @@ changes nothing.
    the base or after the closing merge or rebase onto `main`: that model is derived
    from this specification, so the same change updates it wherever it models what this
    ticket changes. Read the condition again after that merge: if it brought in the
-   model, `quint/traces/` or a replay the base did not hold, this paragraph is done
-   then, before any gate runs, each stop in it included. The rule is the same-change
+   model, `quint/traces/` or a replay the base did not hold, or changed
+   `quint/pachinko.qnt` or a patch under `quint/mutants/`, the rest of this step is
+   done then, against the merged tree, before any gate runs, each stop in it
+   included. The rule is the same-change
    rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
    the model; both exist wherever the model does.
    Here that is more than the publish: `new_pocket_first` in the
@@ -281,7 +283,11 @@ changes nothing.
    reads, leave the rest to the model's own ticket for publish, which reads this
    specification at its base, and say in the hand-back that the check of both values
    was not owed and why. If the model has `PublishIntoNewPocket` and the tree has no
-   `just verify-quint` recipe, **stop and ask** how the check is to be shown.
+   `just verify-quint` recipe, **stop and ask** how the check is to be shown. Which
+   case holds is read of the tree this ticket lands on, not of the base alone: a
+   closing merge or rebase that brings `PublishIntoNewPocket` into a model that
+   lacked it makes the check of both values owed then, with the instance, the run
+   and the mutant above, before any gate runs.
 
    In this order: edit the model; re-cut each mutant patch under `quint/mutants/` that
    the edit breaks, keeping its mutation and the property it names, and list each in

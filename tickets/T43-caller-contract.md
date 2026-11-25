@@ -406,13 +406,15 @@ T47 have the two answers they wait on. No behaviour has changed.
    base holds it. So each follow-up ticket that changes `docs/specs/pachinko.allium`
    carries the model's obligation, written out in full and conditional on the tree it
    lands on, at its base or after its closing merge or rebase, which its closing step
-   reads again: a follow-up never cites a scratch path or this ticket for it. Its Files
+   reads again, doing the model's step again there if the merge brought in or
+   changed the model, a mutant patch, the fixtures or a replay: a follow-up never
+   cites a scratch path or this ticket for it. Its Files
    touched has one row, classed
    `shared, own lines, if the tree this ticket lands on holds quint/pachinko.qnt`, for
    `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`,
    `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`,
    `crates/libpachinko/tests/queue/walk/model/trace.rs` and
-   `double/tests/test_replay.py`, each only where the base holds it. Its steps have
+   `double/tests/test_replay.py`, each only where that tree holds it. Its steps have
    one, under the same condition, that says all of this in its own words: the model
    moves in the same change wherever it models what the ticket changes (the same-change
    rule in `AGENTS.md`, and the decision record under `docs/decisions/` that introduced

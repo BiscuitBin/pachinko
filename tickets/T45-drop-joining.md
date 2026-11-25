@@ -539,8 +539,10 @@ sending one id share it. Everything else a caller can observe is unchanged.
    the base or after the closing merge or rebase onto `main`: that model is derived
    from this specification, so the same change updates it wherever it models what this
    ticket changes. Read the condition again after that merge: if it brought in the
-   model, `quint/traces/` or a replay the base did not hold, this paragraph is done
-   then, before any gate runs, each stop in it included. The rule is the same-change
+   model, `quint/traces/` or a replay the base did not hold, or changed
+   `quint/pachinko.qnt` or a patch under `quint/mutants/`, the rest of this step is
+   done then, against the merged tree, before any gate runs, each stop in it
+   included. The rule is the same-change
    rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
    the model; both exist wherever the model does.
    Here the two join rules and the two id invariants go, with their guards,

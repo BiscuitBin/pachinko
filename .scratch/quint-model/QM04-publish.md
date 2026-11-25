@@ -472,7 +472,12 @@ apply, and every ticket of the series carries them word for word.
 2. **Read before writing, and the plan.** Read everything under "Read these". Compare
    each Allium line this ticket quotes with the Allium at `base`. If a rule, an
    invariant or a surface this ticket owns or cites is gone or reads differently,
-   **stop** and ask: T45, T39 or T47 may have merged. Write `ai_tmp/qm04/plan.md` with:
+   **stop** and ask: T45, T39 or T47 may have merged. Count the variants of
+   `Rule` in the base's model: 3, as this ticket counts them. If the count differs,
+   name the T ticket behind the difference (README, "The T tickets that touch the
+   model"), and have the plan recompute each trace, each step count and the bound,
+   which is still never lowered.
+   Write `ai_tmp/qm04/plan.md` with:
    - for each of the six rules, the Allium's text beside the planned action, its
      `guard_` and its `effect_`;
    - each of the six invariants and three parts of guarantees, with the ghost it reads
@@ -511,8 +516,11 @@ apply, and every ticket of the series carries them word for word.
    `quint/pachinko.qnt`: remove the seed and make `init` empty; add the constants, the
    state, the `Step` and `Rule` variants, the six guards, effects and witnesses, the
    invariants and the three parts; and add the three actions to `step` in their
-   unanswered form only, so that each sets `last`, leaves the state alone and leaves
-   `fired` empty. QM03's recipe reads the rules, witnesses and properties from the model
+   unanswered form only, so that each leaves the state alone and leaves `fired` empty.
+   No stub writes `last`: `step` writes it for each, from the arguments it chose, as
+   the README's second design block has it and as QM02 landed it. A stub that wrote
+   `last` itself would give the same red run, so the run does not show which was built.
+   QM03's recipe reads the rules, witnesses and properties from the model
    itself, so nothing is listed by hand; if its ruling differs, list them where it reads
    them. `just check-quint` passes (claim A, first half). QM03's ticket proposes a
    recipe that applies every patch before it verifies anything; step 2 read in its
@@ -566,6 +574,10 @@ apply, and every ticket of the series carries them word for word.
    - Does `step` offer `publish` for every publisher, pocket key, record key and rank of
      the instance in every state, or is a choice made only when the state allows it: a
      free pocket key, a count below a limit, a rank above the stored one?
+   - Does any of the three new actions write `last`, or does `step` alone write it,
+     from the arguments it chose?
+   - Is the body of each `witness_<Rule>` this ticket adds `fired.contains(<Rule>)` and
+     nothing else? The recipe reaches a witness and never reads its body.
    - Was a re-cut patch changed in what it mutates or in the property it names?
    - Could Verification pass with a mutant surviving, a witness not reached, or a server
      on port 8822 that the run did not start?

@@ -244,7 +244,11 @@ answers the fifth.
 - **`replayStep`.** It offers exactly the top-level actions of `step` that have a
   `WalkStep` and that the model has when this ticket runs without a clock:
   `publisherJoins`, `consumerJoins`, `publish`, `pull`, `ack`, `nack`, `renew` and
-  `release`, over the same arguments `step` gives them. It never offers `lapse`, so a
+  `release`, over the same arguments `step` gives them. It writes `last` as `step`
+  does: in the same conjunction that calls the action, from the arguments it chose,
+  and no action writes it (README, "Three more ghosts"). If QM02's ruling was the
+  alternative, in which the actions write `last`, `replayStep` writes nothing and says
+  so. It never offers `lapse`, so a
   lapse cannot appear in a fixture whether or not QM08 has merged. If QM09 has merged, it
   does not offer `advance`, `tick` or QM09's model-only decay steps either: QM11 adds
   the first two, and the others are never replayed. As a second guard the generator
@@ -264,7 +268,12 @@ answers the fifth.
     rule in `witnesses`, and `walk_<seed>` for each of the `walks` seeds from `seed`
     up. A second `walk_1` in place of `walk_4` keeps the count and fails here. The hashes
     alone do not show that: a fixture emptied by hand with its hash refreshed matches
-    them. Its message names `quint/pachinko.qnt` and `just quint-traces`. QM02's
+    them. Nor are the manifest's numbers taken from the manifest alone: `main`, `init`,
+    `step`, `seed`, `walks`, `walk_steps`, `witnesses`, `witness_steps` and
+    `witness_samples` must equal the values the script generates with, which it holds
+    as constants. Without that, `walk_4` deleted from the fixture with `walks`,
+    `traces` and the hash lowered to match would pass offline and fail only in `diff`.
+    Its message names `quint/pachinko.qnt` and `just quint-traces`. QM02's
     `scripts/check-quint.sh` runs it, after its typecheck, with pixi's Python as that
     script already reads JSON.
   - `just quint-traces diff` generates into scratch as `write` does, compares the result
@@ -733,8 +742,8 @@ in, with the lines of the model that show it, and the **Stop** in step 3 confirm
      `step` less the actions without a `WalkStep`, with the same arguments?
    - Does the set fire each of the 25 rules, and would the generation fail, rather than
      write a smaller set, if one could not be reached?
-   - Can `just quint-traces check` pass on a fixture that was edited, emptied or
-     generated from another model?
+   - Can `just quint-traces check` pass on a fixture that was edited, emptied, cut
+     down together with its manifest, or generated from another model?
    - Does anything in the plan decide what the Rust should do from the Rust itself,
      rather than from the model (shared rule 1)?
 
@@ -770,7 +779,9 @@ in, with the lines of the model that show it, and the **Stop** in step 3 confirm
      then with one rank changed in one state of the fixture, `check` fails each time;
      with the `traces` array emptied and `fixture_sha256` updated to match, `check`
      still fails, on the count of traces; with one walk's `name` changed to another
-     walk's and the hash updated, `check` fails, on the name given twice; with one
+     walk's and the hash updated, `check` fails, on the name given twice; with the
+     last walk removed from the fixture and `walks`, `traces` and `fixture_sha256`
+     changed to match, `check` fails, on `walks` against the script's number; with one
      rank changed and `fixture_sha256`
      updated to match, `check` passes and `diff` fails, which is why both exist;
      restore after each and show `cmp` exits 0;
@@ -876,7 +887,8 @@ in, with the lines of the model that show it, and the **Stop** in step 3 confirm
 - `just quint-traces` twice writes the same two files, byte for byte, and the fixture is
   under 768 KB; both are quoted.
 - `just quint-traces check` fails on a one-character model edit, on `traces=0`, on an
-  emptied fixture, with its hash left and with its hash updated, and on an edited
+  emptied fixture, with its hash left and with its hash updated, on a walk removed
+  with the manifest and the hash changed to match, and on an edited
   fixture; `just quint-traces diff` fails on a fixture edited with its hash updated;
   each is quoted with its exit status.
 - `just check-quint` fails on the one-character model edit and passes once it is

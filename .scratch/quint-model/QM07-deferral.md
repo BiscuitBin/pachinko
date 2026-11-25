@@ -497,7 +497,12 @@ apply, and every ticket of the series carries them word for word.
    `localhost:8822`, with the probe and its positive control from Verification, and run
    `just verify-quint` on the untouched worktree: quote its exit status and its wall
    time. That time is the figure step 6 compares with.
-2. **Read before writing.** Read every path under "Read these". Copy every line of the
+2. **Read before writing.** Read every path under "Read these". Count the variants of
+   `Rule` in the base's model: 21, as this ticket counts them. If the count differs,
+   name the T ticket behind the difference (README, "The T tickets that touch the
+   model"), and have the plan recompute each trace, each step count and the bound,
+   which is still never lowered.
+   Copy every line of the
    header's "Not yet modelled" list that names QM07, exactly, into
    `ai_tmp/qm07/gap-lines.txt`, and the name of the exception's definition in
    `PublishAnsweredByOneRule` into `ai_tmp/qm07/exception-name.txt`, one name on one
@@ -608,6 +613,8 @@ apply, and every ticket of the series carries them word for word.
      `PublishAnsweredByOneRule`? Did any patch change its mutation or the property it
      names?
    - Does the header's "Not yet modelled" list still say everything the model lacks?
+   - Is the body of each `witness_<Rule>` this ticket adds `fired.contains(<Rule>)` and
+     nothing else? The recipe reaches a witness and never reads its body.
 9. **Commit and hand back.** Commit the work. Rerun Verification and quote it, headed by
    the full commit id. Set `status: done` here and in the index of
    `.scratch/quint-model/README.md`, write the hand-back notes, and commit the record.

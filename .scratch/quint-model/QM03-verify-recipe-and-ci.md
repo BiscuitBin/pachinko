@@ -226,9 +226,10 @@ The later tickets are written against the recommended answers.
      leaves a later ticket nothing to raise from.
    - `timeout-minutes: 20` for the job, the most any job in `ci.yml` has today (`rust`,
      `coverage` and `image`).
-4. **What the recipe shows about the server that answers** (the README row asks how it
-   "makes sure the Apalache server that answers is the one it started"; it cannot make
-   sure, and "What stays open" below says what is left). Recommended:
+4. **What the recipe shows about the server that answers** (README row: what
+   `verify-quint` shows about the Apalache server that answers, and what it cannot. It
+   cannot make sure that the server is the one it started, and "What stays open" below
+   says what is left). Recommended:
    - Before anything else, and again before every run, a probe connects to port 8822
      on each address `localhost` resolves to, and on `127.0.0.1` and `::1`. Any answer
      fails the recipe, naming the listener if `lsof` is present. The probe is pixi's
@@ -238,12 +239,16 @@ The later tickets are written against the recommended answers.
      `No running Apalache server found, launching...` and
      `Started Apalache server on pid=`, and must not hold
      `Connecting with existing Apalache server` (`apalache.js`, lines 495, 499 and 515).
-     That is the rule for a run that connects once, as every run of this ticket does.
-     A run that connects more than once in one invocation logs the connecting line
-     when it meets the server it started itself: `--inductive-invariant` connects once
-     for each of its phases (`verify.js`, lines 203 to 227). The ticket that adds such
-     a run states that row's rule: the launching line and the started line come first,
-     once each, and every connecting line comes after them.
+     That is the rule for a run that connects once, as every run the recipe makes
+     does. A run that connects more than once in one invocation logs the connecting
+     line when it meets the server it started itself: `--inductive-invariant` connects
+     once for each of its phases (`verify.js`, lines 203 to 227), and
+     `--search-observations` connects again for its search once the first call has
+     passed (lines 257 to 261). The rule for such a run: the launching line and the
+     started line come first, once each, and every connecting line comes after them.
+     Step 2's probe of `--search-observations` (claim 9) is this ticket's one such
+     run, by hand and outside the recipe, and its log is read by that rule. A ticket
+     that adds such a run to the recipe states the rule in its row.
    - Every run has `grpc_proxy`, `https_proxy` and `http_proxy` unset. QM01 recommends
      that the `quint` recipe unset them, with their upper-case forms, for every command
      (QM01, "The proxy variables"), and step 1 quotes `just --show quint` to see. If
@@ -403,7 +408,7 @@ The later tickets are written against the recommended answers.
     | A bound without an instance | `which the model does not have` |
     | A rule without a witness, or a witness without a rule | `has no witness`, or `names no rule` |
     | A definition that breaks the README's naming | the definition's name, and the rule it breaks |
-    | A property, or a qualified definition, in an instance | `in an instance`, and the definition's name |
+    | A property, or a qualified definition, in an instance | `in an instance` and the definition's name, both on the `verify-quint: FAILED:` line |
     | Something answers on port 8822 | `port 8822 is in use`, the listener, and the advice of point 4 |
     | A run that did not start its own server | `did not start its own Apalache server` |
     | The canary holds | `Canary was not violated` |
@@ -486,12 +491,12 @@ differs from the one stated is a design change: stop and bring it to the maintai
 
 | # | Claim | Check |
 | --- | --- | --- |
-| 1 | A `verify` that passes does not start the Rust evaluator; one that reports a violation does, and so does an `--observation` that is reached. So the witness path of point 1 needs the evaluator QM01 installs (read in `verify.js` and `rust/invariantsReporter.js`, not run) | step 2: the logs of a pass, a violation and a reached witness; step 7: the whole recipe with the external network denied |
+| 1 | A `verify` that passes does not start the Rust evaluator; one that names an invariant and reports a violation does, and so does an `--observation` that is reached. So the witness path of point 1 needs the evaluator QM01 installs (read in `verify.js` and `rust/invariantsReporter.js`, not run) | step 2: the logs of a pass, a violation and a reached witness; step 7: the whole recipe with the external network denied |
 | 7 | The properties a `verify` checks are the ones named on its command line; with none named it falls back to the definitions declared with the `invariant` qualifier, and the model declares none. A run can therefore pass having checked nothing, so a pass means something only after `Canary` was violated through the same instance (read in `cliHelpers.js` lines 91 and 117 and `cliCommands.js` line 493, not run) | step 2: a `verify` with no property flag, and one with `--no-invariant`, each pass on a copy whose every property is false; step 6: the control "the canary holds" |
-| 8 | Quint tries a server on `localhost:8822` before it starts its own (read in `apalache.js` from line 490; AP01 ran the half with the port free at `5b74af3`, and no record shows the connecting line printed) | step 2: the three log lines of point 4, on a run with the port free, and the connecting line matched in `apalache.js` itself, since shared rule 10 forbids the run that would print it; step 6: the control "port busy" |
-| 9 | One `--observation` passes when reached and fails when not; `--search-observations` only warns, and several `--observation` flags pass when one is reached (read in `verify.js` from lines 133 and 176, not run). `--search-observations` searches the definitions declared with the `observation` qualifier and nothing named with `--observation` (`cliCommands.js`, lines 497 to 498; `verify.js`, line 134) | step 2: a reached witness; an unreachable one; two `--observation` flags, one reached and one not; and `--search-observations` on a copy that declares the unreachable one with the `observation` qualifier. Each with its exit status and result line |
-| 10 | A syntax error, a type error and a counterexample all exit 1, and a deadlock is reported as a violation (read in `cliCommands.js` from line 638 and `apalache.js` from line 129, not run) | step 2: the four runs and their exit statuses; step 6: the controls "ill-typed" and "deadlock" |
-| 11 | The output names the violated invariant only when the reporter can evaluate the counterexample (read in `cliReporting.js` from line 261, not run) | step 2: the cross-mark line of a caught mutant, quoted byte for byte with `od -c`; its absence on the deadlock run |
+| 8 | Quint tries a server on `localhost:8822` before it starts its own (read in `apalache.js` from line 490; AP01 ran the half with the port free at `5b74af3`, and no record shows the connecting line printed) | step 2: the three log lines of point 4, on a run with the port free, and the connecting line matched in `apalache.js` itself, since shared rule 10 forbids a run against a server it did not start. Claim 9's `--search-observations` probe prints that line only on meeting the server its own first call started, which shows the spelling and not this claim; step 6: the control "port busy" |
+| 9 | One `--observation` passes when reached and fails when not; `--search-observations` only warns, and several `--observation` flags pass when one is reached (read in `verify.js` from lines 133 and 176, not run). `--search-observations` searches the definitions declared with the `observation` qualifier and nothing named with `--observation` (`cliCommands.js`, lines 497 to 498; `verify.js`, line 134) | step 2: a reached witness; an unreachable one; two `--observation` flags, one reached and one not; and `--search-observations` on a copy that declares the unreachable one with the `observation` qualifier. Each with its exit status and result line. The last connects more than once, so its log is read by point 4's rule for such a run, not by the rule against the connecting line |
+| 10 | A syntax error, a type error and a counterexample all exit 1, and a deadlock is reported as a violation (read in `cliCommands.js` from line 638 and `apalache.js` from line 129, not run). The deadlock half holds only if Apalache reports a deadlock under the configuration Quint builds, which claim F settles first. If claim F finds that it reports none, this half has no run: record it as read and not run, with claim F's output, and put it to the maintainer at step 4's **Stop** (Open points, "A witness on a deadlock's trace") | step 2: the four runs and their exit statuses; step 6: the controls "ill-typed" and "deadlock" |
+| 11 | The output names the violated invariant only when the reporter can evaluate the counterexample (read in `cliReporting.js` from line 261, not run) | step 2: the cross-mark line of a caught mutant, quoted byte for byte with `od -c`; its absence on the deadlock run, if claim F produced one (row 10) |
 | 12 | The whole of `verify-quint` finishes inside the job's timeout, with the head-room of point 8 (not read) | step 7, locally; step 13, in CI, with the run's URL |
 | A | `--invariants` takes every word after it, the input file included, so the file goes first (read in `cli.js` line 334 and the comment at line 60, not run) | step 2: the same run with the file last, quoted |
 | B | `--no-invariant` with `--observation` is accepted and leaves the observation as the only thing checked (read in `cliHelpers.js` from line 171, not run) | step 2: the witness run on a copy whose `Canary` is declared `invariant` |
@@ -502,7 +507,7 @@ differs from the one stated is a design change: stop and bring it to the maintai
 | G | The runner has what the recipe needs: `mktemp -d`, `git`, pixi's Python, and no exported bash function, which the `quint` recipe's guard refuses (`scripts/install-apalache.sh`, the `BASH_FUNC_` test) | step 13: the first CI run |
 | H | A denial that blocks the external network and allows loopback lets a `verify` pass; on macOS a `sandbox-exec` profile, on Linux `unshare -rn` with `lo` brought up (not read, not run) | step 7: a loopback connection succeeds and §11's two `curl` commands fail inside the same denial |
 | I | After each run the port is free again within the bounded wait (AP01 ran it on macOS at `5b74af3`; not run on Linux). The recipe waits for the port, not for the pid it read from the log: a process can outlive its listener, and nothing here shows the process gone | every run of step 5; step 13 for Linux, where a green run means every wait succeeded |
-| J | A `verify` of a file outside the worktree leaves nothing in the worktree but `_apalache-out/` | step 7: a `find -cnewer` over the whole worktree, ignored directories included, after its positive control, a file rewritten with its modification time put back. `git status --short --ignored` and `just check-clean` show only Git's view, in which an ignored directory such as `.quint/` is one line whatever changes inside it |
+| J | A `verify` of a file outside the worktree leaves nothing in the worktree but `_apalache-out/` | step 7: a `find -cnewer` over the whole worktree, ignored directories included, after its positive control, a file rewritten with its modification time put back; and the root's own listing before and after, which the `find` leaves out. `git status --short --ignored` and `just check-clean` show only Git's view, in which an ignored directory such as `.quint/` is one line whatever changes inside it |
 | K | `editorconfig-checker` reports a patch's context lines, for their odd indentation and for the single space that stands for a blank line, and the `trailing-whitespace` fixer rewrites that space (read in `.editorconfig`, `.pre-commit-config.yaml` and `.pre-commit-fix.yaml`, not run) | step 5: `just lint` and `just fix` on the patches, before point 11's two edits and after |
 | L | Each of QM02's three witnesses is reached on `pachinko_walk` at its bound. The seed queues two pockets for three consumers, so that `PullFindsNoPocket` can fire (README, under "What each ticket delivers") | step 2: each witness run at every measured bound, and the shallowest bound that reaches it |
 
@@ -720,7 +725,7 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
 | `docs/project/repository-map.md` | shared, own lines | the `scripts/` lines name the two scripts; `quint/` names `verify.txt` and `mutants/` |
 | `AGENTS.md` | shared, own lines | `just verify-quint` in the same-change rule QM02 wrote |
 | `.agents/skills/spec-change/SKILL.md` | shared, own lines | the same, in the skill's body; its frontmatter is frozen and its bridges are not touched |
-| `.scratch/quint-model/QM03-verify-recipe-and-ci.md` | ticket | `status:`, the hand-back notes, and a correction to Verification that a control shows is needed, recorded under Departures |
+| `.scratch/quint-model/QM03-verify-recipe-and-ci.md` | ticket | `status:`, the hand-back notes, a correction to Verification that a control shows is needed, and the lines of this ticket that step 4's ruling replaces (step 2's recount, point 12), each recorded under Departures |
 | `.scratch/quint-model/README.md` | shared, own lines | QM03's Status cell; and, only if the maintainer rules against a recommended answer, the sentences that ruling changes there |
 | `.scratch/quint-model/QM04-*.md` to `QM13-*.md` | shared, own lines | only if the maintainer rules against a recommended answer: the sentences that ruling changes, each listed under Design rulings |
 | `tickets/T39-decide-q2-q6.md`, `tickets/T40-pocket-order-model.md`, `tickets/T42-clock-model.md`, `tickets/T43-caller-contract.md`, `tickets/T45-drop-joining.md`, `tickets/T46-no-claim-without-records.md`, `tickets/T47-start-rule-and-config-bounds.md` | shared, own lines | only if the maintainer's ruling differs from a recommended answer, and only in a ticket still `todo`: the paths and commands that its "The Quint model" paragraph and its `quint/pachinko.qnt` row take from this ticket, each listed in the hand-back |
@@ -758,7 +763,8 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
    its replacement, and step 4 puts that list to the maintainer with the rest. Time
    the pass on
    `pachinko_walk` at `--max-steps` 6, 8, 10 and 12, and find the shallowest bound at
-   which each of the three witnesses is reached (claim L). If one is
+   which each witness of the base's model is reached (claim L; three witnesses, as
+   this ticket was written). If one is
    reached at no measured bound, **stop** and bring the model's text and the runs to the
    maintainer: the recipe cannot be green, and neither a lower standard nor an edit to the
    model is this ticket's to choose. Otherwise write `ai_tmp/qm03/plan.md`:
@@ -784,21 +790,33 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
      constructor or a constant for a property? Does it refuse a type declaration, or
      pass a property that sits in an instance?
    - Is each expected line something step 2 saw printed, or only something read?
+   - Is the body of each `witness_<Rule>` in the base's model `fired.contains(<Rule>)`
+     and nothing else? The recipe reaches a witness and never reads its body (Open
+     points, "A witness that is true for another reason").
    - Does any step lower a bound, shrink a domain or edit `quint/pachinko.qnt`?
 4. **Stop for the ruling.** **Stop** and put "Design proposed" to the maintainer, with
    the checkpoint's verdicts, step 2's measurements and any claim whose answer differed.
    Record the ruling on each of the thirteen points. If it changes a recommended
    answer, edit the sentences it changes in the README and in the later tickets, and
-   list them under Design rulings.
+   list them under Design rulings. Where the ruling replaces a line of this ticket,
+   one that step 2's plan listed after the recount or a slug or edit of point 12,
+   make that replacement here too, in point 12, Files touched, the acceptance criteria
+   and Verification, and quote each under Departures.
 5. **The patches under the hooks, then the recipe, green.** Cut each patch with
    `diff -u` from a copy edited under `ai_tmp/qm03/`, never by hand, add both, and save
    them under `ai_tmp/qm03/saved/`. Red first (claim K): `just lint` fails on a patch;
    quote the lines `editorconfig-checker` reports. `just fix` changes a patch that has a
    blank context line (`cmp` against the saved copy exits 1); restore it from the saved
    copy. If neither patch has such a line, say so, and show it on a scratch patch that
-   does. Then add the `.editorconfig` section and the `.pre-commit-fix.yaml` exclusion,
-   and show the green half: `just fix`, then `just lint`, then `cmp` exits 0 for each
-   patch. Then add the helper, `quint/verify.txt`, the runner and the `Justfile` recipe.
+   does. Keep that patch at `quint/mutants/qm03-scratch.patch`, untracked, with a saved
+   copy of its own: `just fix` reads no file under `ai_tmp/` (the `exclude` at the head
+   of `.pre-commit-fix.yaml`) and no untracked file Git ignores, so a patch kept under
+   `ai_tmp/` is never rewritten and its `cmp` cannot exit 1. Then add the
+   `.editorconfig` section and the `.pre-commit-fix.yaml` exclusion, and show the green
+   half: `just fix`, then `just lint`, then `cmp` exits 0 for each patch, the scratch
+   one included. Remove the scratch patch before the recipe first runs: the recipe
+   takes every `*.patch` under `mutants/` for a mutant. Then add the helper,
+   `quint/verify.txt`, the runner and the `Justfile` recipe.
    With the port probe green, run `just verify-quint` and quote its whole
    output and exit status, headed by the commit and "with uncommitted changes". Run
    `sh -n scripts/verify-quint.sh`, and run the recipe once under `/bin/sh` on macOS,
@@ -884,9 +902,16 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
 
    `find` reads ignored directories, which `git status --short --ignored` shows as one
    line each. A path it prints is something the recipe wrote in the worktree, so claim
-   J's answer differs: record it and **stop**. Then run `just check-clean`, which shows
-   Git's view. Run the recipe three times and quote each total and the per-run seconds:
-   this is the local half of claim 12.
+   J's answer differs: record it and **stop**. The command leaves out `.` itself, so an
+   entry removed from the root, an ignored `.DS_Store` for one, shows nowhere: the file
+   is gone, and the directory that changed is the one left out. So compare the root's
+   listing as well. Before the run, when the marker is created again, save the listing
+   with `ls -A >| ai_tmp/qm03/root.before`. Then its positive control, still before the
+   run: `ls -A | diff ai_tmp/qm03/root.before -` exits 1 while a scratch file sits in
+   the root, and 0 once the file is removed. After the run the same `diff` must exit 0
+   again. A difference is claim J's answer too: record it and **stop**. Then run
+   `just check-clean`, which shows Git's view. Run the recipe three times and quote
+   each total and the per-run seconds: this is the local half of claim 12.
 8. **Adversarial review** (checkpoint 2: conformance and breakage, per
    `tickets/CONVENTIONS.md` §14, over `scripts/verify-quint.sh`,
    `scripts/verify-quint-model.py`, `quint/verify.txt`, the two patches,
@@ -989,8 +1014,9 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
 - `just verify-quint` passes with the external network denied and loopback allowed,
   with the loopback control passing and both `curl` controls failing.
 - After a run, step 7's `find` prints nothing outside `_apalache-out/`, after its
-  positive control; `git status --short` lists nothing the run made; and
-  `just check-clean` passes.
+  positive control; the root's listing is the same before and after, after its own
+  control; `git status --short` lists nothing the run made; and `just check-clean`
+  passes.
 - Both patches are byte-identical after `just fix`, and `just lint` passes with them;
   before point 11's two edits `just lint` failed on them, as step 5 quotes.
 - `.github/workflows/ci.yml` has the job `quint` with the three installs, the recipe,
@@ -1007,7 +1033,9 @@ sentence with `rg` at the base; the quotations in step 10 are from `cf1f3f3`.
 - `AGENTS.md` and `.agents/skills/spec-change/SKILL.md` name `just verify-quint` in the
   same-change rule, and `just check-agents` passes.
 - Each claim, 1 and 7 to 12 and A to L, has its outcome recorded with the output that
-  settled it.
+  settled it. A half its row says has no run is recorded as read and not run: claim
+  8's server that the run did not start, and the deadlock half of claims 10 and 11 if
+  claim F found that none is reported.
 - The ruling on each of the thirteen design points is recorded, with every sentence it
   changed in the README and the later tickets.
 - The three checkpoints are recorded as §14's Record asks, with the series' deltas.
@@ -1204,6 +1232,14 @@ run is quoted beside this script's output, not inside it.
   deadlock then rests on reading `step` (README, "Every step is total"). The
   maintainer decides at step 4's **Stop**, with claim F's output, whether that is
   enough or whether a later ticket sets Apalache's deadlock option.
+- **A witness that is true for another reason.** The helper checks that each rule
+  has a `witness_<Rule>` and the recipe that it is reached, but neither reads its
+  body, which the README fixes as `fired.contains(<Rule>)`. A model whose witness is
+  `true` is green with a rule that never fired; QM02's checkpoint 2 and checkpoint 1
+  here read the body, and nothing reads it for a witness a later ticket adds. A check
+  in the helper would refuse the "unreachable witness" control before its own branch,
+  so the maintainer decides at step 4's **Stop** whether the helper compares the body
+  and how that control is then built.
 - **How QM02 wrote the model.** This ticket was drafted before QM02 ran. Point 6's
   rule rests on the README's naming, but the edits of point 12 and the builds of step
   6's "script" controls depend on the model's text. The builder fits them at step 2,
@@ -1222,9 +1258,10 @@ run is quoted beside this script's output, not inside it.
   The wait after a run is for the port, not for the pid, so a spawned process that
   outlives its listener is not seen either. Nobody is assigned.
 - **A run that connects more than once.** Point 4's rule against the connecting line
-  fits every run of this ticket. QM13's inductive run connects once for each phase and
-  needs the rule point 4 states for it. Settled by QM13, in the recipe and in its own
-  controls.
+  fits every run the recipe makes in this ticket. Step 2's `--search-observations`
+  probe, run by hand, is read by the other rule point 4 states. QM13's inductive run
+  connects once for each phase and needs that rule in the recipe. Settled by QM13, in
+  the recipe and in its own controls.
 - **A server already running.** No record this ticket cites shows the pinned CLI run
   against an Apalache server that was already listening, and this ticket does not run
   it: shared rule 10 forbids a `verify` with the port in use. The connecting line is

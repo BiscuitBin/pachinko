@@ -339,8 +339,9 @@ the ruling. QM09 keeps `tick` and `advance` in `step`; this ticket adds them to
   `tick_lapses_two`; the manifest gains the key `cases`, which lists such names, and
   `traces` equals `walks` plus the numbers of `witnesses` and `cases`, which `check`
   enforces, with each name in `cases` held by exactly one trace, as it requires of a
-  witness and a walk. `write` fails, and writes nothing, if the run does not reach it.
-  The rule
+  witness and a walk, and with `cases` equal to the script's own list, as QM10's
+  `check` requires of the manifest's other numbers. `write` fails, and writes
+  nothing, if the run does not reach it. The rule
   test requires a trace of that name whose last step is a tick that took two leases
   from active to expired. The shortest path is two publishes into two pockets, two
   pulls by two consumers, one advance past `lease_ttl` and a tick. A tick that decays
@@ -642,6 +643,10 @@ apply, and every ticket of the series carries them word for word.
 4. **The model.** Add `advance` and `tick` to `replayStep` in `quint/pachinko.qnt`. Run
    `just check-quint` and show it fail on the hash check, naming `just quint-traces`:
    the model changed and the fixtures did not. That failure is the red test for step 5.
+   Shared rule 11 has the fixtures regenerated before any gate runs, so that no gate
+   is read against fixtures the model has left behind. This run is the one stated
+   exception: it is the hash check's red control, run for its failure. No other gate
+   runs, and nothing is quoted as passing, until step 5 has regenerated.
    Re-cut any mutant patch the edit broke, keeping its mutation and the property it
    names, and list it in the hand-back (shared rule 11).
 5. **The fixtures, red then green.** Extend the generator's rule list and its list of
@@ -741,7 +746,11 @@ apply, and every ticket of the series carries them word for word.
    now holds `double/tests/test_replay.py` and the base did not, step 7's work on the
    double's replay is owed before the hand-back. If the merge changed
    `quint/pachinko.qnt`, run `just quint-traces` before any gate and rerun the green
-   runs of steps 5 to 7. Show the merge's diff at the push stop (the review deltas,
+   runs of steps 5 to 7. If the merged tree holds `double/tests/test_replay.py`, run
+   `just python-double` after the merge whatever the merge changed, and quote it: no
+   gate runs that recipe, and a merge can change the double or its replay and leave
+   the model alone. A failure there is step 7's work again, or its **Stop**. Show the
+   merge's diff at the push stop (the review deltas,
    "After the last checkpoint"). Commit the work. Rerun Verification and quote it,
    headed
    by the full commit id. Record each claim's outcome, the ruling of step 3 and each
@@ -816,6 +825,9 @@ just quint-traces check
 just check-quint
 just test
 
+# The double's replay, where the tree holds it: no gate runs that recipe.
+if test -f double/tests/test_replay.py; then just python-double; fi
+
 # The fixture holds the clock's steps, and no bare lapse. The control finds a pull.
 grep -c -F '"Pull"' quint/traces/pachinko_walk.json
 grep -c -F '"Tick"' quint/traces/pachinko_walk.json
@@ -827,16 +839,20 @@ grep -Fx 'main=pachinko_walk' quint/traces/manifest.txt
 grep -E '^cases=(.* )?tick_lapses_two( .*)?$' quint/traces/manifest.txt
 grep -c -F '"tick_lapses_two"' quint/traces/pachinko_walk.json
 
-# A wrong expiry fails the test: the first expires_at in the file becomes 7.
+# A wrong expiry fails the test: the first expires_at in the file is raised by 1.
 cp quint/traces/pachinko_walk.json ai_tmp/qm11/fixture.saved
 saved=ai_tmp/qm11/fixture.saved
 target=quint/traces/pachinko_walk.json
-awk '!done && sub(/"expires_at":[0-9]+/, "\"expires_at\":7") { done = 1 } { print }' "$saved" >| "$target"
+awk '!done && match($0, /"expires_at":[0-9]+/) {
+  n = substr($0, RSTART + 13, RLENGTH - 13) + 1
+  $0 = substr($0, 1, RSTART + 12) n substr($0, RSTART + RLENGTH)
+  done = 1
+} { print }' "$saved" >| "$target"
 if cmp -s "$saved" "$target"; then exit 1; fi
 if just test >| ai_tmp/qm11/red-expiry.log 2>&1; then exit 1; fi
 cp "$saved" "$target"
 saved=""
-grep -E 'replay .* step [0-9]+: [a-z]+:' ai_tmp/qm11/red-expiry.log
+grep -E 'replay .* step [0-9]+: (answer|state):' ai_tmp/qm11/red-expiry.log
 git diff --exit-code -- quint/traces
 just test
 
@@ -873,14 +889,23 @@ Set `base` in the environment to the commit step 1 recorded before running it; `
 stops the script if it is missing. The `if just test ...; then exit 1; fi` line is
 the red test and the `just test` lines before and after it are the green ones. The
 `cmp -s` line before it is the positive control for the edit: if the fixture held no
-`"expires_at":<digits>`, nothing would change and the script stops there. The `grep -E`
+`"expires_at":<digits>`, nothing would change and the script stops there. The edit
+raises the value by 1 and no more, so that it stays in every range a decoder or a
+state check could ask of it, after its grant included, and only a comparison of that
+expiry with the Rust's can reject it. The `grep -E`
 after the red run shows it failed in a comparison of the replay, by the prefix QM10
-gave every such message (`replay <trace> step <index>: <comparison>:`); the test's
+gave every such message (`replay <trace> step <index>: <comparison>:`), and in one
+of the two that read an expiry: `answer`, where the edited value is a lease's just
+granted or extended and the queue returned the true one, and `state` otherwise. A
+failure under any other comparison stops the script and is looked into; the pattern
+is not widened to admit it. The test's
 name alone would also match the line that reports it passing while another test
-failed. While `saved` is set, the `trap` puts the fixture back however the script
-ends, an interrupt included. `grep -c -F '"Pull"'` is the positive
-control for the silent probe of the three model-only steps, the `grep -F` of `replay.rs`
-for the silent
+failed. The `just python-double` line runs only where the tree holds the double's
+replay; `just check` does not run that recipe, so nothing else in this script
+would notice a replay a merge had broken. While `saved` is set, the `trap` puts the
+fixture back however the script ends, an interrupt included. `grep -c -F '"Pull"'` is
+the positive control for the silent probe of the three model-only steps, the
+`grep -F` of `replay.rs` for the silent
 probe of `crates/libpachinko/src/`, and the first `lsof`, run while the control listener
 holds the port, for the two that must print nothing. `"Pull"`, `"Tick"`, `"Advance"` and
 `"Lapse"`, with `"DecaySuperseded"` and `"DecayDeadLetter"`, are the variants of the

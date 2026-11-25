@@ -118,8 +118,11 @@ runs `--inductive-invariant`.
 
 What the base must hold, besides QM08: QM01's pinned Rust evaluator
 (`tools/quint/evaluator.txt`, installed by `just install-quint-evaluator`, which
-`just initialize` runs). A `verify` that reports a violation starts the evaluator
-(claim 1 of the series README), and every red control in this ticket is such a run.
+`just initialize` runs). A `verify` that names an invariant and reports a violation
+starts the evaluator (claim 1 of the series README), and in this ticket the run that
+fails in the implication is such a run. A run that fails in the start or the step hands
+the reporter no expression (`verify.js`, lines 211 and 218) and is not expected to
+start it.
 The chain QM01 to QM08 implies it; step 1 confirms it.
 
 Read these:
@@ -136,8 +139,8 @@ Read these:
 - `.scratch/quint-model/QM03-verify-recipe-and-ci.md` and
   `.scratch/quint-model/QM08-untimed-lapse-and-parking.md` (created by the series):
   their "Design proposed in this ticket" and hand-back "Design rulings", for the format
-  of `quint/verify.txt`, how a property is named on the command line, how the recipe
-  makes sure the server that answers is its own, and the measured time.
+  of `quint/verify.txt`, how a property is named on the command line, what the recipe
+  shows about the server that answers, and the measured time.
 - The CLI source cited above, and `builtin.qnt` lines 921 to 933 (`apalache::generate`,
   which "must be used together with `nondet`").
 - `.scratch/apalache/AP01-java-and-verify.md`, Verification, for the port probe.
@@ -172,17 +175,18 @@ What the shared rules mean for this ticket:
   command line and is trusted only after `Canary` was violated on `pachinko_walk` in
   the same recipe run. It fails closed on each of: a missing `> [1/3]`, `> [2/3]` or
   `> [3/3]` line; a `> [3/3]` line that does not name both invariants; no `[ok] No violation
-  found`; a weakening patch that does not apply or does not typecheck, or whose header
-  does not name the one conjunct it removes; a weakened run that passes, whose last
+  found`; a weakening patch that does not apply or does not typecheck, whose header
+  does not name the one conjunct it removes, or that changes anything else in the
+  invariant; a weakened run that passes, whose last
   progress line is not the `> [2/3]` one, that fails with no `[violation]` line, or
   that fails on a deadlock and not on a counterexample.
 - *Shared rule 10.* One inductive run starts up to three checks against the Apalache
   server. The port probe runs before each `just quint verify`, never between its
   checks, and the log must show that the server every check used is the one this run
-  started ("Design proposed"). A run that reports a violation starts the Rust
-  evaluator (claim 1 of the
-  README), so the weakened runs need the pinned evaluator that `just initialize`
-  installed.
+  started ("Design proposed"). A run that names an invariant and reports a violation
+  starts the Rust evaluator (claim 1 of the README), so the run that fails in the
+  implication needs the pinned evaluator that `just initialize` installed. The weakened
+  runs fail in the step and are not expected to start it.
 - *Shared rule 11.* This ticket changes `quint/pachinko.qnt`. It re-cuts every patch
   under `quint/mutants/` that the change breaks and runs `just verify-quint`. If the
   tree this ticket lands on holds `quint/traces/`, at the base or after the closing
@@ -323,11 +327,18 @@ point for QM13, so every item below is this ticket's own.
      whose instance has no inductive line. `# removes:` names the conjunct taken out.
      The recipe checks it against the parsed model and the parsed copy: the names
      `LeaseExclusivityInductive` refers to differ by that one name and by nothing
-     else, the name is not one of the implied properties, and every other definition
-     of the copy is the model's, compared as QM03's point 2.6 compares one definition,
-     ids and source positions aside. Without the last, a patch could take the conjunct
-     out and also change an action, and the step's counterexample would say nothing
-     about the conjunct. QM03's check that a
+     else, the name is not one of the implied properties, the copy's
+     `LeaseExclusivityInductive` is the model's with that one conjunct deleted and
+     nothing else changed, and every other definition of the copy is the model's,
+     compared as QM03's point 2.6 compares one definition, ids and source positions
+     aside. For the invariant itself the recipe deletes the named operand from the
+     model's parsed conjunction and compares what is left with the copy's definition
+     in that same way; the invariant is one conjunction whose operands are names, as
+     Goal has it, and the recipe refuses a model where it is not. The names alone
+     would pass a patch that takes the conjunct out and also turns a remaining `and`
+     into an `or`, and a counterexample to that invariant says nothing about the
+     conjunct. Without the check of every other definition, a patch could take the
+     conjunct out and also change an action, with the same result. QM03's check that a
      patch leaves the property it names defined as the model defines it (its "Design
      proposed", point 2.6, `changes the property it names`) applies to the
      `# property:` kind only: a weakening changes `LeaseExclusivityInductive` on
@@ -666,7 +677,8 @@ hand-back names the file as it is.
      check have caught it?
    - Would the weakened run still fail if the recipe read only the exit status? Could
      it fail in the start or the implication, or on a deadlock, and be counted? Could a
-     patch that removes another conjunct than its header names be counted?
+     patch that removes another conjunct than its header names be counted, or one
+     that removes the named conjunct and changes what is left of the invariant?
    - Does QM03's recipe, as landed, refuse the inductive line or run the weakening as a
      bounded mutant, and does the plan change exactly the file that decides it?
    - What does a later ticket that adds a `var` see, and does the comment tell it what
@@ -759,6 +771,10 @@ hand-back names the file as it is.
      be the check; quote that run, whatever it shows, beside the recipe's message;
    - the same patch with `# removes:` still naming the real weakening's conjunct: the
      recipe fails, because the parsed copy lacks another name than the header gives;
+   - the real weakening given one more change inside the invariant, two of the
+     conjuncts it leaves joined by `or` in place of `and`, its header unchanged: the
+     recipe fails before any run, because the copy's invariant is not the model's
+     less the named conjunct, although the names it refers to are exactly those;
    - the model given, for this control only, a `val` that is `true` and that `val` as
      one more conjunct of the invariant, and the weakening replaced by one that removes
      exactly it, its header saying so. A conjunct that is `true` cannot matter, so the
@@ -866,7 +882,7 @@ recorded:
   the implication, with `[violation]` and the violated invariant named.
 - Step 6's start control and each necessity run are quoted, and the hand-back lists
   every conjunct with the Allium text behind it and the check that fails without it.
-- Each of step 8's seven edits makes the recipe fail, each message quoted, and the
+- Each of step 8's eight edits makes the recipe fail, each message quoted, and the
   edited files are byte for byte as committed afterwards.
 - `git diff "$base"...HEAD -- quint/pachinko.qnt` shows added lines in one section and
   no changed or removed line.
@@ -887,8 +903,11 @@ recorded:
 
 Run from a file as one `sh` script, from the repository's root, after the commit, with
 no other `verify` running in any worktree; `set -eu` stops it at the first command that
-fails. Set `budget_seconds` to half of the `quint` job's `timeout-minutes`, in seconds,
-before it runs. The two ordinary invariants are named as QM03's recipe names
+fails. Set `budget_seconds` before it runs: to half of the `quint` job's
+`timeout-minutes`, in seconds, or, if the maintainer ruled another bar, at step 4 or
+at step 8's **Stop**, to the bar that ruling names, which is never above the job's
+timeout; Departures then quotes the ruling with its date. The
+two ordinary invariants are named as QM03's recipe names
 properties: `--invariants` and the names, last on the line, with the model's path
 first, because the option takes every word after it. They are the script's positional
 parameters, set once by `set --`; a function call does not disturb them. `v` is the

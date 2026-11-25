@@ -451,7 +451,7 @@ from the one below is a design change: stop and bring it back.
 | 5 | An instance that sets a module's `const`s is checked by naming it with `--main`, with that instance's `init` and `step`. Not read | step 2: one property over a constant passes through the instance whose value makes it true and is violated through the other; step 4 on the model |
 | 6 | `typecheck` exits non-zero on an ill-typed module and needs no network. Not read | step 2 for the exit status; step 6 for the network, under §11's denial with both `curl` controls |
 | 7 | The properties a `verify` checks are the ones named on its command line; with none named it falls back to the definitions declared with the `invariant` qualifier, and the model declares none, so such a run can pass having checked nothing. Read in `cliHelpers.js` (`getInvariants`) and `cliCommands.js`, not run | step 2: a `verify` naming no property passes on a module whose `Canary` is false, and is violated on the copy that declares one false `invariant`; step 4: `Canary` violated through `pachinko_walk` before any pass is read |
-| 8 | Quint uses an Apalache server already on `localhost:8822` before it starts its own. Read in `apalache.js` (`connect`), not run here | steps 2 and 4: the port probe before every `verify`, and at `--verbosity=4` the line `No running Apalache server found, launching...` present and `Connecting with existing Apalache server` absent |
+| 8 | Quint uses an Apalache server already on `localhost:8822` before it starts its own. Read in `apalache.js` (`connect`), and not run by this ticket: shared rule 10 forbids a `verify` with the port in use. This ticket's runs show the other half only, that with the port free Quint finds no server and launches one. The outcome is recorded as that, and the use of a server already listening as read and not run | steps 2 and 4: the port probe before every `verify`, and at `--verbosity=4` the line `No running Apalache server found, launching...` present and `Connecting with existing Apalache server` absent |
 | a | `typecheck` over a file checks every module in it, the instance at its foot included. Not read | step 2: a scratch copy whose instance sets a `const` to a value of the wrong type fails |
 | b | One `--invariant` takes several names separated by commas. Read in `cliCommands.js` ("An `--invariant` may list several invariants separated by commas"), not run. `--invariants` is an array option and can take the input file's name as a property (read in `cli.js`, the comment on `observation`), so no command here uses it | step 2: two names that hold pass, and the same list with a false name second is violated |
 | c | Apalache accepts the shapes the design needs: a list in the state, `prev` holding the whole state, sum types with record payloads, and an argument chosen from a set that depends on the state. Only `typecheck` was run, on a module with neither the list nor `prev` | step 2, before the maintainer rules |
@@ -678,7 +678,7 @@ last sentence is the one step 8 writes into `AGENTS.md` and the skill.
 | `docs/how-to/develop-locally.md` | shared, own lines | "Quint": the model, `just check-quint`, `--main=pachinko_walk`, and that a worktree needs `just install-quint` before `just check` passes |
 | `docs/operations/troubleshooting.md` | shared, own lines | a section headed by the gate's message for a missing or stale CLI |
 | `docs/reference/testing.md` | shared, own lines | only if a sentence there says what checks the design itself; the author found none |
-| `.scratch/quint-model/QM02-tracer-claim-and-release.md` | ticket | `status:` and the hand-back notes |
+| `.scratch/quint-model/QM02-tracer-claim-and-release.md` | ticket | `status:`, the hand-back notes, a correction to Verification that a control shows is needed, recorded under Departures, and, only if a ruling at step 3 differs from a recommended answer, the sentences of this ticket that ruling changes ("The refusal of an ended lease" lists them for `ActionsNameTheirLease_release`), each listed under Design rulings |
 | `.scratch/quint-model/README.md` | shared, own lines | QM02's Status cell; and, only if a ruling at step 3 differs from a recommended answer, the sentences it changes there |
 | `.scratch/quint-model/QM03-*.md` to `QM13-*.md` | shared, own lines | only if a ruling at step 3 differs from a recommended answer: the sentences it changes, each listed in the hand-back |
 | `tickets/T39-decide-q2-q6.md`, `tickets/T40-pocket-order-model.md`, `tickets/T42-clock-model.md`, `tickets/T43-caller-contract.md`, `tickets/T45-drop-joining.md`, `tickets/T46-no-claim-without-records.md`, `tickets/T47-start-rule-and-config-bounds.md` | shared, own lines | only if a ruling at step 3 differs from a recommended answer, and only in a ticket still `todo`: the paths and commands that its "The Quint model" paragraph and its `quint/pachinko.qnt` row take from this ticket, each listed in the hand-back |
@@ -691,8 +691,9 @@ last sentence is the one step 8 writes into `AGENTS.md` and the skill.
    that `git ls-files .scratch/quint-model/` lists the README and this ticket, and that
    `tools/quint/evaluator.txt` (created by QM01) exists. Run `just initialize` (network,
    authorised): a new worktree has no `tools/quint/node_modules/` and no `.quint/`, and
-   this ticket needs the CLI, Apalache and the evaluator, since a `verify` that reports
-   a violation starts the evaluator (the series README's claim 1, QM01's). Run
+   this ticket needs the CLI, Apalache and the evaluator, since a `verify` that names
+   an invariant and reports a violation starts the evaluator (the series README's
+   claim 1, QM01's). Run
    `just check` on the untouched worktree and quote its last line, headed by the commit.
    Quote `just --show quint`. This ticket's `verify` runs rely on that recipe unsetting
    `grpc_proxy`, `https_proxy` and `http_proxy`, as QM01 recommends ("The proxy
@@ -787,7 +788,8 @@ last sentence is the one step 8 writes into `AGENTS.md` and the skill.
    **Stop** for the maintainer's ruling, with the findings and the probe output in
    hand, on: each heading under "Design proposed", the text of decision 0022, and each
    open point that names this **Stop**. Record each ruling. Edit what a ruling changes
-   in the later tickets and the series README, and list each sentence in the hand-back.
+   in this ticket, in the later tickets and in the series README, and list each
+   sentence in the hand-back.
 4. **The model, and ruling 4's loop by hand.** Write `quint/pachinko.qnt` to the ruled
    plan, with every section in the Allium's order and a header comment that names
    decision 0022 and holds "Not yet modelled". It is indented by two spaces, as
@@ -858,6 +860,9 @@ last sentence is the one step 8 writes into `AGENTS.md` and the skill.
    - Does `effect_ReleaseRequeuesPocket` state the pocket's position and the counter
      from the Allium's lines, or through the definition the action calls?
    - Has `Rule` exactly the three variants this ticket owns?
+   - Is the body of each `witness_<Rule>` `fired.contains(<Rule>)` and nothing else? A
+     witness that is true for another reason is reached where its rule never fired,
+     and no run tells the two apart.
    - Does the passing run's command name every property the model defines?
    - Does the mutant's last state show what `OneActiveLeasePerPocket` forbids? Does the
      pass at the same bound name that property?
@@ -1171,6 +1176,13 @@ denial; their output is quoted there.
   anything false after this ticket. `scripts/initialize.sh`'s comment over
   `just install-quint` is the same. The maintainer says, at step 3 or at the hand-back,
   whether this ticket adds the lines or a follow-up does.
+- **What the gate's version check shows.** The gate reads the version the installed
+  package's `package.json` records and refuses links; it does not hash the installed
+  files, and neither does `check_cli` in the `quint` recipe's guard. A tree changed
+  after `just install-quint` whose `package.json` still names the pin passes, so a
+  green gate shows the recorded version and not the bytes that ran. The maintainer
+  says at step 3's **Stop** whether a digest of the installed tree, as QM01 stamps the
+  evaluator's, is a ticket.
 - **The by-hand bound.** `--max-steps=5` is this ticket's, for the reason step 4 gives.
   QM03 sets the bound `verify-quint` uses. If a run here does not finish in a time a CI
   job could hold, stop and ask at step 4: the domains are a ruling and are not shrunk.

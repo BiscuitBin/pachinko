@@ -223,14 +223,26 @@ the ruling and the plan says what that changes.
   batch. If QM05's ruling was an `assume`, this follows that ruling instead. The
   property is a `val` of `pachinko`, not of the instance module, where QM03's helper
   refuses an upper-case `val`. And if `tickets/T47-start-rule-and-config-bounds.md` has
-  landed and made the bounds the start rule's requirements, the patch leaves the model
-  no start state: nothing is violated, and `ExpiryLimitPositive` cannot catch it. Step
-  2 reads T47's hand-back, and `qm08-zero-expiry-limit` then takes the control T47's
-  ruling named, as QM05's patch does. The lines here that name the patch change with
-  it: its row in the mutants table and in Files touched, the count of eight, claim D,
-  and in Verification the count and the header check. Each is brought to the ruled
-  control before step 4 and recorded under Departures; none is dropped without its
-  replacement.
+  landed and made the bounds the start rule's requirements, the patch is expected to
+  leave the model no start state, so that nothing is violated and
+  `ExpiryLimitPositive` cannot catch it. That is expected and not shown: it is the
+  README's claim 17, not read and not run, and T47 checks it on the patch it finds.
+  Step 2 reads T47's hand-back, and `qm08-zero-expiry-limit` then takes the control
+  T47's ruling named, as QM05's patch does; the checker's answer is the run that
+  hand-back quotes, not this bullet. If the hand-back quotes no such run, or names no
+  control that covers a config-bound mutant written after it, step 2 runs the probe on
+  a scratch module under `ai_tmp/qm08/` (one constant, an `init` that requires its
+  bound, an instance that breaks the bound and a twin that keeps it, each verified with
+  a property that is false on purpose) and quotes it, and the question of which control
+  this ticket uses goes to the maintainer at the **Stop** in step 4. Every line of this
+  ticket that names the patch, or counts it among the eight, changes with the ruled
+  control, whichever section holds it: the Goal, its row in the mutants table and in
+  Files touched, the cost under "`--max-steps`", claim D, step 6, the acceptance bullet
+  on the eight, and in Verification the count and the header check. A ruled control
+  that shows no property violated cannot meet "the named property violated" in step 6
+  or "caught by the property" in acceptance; those lines then say what the ruled
+  control shows. Each line is brought to the ruled control before step 4 changes a
+  tracked file and recorded under Departures; none is dropped without its replacement.
 
 ### `MarksStandHoweverLeaseEnds`, in the form it keeps
 
@@ -431,7 +443,7 @@ by hand at step 7 and adds no committed mutant.
 | --- | --- | --- |
 | 12 | The whole of `verify-quint` (every instance, witness and mutant, with setup) finishes inside the CI job's timeout. Each run being fast is not enough | steps 2, 5 and 6: the wall time of `just verify-quint` before the change, with the model and with the mutants, each with the setup and install durations from QM03's hand-back added, quoted beside the `quint` job's `timeout-minutes` and the head-room QM03's ruling set |
 | A | `--max-steps=N` counts steps after `init`: a state first reached by step N is checked and one first reached by step N+1 is not. Read in `tools/quint/node_modules/@informalsystems/quint/dist/src/apalache.js` line 108 (`length: args.maxSteps`) and `verify.js` line 239 ("No trace of up to ... steps reached"), not run | step 5: a witness run for `ReviveParkedPocket` is observed at `--max-steps` equal to its depth and not at one less. The depth is the plan's, recomputed against the base as the README's "The T tickets that touch the model" asks: 8 today, 6 if T45 has removed the joins |
-| B | The step counts in the mutants table are the shortest. Counted by hand from the Allium, not run | step 6: each mutant's counterexample has the length the table gives. A shorter one is recorded; a longer one, or none inside the bound, is a finding |
+| B | The step counts in the mutants table are the shortest. Counted by hand from the Allium, not run | step 6: each mutant's counterexample has the length the table gives, or the length the plan recomputed at step 2 where the base's `Rule` count differed. A shorter one is recorded; a longer one, or none inside the bound, is a finding |
 | C | On `pachinko_walk` a parking lapse never frees a marked record. Derived from `MarkedPocketHasNoExpiries`, not run | step 7: `parksWithMarkedRecord` is not observed on `pachinko_walk` and is observed on `pachinko_limit1` |
 | D | A property that reads only a constant is violated in the first state of an instance that breaks it. QM05 checks the form for `PullBatchPositive`; this author ran nothing | step 6: `qm08-zero-expiry-limit` is caught |
 
@@ -638,7 +650,7 @@ apply, and every ticket of the series carries them word for word.
 | `crates/libpachinko/tests/queue/walk/model/trace.rs` | shared, own lines | on the same condition: `consecutive_expiries` read from the fixture's state. Created by QM10 |
 | `double/tests/test_replay.py` | shared, own lines | only if the tree this ticket lands on holds `double/tests/test_replay.py`, at the base or after the closing merge or rebase: `consecutive_expiries` mapped in the projection and compared. Created by QM12 |
 | `docs/decisions/` | shared, own lines | in the record QM02 wrote as decision 0022 only: the superset argument and what it does not carry; `ExpiryLimitPositive` as a check on the constant; the path no gated instance reaches |
-| `.scratch/quint-model/QM08-untimed-lapse-and-parking.md` | ticket | `status:` and the hand-back notes; and, only if T47's ruling replaced the config-bound control, the lines of "Design proposed", Files touched, acceptance and Verification that name `qm08-zero-expiry-limit`, each recorded under Departures |
+| `.scratch/quint-model/QM08-untimed-lapse-and-parking.md` | ticket | `status:` and the hand-back notes; and, only if a ruling replaced the config-bound control, T47's or the maintainer's at the Stop in step 4, every line of this ticket that names `qm08-zero-expiry-limit` or counts it among the eight mutants, in whichever section, each recorded under Departures |
 | `.scratch/quint-model/README.md` | shared, own lines | QM08's Status cell |
 
 ## Steps
@@ -654,6 +666,12 @@ apply, and every ticket of the series carries them word for word.
    spelt; the "Not yet modelled" lines, with every line that names QM08 copied exactly
    into the plan; whether `replayStep`, `quint/traces/` and
    `double/tests/test_replay.py` exist.
+   Count the variants of `Rule` in the base's model: 25, as this ticket counts them.
+   If the count differs, name the T ticket behind the difference (README, "The T
+   tickets that touch the model"). `tickets/T45-drop-joining.md` is the case in view:
+   it removes two rules and the two joins that open every trace here. The plan then
+   recomputes each trace, each step count in the mutants table and under
+   "`--max-steps`", and the bound, which is still never lowered.
    Read `quint/verify.txt` for `pachinko_walk`'s bound, and the hand-backs of QM03, QM05
    and QM06 for what was ruled. Check the Allium for T42's lapse intent, and **stop** if
    it has landed. Show that nothing listens on `localhost:8822`, run
@@ -747,6 +765,8 @@ apply, and every ticket of the series carries them word for word.
    - Does the diff transcribe any of the six lease-end rules a second time?
    - Is `lapse` reachable from `replayStep`, or is any timestamp, TTL or `now` in the
      diff?
+   - Does `step` offer `lapse` for every lease identity the base's representation has,
+     ended leases and one never granted included, whatever the state holds?
    - Could `ExpiriesWithinLimit` or `MarkedPocketHasNoExpiries` hold because a write to
      the count is missing, not because the rules keep it?
    - Does each re-cut patch still make the mutation its name says, against the property
@@ -755,6 +775,8 @@ apply, and every ticket of the series carries them word for word.
      about witnesses or about a tick that it does not carry?
    - Does `effect_LeaseExpiryKeepsPocketAtFront` say the pocket is first, which is
      false, or that its position is unchanged?
+   - Is the body of each `witness_<Rule>` this ticket adds `fired.contains(<Rule>)` and
+     nothing else? The recipe reaches a witness and never reads its body.
 10. **Commit and hand back.** Commit the work. Rerun Verification and quote it, headed
     by the full commit id. Set `status: done` here and in
     `.scratch/quint-model/README.md`, write the hand-back notes, with each patch re-cut
@@ -766,15 +788,20 @@ apply, and every ticket of the series carries them word for word.
     brought in (QM10 or QM12 may have merged meanwhile). Read again, against the merged
     tree, every condition here that turns on the tree holding `quint/traces/` or
     `double/tests/test_replay.py`: if the merge brought one in, do step 7's replay work
-    now, regenerating the fixtures before any gate. Then rerun `just check` and
+    now, regenerating the fixtures before any gate. Commit whatever shared rule 11 and
+    that replay work changed, as work and apart from the record, before the reruns:
+    Verification runs after a commit and ends on an empty `git status --short`, which
+    a tree holding those edits uncommitted fails. Then rerun `just check` and
     Verification,
     and requote both (`tickets/CONVENTIONS.md` §11, "Green"; shared rule 13).
     If the base had moved, the quotes already committed are stale
     (§11, "Quoted evidence names its commit"): put the fresh ones in the hand-back,
-    headed by the merged commit, commit that record, and run `just check` on it once
+    headed by the commit they ran at, which is the merged commit or the work committed
+    on top of it, commit that record, and run `just check` on it once
     more, with an empty `git status --short`, as after the first record.
     If the
-    merge or rebase changed a file under Files touched, checkpoint 2 did not see that
+    merge or rebase changed a file under Files touched, or work was committed after
+    it, checkpoint 2 did not see that
     change: show its diff at the stop and ask whether it is reviewed before the push.
     **Stop** before pushing or opening a pull request: both need authorisation
     (`tickets/CONVENTIONS.md` §11, "Separately authorised actions").
@@ -806,8 +833,10 @@ apply, and every ticket of the series carries them word for word.
   the copy with no cut, and the counterexample on the copy with the cut, ending in a
   lapse.
 - The hand-back lists the edit to QM06's shared definition for the counter, and gives
-  the eight-step trace of a parked pocket's revival behind `Supersede` and the one
-  behind `PublishNewKey`, both inside the bound of the quoted pass.
+  the trace of a parked pocket's revival behind `Supersede` and the one behind
+  `PublishNewKey`, each at the depth the plan computed against the base (eight steps
+  today, six if `tickets/T45-drop-joining.md` has removed the joins), both inside the
+  bound of the quoted pass.
 - Each of the seven properties under "Coverage this ticket adds" has its mutant caught
   or its definition named in the hand-back.
 - The path the walk's limit cannot reach is shown as ruled: by hand on
