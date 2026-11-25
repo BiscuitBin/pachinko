@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 835 491" width="835" height="491" role="img" aria-labelledby="title desc">
 <title id="title">Which notes each finding cites</title>
-<desc id="desc">Rows are the 15 findings, columns the 38 notes grouped by heading; a dot marks a note the finding cites. Finding 1 (answered): N24, N31, N38. Finding 2 (open): N13, N24, N32, N33. Finding 3 (open): N05, N15, N23. Finding 4 (open): N10, N18, N22. Finding 5 (open): N11, N12, N20, N21. Finding 6 (open): N14, N26, N37. Finding 7 (open): N23, N25, N29, N34. Finding 8 (open): N30. Finding 9 (open): N33, N35. Finding 10 (open): N28. Finding 11 (open): N19. Finding 12 (open): N27. Finding 13 (open): N01, N03, N04, N16, N17. Finding 14 (open): N09. Finding 15 (open): N07. Notes no finding cites: N02, N06, N08, N36. Notes with a ruling: N24, N31, N32, N38.</desc>
+<desc id="desc">Rows are the 15 findings, columns the 38 notes grouped by heading; a dot marks a note the finding cites. Finding 1 (answered): N24, N31, N38. Finding 2 (ruled): N13, N24, N32, N33. Finding 3 (ruled): N05, N15, N23. Finding 4 (ruled): N10, N18, N22. Finding 5 (ruled): N11, N12, N20, N21. Finding 6 (answered in part): N14, N26, N37. Finding 7 (answered in part): N23, N25, N29, N34. Finding 8 (answered): N30. Finding 9 (ruled): N33, N35. Finding 10 (ruled): N28. Finding 11 (ruled): N19. Finding 12 (widened): N27. Finding 13 (ruled): N01, N03, N04, N16, N17. Finding 14 (ruled): N09. Finding 15 (answered): N07. Notes no finding cites: N02, N06, N08, N36. Notes with a ruling: N01, N03, N04, N05, N07, N09, N10, N11, N12, N13, N14, N15, N16, N17, N18, N19, N20, N21, N22, N23, N24, N25, N26, N27, N28, N29, N30, N31, N32, N33, N34, N35, N37, N38.</desc>
 <style>
 svg { --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0; --box: #f6f8fa; --info: #ddf4ff; --ok: #dafbe1; --warn: #fff8c5; --bad: #ffebe9; --accent: #0969da; --g1: #8250df; --g2: #bf8700; --g3: #0969da; --g4: #1a7f37; }
 @media (prefers-color-scheme: dark) { svg { --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d; --box: #151b23; --info: #0c2d6b; --ok: #0f3d1d; --warn: #3b2e00; --bad: #5d0f12; --accent: #4493f8; --g1: #ab7df8; --g2: #d29922; --g3: #4493f8; --g4: #3fb950; } }
@@ -31,7 +31,7 @@ text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 <text x="370" y="34" font-size="10.5" text-anchor="start" dominant-baseline="middle" class="muted">grey id: no finding cites it</text>
 <rect x="536" y="25" width="24" height="18" rx="4" class="box ok"/>
 <text x="542" y="34" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">1.</text>
-<text x="568" y="34" font-size="10.5" text-anchor="start" dominant-baseline="middle" class="muted">answered; the other findings are open</text>
+<text x="568" y="34" font-size="10.5" text-anchor="start" dominant-baseline="middle" class="muted">answered, in whole or in part</text>
 <rect x="318.0" y="46" width="62.5" height="4" rx="2" class="g1"/>
 <text x="349.25" y="62" font-size="10" text-anchor="middle" dominant-baseline="middle" font-weight="600">disagreed</text>
 <rect x="318.0" y="114" width="62.5" height="319" rx="3" class="box plain" opacity="0.6"/>
@@ -97,87 +97,123 @@ text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 <text x="12" y="149.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">2.</text>
 <text x="32" y="149.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should a surface name what each trigger answers?</text>
 <circle cx="324.25" cy="149.5" r="4.2" class="dot g1"/>
+<circle cx="324.25" cy="149.5" r="6.4" class="ring"/>
 <circle cx="336.75" cy="149.5" r="4.2" class="dot g1"/>
 <circle cx="336.75" cy="149.5" r="6.4" class="ring"/>
 <circle cx="361.75" cy="149.5" r="4.2" class="dot g1"/>
 <circle cx="361.75" cy="149.5" r="6.4" class="ring"/>
 <circle cx="679.75" cy="149.5" r="4.2" class="dot g3"/>
+<circle cx="679.75" cy="149.5" r="6.4" class="ring"/>
 <rect x="4" y="160.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="181.0" x2="827" y2="181.0" class="lane"/>
 <text x="12" y="170.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">3.</text>
 <text x="32" y="170.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should a lease have an identity?</text>
 <circle cx="567.25" cy="170.5" r="4.2" class="dot g3"/>
+<circle cx="567.25" cy="170.5" r="6.4" class="ring"/>
 <circle cx="592.25" cy="170.5" r="4.2" class="dot g3"/>
+<circle cx="592.25" cy="170.5" r="6.4" class="ring"/>
 <circle cx="801.25" cy="170.5" r="4.2" class="dot g4"/>
+<circle cx="801.25" cy="170.5" r="6.4" class="ring"/>
 <line x1="8" y1="202.0" x2="827" y2="202.0" class="lane"/>
 <text x="12" y="191.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">4.</text>
 <text x="32" y="191.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Must an actor have joined?</text>
 <circle cx="751.25" cy="191.5" r="4.2" class="dot g4"/>
+<circle cx="751.25" cy="191.5" r="6.4" class="ring"/>
 <circle cx="776.25" cy="191.5" r="4.2" class="dot g4"/>
+<circle cx="776.25" cy="191.5" r="6.4" class="ring"/>
 <circle cx="788.75" cy="191.5" r="4.2" class="dot g4"/>
+<circle cx="788.75" cy="191.5" r="6.4" class="ring"/>
 <rect x="4" y="202.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="223.0" x2="827" y2="223.0" class="lane"/>
 <text x="12" y="212.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">5.</text>
 <text x="32" y="212.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should the specification name its refusals and their order?</text>
 <circle cx="445.75" cy="212.5" r="4.2" class="dot g2"/>
+<circle cx="445.75" cy="212.5" r="6.4" class="ring"/>
 <circle cx="470.75" cy="212.5" r="4.2" class="dot g2"/>
+<circle cx="470.75" cy="212.5" r="6.4" class="ring"/>
 <circle cx="579.75" cy="212.5" r="4.2" class="dot g3"/>
+<circle cx="579.75" cy="212.5" r="6.4" class="ring"/>
 <circle cx="629.75" cy="212.5" r="4.2" class="dot g3"/>
+<circle cx="629.75" cy="212.5" r="6.4" class="ring"/>
 <line x1="8" y1="244.0" x2="827" y2="244.0" class="lane"/>
+<rect x="6" y="224.5" width="24" height="18" rx="4" class="box ok"/>
 <text x="12" y="233.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">6.</text>
 <text x="32" y="233.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Is a requires that restates an invariant a guard?</text>
 <circle cx="458.25" cy="233.5" r="4.2" class="dot g2"/>
+<circle cx="458.25" cy="233.5" r="6.4" class="ring"/>
 <circle cx="483.25" cy="233.5" r="4.2" class="dot g2"/>
+<circle cx="483.25" cy="233.5" r="6.4" class="ring"/>
 <circle cx="520.75" cy="233.5" r="4.2" class="dot g2"/>
+<circle cx="520.75" cy="233.5" r="6.4" class="ring"/>
 <rect x="4" y="244.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="265.0" x2="827" y2="265.0" class="lane"/>
+<rect x="6" y="245.5" width="24" height="18" rx="4" class="box ok"/>
 <text x="12" y="254.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">7.</text>
 <text x="32" y="254.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should one lease end’s or one tick’s entries be ordered?</text>
 <circle cx="642.25" cy="254.5" r="4.2" class="dot g3"/>
+<circle cx="642.25" cy="254.5" r="6.4" class="ring"/>
 <circle cx="692.25" cy="254.5" r="4.2" class="dot g3"/>
+<circle cx="692.25" cy="254.5" r="6.4" class="ring"/>
 <circle cx="801.25" cy="254.5" r="4.2" class="dot g4"/>
+<circle cx="801.25" cy="254.5" r="6.4" class="ring"/>
 <circle cx="813.75" cy="254.5" r="4.2" class="dot g4"/>
+<circle cx="813.75" cy="254.5" r="6.4" class="ring"/>
 <line x1="8" y1="286.0" x2="827" y2="286.0" class="lane"/>
+<rect x="6" y="266.5" width="24" height="18" rx="4" class="box ok"/>
 <text x="12" y="275.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">8.</text>
 <text x="32" y="275.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should readers be told shed_at does not order versions?</text>
 <circle cx="667.25" cy="275.5" r="4.2" class="dot g3"/>
+<circle cx="667.25" cy="275.5" r="6.4" class="ring"/>
 <rect x="4" y="286.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="307.0" x2="827" y2="307.0" class="lane"/>
 <text x="12" y="296.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">9.</text>
 <text x="32" y="296.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">How are the temporal triggers processed?</text>
 <circle cx="508.25" cy="296.5" r="4.2" class="dot g2"/>
+<circle cx="508.25" cy="296.5" r="6.4" class="ring"/>
 <circle cx="679.75" cy="296.5" r="4.2" class="dot g3"/>
+<circle cx="679.75" cy="296.5" r="6.4" class="ring"/>
 <line x1="8" y1="328.0" x2="827" y2="328.0" class="lane"/>
 <text x="12" y="317.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">10.</text>
 <text x="32" y="317.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Does a rejected action have a now?</text>
 <circle cx="495.75" cy="317.5" r="4.2" class="dot g2"/>
+<circle cx="495.75" cy="317.5" r="6.4" class="ring"/>
 <rect x="4" y="328.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="349.0" x2="827" y2="349.0" class="lane"/>
 <text x="12" y="338.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">11.</text>
 <text x="32" y="338.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Is a claim that hands nothing intended?</text>
 <circle cx="617.25" cy="338.5" r="4.2" class="dot g3"/>
+<circle cx="617.25" cy="338.5" r="6.4" class="ring"/>
 <line x1="8" y1="370.0" x2="827" y2="370.0" class="lane"/>
 <text x="12" y="359.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">12.</text>
 <text x="32" y="359.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Does an idle pocket&#x27;s position mean anything?</text>
 <circle cx="654.75" cy="359.5" r="4.2" class="dot g3"/>
+<circle cx="654.75" cy="359.5" r="6.4" class="ring"/>
 <rect x="4" y="370.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="391.0" x2="827" y2="391.0" class="lane"/>
 <text x="12" y="380.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">13.</text>
 <text x="32" y="380.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Should the specification fix its numeric domains?</text>
 <circle cx="542.25" cy="380.5" r="4.2" class="dot g3"/>
+<circle cx="542.25" cy="380.5" r="6.4" class="ring"/>
 <circle cx="554.75" cy="380.5" r="4.2" class="dot g3"/>
+<circle cx="554.75" cy="380.5" r="6.4" class="ring"/>
 <circle cx="604.75" cy="380.5" r="4.2" class="dot g3"/>
+<circle cx="604.75" cy="380.5" r="6.4" class="ring"/>
 <circle cx="726.25" cy="380.5" r="4.2" class="dot g4"/>
+<circle cx="726.25" cy="380.5" r="6.4" class="ring"/>
 <circle cx="763.75" cy="380.5" r="4.2" class="dot g4"/>
+<circle cx="763.75" cy="380.5" r="6.4" class="ring"/>
 <line x1="8" y1="412.0" x2="827" y2="412.0" class="lane"/>
 <text x="12" y="401.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">14.</text>
 <text x="32" y="401.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">Is “refused at configuration” the intended reading?</text>
 <circle cx="738.75" cy="401.5" r="4.2" class="dot g4"/>
+<circle cx="738.75" cy="401.5" r="6.4" class="ring"/>
 <rect x="4" y="412.0" width="827" height="21" class="box none" stroke="none" opacity="0"/>
 <line x1="8" y1="433.0" x2="827" y2="433.0" class="lane"/>
+<rect x="6" y="413.5" width="24" height="18" rx="4" class="box ok"/>
 <text x="12" y="422.5" font-size="11" text-anchor="start" dominant-baseline="middle" font-weight="600">15.</text>
 <text x="32" y="422.5" font-size="10.5" text-anchor="start" dominant-baseline="middle">ArrivalPositionUnoccupied over a record and itself?</text>
 <circle cx="420.75" cy="422.5" r="4.2" class="dot g2"/>
+<circle cx="420.75" cy="422.5" r="6.4" class="ring"/>
 <text x="10" y="457" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">ticket PD…</text>
 <text x="324.25" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">02</text>
 <text x="336.75" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">03</text>
@@ -217,5 +253,5 @@ text.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 <text x="788.75" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">03</text>
 <text x="801.25" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">03</text>
 <text x="813.75" y="457" font-size="9" text-anchor="middle" dominant-baseline="middle" class="mono muted">04</text>
-<text x="10" y="477" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Finding 1 is answered (2026-11-20); the other fourteen are open. N02, N06, N08 and N15 record a reading; N36 is open question 7.</text>
+<text x="10" y="477" font-size="10" text-anchor="start" dominant-baseline="middle" class="muted">Findings 1, 8 and 15 are answered, 6 and 7 in part; the rest go to tickets T40 to T47. N02, N06, N08, N15: a reading. N36: question 7, closed.</text>
 </svg>

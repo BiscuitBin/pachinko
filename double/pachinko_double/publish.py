@@ -16,8 +16,8 @@ inherits the arrival position. Neither sheds the held version.
 a fresh position at the back, and `ReviveParkedPocket` answers it on a parked
 one the same way, with its count reset. A stale publish and a refused
 equal-rank publish emit no `PocketTouched`, so a parked pocket stays parked
-with its count (S025, S092). Whether anything else can revive a parked pocket
-is open question 7 (spec note N36). A touched pocket that is queued or
+with its count (S025, S092). Nothing but a publish revives a parked pocket
+(spec note N36). A touched pocket that is queued or
 leased is left as it is, which is the table's answer when no guard holds.
 """
 

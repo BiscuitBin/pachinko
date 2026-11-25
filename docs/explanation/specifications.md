@@ -53,11 +53,11 @@ An `open question` records a product decision nobody has made yet. An unwritten
 gap is easily filled by whoever writes the code first; a written one stays visible
 until someone entitled to decide answers it.
 
-The root carries six: who reads the superseded and dead-letter queues, capacity
-beyond shedding the decaying queues, routing by pool or priority, an adaptive lease
-TTL, a pocket jumping the queue, and reviving a parked pocket other than by a publish. All six mark decisions the maintainer declined to
-make in the elicitation. Five numbers are closed, and the surviving questions keep
-theirs. The eighth, a consumer's action processed after its lease's time has passed
+The root carries two: who reads the superseded and dead-letter queues, and a pocket
+jumping the queue. Both mark decisions the maintainer declined to make in the
+elicitation and has since ruled on; each adds behaviour no implementation has, so its
+line stays until `tickets/T39-decide-q2-q6.md` lands it with its code and tests. Nine
+numbers are closed, and the surviving questions keep theirs. The eighth, a consumer's action processed after its lease's time has passed
 but before the lapse, was closed by
 [decision 0019](../decisions/0019-service-runtime-tokio-and-http.md): such an action
 succeeds. The maintainer closed questions 9 and 10 on 2026-11-13, a key published
@@ -66,7 +66,13 @@ consumer still holds, by keeping a record held until its lease ends
 ([decision 0020](../decisions/0020-held-set-until-lease-ends.md) records why). On
 2026-11-16 they closed question 11, a gap the wave's code review exposed: a stale
 publish does not touch its pocket, so it no longer revives a parked one. The same day they closed
-question 1: an equal-rank publish is rejected, as the rules had read it. Where the
+question 1: an equal-rank publish is rejected, as the rules had read it. On 2026-11-23
+they closed questions 5 and 7, an adaptive lease TTL and reviving a parked pocket other
+than by a publish: `lease_ttl` stays one fixed value, and only a publish revives a
+parked pocket. On 2026-11-24 they closed questions 3 and 4, capacity beyond shedding the
+decaying queues and routing by pool or priority: superseded records are removed first
+and dead letters after them, oldest first, with no record removed or bounded and no
+publish refused, and pools and classes run as separate deployments. Where the
 rules' reading matters meanwhile, the question says what it is, and no code answers
 one. A change that reaches an unanswered decision adds a question rather than guessing.
 A low count is normal for a settled module, but it is not a reason to hide uncertainty.
