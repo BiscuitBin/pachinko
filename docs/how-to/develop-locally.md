@@ -166,7 +166,10 @@ just quint run path/to/module.qnt
 
 `typecheck` works offline. `run`, `test` and the REPL download Quint's Rust evaluator
 the first time, and `verify` and `compile --target tlaplus` download Apalache, which
-also needs a Java runtime the environment does not provide. Every recipe sets `QUINT_HOME` to the gitignored `.quint/`,
+runs on the `openjdk` pixi pins; the `quint` recipe alone puts that `java` on `PATH`.
+`verify` and `compile --target tlaplus` use any Apalache server already listening on
+`localhost:8822`, whatever Java it runs on, and start their own only when none answers. Reporting a violation also needs the
+evaluator, downloaded on first use like Apalache. Every recipe sets `QUINT_HOME` to the gitignored `.quint/`,
 so those downloads land in the worktree and `~/.quint` is never written. A bare `quint`
 from your shell is not this one, or is nothing at all.
 

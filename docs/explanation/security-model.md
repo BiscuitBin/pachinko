@@ -70,8 +70,9 @@ for tests are never a source to use where unpredictability matters.
   the third exception: npm installs it from a lock that holds every package's integrity
   hash, but on first use it downloads its Rust evaluator, and for `verify` and TLA+ compilation Apalache, from
   GitHub releases at versions it pins and checks against no checksum
-  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). No gate runs those
-  commands.
+  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). The Java Apalache
+  runs on comes from conda-forge through `pixi.lock`, like pixi's other tools; Apalache
+  itself is still unchecked. No gate runs those commands.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
   app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
   this one alone, and the one party outside the maintainer and GitHub Actions that holds

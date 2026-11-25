@@ -63,9 +63,10 @@ asserts nothing. The change that adds the first module adds `check-quint`, runni
 `quint typecheck`, which is offline, to `just check` and to the recipe list in
 `pyproject.toml`, and adds `just install-quint` to the CI job that runs it.
 
-`quint verify` and TLA+ compilation are left out for now. A gate that runs either needs a
-Java runtime, and
-conda-forge's `openjdk` can be pinned in pixi when one is wanted.
+`quint verify` and TLA+ compilation run Apalache, which needs Java. pixi pins
+conda-forge's `openjdk` exactly in `pyproject.toml`, and the `quint` recipe alone puts its
+`java` first on `PATH`, since Apalache's launcher runs the first `java` there and ignores
+`JAVA_HOME`. No gate runs either command yet.
 
 Quint Studio stays outside the repository. [Develop locally](../how-to/develop-locally.md)
 names it as an optional per-machine tool, and no recipe, gate or CI job depends on it.
@@ -91,12 +92,22 @@ snapshots the worktree between recipes, so files Git could see would abort the r
 Contributors need no global Node. The pixi environment's `node` and `npm` are first on
 every recipe's `PATH`, so a Node installed elsewhere on the machine is never used here.
 
+Java is in the default environment, so `just sync` installs it in every worktree and CI
+job, though only `just quint` uses it. On macOS it roughly doubled the environment, from
+about 337 MiB to 670 MiB; on linux-64 it brings 43 further packages, among them X11,
+fonts, ALSA and CUPS libraries.
+
+Quint talks to Apalache as a server on `localhost:8822`. It uses any server already
+listening there, whoever started it and on whatever Java, and starts its own, on pixi's
+Java, only when none answers.
+
 ## What would reopen this
 
 conda-forge packaging Quint, which would move the pin into `pixi.lock` and retire
 `tools/quint/`. Upstream publishing checksums for the evaluator and Apalache, or an
 option to verify them, which would close the gap above. A gate that needs `quint verify`,
-which would add a pinned Java runtime and reopen the question of Apalache's provenance.
+which would reopen the question of Apalache's provenance; the pinned Java it also needs
+is in place.
 
 ## Related pages
 

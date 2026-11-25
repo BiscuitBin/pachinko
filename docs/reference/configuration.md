@@ -215,6 +215,7 @@ so a bump never touches the handbook.
 | Tools conda-forge lacks | `tools.txt`, or `tools-source.txt` for a tool with no release binary |
 | The Allium checker | The tooling package, which pins its version and checksums; `pyproject.toml` pins the package |
 | The Quint CLI | `tools/quint/package.json`, locked in `tools/quint/package-lock.json`; the CLI pins the evaluator and Apalache it downloads |
+| The Java Apalache runs on | `openjdk` in `pyproject.toml`, exact, locked in `pixi.lock` |
 | Hooks | The `rev` of each remote hook in the two prek configurations, a commit SHA with a version comment |
 | GitHub Actions | Each `uses:` in the workflows and the setup action, a commit SHA with a version comment |
 

@@ -16,7 +16,8 @@ export PATH := justfile_directory() / ".pixi" / "envs" / "default" / "bin" + ":"
 # in the worktree like every other tool (decision 0021). Relative, because
 # every recipe runs from this directory and Quint 0.34.0 pastes the path
 # unquoted into shell `tar` and `chmod` commands, which a checkout path with a
-# space would break.
+# space would break. Apalache runs on the openjdk pyproject.toml pins, which
+# the `quint` recipe alone puts on PATH.
 export QUINT_HOME := ".quint"
 
 # Line-coverage floor over crates/*/src/**. Lower the complexity, not the
@@ -444,8 +445,16 @@ plan-spec module:
 # install-quint` fails here rather than falling through to a quint on PATH.
 # `typecheck` is offline; `run`, `test`, the REPL, `verify` and
 # `compile --target tlaplus` download their backend into .quint/ on first use. Not a gate (decision 0021).
+# Apalache, which `verify` and `compile --target tlaplus` run, runs the first
+# `java` on PATH and never reads JAVA_HOME. conda-forge's openjdk, which
+# pyproject.toml pins, keeps its `java` in lib/jvm/bin rather than bin/, so this
+# recipe alone puts that directory first; no other recipe sees a Java. Quint
+# uses any Apalache server already listening on localhost:8822 before it
+# starts its own. APALACHE_JAR is unset, since the launcher would run that jar
+# in place of the one in .quint/. TMPDIR defaults to /tmp, since an unset one
+# makes the launcher create tmp/ in this directory.
 quint *args:
-    tools/quint/node_modules/.bin/quint "$@"
+    env -u APALACHE_JAR TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/.bin/quint "$@"
 
 # Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
 # which owns their layout and words: edit the script, never an SVG. It writes

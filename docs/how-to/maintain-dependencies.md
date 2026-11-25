@@ -312,6 +312,11 @@ the versions of the Rust evaluator and Apalache it downloads on first use; read 
 release notes, then run `just quint run` on a module once, so the new evaluator lands in
 `.quint/`. Those downloads are pinned by the CLI's version and checked by nothing else.
 
+Apalache runs on the `openjdk` that `pyproject.toml` pins exactly, so `just lock-upgrade`
+never moves it: edit the version by hand, like pixi's other exact pins, then `just lock`
+and `just sync`. A Quint release whose Apalache needs a newer Java needs this pin moved
+with it; run `just quint verify` on a module once to confirm.
+
 Renovate's `quint` group proposes the same move. Approve it on the dashboard, check the
 branch out, and run `just install-quint` and the Quint commands you use before merging.
 

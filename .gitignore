@@ -73,3 +73,7 @@ mutants.out*/
 # target/: files Git can see abort the snapshot.
 /tools/quint/node_modules/
 /.quint/
+# The Apalache server Quint starts for `verify` writes a run directory per
+# check (SMT logs) under _apalache-out/ in its working directory, which is
+# this one when a recipe starts it.
+/_apalache-out/
