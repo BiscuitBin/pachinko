@@ -32,7 +32,7 @@ snapshot.
 | Id | Title | File | Blocked by | Status |
 | --- | --- | --- | --- | --- |
 | AP01 | A pinned Java runtime, and a working `just quint verify` | `AP01-java-and-verify.md` | the Quint CLI pin | done |
-| AP02 | Apalache pinned by checksum, installed by `just initialize` | `AP02-checksummed-apalache.md` | AP01 | todo |
+| AP02 | Apalache pinned by checksum, installed by `just initialize` | `AP02-checksummed-apalache.md` | AP01 | done |
 
 ## Dependencies
 
