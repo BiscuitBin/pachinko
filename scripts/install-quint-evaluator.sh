@@ -114,12 +114,10 @@ platform() {
     [ -f "$node" ] && [ -x "$node" ] || fail "pixi's node, $node, is missing or not executable; run just sync"
     first=$(command -v node) || fail "no node on PATH; run the recipe through just, which puts pixi's first"
     # The Justfile's PATH names the checkout as just was given it, which may
-    # pass through a symlink; $node is the physical path, so the directory of
-    # the first node is resolved the same way before the two are compared.
-    case $first in
-        */node) first_dir=$(CDPATH='' cd -- "${first%/node}" 2>/dev/null && pwd -P) && first=$first_dir/node ;;
-    esac
-    [ "$first" = "$node" ] ||
+    # pass through a symlink, so the two are compared as files (device and
+    # inode, `test -ef`), not as spellings: no path is resolved, and a missing
+    # or unreadable file is a mismatch.
+    [ "$first" -ef "$node" ] ||
         fail "the first node on PATH is $first, not pixi's $node, so the CLI could run on another platform than the one asked; run the recipe through just"
     # The recipe runs the CLI with pixi's Java bin directory put before this
     # PATH, so a node there would run the CLI in place of the one asked.

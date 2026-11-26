@@ -884,12 +884,14 @@ the line numbers below are as at commit `cf1f3f3`.
 ## Verification
 
 Corrected at step 4 under the maintainer's rulings (hand-back §9, item 6): each
-refusal checks its own reason, an absent marker needs `grep`'s status 1, each `verify`
-log shows Quint started its own Apalache and downloaded nothing, the port control
-names its listener's PID, the `curl` controls check exit codes after positive runs
-outside the denial, and every `verify` runs under a denial that allows loopback only.
-The loopback profile is macOS's, probed at step 7, so the script runs on Darwin only;
-Linux's `unshare -rn` starts with `lo` down and was not probed. Run from a file as one `sh` script, from the repository's root, after the commit, with
+refusal checks its own reason, an absent marker needs `grep`'s status 1, the port
+control names its listener's PID, and the `curl` controls check exit codes after
+positive runs outside the denial. Each `verify` that reaches the CLI (claim 1's three
+and the dead-proxy run) runs under a denial that allows loopback only, and its log
+shows Quint started its own Apalache and downloaded nothing; the `verify` the guard
+refuses without the stamp runs under the full denial and starts nothing. The loopback
+profile is macOS's, probed at step 7, so the script runs on Darwin only; Linux's
+`unshare -rn` starts with `lo` down and was not probed. Run from a file as one `sh` script, from the repository's root, after the commit, with
 the stamped installs of Apalache and the evaluator in place and nothing listening on
 port 8822. `set -eu` stops it at the first command that fails, the trap puts back
 whatever a stopped run had moved, and a signal leaves through the same trap. A backup is
@@ -1640,6 +1642,19 @@ These four fixes changed files under Files touched after checkpoint 2's last rou
 Codex did not review them. They are in `5140f88` and covered by section 10's run. The
 push stop asks whether checkpoint 2 runs over them first.
 
+**After the last checkpoint** (the maintainer asked for it, 2026-11-25). One round of
+both lenses, Codex Sol as above, over the changes made after checkpoint 2 (the
+`/code-review` fixes, the `scripts/initialize.sh` rewrap, the Verification block and
+Open points), at `a8d7be9`; raw files in `ai_tmp/review/QM01-3/`. Nine findings, five
+distinct, all valid. Three were in the `node` comparison that let a symlinked checkout
+through: a `PATH` entry ending `link/..` collapsed by a logical `cd`, a failed
+resolution that kept the unresolved spelling, and a directory name ending in a newline.
+Each could approve another `node`. Fixed by comparing the two as files with `test
+-ef` and resolving no path; probed in `dash` and `bash`, where the normal case and a
+symlinked checkout pass and the `..`, newline and fake-first cases are refused. The
+Verification preamble overclaimed for the refused `verify`, and Open points lacked the
+8822 window ruled at Q9; both fixed. The fixes are in the commit after `a8d7be9`.
+
 ### 9. Departures
 
 1. **Branch and worktree.** The work ran on `mk-quint-spec-tickets` at `8eeca83`, in this
@@ -1776,6 +1791,12 @@ committed and is not quoted here.
   the review is the maintainer's.
 - **What the stamp proves.** It detects a local change against the installer's record,
   not a coordinated rewrite of the directory and the stamp together.
+- **Which server answered a `verify`.** After its first connection fails, Quint spawns
+  Apalache and retries `localhost:8822` without tying the answer to its child, so
+  another server that binds the port in that window would answer. The maintainer
+  ruled at step 4 (hand-back §4) to accept it as the concurrency that shared rule 10
+  already forbids: each `verify` has the port probe before and after, and its log
+  must not hold `Apalache server exited with code`. Nothing closes the window.
 - **Installing while running.** Shared rule 10 forbids it; nothing enforces it. A
   `just quint run` that has passed the guard while
   `just install-quint-evaluator` moves the directory aside can find no executable, and
