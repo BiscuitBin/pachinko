@@ -1,7 +1,7 @@
 ---
 id: QM01
 title: "The Rust evaluator pinned by checksum"
-status: todo
+status: done
 depends_on: []
 parallel_with: []
 branch: ticket/qm01-evaluator-pin
@@ -1150,23 +1150,613 @@ there.
 
 ### 1. Base and branch
 
+Base `8eeca83e8b64d9736c40e65866904fdef1af4cfe` on `mk-quint-spec-tickets`, the branch
+inside PR #55. The work ran there, in this worktree, not on `ticket/qm01-evaluator-pin`,
+as the maintainer ruled before the work (Departures, item 1). It landed as
+`5140f88852b5f0872f57a117843fdd5a1ef1640b`.
+
+After that commit, `git fetch origin` left `origin/mk-quint-spec-tickets` at `8eeca83`,
+and `origin/quint-spec` at `cf1f3f3` was already an ancestor of `HEAD`. Nothing was
+merged or rebased, so no file under Files touched changed after checkpoint 2 that way.
+
 ### 2. Baseline
+
+At `8eeca83`: `just initialize` exited 0 (`ai_tmp/qm01/initialize.log`). `just check` on
+the untouched worktree then ended (`ai_tmp/qm01/baseline-check.log`):
+
+```text
+All checks passed and the worktree is unchanged.
+```
+
+`git status --short` printed nothing. `ls .quint` listed only `apalache-dist-0.62.4`, so
+there was no evaluator directory of Quint's own. Step 5 seeded one from
+`ai_tmp/qm01/fixture/`.
 
 ### 3. Claims
 
+Steps 2 and 4 to 7 ran at `8eeca83` with the work uncommitted. Each case's raw log is
+under `ai_tmp/qm01/`.
+
+1. **Holds.** Step 7 (`step7-green.out`, excerpt), under the loopback-only denial:
+
+   ```text
+   commit 8eeca83 (with uncommitted changes)
+   -- verify inRange: exit 0
+   [ok] No violation found (3051ms).
+   -- verify belowTwo: exit 1
+   [violation] Found an issue (3396ms).
+   Starting Rust evaluator with command: evaluate-at-state-from-stdin
+     ❌ belowTwo
+   -- verify observation: exit 0
+   Starting Rust evaluator with command: evaluate-at-state-from-stdin
+   Starting Rust evaluator with command: evaluate-at-state-from-stdin
+   [observed] Observed reachedTwo, which stopped the run (3158ms).
+   ```
+
+   The `inRange` log holds no start line. The script asserts that (`step7.sh` line 168,
+   `grep` status 1) and does not print it. Each log also held
+   `No running Apalache server found, launching...` and `Started Apalache server on pid=`.
+   The same three runs passed again at `5140f88` (section 10).
+2. **Holds.** First half, step 7 under §11's full denial: `just quint run --verbosity=4`
+   exited 0 and logged `Starting Rust evaluator with command: simulate-from-stdin`. The
+   absence of `Fetching Rust evaluator` is asserted at `step7.sh` line 97. Second half,
+   step 5 case 15, the one unguarded run, under the full denial after `true` exited 0 and
+   the two `curl` controls exited 6 and 7 inside it (and 0 outside it). The stand-in
+   exited 3 when run by hand. `just quint run --max-steps=3 ai_tmp/qm01/smoke.qnt` exited
+   1 with `error: [QNT516] Rust evaluator exited with code 3`. The sentinel file was there
+   and the log held no fetch line, so the CLI ran what it found. These values come from
+   the first step-5 run at `8eeca83` with the work uncommitted. `step5.out` and
+   `step5/unguarded-*.log` on disk come from a rerun after step 6 had added the guard, so
+   case 15 there is the guard's refusal (`step 5 rc=1`). That rerun is not evidence for
+   this claim (Departures, item 11).
+3. **No checksum asset.** The release `evaluator/v0.8.0` lists no checksum file. Every
+   asset carries a GitHub-computed `digest`, served by the same API and host as the
+   download, so it is not an independent checksum. For both pinned archives, the digest
+   agreed with `sha256sum` and with `shasum -a 256` of the download (step 2, step 4's
+   re-hash). Each pinned hash therefore rests on one download over TLS. The pages say so.
+4. **Holds.** In the first step-5 run, case 15, `just quint run --backend typescript`
+   exited 0 under the full denial with no sentinel file. In step 7, under the full
+   denial, the TypeScript run exited 0 with `[ok] No violation found (62ms at 161290
+   traces/second).` The script asserts it held no start line. The guard fails closed:
+   section 6 shows every `--backend` spelling refused without the stamp.
+5. **A, holds.** The release (`ai_tmp/qm01/release.json`, read without a credential, not
+   draft, not prerelease) has five assets: `quint_evaluator-aarch64-apple-darwin.tar.gz`,
+   `-aarch64-unknown-linux-gnu.tar.gz`, `-x86_64-apple-darwin.tar.gz`,
+   `-x86_64-pc-windows-msvc.zip` and `-x86_64-unknown-linux-gnu.tar.gz`. These include
+   the two that `binaryManager.js` lines 132 and 143 name.
+6. **B, holds.** `tar -tzf` and `tar -tvzf` (bsdtar 3.5.3, the four `TAR_*`/`TAPE`
+   variables unset) list each archive as exactly one member, `quint_evaluator`, a regular
+   file with mode `-rwxr-xr-x`: 2200712 bytes for Linux and 2511024 for Darwin. Neither
+   has a `./` prefix or a directory member. The member rule is fixed from this (section
+   9, item 4).
+7. **C, holds.** Each `browser_download_url` is
+   `https://github.com/quint-co/quint/releases/download/evaluator/v0.8.0/<asset>`. The
+   downloads hash to the assets' digests:
+   `774020b648a887f511d040fd564a8223c62a996b80f8dc50ea24d8630235be51` for `linux-64` and
+   `cc016a73031f8717f7c7b9f2a54eb21b15d58b2a1f1ee7f1750a225e00a76672` for `osx-arm64`.
+8. **D, holds.** Step 7: the Rust `run` exited 0 under
+   `sandbox-exec -p '(version 1)(allow default)(deny network*)'`, with no loopback
+   exception. Inside it, `true` exited 0 and the controls exited 6 and 7. The REPL,
+   piped `1 + 1` under the same denial, exited 0, printed `>>> 2` and showed the banner
+   `Quint REPL 0.34.0 (using the Rust backend)`.
+9. **E, holds on this machine.** `uname -s` gave `Darwin`, `uname -m` gave `arm64`, and
+   pixi's `node` gave `darwin arm64`. Only one machine was checked. Under ruling Q4 the
+   guard reads pixi's `node`, not `uname` (section 4).
+10. **F, holds.** The start line appeared at `--verbosity=4` in every log that started
+    the evaluator, and it is the positive control in each silent probe's own log. The
+    fetch line was matched against its source line, `binaryManager.js` line 57,
+    `Fetching Rust evaluator ${version}...`, which `verify.sh` prints first (section 10).
+    No run downloaded through Quint, so the fetch line was never seen printed.
+11. **G, holds.** Red, step 7 (`step7-red.out`), with the recipe as step 6 left it and
+    nothing on `127.0.0.1:9` or 8822. The run used the loopback-only denial (section 9,
+    item 10):
+
+    ```text
+    commit 8eeca83 (with uncommitted changes)
+    -- proxy red: exit 1 after 60s
+    E Failed to connect to proxy 127.0.0.1:9 with error connect ECONNREFUSED 127.0.0.1:9
+    error: Timed out waiting for Apalache server to become ready after 60 seconds. Channel state: 3
+    ```
+
+    Green, after the six `-u` flags (`step7-green.out`): `proxy green (grpc_proxy): exit
+    0` and `proxy green (all six): exit 0`, each with `[ok] No violation found`.
+
 ### 4. Design rulings
+
+The maintainer ruled at step 4 (2026-11-25) on the plan's twelve questions
+(`ai_tmp/qm01/plan.md`, "Rulings at step 4"):
+
+- Q1, the pin layout and stamp: (a), as recommended.
+- Q2, the guard's table: (a), as recommended. `--backend` is never read, so
+  `run --backend typescript` is refused without the install.
+- Q3, the proxy variables: (a), six `-u` flags on the recipe.
+- Q4, the platform test: **(b), pixi's `node`** (`process.platform`, `process.arch`),
+  not `uname`. This differs from the recommendation. The installer asks
+  `.pixi/envs/default/bin/node` with `NODE_OPTIONS` unset. It refuses unless that is the
+  first `node` on `PATH`. The mapping is `linux x64` to `linux-64` and `darwin arm64` to
+  `osx-arm64`. `rg -n -i 'uname|rosetta|process\.arch' .scratch/quint-model/` outside
+  QM01 finds only `QM10-rust-replay.md` line 444, which quotes `uname -sm` for where
+  traces were made and does not depend on the platform test. So no sentence in the README
+  or in QM02 to QM13 was edited.
+- Q5, `NODE_OPTIONS` unset in the recipe: (a). Q6, the corrections to Verification: (a),
+  all of them (section 9, item 6). Q7, positive `curl` controls outside the denial: (a),
+  authorised. Q8, a loopback-only denial for every `verify`: (a).
+- Q9, the 8822 window: (a), an Open point plus the absent marker
+  `Apalache server exited with code`. Q10, edit `docs/how-to/develop-locally.md:152`:
+  (a). Q11, decision 0021 line 29: (a), left as it is.
+- Q12, the six stricter checks, `--check-archive` and the one-member rule: keep all.
+
+After checkpoint 2 (2026-11-25):
+
+- Keep the CLI's line check, with a by-hand read of the lookup on each bump. The round-2
+  high stays open ("Where a later CLI looks").
+- A mount under the old directory is recorded in Open points only. Neither installer
+  changes.
 
 ### 5. What landed
 
+`5140f88`, "Pin the Quint CLI's Rust evaluator by checksum (QM01)", `git show --stat`:
+
+```text
+ .dockerignore                                    |   5 +-
+ .gitignore                                       |   9 +-
+ .scratch/quint-model/QM01-evaluator-pin.md       | 205 ++++++---
+ AGENTS.md                                        |   2 +-
+ Justfile                                         |  79 +++-
+ docs/decisions/0021-project-managed-quint-cli.md |  71 ++-
+ docs/explanation/security-model.md               |  30 +-
+ docs/how-to/develop-locally.md                   |  21 +-
+ docs/how-to/maintain-dependencies.md             |  87 +++-
+ docs/operations/maintenance.md                   |   3 +-
+ docs/project/repository-map.md                   |   4 +-
+ docs/reference/commands.md                       |  27 +-
+ docs/reference/configuration.md                  |   6 +-
+ docs/reference/quality-gates.md                  |   6 +-
+ docs/reference/testing.md                        |   2 +-
+ docs/tutorials/first-change.md                   |   2 +-
+ renovate.json                                    |   2 +-
+ scripts/check-quint-evaluator-pin.sh             | 142 ++++++
+ scripts/initialize.sh                            |  13 +-
+ scripts/install-quint-evaluator.sh               | 549 +++++++++++++++++++++++
+ tools/quint/evaluator.txt                        |  13 +
+ 21 files changed, 1125 insertions(+), 153 deletions(-)
+```
+
+- `tools/quint/evaluator.txt` pins `quint=0.34.0`, `evaluator=v0.8.0`, and the two hashes
+  from claim C.
+- `scripts/install-quint-evaluator.sh` has an install mode, `--check` (the guard) and
+  `--check-archive`.
+- `scripts/check-quint-evaluator-pin.sh` is in `just lock-check`.
+- The `quint` recipe gains a second guard line and unsets `NODE_OPTIONS` and the six
+  proxy variables.
+- `scripts/initialize.sh` runs `just install-apalache` at line 48 and
+  `just install-quint-evaluator` at line 54.
+- `AGENTS.md` line 37 lists `just install-quint-evaluator` among the recipes that reach
+  the network.
+- Decision 0021 and the handbook pages state the pin and the gaps under Goal.
+
+Every path is in Files touched. The ticket's own diff is the corrected Verification and
+the Open points.
+
 ### 6. The gate, the installer and the guard, red and green
+
+Every control ran on `osx-arm64` only (macOS, Darwin arm64): the gate, the installer,
+the guard, both denials and every `verify`. The `linux-64` hash was pinned from a
+download that was hashed and listed but never unpacked or run (Open points, "The other
+platform"). Linux's `unshare -rn` and GNU `tar` and `find` were never run.
+
+**Step 4, the gate** (`ai_tmp/qm01/step4.out`, `step 4 rc=0`):
+
+```text
+commit 8eeca83 (with uncommitted changes)
+green green: exit 0
+green green-absent: exit 0
+red quint-0.33.0: exit 1
+check-quint-evaluator-pin: tools/quint/evaluator.txt says quint=0.33.0, but tools/quint/package.json pins '0.34.0' and tools/quint/package-lock.json locks '0.34.0'. After a Quint bump, read the new CLI's QUINT_EVALUATOR_VERSION, move evaluator= and every sha256.<platform>= if it moved, then set quint= (docs/how-to/maintain-dependencies.md, "Moving the evaluator pin")
+red no-linux: exit 1
+check-quint-evaluator-pin: tools/quint/evaluator.txt must have exactly one sha256.linux-64= line, for the pixi platform linux-64; it has 0
+red 63-digits: exit 1
+check-quint-evaluator-pin: sha256.osx-arm64= in tools/quint/evaluator.txt is not 64 lowercase hex digits: c016a73031f8717f7c7b9f2a54eb21b15d58b2a1f1ee7f1750a225e00a76672
+red osx-64: exit 1
+check-quint-evaluator-pin: tools/quint/evaluator.txt has sha256.osx-64=, but osx-64 is not a platform under [tool.pixi.workspace] in pyproject.toml
+red no-v: exit 1
+check-quint-evaluator-pin: evaluator=0.8.0 in tools/quint/evaluator.txt is not v followed by x.y.z, as the CLI's QUINT_EVALUATOR_VERSION spells it
+red apalache-key: exit 1
+check-quint-evaluator-pin: tools/quint/evaluator.txt has a line that is not quint=, evaluator=, sha256.<platform>=, a comment or blank: apalache=0.62.4
+cmp exit 0
+dash green exit 0
+dash red exit 1
+```
+
+`green-absent` ran with `tools/quint/node_modules` and `.quint` moved into `ai_tmp/qm01/`.
+The `dash` red printed the same `quint=0.33.0` message, and `cmp` exited 0 after it.
+
+**Step 5, the installer** (`ai_tmp/qm01/step5.out`, cases 1 to 14, from the rerun with
+the same results as the first run):
+
+- Cases 1 to 6 each exited 0. Each install among them (all but case 2) ended with
+  `installed the Rust evaluator v0.8.0 (osx-arm64, sha256 cc016a73…6672)`.
+  - Case 1, Quint's own directory (the fixture): `no stamp at
+    .quint/rust-evaluator-v0.8.0/.pachinko-stamp`, replaced.
+  - Case 2: a second run skipped with `the Rust evaluator v0.8.0 (osx-arm64) is installed
+    and matches its stamp; nothing to do.` The same line printed under `dash`.
+  - Case 3, one byte appended, and case 4, the asset's name beside the executable: each
+    `tree digest mismatch`, replaced.
+  - Case 5, removed and repopulated: `no stamp`, replaced.
+  - Case 6, `chmod a-x`: `executable not a regular executable file`, replaced.
+- Cases 7 to 11 each exited 1. Cases 8 to 10 left `.quint` unchanged by snapshot, and
+  case 7 left its copy unchanged.
+  - Case 7, a symlink at the directory: `… is a symlink; it must be a directory inside
+    this worktree. Remove the symlink itself (not its target), then run just
+    install-quint-evaluator`. The copy was unchanged.
+  - Case 8, `evaluator=v0.7.0`: `the installed Quint CLI 0.34.0 runs the evaluator
+    'v0.8.0' (QUINT_EVALUATOR_VERSION), but tools/quint/evaluator.txt pins
+    evaluator=v0.7.0`.
+  - Case 9, `package.json` at `0.33.0`: `the installed Quint CLI is 0.33.0, not
+    quint=0.34.0 from tools/quint/evaluator.txt; run just install-quint`. `cmp` exited 0
+    after the restore.
+  - Case 10: `QUINT_HOME must be .quint, … (it is 'ai_tmp/qm01/elsewhere')`.
+  - Case 11, the wrong hash: `checksum mismatch for …: tools/quint/evaluator.txt pins
+    sha256.osx-arm64=0c016a73…, the download has cc016a73…; nothing was installed`.
+    `.quint` then held only `apalache-dist-0.62.4`.
+- Case 12, the member check through `--check-archive` on crafted archives, none
+  unpacked. `good` and the real archive exited 0. These exited 1:
+
+  ```text
+  archive check: unsafe component in '../quint_evaluator'
+  archive check: absolute name '/tmp/quint_evaluator'
+  archive check: not a regular file: 'quint_evaluator' (symbolic link)
+  archive check: not a regular file: 'quint_evaluator' (hard link)
+  archive check: unexpected member 'other'
+  archive check: duplicate member quint_evaluator
+  archive check: not a regular file: 'quint_evaluator' (directory)
+  ```
+
+  - Case 12b, install mode, offline, with the symlink archive served by a stand-in
+    `curl`: refused by the member check, and `tar never ran`.
+  - Cases 12c and 12d, a `tar` that unpacks a hard link or a symlink where the archive
+    held a regular file: `the unpacked quint_evaluator is a hard link to another file;
+    nothing was installed`, and `entry check: quint_evaluator is not a regular file`.
+    Each exited 1.
+- Case 13, a stand-in `node` first on `PATH`: exit 1, `the first node on PATH is
+  …/ai_tmp/qm01/fakenode/node, not pixi's …/.pixi/envs/default/bin/node`. The
+  other-platform branch was not run (section 9, item 9).
+- Case 14: with the pin restored (`cmp` exited 0), an install and then a skip, each exit
+  0.
+- Case 15: section 3, claims 2 and 4.
+
+**Step 6, the guard** (`ai_tmp/qm01/step6.out`, `step 6 rc=0`). Every `just quint`
+command ran under the full denial after `true` and the two `curl` controls, which exited
+6 and 7. Each refusal exited 1 and named `just install-quint-evaluator`. The script
+asserted that each left an unchanged snapshot of `.quint` and no fetch line. With the
+stamp moved aside, `run`, `test`, `verify`, the guard with no arguments, with `repl`,
+with `--verbosity=4`, with `nonsense` and with `verify --help` were each refused with
+`(no stamp at .quint/rust-evaluator-v0.8.0/.pachinko-stamp)`. For example:
+
+```text
+commit 8eeca83 (with uncommitted changes)
+-- refused nostamp-run: exit 1
+install-quint-evaluator --check: refused: the Rust evaluator v0.8.0 is not installed as tools/quint/evaluator.txt pins it (no stamp at .quint/rust-evaluator-v0.8.0/.pachinko-stamp); run just install-quint-evaluator. Checked because the first argument is 'run', which runs the evaluator; the guard does not read --backend, so --backend typescript is refused too
+```
+
+`typecheck`, `parse`, `compile --target json` and `--version` passed without the stamp.
+All eight `--backend` vectors were refused, as ruling Q2 says:
+
+- `--backend=typescript`, `--backend typescript` and `--backend="typescript"`
+- `--no-backend` and `--BACKEND=typescript`
+- the option given twice
+- `run -- --backend=typescript …`
+- `run … <file> -- --backend=typescript`
+
+The stamp was restored (`cmp` exited 0). Then:
+
+- The stand-in was refused with `tree digest mismatch`, and the script asserted that no
+  sentinel appeared.
+- An appended byte was refused with `tree digest mismatch`, and `chmod a-x` with
+  `executable not a regular executable file`.
+- A symlinked directory was refused.
+- An empty directory inside it was refused with `unexpected entries`.
+- A symlink at `dist/src/config.js` and at `@informalsystems` were each refused with
+  `is a symlink`.
+- An extensionless `config` or `rust/binaryManager` beside its `.js` was refused with
+  `node's require() would load it`.
+- An extra line naming the constant was refused with `names QUINT_EVALUATOR_VERSION on
+  lines other than the three this check knows`.
+- A stamp with a trailing blank line was refused with `stamp malformed`.
+- `evaluator=v0.7.0` was refused, naming both versions.
+- `QUINT_HOME=ai_tmp/qm01/elsewhere` was refused.
+
+With everything restored, `just quint run` exited 0 (`passed green-run`), and the guard
+under `dash` exited 0.
+
+**Step 7** (`step7-full.out`, `step 7 full rc=0`). Under the full denial, the TypeScript
+run is in section 3 (claim 4). The CLI's own reading of each `--backend` spelling, with
+the stamp in place:
+
+- `--backend=typescript`, `--backend typescript` and `--backend="typescript"`: exit 0, no
+  evaluator start.
+- `--no-backend`, `--BACKEND=typescript` and the option given twice: exit 1 from the CLI,
+  after the guard had passed, with no evaluator start.
+- `run … <file> -- --backend=typescript`: exit 0, and the evaluator started.
+
+The REPL, the proxy runs and claim 1 are in section 3.
 
 ### 7. Checkpoint 1 record: the plan
 
+**Harness and model.** Codex CLI v0.172.0, `codex exec -m gpt-6.2-sol -s read-only`, run
+in the form the review deltas give. It read `ai_tmp/qm01/plan.md` and the drafts at
+`8eeca83`, before any tracked file changed. The lenses were conformance and breakage,
+and there were two rounds. Fresh Claude subagents triaged and applied the fixes, one
+writer at a time. The records are under `ai_tmp/review/QM01-1/` (`findings-*.md`,
+`verdicts.md`).
+
+**Round 1.** 19 findings, 15 distinct (B01 = C02, B03 = C01's `sed` part, B08 = C06's
+digest part, B09 = C05 + C06). Three were high (C01, C02, B01). Over all 19: 14 valid, 5
+valid in part, 0 invalid.
+
+- C01 (high), valid in part: the symlink list missed `tools`, `tools/quint` and
+  `config.js`, and one `sed` line could not see a later write of the constant. Added to
+  `check_cli`, and every line naming the constant must equal one of 0.34.0's three
+  (Departure 6 of the plan).
+- C02/B01 (high), valid: `lsof` accepted any listener, and no log was checked for
+  Quint's own launch. Launch markers are now required, the existing-server marker must be
+  absent, and the `lsof -t` PID must equal the listener's.
+- C03, valid: the Apalache download marker was not searched for, and the red proxy run
+  accepted any failure. The marker must be absent, and the red run needs a gRPC
+  connection error.
+- C04, valid: the branch. Closed by the maintainer's ruling.
+- C05, valid: refusals matched only the shared prefix, and `grep` status 2 counted as
+  absent. Each refusal now matches its own reason, through an `absent` helper.
+- C06/B08, valid: the `ls -la` snapshot was shallow, and AP02's digest skips
+  directories. There is now a recursive snapshot, and the skip test checks the entries.
+- C07, valid in part: steps 8 to 10 were not sequenced. Added to the plan.
+- C08, valid in part: page lines were missing from the plan's map. Added. Line 152 and
+  decision 0021 line 29 became Q10 and Q11.
+- C09 and C10, valid: the added controls were not listed, and the `uname` tradeoff was
+  misstated. Both are corrected in the plan.
+- B02, valid: `NODE_OPTIONS` could set `QUINT_HOME` after the guard. Became Q5.
+- B04, valid in part: the full prefixes in the plan.
+- B05, valid: success relied on the trap. The installer now removes `$tmp` itself.
+- B06, valid in part: install mode's member check had no red control. Case 12b added.
+- B07, valid: any non-zero `curl` status passed. A status of 0, 2, 126 or 127 now fails.
+
+**Round 2** (the last). 20 findings, 13 distinct. Three were high (R2-C01 = R2-B02,
+R2-C02 = R2-B04, and R2-B01 in part). Over all 20: 16 valid, 4 valid in part, 0 invalid.
+
+- R2-C01/R2-B02 (high), valid: Quint retries 8822 without tying the answer to its child.
+  No fix fits within shared rule 10. Became Q9, and the absent marker
+  `Apalache server exited with code` was added.
+- R2-C02/R2-B04 (high), valid: step 6 ran `verify` without a denial. Every `just quint`
+  in steps 5 and 6 now runs under the full denial. Became Q6 to Q8 for step 7 and
+  Verification.
+- R2-B01 (high), valid in part: an extensionless `config` or `rust/binaryManager` would
+  be loaded instead of the checked file. These are refused (Departure 8).
+- R2-C03 to R2-C09 and R2-B03 to R2-B11 were each valid or valid in part:
+  - the step scripts record `rc` and restore through an EXIT trap;
+  - pixi's `python` is used by path;
+  - the extra-key and npm comparisons run in Python;
+  - case 15 and the eighth vector were added;
+  - `find -links 1` and cases 12c and 12d were added;
+  - the stamp is compared with `cmp`;
+  - the symlink copy is checked by a content hash;
+  - the cleanup wording was corrected.
+- R2-B11, the mount under the old directory, was left open.
+
+**Applied** to `ai_tmp/qm01/` only. No tracked file changed before the step-4 ruling.
+
+**Rulings.** Section 4.
+
+**Handed back.** Round 1 handed nothing back. Round 2, both outside Files touched:
+
+- `scripts/install-apalache.sh` `check_cli` (R2-B01): its symlink list does not name
+  `dist/src/config.js`, through which Apalache's lookup goes, nor the extensionless
+  `dist/src/config`.
+- `scripts/check-apalache-pin.sh` lines 63 to 68 (R2-B05): the same `$()` trim of the
+  npm values.
+
+**Re-run.** Steps 4 to 7 at `8eeca83` with the work uncommitted (sections 3 and 6).
+
 ### 8. Checkpoint 2 record: the diff
+
+**Harness and model.** As at checkpoint 1, over `git diff 8eeca83` plus the uncommitted
+changes, with the pages included. There were two rounds. The records are under
+`ai_tmp/review/QM01-2/` (`findings-*.md`, `verdicts.md`, `controls.out`,
+`controls-2.out`).
+
+**Round 1.** 15 finding ids, 11 verdicts (B1 = C1, B3 = C2, B6 = C7, B7 = C6). One was
+high (B1). 8 valid, 3 valid in part, 0 invalid.
+
+- B1/C1 (high), valid: no line of `config.js` or `binaryManager.js` that builds the
+  evaluator's path was checked. The new `exact_lines` check compares those lines with
+  0.34.0's. The pages state the in-place-edit limit.
+- B2, valid: `tarfile` stopped silently at a bad header. The member check now requires
+  zeros after the last member.
+- B3/C2, valid: `NODE_V8_COVERAGE` reached the guard's `node`. The probe now runs under
+  `env -i`.
+- B5, valid: a `node` in pixi's `lib/jvm/bin` would run the CLI. It is refused.
+- B6/C7, valid: the evaluator bump order and `tar -tvzf` in the how-to. Fixed for the
+  evaluator's subsection. The Apalache half was handed back.
+- B7/C6, valid: "or an observation" was added on QM01's pages.
+- C4, valid: a NUL passed the pin check. The check now accepts printable ASCII and LF
+  only.
+- C5, valid in part: commands.md wording.
+- B4, valid in part (Linux, from source): a mount under the old directory. Not applied;
+  left for the maintainer.
+- B8, valid: `.scratch/apalache/README.md:53`. Handed back.
+- C3, valid in part: the record and Verification. Left to the executing agent.
+
+**Round 2** (the last). 11 finding ids, 7 verdicts. One was high (R2-B1 = C2R2-01).
+5 valid, 2 valid in part, 0 invalid apart from R2-B3's path sub-claim.
+
+- R2-B1/C2R2-01 (high), valid: on byte copies, a lookup change outside the compared lines
+  passed `check_cli`. Left open by the maintainer's ruling (section 4). The pages were
+  corrected under C2R2-05 so they no longer say such a release is refused.
+- R2-B4/C2R2-04, valid: `--check-archive` resolved a relative path against the root.
+  Fixed.
+- R2-B5, valid: a PAX global record. The how-to now runs `--check-archive` on each
+  archive.
+- R2-B2/C2R2-02: the mount, as in round 1. Recorded in Open points only, by ruling.
+- R2-B3/C2R2-03 and R2-B6: Verification, and the Apalache bump order. Handed back.
+
+**Applied** to the scripts, the `Justfile` and the pages, before `5140f88`. Every path is
+in Files touched.
+
+**Handed back.**
+
+- The "Moving the Apalache pin" subsection of `docs/how-to/maintain-dependencies.md` runs
+  `just lock-check` before the evaluator pin is reviewed (B6, R2-B6). That is the
+  Apalache series' lines, and it is in Open points.
+- "Or an observation" is missing in `.scratch/quint-model/QM02`, `QM03` (two places),
+  `QM05`, `QM13` (two places) and QM01's own design text (B7/C6). These are left as
+  written.
+- `.scratch/apalache/README.md:53` still reads as current status (B8). It is in Open
+  points.
+- Verification and the record (C3, R2-B3/C2R2-03) went to the executing agent. This is
+  closed: the ticket's Verification block is now the same as `ai_tmp/qm01/verify.sh`
+  (`diff` exit 0), with each correction under section 9, item 6. Sections 4, 7, 8 and 9
+  are this record.
+
+**Re-run.** At `8eeca83` with the work uncommitted, the review's controls were run on
+byte copies in a scratch mirror (`controls.out`, `controls-2.out`). Then:
+
+```text
+Validated 49 pages and 50 canonical topics.
+Validated AGENTS.md, 2 adapters, and 14 skills.
+```
+
+`just lock-check` and `just lint` each exited 0.
+
+**After the last checkpoint.** A `/code-review` at high effort then gave six nits:
+
+- Fixed: comparing pixi's `node` in a symlinked checkout.
+- Fixed: a `just check-quint-evaluator-archive` recipe.
+- Fixed: a note on mapping a new platform.
+- Fixed: an `AGENTS.md` pointer to the gaps.
+- Left: the Apalache how-to bump order, which is outside the ticket's lines and in Open
+  points.
+- Left: the bare `python`, which matches `scripts/check-apalache-pin.sh`.
+
+These four fixes changed files under Files touched after checkpoint 2's last round, and
+Codex did not review them. They are in `5140f88` and covered by section 10's run. The
+push stop asks whether checkpoint 2 runs over them first.
 
 ### 9. Departures
 
+1. **Branch and worktree.** The work ran on `mk-quint-spec-tickets` at `8eeca83`, in this
+   worktree. There was no `ticket/qm01-evaluator-pin`, no new worktree, and no second
+   `just initialize` beyond step 1's. This follows the maintainer's ruling before the
+   work.
+2. **Reviewer model.** `gpt-6.2-sol`, as the review deltas name it. Codex was on `PATH`,
+   so the fallback was not used.
+3. **A third installer mode.** `--check-archive <file>` is offline and read-only, so the
+   member check can run on its own (step 5, case 12). `just check-quint-evaluator-archive`
+   runs it. The design names two modes.
+4. **One member.** The member set must be exactly one regular file, `quint_evaluator`.
+   Directory members are refused too, because both v0.8.0 archives are that one file
+   (claim B).
+5. **Stricter checks than the ticket's text** (Q12, kept):
+   - the installed entry set in the skip test;
+   - the three-line set for the constant;
+   - removal of `$tmp` on success;
+   - refusal of extensionless shadows of `config` and `rust/binaryManager`;
+   - the stamp compared byte for byte;
+   - a single link on the unpacked executable;
+   - the lines of `config.js` and `binaryManager.js` that build the path (checkpoint 2,
+     B1);
+   - the `env -i` platform probe;
+   - refusal of a `node` in pixi's JVM `bin`;
+   - refusal of NUL or CR in the pin.
+6. **Verification corrected** under rulings Q6 to Q8:
+   - each refusal checks its own reason;
+   - an absent marker needs `grep` status 1;
+   - each `verify` log must show Quint launching its own Apalache and no download;
+   - the port control names its listener's PID;
+   - the `curl` controls check exit codes, after positive runs outside the denial;
+   - every `verify` runs under a loopback-only denial.
+
+   The script runs on Darwin only. The Linux `unshare -rn` branch was dropped, because a
+   new namespace starts with `lo` down and this was not probed. The loopback profile was
+   probed on macOS:
+
+   ```text
+   (version 1)(allow default)(deny network*)(allow network-bind network-inbound (local ip "localhost:*"))(allow network-outbound (remote ip "localhost:*"))
+   ```
+
+   A first profile with `(allow network* (local ip "localhost:*"))` let `curl` reach
+   `1.1.1.1` and was rejected.
+7. **`NODE_OPTIONS` is unset** by the `quint` recipe, a seventh `-u` beside the ticket's
+   six (Q5).
+8. **Platform from pixi's `node`**, not `uname` (Q4, section 4).
+9. **Step 5, case 13** became a stand-in `node` first on `PATH`, with the script run
+   directly. Pixi's environment has no `uname` for the ticket's case to shadow, and the
+   ruling reads `node`. The branch for a platform the pin does not list was not run: it
+   needs pixi's `node` replaced.
+10. **Step 7's `verify` runs**, the proxy red and green runs included, ran under the
+    loopback-only denial of item 6, not "not under a denial" (Q8). Two vectors differ
+    from the plan:
+    - Step 7 ran seven `--backend` vectors, not eight. `run -- --backend=typescript
+      <file>` ran in step 6 only, where it was refused.
+    - The vector with the file before `--` ran in both steps.
+11. **Reruns in step 5.**
+    - The harness's first run of `--check-archive` lacked pixi's `bin` on `PATH` and was
+      run again.
+    - `step5.out` on disk is a rerun made after step 6 added the guard. Its case 15 is
+      the guard's refusal, and the unguarded evidence is the first run's (section 3,
+      claim 2).
+12. **Extra positive `curl` controls**, outside the denial, in steps 5 and 7 and in
+    Verification (Q7, network authorised). Each exited 0.
+
 ### 10. Verification
+
+The ticket's Verification block, as `ai_tmp/qm01/verify.sh` (the two are identical), ran
+at `5140f88852b5f0872f57a117843fdd5a1ef1640b` after the commit. It exited 0. Under
+`set -eu`, it reaches its last line only when every command before it succeeded.
+Excerpts from `ai_tmp/qm01/verify.out`:
+
+```text
+5140f88852b5f0872f57a117843fdd5a1ef1640b
+refused lock: exit 1
+check-quint-evaluator-pin: tools/quint/evaluator.txt says quint=0.33.0, but tools/quint/package.json pins '0.34.0' and tools/quint/package-lock.json locks '0.34.0'. After a Quint bump, read the new CLI's QUINT_EVALUATOR_VERSION, move evaluator= and every sha256.<platform>= if it moved, then set quint= (docs/how-to/maintain-dependencies.md, "Moving the evaluator pin")
+install-quint-evaluator: the Rust evaluator v0.8.0 (osx-arm64) is installed and matches its stamp; nothing to do.
+refused nostamp-run: exit 1
+refused nostamp-test: exit 1
+refused nostamp-verify: exit 1
+refused nostamp-typescript: exit 1
+refused nostamp-default: exit 1
+refused nostamp-repl: exit 1
+refused nostamp-option: exit 1
+refused changed-run: exit 1
+install-quint-evaluator --check: refused: the Rust evaluator v0.8.0 is not installed as tools/quint/evaluator.txt pins it (tree digest mismatch: the files under .quint/rust-evaluator-v0.8.0 are not the ones .quint/rust-evaluator-v0.8.0/.pachinko-stamp records); run just install-quint-evaluator. Checked because the first argument is 'run', which runs the evaluator; the guard does not read --backend, so --backend typescript is refused too
+deny control 1 curl exit 6
+deny control 2 curl exit 7
+Starting Rust evaluator with command: simulate-from-stdin
+[ok] No violation found (60ms at 166667 traces/second).
+deny_loop control 1 curl exit 6
+deny_loop control 2 curl exit 7
+[ok] No violation found (2965ms).
+[ok] No violation found (2970ms).
+[violation] Found an issue (3102ms).
+Starting Rust evaluator with command: evaluate-at-state-from-stdin
+  ❌ belowTwo
+verify --observation exit 0
+[observed] Observed reachedTwo, which stopped the run (3060ms).
+Validated 49 pages and 50 canonical topics.
+Validated AGENTS.md, 2 adapters, and 14 skills.
+All checks passed and the worktree is unchanged.
+VERIFICATION PASSED
+verify exit 0
+```
+
+- Each `refused` line was followed by its own diagnostic (`no stamp at …` for the
+  `nostamp-*` cases), omitted here, which the script matched.
+- The `curl` controls failed with `Could not resolve host: static.rust-lang.org` (6) and
+  `Failed to connect to 1.1.1.1 port 443` (7).
+- Each `verify` log held `No running Apalache server found, launching...` and
+  `Started Apalache server on pid=`.
+- The last lines are `just check`'s.
+
+Every run was on macOS. The record's own `just check` runs after this record is
+committed and is not quoted here.
 
 ## Open points
 
@@ -1193,9 +1783,10 @@ there.
   and the next guarded run refuses the unstamped directory. A lock across the guard and
   the whole CLI call would close it, for Apalache as well. The maintainer decides
   whether that is a ticket.
-- **Whether upstream publishes a checksum.** Claim 3 is open until step 2. If the
-  release has neither a checksum asset nor asset digests, each hash rests on one
-  download over TLS, and the pages say so.
+- **Whether upstream publishes a checksum.** It does not (claim 3, step 2): the release
+  has no checksum asset. Each asset's GitHub `digest` agreed with two local hashes, but
+  it comes from the same host as the download, so each pin rests on one download over
+  TLS. Decision 0021's reopen trigger stays.
 - **The platform test.** The maintainer ruled at step 4 for pixi's `node`, not `uname`,
   so the platform agrees with the CLI's by construction, Rosetta included, at the cost
   of a `node` start in every guarded run. The branch for a platform the pin does not

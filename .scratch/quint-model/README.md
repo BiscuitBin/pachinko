@@ -254,7 +254,7 @@ snapshot.
 
 | Id | Title | File | Blocked by | Size | Status |
 | --- | --- | --- | --- | --- | --- |
-| QM01 | The Rust evaluator pinned by checksum | `QM01-evaluator-pin.md` | none | M | todo |
+| QM01 | The Rust evaluator pinned by checksum | `QM01-evaluator-pin.md` | none | M | done |
 | QM02 | Tracer: claim and release, decision 0022 and check-quint | `QM02-tracer-claim-and-release.md` | QM01 | L | todo |
 | QM03 | The verify recipe and its required CI job | `QM03-verify-recipe-and-ci.md` | QM02 | M | todo |
 | QM04 | Publish with nothing held | `QM04-publish.md` | QM03 | M | todo |
