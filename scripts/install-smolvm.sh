@@ -401,7 +401,7 @@ for name in sorted(set(members) | set(found)):
 # opened (following links) and hashed; each failure is named on standard error
 # as `<path>: FAILED` or `<path>: FAILED open or read`; exit 1 on any.
 sha_program='
-import hashlib, re, sys
+import hashlib, os, re, sys
 
 def digest(path):
     value = hashlib.sha256()
@@ -433,6 +433,14 @@ for number, line in enumerate(lines, 1):
         sys.stderr.write(path + ": line " + str(number) + " is not a SHA-256 checksum line\n")
         sys.exit(1)
     name = match.group(2).decode("utf-8", "surrogateescape")
+    parts = name.split("/")
+    if name.startswith("/") or any(part in ("", ".", "..") for part in parts):
+        sys.stderr.write(path + ": line " + str(number) + " names a path outside the tree: " + repr(name) + "\n")
+        sys.exit(1)
+    real = os.path.realpath(name)
+    if real != os.path.join(os.getcwd(), name) and not real.startswith(os.getcwd() + os.sep):
+        sys.stderr.write(path + ": line " + str(number) + " resolves outside the tree: " + repr(name) + "\n")
+        sys.exit(1)
     checked += 1
     try:
         found = digest(name)

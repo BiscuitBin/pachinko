@@ -275,12 +275,16 @@ worktree: once the worktree is gone, only the orphan's form below removes its st
 Quint Studio's own data is kept apart from this state, and the purge does not touch it.
 
 The purge renames the state directory to
-`~/Library/Caches/pachinko/smolvm/.purging-<worktree>-<hash>-<pid>` before it removes
-it. If the removal fails part way, that `.purging-*` directory is all that is left;
-nothing uses it, so once no pachinko smolvm command is running, remove it by hand:
+`~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>` before it removes it. If the
+removal fails part way, that `.purging-*` directory is all that is left, and nothing
+uses it. If the purge instead refused because what it renamed was not the directory it
+checked, it says so and leaves both paths alone: look at each, and put back by hand
+what belongs where. Before removing a `.purging-*` directory by hand, while no pachinko
+smolvm command is running, check that its marker names the worktree you purged:
 
 ```console
-rm -rf ~/Library/Caches/pachinko/smolvm/.purging-<worktree>-<hash>-<pid>
+grep '^path=' ~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>/.pachinko-state
+rm -rf ~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>
 ```
 
 ### The state of a worktree that is gone

@@ -188,9 +188,29 @@ try:
         if (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino):
             no(path + " was replaced between its check and its lock")
     elif command == "write-new":
-        fd = os.open(args[0], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        # Written whole to <path>.new and fsynced, then linked into place, which fails
+        # if the name exists: an interruption leaves only <path>.new, never a partial
+        # file at <path>.
+        path, staged = args[0], args[0] + ".new"
+        fd = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(args[1])
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(staged, path, follow_symlinks=False)
+        os.unlink(staged)
+    elif command == "interrupted":
+        # The state directory holds nothing, or only a marker that was never linked
+        # into place (<marker>.new): a creation interrupted before its marker.
+        path = args[0]
+        names = os.listdir(path)
+        if any(name != ".pachinko-state.new" for name in names):
+            no(path + " is not an interrupted creation")
+        for name in names:
+            st = os.lstat(os.path.join(path, name))
+            if not stat.S_ISREG(st.st_mode):
+                no(os.path.join(path, name) + " is not a regular file")
+            os.unlink(os.path.join(path, name))
     elif command == "symlink":
         os.symlink(args[0], args[1])
     elif command == "link":
@@ -286,6 +306,13 @@ try:
         except FileNotFoundError:
             print("gone")
             sys.exit(0)
+        try:
+            tools = os.lstat(os.path.join(path, ".tools"))
+        except FileNotFoundError:
+            print("gone")
+            sys.exit(0)
+        if stat.S_ISLNK(tools.st_mode) or not stat.S_ISDIR(tools.st_mode):
+            no(os.path.join(path, ".tools") + " is a symbolic link or not a directory, so its id says nothing about that worktree")
         try:
             st = os.lstat(id_path)
         except FileNotFoundError:
@@ -482,9 +509,9 @@ own_state() {
         # Wholly empty: a creation interrupted before its marker. Nothing is in it
         # to adopt or to lose, so it is removed (and, for run, made again below).
         check_dir "$state_dir"
-        if h empty "$state_dir" 2>/dev/null; then
+        if h interrupted "$state_dir" 2>/dev/null; then
             /bin/rmdir -- "$state_dir" || refuse "cannot remove the empty state directory $state_dir"
-            say "removed the empty state directory $state_dir, which an interrupted creation left"
+            say "removed the state directory $state_dir, which an interrupted creation left empty"
             state=absent
         fi
     fi
@@ -532,9 +559,18 @@ pin=$pin
 # inventory <link>: smolvm's own listing of the machines in that state; sets
 # machines, one name per line. Any failure is a refusal.
 inventory() {
-    listing=$(/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$1" TERM="${TERM:-dumb}" \
+    # In the foreground, into a file in the state's own tmp/, so that the trap makes
+    # this shell, and its locks, outlast the listing (a command substitution would
+    # not wait for it on a signal).
+    listing_file=$(/usr/bin/mktemp "$state_dir/tmp/listing.XXXXXX") ||
+        refuse "cannot make a file for smolvm's listing in $state_dir/tmp"
+    rc=0
+    /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$1" TERM="${TERM:-dumb}" \
         TMPDIR="$1/tmp" DOCKER_CONFIG="$1/docker-config" SMOLVM_DATA_DIR="$1" \
-        "$release" machine ls --json 8<&- 9<&-) ||
+        "$release" machine ls --json >"$listing_file" 8<&- 9<&- || rc=$?
+    listing=$(/bin/cat -- "$listing_file") || rc=1
+    /bin/rm -f -- "${listing_file:?}"
+    [ "$rc" -eq 0 ] ||
         refuse "smolvm could not list the machines in $1, so nothing was removed"
     machines=$(/usr/bin/printf '%s' "$listing" | h machines) ||
         refuse "smolvm's listing of the machines in $1 cannot be read, so nothing was removed"
@@ -593,7 +629,7 @@ remove_state() {
         refuse "$state_dir still holds machines (above), so nothing was removed"
     fi
     why=$(h one-fs "$state_dir" 2>&1) || refuse "$why; nothing was removed"
-    purging=$cache/.purging-${state_dir##*/}-$$
+    purging=$cache/.purging-$link_hash-$$
     why=$(h aside "$state_dir" "$purging" "$state_devino" 2>&1) || refuse "$why"
     /bin/rm -f -- "${state_link:?}" ||
         refuse "cannot remove $state_link; the state directory is now $purging, which nothing uses: remove it by hand"
@@ -631,11 +667,11 @@ orphan_mode() {
     lock "$state_dir.lock" 9
     parents
     orphan_checks
-    state_inner
     life=$(h worktree "$m_path" "$m_id" 2>&1) ||
         refuse "cannot tell whether $m_path, the worktree $state_dir names, still exists ($life); make it searchable, or run just smolvm-purge from it"
     [ "$life" = gone ] ||
         refuse "$m_path still exists and holds this state's id; run just smolvm-purge from that worktree"
+    state_inner
     the_link
     no_links
     if [ -n "$delete" ]; then

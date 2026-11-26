@@ -168,12 +168,17 @@ It needs the stamped install, takes both locks, checks the state as the launcher
 and takes smolvm's own listing of the machines there; it refuses, removing nothing,
 when the listing fails or lists any machine, naming each and how to delete it. It then
 walks the state directory and refuses a mount point under it, renames the directory to
-`~/Library/Caches/pachinko/smolvm/.purging-<name>-<pid>` beside it, checks that what it
-renamed is the directory it checked (the same device and inode, still holding the
+`~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>` beside it, checks that what
+it renamed is the directory it checked (the same device and inode, still holding the
 marker), removes the state link, and removes the renamed directory. A removal that fails
 part way leaves only that `.purging-*` directory, which nothing uses and which is
-removed by hand. With no state it says so, removing a state link left pointing at the
-absent directory. It keeps the lock entry, the parents and the id file.
+removed by hand. These checks hold against mistakes and against other users, not
+against a process of the same user that swaps or mounts something in the state between
+a check and the removal: the trusted writers of the state are the user and root
+(the maintainer's ruling of 2026-11-26, recorded in QS02's hand-back). The listing
+runs in the foreground, so the purge's trap holds both locks until smolvm's listing
+ends. With no state it says so, removing a state link left pointing at the absent
+directory. It keeps the lock entry, the parents and the id file.
 `just smolvm-purge --orphan <name>` does
 the same for the state of a worktree that is gone, `<name>` being the state directory's
 name: the marker's recorded worktree must no longer exist or no longer hold the
