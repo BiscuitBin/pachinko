@@ -1773,6 +1773,18 @@ verify exit 0
 Every run was on macOS. The record's own `just check` runs after this record is
 committed and is not quoted here.
 
+**Rerun after the last fix** (the guard's `node` comparison, section 8). The same
+script, `ai_tmp/qm01/verify.sh`, at `fbe65eb9b90276170924f083e74b01147de9a229`, exit 0:
+the nine `refused` lines each exited 1, the `curl` controls exited 6 and 7 under both
+denials, and it ended:
+
+```text
+All checks passed and the worktree is unchanged.
+VERIFICATION PASSED
+```
+
+`git status --short` printed nothing.
+
 ## Open points
 
 - **The other platform.** The executing agent hashes both archives and runs the
