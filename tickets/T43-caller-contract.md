@@ -194,12 +194,46 @@ suggestions for the question, not rulings.
      No log exists today; the draft states what a UUIDv7 does and does not guarantee
      across a restart, so that the ticket that adds the log inherits a stated
      requirement.
-   - **The text form.** Today a lease id is 128 bits sent as 32 lower-case hexadecimal
-     digits, and the lease routes refuse any other form with 400. A UUID's usual text
-     form is hyphenated. Which form the wire carries is put to the maintainer.
+   - **The text form.** Ruled on 2026-11-25, and no longer put at step 5: see
+     "Maintainer call (2026-11-25)" below. Today a lease id is 128 bits sent as 32
+     lower-case hexadecimal digits, and the lease routes refuse any other form with 400.
+     The wire will carry the 36-character hyphenated form, lowercase out and any case
+     in, under the "valid UUID" rule of that call, and the 32-digit form becomes
+     refused.
    - **In the specification.** How the module types the id, where it says "UUIDv7",
      and how it states "never reused" when an ended lease may be forgotten, so that an
      invariant over the leases that exist cannot say it.
+10. **Whether holding a lease id is ever authority.** Added by the maintainer call of
+    2026-11-25 below, and not ruled. RFC 9562 §8 says UUIDs "MUST NOT be used as
+    security capabilities" (unverified until step 3 reads §8). A lease id is a token
+    its holder presents back; today an action names its lease and its consumer, and the
+    lease refusals check that the lease is the consumer's (point 4). If possession of a
+    lease id ever stands as proof of holding the lease, a UUIDv7's timestamp bits make
+    it easier to guess than a version 4's random bits. Put it beside point 4, where a
+    second refusal already tells a caller that an id it does not own is active, and
+    beside this ticket's non-goal of authenticating a caller. The draft decides nothing
+    here; it states what the specification and the service rely on a lease id for.
+
+### Maintainer call (2026-11-25), recorded against this ticket as written
+
+On 2026-11-25 the maintainer ruled the format of the publisher, consumer and lease ids,
+answering item 9 of "What this double raises that no `N`-note holds" in
+`gleam-double/SPEC-NOTES.md`. This ticket was written before that ruling. The call rules
+one sub-bullet of open point 9 and adds open point 10; the rest of the ticket stands as
+written. The consumer id, and the publisher id if T45 keeps one, are
+`tickets/T49-consumer-id-uuid.md`'s.
+
+| Call | Decision | Effect |
+| --- | --- | --- |
+| The lease id's text form (open point 9, "The text form") | A valid UUID: the RFC 9562 variant, bits `10`, so the first hex digit of octet 8 is `8`, `9`, `a` or `b`, with any version nibble, which refuses the nil and max UUIDs and leaves versions 9 to 15 open; exactly 36 characters in the 8-4-4-4-12 form, hex digits in any case on input; braces, `urn:uuid:`, the 32-digit form, whitespace and stray hyphens refused; parsed to the 16-byte value, emitted as lowercase canonical text, never compared as the text sent | The sub-bullet is ruled and is not put at step 5. Today's 32-digit form becomes refused: a breaking wire change for every client that holds or sends a lease id, which step 6's service follow-up states in `docs/reference/http-api.md` and both Unreleased sections of `CHANGELOG.md`. |
+| A lease id a caller presents | No version check. The service always mints a UUIDv7, and an id it never minted is simply not found | The 36-character and variant checks still apply to a presented id; only the version check is waived. The status, code and place of the refusal of a malformed lease id stay with open point 5. |
+| RFC 9562 §8, a UUID is not a capability | Not ruled | Open point 10, put at step 5. |
+
+The RFC facts in this call are as RFC 9562 §4
+(`https://www.rfc-editor.org/rfc/rfc9562.html#section-4`) and §8
+(`https://www.rfc-editor.org/rfc/rfc9562.html#section-8`) were read on 2026-11-25, and
+are unverified here until step 3 re-reads both. Lowercase on output is the maintainer's
+ruling, not the RFC's: RFC 9562 says only that any case is valid.
 
 ### What exists today
 
@@ -346,13 +380,15 @@ T47 have the two answers they wait on. No behaviour has changed.
    for open point 6 and record, with the section read, whether Allium 3 has a
    construct for a named rejection or an order of checks. Read RFC 9562's UUID version
    7 sections (network, authorised by this step) and record the layout, what it says
-   of ids made within one millisecond, and what it guarantees about uniqueness. Quote
+   of ids made within one millisecond, and what it guarantees about uniqueness; read
+   also §4 and §8, for the text form ruled on 2026-11-25 and for open point 10. Quote
    each source; a claim from memory stays marked unverified.
 4. **The draft and the record.** Use the `spec-change` skill for the drafting and the
    `review-docs` skill for the page. Write the decision record at the next free
    number, with its `docs/manifest.yml` entry and `docs/decisions/README.md` row. It
    holds:
-   - the four rulings, with dates and the maintainer's reasons as Context states them;
+   - the four rulings, with dates and the maintainer's reasons as Context states them,
+     and the maintainer call of 2026-11-25 on the lease id's text form;
    - the drafted specification text for the ruled parts, as fenced excerpts: the
      `Lease` id, the `Batch` and lease view that expose it, `expires_at` as the answer
      of pull, renew, ack and nack, and that an ended lease may be forgotten;
@@ -374,7 +410,7 @@ T47 have the two answers they wait on. No behaviour has changed.
    the code. Does any excerpt or sentence assume an answer to an open point? Does the
    inventory match `refusals.py`, `error.rs` and the routes? Is every fact about Allium
    and UUIDv7 quoted from its source? Is each example true of the code?
-5. **Authorisation required: the open points.** Put the nine open points to the
+5. **Authorisation required: the open points.** Put the ten open points to the
    maintainer, in Context's order, each with its examples, its options and the record's
    excerpt. Ask also how the follow-up work is to be cut into tickets (step 6 proposes
    a cut). Stop until the maintainer answers. Quote each answer in the hand-back,
@@ -422,11 +458,12 @@ T47 have the two answers they wait on. No behaviour has changed.
 - Every drafted excerpt passed `just check-specs` and `just analyse-specs` when applied
   to the module, with the output quoted, and no commit on the branch changes
   `docs/specs/pachinko.allium`, `crates/` or `double/`.
-- The maintainer's answer to each of the nine open points is quoted in the hand-back
+- The maintainer's answer to each of the ten open points is quoted in the hand-back
   with its date, and nothing before step 5 chose an option.
 - The record states, as decided: what each trigger answers; the lease's id, its
-  sources and its text form; each named refusal; the check order for every trigger
-  that can be refused; and how the module states a refusal.
+  sources, and its text form as the maintainer call of 2026-11-25 ruled it; each named
+  refusal; the check order for every trigger that can be refused; and how the module
+  states a refusal.
 - The answers T46 and T47 wait on are stated in the record under their own headings.
 - Follow-up tickets exist for the specification, the Rust, the service, the double and
   the catalog, each with its row in `tickets/README.md`, and one of them revises
@@ -462,7 +499,7 @@ None yet.
 
 ## Open points
 
-- The nine open points in Context are step 5's to settle.
+- The ten open points in Context are step 5's to settle.
 - The base branch is step 0's to ask.
 - How the follow-up work is cut into tickets is proposed at step 5 and fixed at step 6.
 - Whether this ticket's record can serve as the decision record a new randomness

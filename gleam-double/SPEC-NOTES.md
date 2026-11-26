@@ -206,6 +206,16 @@ serialized stream has a section of its own, below.
    wraps each in a type of its own and checks nothing, so an empty key is as valid as any
    other (G68). **The maintainer decides:** do publisher ids, consumer ids, pocket keys,
    record keys and lease ids have a format, such as non-empty?
+   - **Ruled (2026-11-25):** yes. A pocket key and a record key are each non-empty, hold
+     no whitespace and use only ASCII `a-z`, `0-9` and `-`. A consumer id, a lease id and
+     a publisher id are each a valid UUID: the RFC 9562 variant with any version, exactly
+     36 characters in the 8-4-4-4-12 form with hex digits in either case, held as the
+     16-byte value and emitted as lowercase text. Version 7 is recommended for a consumer
+     id and a publisher id, not required; the service always mints a version-7 lease id,
+     and a presented lease id gets no version check. Lands in
+     `tickets/T48-key-format.md` (the keys), `tickets/T49-consumer-id-uuid.md` (the
+     consumer id, and the publisher id if T45 keeps one) and the 2026-11-25 amendment to
+     `tickets/T43-caller-contract.md` (the lease id's text form).
 
 G44, G51, G53, G55 and G66 record a reading and leave no question.
 
