@@ -3302,3 +3302,71 @@ Points 1 to 8 and 14 are for the maintainer, before QS02 starts. Points 9 to 13,
     Not written: a git wrapper that compares the common directory with the exact
     mounted path, which is QS04's to write and test (Facts for QS04). A later ticket
     that relies on any of these runs it first.
+
+## Rulings after the hand-back
+
+Given by the maintainer on 2026-11-25, after the hand-back at
+`10119f99cca0ce298339b7445e1a39e0c0ab67f4` was reported, in answer to the lead's
+questions. Each answer is quoted as given. Where it reads "(Recommended)" it is an
+option the lead offered and marked so. Nothing above this section was changed to fit
+them, and none of them was run: each names the ticket that tests it first.
+
+1. **Open point 1, the `.git` pointer: "Read-only worktree (Recommended)".** Ruling 2
+   changes. The worktree is mounted read-only, with a few writable subdirectories such
+   as `quint-specs/`. Of section 3's three ways this is the third, so the condition
+   on QS04 is met by a change of ruling and the outcome is go. It is untested: the
+   spike mounted the worktree read-write throughout, and QS04 first shows that
+   Studio's `serve`, sign-in, a scan and its git commands work this way, and which
+   subdirectories must be writable.
+2. **Open points 3 and 14, the state directory: "One hidden parent (Recommended)"**,
+   then replaced for the state directory by ruling 8, which takes it out of the
+   worktree. The lead's reading of what is left of this answer: a project-managed
+   ignored tree that the guest must not read is hidden by an empty-directory mask, and
+   such trees share one parent so that one mask serves them. Under ruling 1 a mask is
+   no longer needed to stop writes, only to hide.
+3. **Open point 5, Studio and git: "Git wrapper (Recommended)".** The common git
+   directory stays mounted read-only. QS04 ships a wrapper around the guest's `git`
+   that sends new objects to a directory on the machine's disk, and it compares the
+   common directory with the exact mounted path, which the spike's wrapper did not.
+4. **Open point 2, whole masks: "Acceptable (Recommended)".** `tools/`, `fuzz/` and
+   `loadgen/` may be read-only to Studio, tracked files included. Ruling 1 gives the
+   same for every tracked file outside the writable subdirectories.
+5. **Open point 6, the host port:** "option 1, But to help make it easier to run across
+   different work tree directories and also not conflict with other projects, have it
+   search for an open port." Option 1 was another host port than 7000. So QS04
+   publishes Studio's guest port 7000 on a free host port that it searches for, for
+   each worktree, and records it where the URL and QS05's wiring read it. The spike
+   set the port at `machine create` and never changed it. `machine update` has a
+   `-p` flag (`logs/help-machine-update.txt` line 29), which was not run.
+6. **Open point 7, Studio is not hermetic: "Accept and document (Recommended)".**
+   Decision 0022 and the handbook say what the AppImage's pin does not pin. Egress
+   stays open, as ruling 2 has it, with host loopback and private ranges blocked.
+7. **Open point 8, the guest's packages:** "Got with option 1 for now, but create a
+   follow up ticket for later (after mvp) to see if we can build and host it as an
+   artifact on github." Option 1 was a dated snapshot: QS04 installs from a fixed
+   `snapshot.debian.org` timestamp and install-tests it. A follow-up ticket, after
+   the first working version, looks at building the guest image and hosting it as an
+   artifact on GitHub.
+8. **Open point 4, the state root.** The maintainer asked: "what if for each worktree
+   we created a new tmp dir in /tmp or something like that?" The lead answered from
+   Facts for QS02: the limit is on the path as it is written, 42 bytes for the root,
+   so a short absolute root outside the worktree fits, recipes need not run from the
+   worktree root, and the guest cannot see a state directory that is not in the
+   worktree; and macOS empties `/tmp` at a restart, which would take the machine, its
+   sign-in and the scan with it. The maintainer then chose **"Durable dir + /tmp
+   symlink (Recommended)"**: the state lives in a durable directory outside the
+   worktree, one for each worktree, for example under `~/Library/Caches/pachinko/`,
+   and smolvm is given a short symbolic link to it in `/tmp`, which the recipe makes
+   again after a restart. This is state outside the worktree, so it needs a decision
+   record and a recipe that removes it. It is untested and rests on the source as
+   read (the length test comes before any canonicalisation): the spike ran no
+   absolute root that fitted and no root through a symbolic link, and QS02 runs both
+   first. It replaces "the value must be a relative path" in Facts for QS02 and Open
+   point 4 as the design, not as a finding.
+9. **Departure 15, the grouped probe lines: "Grouping is fine (Recommended)".** The
+   maintainer's leave for grouping the 8633 lines, given after the fact.
+10. **Where these go, and the branch.** "Everything now": the lead carries these
+    rulings into the README of these tickets and into QS02 to QS05, and writes the
+    follow-up ticket of ruling 7, on `quint-studio-smolmachine`, since those files are
+    not in this ticket's Files touched. "Leave it local (Recommended)": this branch is
+    not merged, pushed or opened as a pull request.
