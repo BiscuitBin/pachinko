@@ -66,3 +66,13 @@ mutants.out*/
 /fuzz/artifacts/
 /fuzz/coverage/
 /loadgen/target/
+
+# The Gleam double's build directory: the hex packages `just gleam-double-deps`
+# fetches, with their own TOML, Markdown and sources, and what `gleam build`
+# compiles. Ignored for the same reason as target/, and so that the hook gate,
+# which reads the files Git can see, never reads a dependency's files.
+/gleam-double/build/
+
+# What a crashed Erlang VM writes into its working directory. `just
+# gleam-double` sets ERL_CRASH_DUMP_BYTES=0, so this catches only a bare run.
+erl_crash.dump

@@ -70,6 +70,8 @@ snapshot.
 | T45 | Drop joining for publishers and consumers; a caller-supplied consumer id stays, accepted on first use | `T45-drop-joining.md` | none | none | todo |
 | T46 | No claim without records: a pull with a limit below 1 by a consumer with no lease claims no pocket (finding 11, ruled) | `T46-no-claim-without-records.md` | T43 | none | todo |
 | T47 | State the start of a deployment as a rule that requires the config bounds and creates the Queue, and settle the Queue's first position | `T47-start-rule-and-config-bounds.md` | T40, T43 | none | todo |
+| T48 | Pocket keys and record keys have a format: non-empty, ASCII a-z, 0-9 and - | `T48-key-format.md` | T43 | none | todo |
+| T49 | A consumer id is a UUID: any version of the RFC 9562 variant, 36 characters in, lowercase out, held as 16 bytes | `T49-consumer-id-uuid.md` | T43, T45 | none | todo |
 
 The ids T03, T04, T08 and T09 are intentionally unused: T03 was merged into T00, T04
 into T01, and T08 and T09 into T07. T20 and T21 belong to the prototype branches that
@@ -95,15 +97,18 @@ T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ 
                  └─ T29 ───────────────┘       └─ T34
 ```
 
-The tickets from the rulings of 2026-11-24 on the Python double's findings. T40 hangs
-from T35 above, and T39 and T47 wait on it; T44 and T45 depend on no ticket:
+The tickets from the rulings of 2026-11-24 on the Python double's findings, and T48 and
+T49 from those of 2026-11-25 on the ids' format. T40 hangs from T35 above, and T39 and
+T47 wait on it; T44 and T45 depend on no ticket:
 
 ```text
 T41 ── T42
 T43 ─┬─ T46
-     └─ T47
+     ├─ T47
+     ├─ T48
+     └─ T49
 T44
-T45
+T45 ── T49
 ```
 
 The graph was acyclic: T00, then six wave-1 lanes, then T11, then wave 2, then T19 and
@@ -230,6 +235,16 @@ the MVP wave.
   follow-up and T45 each revise decision 0019. The tickets were drafted by one subagent
   each and reviewed once by two Codex `gpt-6-astra` lenses before the commit; they have
   not had the two-round review the follow-up set had.
+- **The id formats, T48 and T49.** `gleam-double/SPEC-NOTES.md` asked whether the ids
+  and keys a caller names have a format, and the maintainer ruled on 2026-11-25. Pocket
+  keys and record keys have one: non-empty, only ASCII `a-z`, `0-9` and `-`. T48 lands
+  it. The consumer, lease and publisher ids are UUIDs of the RFC 9562 variant, any
+  version, written in the 36-character form and held as their 16 bytes. Version 7 is
+  recommended for a consumer id and a publisher id, not required; the service always
+  mints a version-7 lease id and checks no version on one a caller presents. T49 lands
+  that for the consumer id, and for the publisher id if T45 keeps one; the lease id's
+  text form is an amendment to T43, dated the same day, and T45 carries a short
+  amendment for a kept publisher id. T48 waits on T43, and T49 on T43 and T45.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

@@ -87,6 +87,20 @@ answers chooses one.
 6. **How decision 0019 is revised.** See "Decision 0019" below.
 7. **The base branch.** See the last bullet of "What exists today".
 
+### Maintainer call (2026-11-25), recorded against this ticket as written
+
+On 2026-11-25 the maintainer ruled that the publisher, consumer and lease ids are UUIDs.
+This ticket was written before that ruling, and the call changes none of its points; it
+tells step 1's question what a kept publisher id will be. Point 3 above is where a
+publisher id survives or goes: the batch route's path and the single publish's body
+field are the only places one is left once the joins and the module's `Publisher` are
+gone.
+
+| Call | Decision | Effect |
+| --- | --- | --- |
+| A publisher id kept on the publish routes | If step 1's answer to point 3 keeps one, it is a UUID under the rule of `tickets/T49-consumer-id-uuid.md`: the RFC 9562 variant, any version, 36 characters in, lowercase out, held as 16 bytes; version 7 recommended, not required | This ticket lands no format. T49 lands it for a kept publisher id, and step 1's question for point 3 says so. If no publisher id is kept, the call is moot. |
+| The consumer id this ticket keeps | A UUID under the same rule | This ticket keeps the consumer id as it is; T49, which depends on this ticket, lands its format on the model point 1 decides. |
+
 ### The options for the consumer
 
 The facts come from `allium-skill-reference/allium/language-reference.md`; read its

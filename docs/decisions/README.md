@@ -41,6 +41,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0018](0018-renovate.md) | Dependency updates through Renovate |
 | [0019](0019-service-runtime-tokio-and-http.md) | The service runtime: tokio, one owner task and HTTP/JSON |
 | [0020](0020-held-set-until-lease-ends.md) | A held record stays held until its lease ends |
+| [0021](0021-gleam-double-toolchain.md) | The Gleam double's toolchain and packages |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019,

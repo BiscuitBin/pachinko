@@ -1,8 +1,17 @@
 # Every TOML file in the repository, `.config/nextest.toml` included. The excludes are
 # load-bearing: the pixi environment's site-packages and the installed tools hold
-# TOML that is not this repository's to format.
+# TOML that is not this repository's to format. So does the Gleam double's build
+# directory, which holds its hex packages' own manifests, and `gleam` writes the
+# double's manifest.toml in a layout of its own (decision 0021).
 include = ["**/*.toml"]
-exclude = ["target/**", ".tools/**", ".pixi/**", "ai_tmp/**"]
+exclude = [
+  "target/**",
+  ".tools/**",
+  ".pixi/**",
+  "ai_tmp/**",
+  "gleam-double/build/**",
+  "gleam-double/manifest.toml",
+]
 
 [formatting]
 # The same width rustfmt.toml gives Rust.

@@ -14,5 +14,5 @@
     "MD041": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["target", ".tools", ".pixi", "ai_tmp", "allium-skill-reference"]
+  "ignores": ["target", ".tools", ".pixi", "ai_tmp", "allium-skill-reference", "gleam-double/build"]
 }
