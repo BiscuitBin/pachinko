@@ -249,8 +249,8 @@ class RepeatAndConflictTest(unittest.TestCase):
 
 
 class LeaseViewTest(unittest.TestCase):
-    # impl-choice (spec note N23): the surface exposes the held records in no
-    # order; the double lists them smallest position first.
+    # guarantee: HeldRecordsOldestFirst (spec note N23): the held records are
+    # listed smallest position first.
     # scenario: S090
     def test_the_lease_read_shows_every_held_record_with_its_mark_smallest_position_first(self) -> None:
         queue, _ = scenario_queue()

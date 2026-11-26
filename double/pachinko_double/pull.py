@@ -91,9 +91,9 @@ def _has_active_lease(view: View, consumer: str) -> bool:
     return bool(view.state.active_leases_by_consumer.get(consumer, ()))
 
 
-def _batch(view: View, outcome: "Outcome", pocket: Pocket, limit: int) -> tuple[Record, ...]:
+def _batch(view: View, pocket: Pocket, limit: int) -> tuple[Record, ...]:
     """`oldest(pocket.queued_records, r => r.position, min(limit, config.max_pull_batch))`."""
-    return oldest(view.state.queued_by_pocket[pocket.key], min(limit, outcome.config.max_pull_batch))
+    return oldest(view.state.queued_by_pocket[pocket.key], min(limit, view.config.max_pull_batch))
 
 
 def _hand(outcome: "Outcome", pocket: Pocket, records: tuple[Record, ...]) -> None:
@@ -128,9 +128,9 @@ def _pull_within_lease(view: View, outcome: "Outcome", trigger: Pull) -> None:
     assert found is not None
     lease, pocket = found
     # let batch = oldest(pocket.queued_records, r => r.position, min(limit, config.max_pull_batch))
-    records = _batch(view, outcome, pocket, trigger.limit)
+    records = _batch(view, pocket, trigger.limit)
     # ensures: lease.expires_at = now + config.lease_ttl
-    outcome.replace(replace(lease, expires_at=view.now + outcome.config.lease_ttl))
+    outcome.replace(replace(lease, expires_at=view.now + view.config.lease_ttl))
     _hand(outcome, pocket, records)
     # ensures: Batch(consumer: consumer, lease: lease, pocket: pocket, records: batch)
     outcome.answer(Batch(trigger.consumer, lease.id, pocket.key, records))
@@ -160,7 +160,7 @@ def _pull_claims_front_pocket(view: View, outcome: "Outcome", trigger: Pull) -> 
     pocket = _front_pocket(view)
     assert pocket is not None
     # let batch = oldest(pocket.queued_records, r => r.position, min(limit, config.max_pull_batch))
-    records = _batch(view, outcome, pocket, trigger.limit)
+    records = _batch(view, pocket, trigger.limit)
     # ensures: Lease.created(pocket, consumer, status: active, granted_at: now,
     #     expires_at: now + config.lease_ttl)
     # The lease's id is the double's (N05), drawn here and only here (N15).
@@ -170,7 +170,7 @@ def _pull_claims_front_pocket(view: View, outcome: "Outcome", trigger: Pull) -> 
         consumer=trigger.consumer,
         status=LeaseStatus.ACTIVE,
         granted_at=view.now,
-        expires_at=view.now + outcome.config.lease_ttl,
+        expires_at=view.now + view.config.lease_ttl,
     )
     outcome.create(lease)
     # ensures: pocket.status = leased

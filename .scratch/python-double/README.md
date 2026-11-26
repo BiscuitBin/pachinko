@@ -56,15 +56,23 @@ snapshot.
 | PD04 | Deferral behind the held version | `PD04-deferral.md` | PD03 | done |
 | PD05 | The clock, with lapse, parking and decay | `PD05-clock-lapse-parking-decay.md` | PD04 | done |
 | PD06 | Close-out and the specification reader's guide | `PD06-close-out.md` | PD05 | done |
-| PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | todo |
+| PD07 | Is the inspection shape part of the contract? | `PD07-inspection-contract.md` | PD06 | done |
+| PD08 | One read context for every rule | `PD08-one-read-context.md` | PD06 | done |
+| PD09 | A small top level, with harness and exceptions namespaces | `PD09-public-interface.md` | PD08 | done |
 
 ## Dependencies
 
-The series is a chain, so no two tickets run in parallel. PD07, added during the series
-at the maintainer's direction, follows up the inspection-shape rulings once PD06 is done.
+PD01 to PD06 are a chain, so no two of them run in parallel. Two follow-ups were added
+at the maintainer's direction, and each needs only PD06. PD07 follows up the
+inspection-shape rulings. PD08 gives every rule one read context, after the architecture
+review of the finished double. The two may run in parallel: PD07 changes no code, and PD08
+leaves the snapshot's shape as it is. PD09 follows PD08: it trims the package's top level
+to the queue, its config and what it answers, and gives the test harness and the
+exception classes a namespace each.
 
 ```text
-PD01 ──> PD02 ──> PD03 ──> PD04 ──> PD05 ──> PD06 ──> PD07
+PD01 ──> PD02 ──> PD03 ──> PD04 ──> PD05 ──> PD06 ──┬──> PD07
+                                                    └──> PD08 ──> PD09
 ```
 
 ## What each ticket owns

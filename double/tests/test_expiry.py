@@ -560,11 +560,10 @@ class ParkedTest(unittest.TestCase):
         refused(self, queue, EqualRankRefused, lambda: publish(queue, "a", "a1", 1, b"x"))
         self.assertEqual(pocket(queue, "a").status, PocketStatus.PARKED)
 
-    # oq:7, open question 7: "Can anything other than a publish revive a parked
-    # pocket, such as an operator action or a cooldown?" Ported as the rules
-    # stand: only a publish that touches the pocket revives it. Neither time,
-    # nor a tick, nor another pocket's lease, publish or release does. The
-    # question stays open (spec note N36).
+    # Only a publish that touches the pocket revives it. Neither time, nor a
+    # tick, nor another pocket's lease, publish or release does. The
+    # maintainer closed open question 7 on 2026-11-23: no operator action and
+    # no cooldown revives a parked pocket (spec note N36).
     # scenario: S026
     def test_only_a_publish_revives_a_parked_pocket(self) -> None:
         queue, clock = parked(self)

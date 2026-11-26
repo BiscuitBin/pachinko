@@ -132,7 +132,7 @@ def _mark_refusal(action: str) -> RefusalFor:
 
 def _extend(view: View, outcome: "Outcome", lease: Lease) -> None:
     # ensures: lease.expires_at = now + config.lease_ttl
-    outcome.replace(replace(lease, expires_at=view.now + outcome.config.lease_ttl))
+    outcome.replace(replace(lease, expires_at=view.now + view.config.lease_ttl))
 
 
 # rule AckMarksRecord ------------------------------------------------------
@@ -283,7 +283,7 @@ def _renew(view: View, outcome: "Outcome", trigger: Renew) -> None:
     lease = _lease(view, trigger.lease)
     assert lease is not None
     # ensures: lease.expires_at = now + config.lease_ttl
-    outcome.replace(replace(lease, expires_at=view.now + outcome.config.lease_ttl))
+    outcome.replace(replace(lease, expires_at=view.now + view.config.lease_ttl))
 
 
 ACK = SPECIFICATION.register(

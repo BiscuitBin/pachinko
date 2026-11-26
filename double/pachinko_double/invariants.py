@@ -8,8 +8,6 @@ entities, that breaks it:
 - `for a in X: for b in X: a != b implies ...` ranges over ordered pairs of
   distinct members of the snapshot's tuple (`_distinct_pairs`), so two members
   with equal fields still count as two (spec note N07).
-  `ArrivalPositionUnoccupied` has no `a != b`, so it ranges over every pair,
-  a record paired with itself included (`_all_pairs`).
 - `p implies q` is `not p or q`: a false premise holds.
 - A reference such as `r.pocket` is the pocket with that key. With two such
   pockets, which only a snapshot that breaks OnePocketPerKey holds, the
@@ -26,7 +24,7 @@ entities, that breaks it:
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from itertools import permutations, product
+from itertools import permutations
 
 from .inspection import Snapshot
 from .model import LeaseStatus, Mark, PocketStatus, RecordStatus
@@ -72,10 +70,6 @@ def invariant(name: str) -> Callable[[Check], Check]:
 
 def _distinct_pairs[T](items: tuple[T, ...]) -> Iterable[tuple[T, T]]:
     return permutations(items, 2)
-
-
-def _all_pairs[T](items: tuple[T, ...]) -> Iterable[tuple[T, T]]:
-    return product(items, items)
 
 
 # Pocket ------------------------------------------------------------------
@@ -327,7 +321,7 @@ def _record_positions_below_next(s: Snapshot) -> Iterator[str]:
 
 @invariant("ArrivalPositionUnoccupied")
 def _arrival_position_unoccupied(s: Snapshot) -> Iterator[str]:
-    for a, b in _all_pairs(s.records):
+    for a, b in _distinct_pairs(s.records):
         if a.status is RecordStatus.HELD and a.deferred_position is not None and not a.deferred_position != b.position:
             yield f"record {a.pocket!r}/{a.key!r} defers to {a.deferred_position}, where {b.pocket!r}/{b.key!r} stands"
 

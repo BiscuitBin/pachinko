@@ -228,7 +228,7 @@ and against no others.
 ## Evidence for the open questions
 
 This research covers the eight questions the root module carried when it was done.
-The maintainer has since closed two of them, questions 1 and 9. Questions 10 and 11
+The maintainer has since closed six of them, questions 1, 3, 4, 5, 7 and 9. Questions 10 and 11
 came later, from the wave's code review, have no section here, and are closed too. Each section below lists what comparable systems
 do, in the module's order, and ends with what was not found. None of it answers
 a question: the questions stay the maintainer's, as
@@ -320,7 +320,10 @@ Inngest leaves a deduplicated event visible in its event history.
 Every broker read offers a way to reject a publish for capacity, and two drop the oldest
 message by default. The root module's `NeverRefusedForCapacity` guarantee sheds retained
 records and never a record. Not found: anything on the order in which retained records
-are shed, or on spilling to disk; the survey recorded nothing on either.
+are shed, or on spilling to disk; the survey recorded nothing on either. The maintainer
+closed this question, question 3, on 2026-11-24: superseded records are removed first,
+oldest first, then dead letters, oldest first; no record is removed or bounded, and no
+publish is refused.
 
 ### Routing by worker pool or priority
 
@@ -329,7 +332,9 @@ a higher priority before it applies fairness
 ([Task queue priority and fairness](https://docs.temporal.io/develop/task-queue-priority-fairness)).
 RabbitMQ has consumer priority. Trigger.dev sets a machine preset on each task.
 
-Not found: a system that makes the worker pool a property of a group.
+Not found: a system that makes the worker pool a property of a group. The maintainer
+closed this question, question 4, on 2026-11-24: worker pools and priority classes run
+as separate deployments.
 
 ### Adaptive lease TTL
 
@@ -342,7 +347,8 @@ document a fixed timeout with an explicit renewal; Oban, River and Hatchet docum
 fixed timeouts.
 
 Not found: a service, among those read, that derives its own timeout from the durations
-it observes.
+it observes. The maintainer closed this question, question 5, on 2026-11-23: `lease_ttl`
+stays one fixed config value, a liveness timeout that a live consumer renews.
 
 ### A new pocket jumping the queue
 
@@ -369,7 +375,8 @@ Parking a whole group automatically was itself found in two places only: River P
 sequence halt, and pg-boss's `key_strict_fifo` policy, which "holds back successors
 while a job with the same key is active, in retry, or failed".
 
-Not found: a parked group revived by a timer.
+Not found: a parked group revived by a timer. The maintainer closed this question,
+question 7, on 2026-11-23: only a publish revives a parked pocket.
 
 ### A key re-published within the lease
 
@@ -419,7 +426,7 @@ and a newer version waits behind it rather than becoming new work
 - [Purpose and scope](../project/purpose-and-scope.md)
 - [Terminology](../project/terminology.md)
 - [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md), which closed
-  question 8, one of the five questions no longer in the module
+  question 8, one of the nine questions no longer in the module
 - [Decision 0020](../decisions/0020-held-set-until-lease-ends.md), why a record stays
   held until its lease ends, the answer that closed questions 9 and 10
 - [`pachinko.allium`](../specs/pachinko.allium), the root module

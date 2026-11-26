@@ -106,7 +106,7 @@ def _lapsing(view: View, event: LeaseLapsed) -> tuple[Lease, Pocket] | None:
 
 def _at_threshold(view: View, pocket: Pocket) -> bool:
     """`pocket.consecutive_expiries + 1 >= config.max_consecutive_expiries`."""
-    return pocket.consecutive_expiries + 1 >= view.state.config.max_consecutive_expiries
+    return pocket.consecutive_expiries + 1 >= view.config.max_consecutive_expiries
 
 
 def _expire(view: View, outcome: "Outcome", lease: Lease, pocket: Pocket, status: PocketStatus) -> None:

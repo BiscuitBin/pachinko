@@ -61,13 +61,14 @@ a fresh suite with `propagate`.
 ## Handle an open question
 
 An `open question` block records a product decision nobody has made yet. The root
-carries six today, listed at its end; each marks a decision the maintainer has not
-made, and none is permission to invent an answer in code.
+carries two today, listed at its end. The maintainer has ruled on both, and each stays
+until its ticket lands (below); neither is permission to invent an answer in code.
 
 - If your change depends on an unanswered decision, raise it rather than answer in code.
 - If a new gap appears, add an `open question` rather than guess.
 - When a decision is made, state it in the specification and remove its question
-  in the same commit.
+  in the same commit. A decision that adds behaviour lands by ticket, with its code and
+  tests, and its question stays until then.
 
 The module numbers its questions in order, and the numbers do not compact. Question 8,
 a late action before its lapse is processed, was closed by
@@ -79,15 +80,20 @@ nacked it is not a new record, and a supersede does not shed the version a consu
 holds. The maintainer closed question
 11 on 2026-11-16: a stale publish does not touch its pocket, so it leaves a parked
 pocket parked. The same day the maintainer closed question 1: a publish at the stored
-rank is rejected, whatever its payload. The six that remain:
+rank is rejected, whatever its payload. On 2026-11-23 the maintainer closed questions 5
+and 7: `lease_ttl` stays one fixed config value, and only a publish revives a parked
+pocket. On 2026-11-24 they closed questions 3 and 4: for capacity, superseded records
+are removed first and dead letters after them, oldest first, while no record is removed
+or bounded and no publish is refused; and worker pools and priority classes run as
+separate deployments. The two that remain:
 
 - Question 2, who reads the superseded and dead-letter queues, and what an entry must
   carry.
-- Question 3, capacity beyond shedding the decaying queues.
-- Question 4, routing by worker pool or priority.
-- Question 5, an adaptive lease TTL.
 - Question 6, a new pocket jumping the queue.
-- Question 7, reviving a parked pocket other than by a publish.
+
+The maintainer has ruled on both, and `tickets/T39-decide-q2-q6.md` records
+the rulings. Each adds behaviour no implementation has, so its line stays in the module
+until that ticket lands the specification, the code and the tests together.
 
 ## Tooling
 

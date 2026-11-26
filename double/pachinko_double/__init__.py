@@ -1,105 +1,41 @@
 """A Python double of libpachinko, derived from docs/specs/pachinko.allium alone.
 
-`Queue` is the facade a reader drives; `Queue.snapshot()` is the one way to
-read its state, and `check(snapshot)` names every invariant a state breaks.
+The package shows three interfaces, each in its own namespace:
+
+- `pachinko_double`, this module, holds what a reader drives. `Queue` is the
+  facade, built from a `Config`. A pull answers a `Batch` or
+  `NoPocketAvailable`, and a tick a `TickReport`. `Queue.lease_view` answers
+  a `LeaseView` of `HeldRecordView`s, or `None` when the consumer holds no
+  active lease. `Queue.snapshot()` is the one way to read the queue's state,
+  as a `Snapshot`.
+- `pachinko_double.harness` holds what a test builds a queue with and checks
+  it by: the `Clock` and `LeaseIds` protocols `Queue` takes, the fakes that
+  satisfy them, and `check(snapshot)`, which names every invariant a state
+  breaks.
+- `pachinko_double.exceptions` holds every exception class the double
+  defines, in two groups: what the specification refuses, and what means the
+  double itself is wrong.
+
+The entities, their enums and the durations are in `pachinko_double.model`.
+Each rule module is imported by its own name, such as `pachinko_double.pull`.
 """
 
-from . import consuming, decay, expiry, identity, lease_end, publish, pull, rules, settle
+# Bound here so that `pachinko_double.harness` and `pachinko_double.exceptions`
+# answer after a bare `import pachinko_double`, as `pachinko_double.model` does.
+from . import exceptions, harness
 from .config import Config
 from .consuming import HeldRecordView, LeaseView
-from .effects import Clock, FakeClock, LeaseIds, SequentialLeaseIds
-from .inspection import ConfigValues, Snapshot
-from .invariants import InvariantsBroken, Violation, check
-from .model import (
-    HOUR,
-    MILLISECOND,
-    MINUTE,
-    SECOND,
-    Consumer,
-    DeadLetter,
-    Lease,
-    LeaseStatus,
-    Mark,
-    Pocket,
-    PocketStatus,
-    Publisher,
-    Record,
-    RecordStatus,
-    ShedReason,
-    SupersededRecord,
-)
+from .inspection import Snapshot
 from .pull import Batch, NoPocketAvailable
 from .queue import Queue, TickReport
-from .refusals import (
-    ConfigRefused,
-    ConsumerAlreadyJoined,
-    EqualRankRefused,
-    LeaseFenced,
-    MarkConflict,
-    PublisherAlreadyJoined,
-    PullRefused,
-    RecordNotHeld,
-    Refusal,
-    ReleaseRefused,
-    UnknownConsumer,
-    UnknownPublisher,
-)
-from .rules import Defect, GuardOverlap
 
 __all__ = [
-    "HOUR",
-    "MILLISECOND",
-    "MINUTE",
-    "SECOND",
-    "Batch",
-    "Clock",
-    "ConfigRefused",
-    "Config",
-    "ConfigValues",
-    "Consumer",
-    "ConsumerAlreadyJoined",
-    "DeadLetter",
-    "EqualRankRefused",
-    "Defect",
-    "FakeClock",
-    "GuardOverlap",
-    "HeldRecordView",
-    "InvariantsBroken",
-    "Lease",
-    "LeaseFenced",
-    "LeaseIds",
-    "LeaseView",
-    "LeaseStatus",
-    "Mark",
-    "MarkConflict",
-    "NoPocketAvailable",
-    "Pocket",
-    "PocketStatus",
-    "Publisher",
-    "PublisherAlreadyJoined",
-    "PullRefused",
-    "RecordNotHeld",
     "Queue",
-    "Record",
-    "RecordStatus",
-    "Refusal",
-    "ReleaseRefused",
-    "SequentialLeaseIds",
-    "ShedReason",
-    "Snapshot",
-    "SupersededRecord",
+    "Config",
+    "Batch",
+    "NoPocketAvailable",
     "TickReport",
-    "UnknownConsumer",
-    "UnknownPublisher",
-    "Violation",
-    "check",
-    "consuming",
-    "decay",
-    "expiry",
-    "identity",
-    "lease_end",
-    "publish",
-    "pull",
-    "rules",
-    "settle",
+    "LeaseView",
+    "HeldRecordView",
+    "Snapshot",
 ]

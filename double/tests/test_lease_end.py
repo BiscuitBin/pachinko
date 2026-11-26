@@ -10,7 +10,6 @@ Each runs against a private registry, so the fired record is untouched.
 
 import unittest
 
-from pachinko_double.config import Config
 from pachinko_double.inspection import Snapshot, View
 from pachinko_double.lease_end import (
     FREED,
@@ -36,12 +35,11 @@ from pachinko_double.refusals import ReleaseRefused
 from pachinko_double.rules import Defect, Registry, dispatch
 from pachinko_double.settle import RELEASE, Release
 
-from .fixtures import T0, held, lease, pocket, queued, snapshot
+from .fixtures import T0, config, held, lease, pocket, queued, snapshot
 from .test_pull import RecordingOutcome
 
 DEAD_LETTER_TTL = 7_000
 SUPERSEDED_TTL = 5_000
-CONFIG = Config(superseded_ttl=SUPERSEDED_TTL, dead_letter_ttl=DEAD_LETTER_TTL)
 ENDED_AT = T0 + 5
 LATER = T0 + 999
 NOTHING_DEFERRED = ("RequeueUnsettledRecord", "ConsumeAckedRecord", "DeadLetterNackedRecord")
@@ -56,12 +54,18 @@ ENDED = lease("lease-1", "p", "c", LeaseStatus.RELEASED, granted_at=T0, expires_
 
 def state(*records: Record, the_lease: Lease = ACTIVE, status: PocketStatus = PocketStatus.LEASED) -> Snapshot:
     """Pocket p, in `status`, with `records` and one lease of consumer c."""
-    return snapshot(consumers=(Consumer("c"),), pockets=(pocket("p", status),), records=records, leases=(the_lease,))
+    return snapshot(
+        config=config(superseded_ttl=SUPERSEDED_TTL, dead_letter_ttl=DEAD_LETTER_TTL),
+        consumers=(Consumer("c"),),
+        pockets=(pocket("p", status),),
+        records=records,
+        leases=(the_lease,),
+    )
 
 
 def freed(record_key: str, *records: Record) -> RecordingOutcome:
     """Dispatch one Freed, after the lease ended at ENDED_AT, on a view whose now is LATER."""
-    outcome = RecordingOutcome(CONFIG)
+    outcome = RecordingOutcome()
     view = View(state(*records, the_lease=ENDED), LATER)
     dispatch(FREED, view, outcome, Freed("lease-1", record_key, ENDED_AT), registry=Registry())
     return outcome
@@ -124,7 +128,7 @@ class FreedTableTest(unittest.TestCase):
         event = Freed("lease-9", "k2", ENDED_AT)
         self.assertEqual([row.name for row in FREED.rows if row.guard(view, event)], [])
         with self.assertRaises(Defect):
-            dispatch(FREED, view, RecordingOutcome(CONFIG), event, registry=Registry())
+            dispatch(FREED, view, RecordingOutcome(), event, registry=Registry())
 
     def test_these_rows_leave_a_version_deferred_behind_the_held_one_to_the_rows_for_it(self) -> None:
         # Only the three rows with nothing deferred: the rows for a deferred

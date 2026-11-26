@@ -37,10 +37,9 @@ one, at its arrival position, `deferred_position`. No row allots a position:
 the arrival position was allotted when the newer version arrived
 (DeferBehindHeldVersion), and the counter does not advance again here.
 
-The `Freed` events of one end go out smallest held position first. The
-specification sends them as `for record in pocket.held_records`, in no stated
-order; the order decides the order of the entries one end creates (spec note
-N25).
+The `Freed` events of one end go out smallest held position first, as the
+Lease end comment and the `HeldRecordsOldestFirst` guarantee state. That order
+decides the order of the entries one end creates (spec notes N25 and N29).
 """
 
 from dataclasses import dataclass, replace
@@ -200,7 +199,7 @@ def _supersede_unsettled_held_version(view: "View", outcome: "Outcome", event: F
             payload=record.held_payload,
             reason=ShedReason.SUPERSEDED,
             shed_at=event.ended_at,
-            expires_at=event.ended_at + outcome.config.superseded_ttl,
+            expires_at=event.ended_at + view.config.superseded_ttl,
         )
     )
     # The newer version is queued at the held version's position: a key
@@ -262,7 +261,7 @@ def _dead_letter_nacked_record(view: "View", outcome: "Outcome", event: Freed) -
             payload=record.held_payload,
             nacked_by=lease.consumer,
             nacked_at=record.nacked_at,
-            expires_at=event.ended_at + outcome.config.dead_letter_ttl,
+            expires_at=event.ended_at + view.config.dead_letter_ttl,
         )
     )
     # ensures: not exists record
@@ -294,7 +293,7 @@ def _dead_letter_nacked_version_queue_deferred(view: "View", outcome: "Outcome",
             payload=record.held_payload,
             nacked_by=lease.consumer,
             nacked_at=record.nacked_at,
-            expires_at=event.ended_at + outcome.config.dead_letter_ttl,
+            expires_at=event.ended_at + view.config.dead_letter_ttl,
         )
     )
     # The newer version is a new arrival and stands where it arrived.

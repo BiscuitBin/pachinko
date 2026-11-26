@@ -357,10 +357,10 @@ class ReleaseWithADeferredVersionTest(unittest.TestCase):
         )
         self.assertEqual(keys(batch(queue, "c1", 10)), ["k"])
 
-    # impl-choice (spec note N29): the order of the entries one lease end
-    # creates, smallest held position first, is the double's (N25); the
-    # specification sends Freed for a set. The entries themselves, their
-    # stamps and the kept positions are the specification's.
+    # guarantee: HeldRecordsOldestFirst (spec notes N25, N29): the entries one
+    # lease end creates come out smallest held position first. The entries
+    # themselves, their stamps and the kept positions are the specification's
+    # too.
     # scenario: S091
     def test_the_entries_one_lease_end_creates_come_out_smallest_held_position_first(self) -> None:
         queue, clock = scenario_queue()

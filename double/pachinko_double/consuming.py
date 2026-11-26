@@ -15,9 +15,9 @@
 answers one `LeaseView` or None. It reads a snapshot and nothing else: no
 clock, no rule, no apply step.
 
-The surface gives the held records no order. The double lists them smallest
-position first, which is the order a pull handed them out in; S090 pins it,
-so that row is `impl-choice` (spec note N23).
+The surface's `HeldRecordsOldestFirst` guarantee orders the held records:
+smallest position first, which is the order a pull handed them out in. S090
+pins it (spec note N23).
 """
 
 from dataclasses import dataclass

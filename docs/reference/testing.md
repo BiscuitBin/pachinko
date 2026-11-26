@@ -161,13 +161,14 @@ These rules hold for every module the specifications add.
 - **What the specification leaves open is pinned as the implementation's choice.** Where
   a specification leaves an order or a tie-break to the implementation, the module
   documents its rule, and a test that pins what that rule gives is a test of the rule. A
-  change to the pinned value is a change to the rule and is read as one. One such order
-  today: `docs/specs/pachinko.allium` sends `Freed` for each held record at a lease's
-  end without an order, and the superseded records and dead letters that end creates
-  are kept in arrival order, so the store takes the held records smallest held position
-  first. `PocketRecords::end_lease` documents it, the contract case
-  `end_lease_takes_the_smallest_held_position_first` in `records/contract.rs` holds every
-  store to it, and S091 pins it through the queue.
+  change to the pinned value is a change to the rule and is read as one. One order
+  that was pinned this way is now the specification's: on 2026-11-24 the maintainer
+  ruled that one lease end takes its held records smallest position first, and that
+  the lease read lists them so, and `docs/specs/pachinko.allium` states both as the
+  `Consuming` guarantee `HeldRecordsOldestFirst`. `PocketRecords::end_lease` and
+  `PocketRecords::held` document the order, the contract case
+  `end_lease_takes_the_smallest_held_position_first` in `records/contract.rs` holds
+  every store to it, and S090 and S091 pin it through the queue.
 - **A test that passed when first run is shown to bite.** The code is broken on purpose
   and the named test is seen to fail; the ticket that built the module lists the breaks.
 - **A path no input reaches is called directly.** A conversion that only a refusal
@@ -185,7 +186,7 @@ The 93 scenarios, each with the one library test whose `// scenario:` tag pins i
 found by `rg -n 'scenario: S0NN'`, and for the thirteen `wire` scenarios the test that
 also exercises it over HTTP. Tags: `core`, the scenario a reader would expect; `edge`, a
 boundary the rules decide; `wire`, exercised over HTTP too; `oq:N`, a labelled
-placeholder for open question N; `decision:NNNN`, a scenario decision NNNN settled. S066
+placeholder for open question N, which no row carries today; `decision:NNNN`, a scenario decision NNNN settled. S066
 and S067 each have two halves in two tests; the tag sits on the first and the row names
 both.
 
@@ -216,7 +217,7 @@ both.
 | S023 | A publish revives an idle pocket at the back | core | `crates/libpachinko/tests/queue/lease.rs`, `a_publish_revives_an_idle_pocket_at_the_back` | |
 | S024 | A supersede revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_supersede_revives_a_parked_pocket` | |
 | S025 | An equal-rank publish does not revive a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `an_equal_rank_publish_does_not_revive_a_parked_pocket` | |
-| S026 | Only a publish revives a parked pocket (OQ7 as the rules stand) | oq:7 | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
+| S026 | Only a publish revives a parked pocket | edge | `crates/libpachinko/tests/queue/expiry.rs`, `only_a_publish_revives_a_parked_pocket` | |
 | S027 | A pull claims the front pocket, leases it and holds the batch | core | `crates/libpachinko/tests/queue/pull.rs`, `a_pull_claims_the_front_pocket_leases_it_and_holds_the_batch` | |
 | S028 | A positive limit returns at most that many, oldest first, and later pulls continue | core, wire | `crates/libpachinko/tests/queue/pull.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` | `crates/pachinko/tests/http.rs`, `a_positive_limit_returns_at_most_that_many_oldest_first_and_later_pulls_continue` (driver `limit_pages`) |
 | S029 | A limit above `max_pull_batch` is capped | edge | `crates/libpachinko/tests/queue/pull.rs`, `a_limit_above_max_pull_batch_is_capped` | |
@@ -281,7 +282,7 @@ both.
 | S088 | A pocket whose records were all acked, one with a deferred version, is queued on release and on lapse | edge | `crates/libpachinko/tests/queue/lease.rs`, `a_pocket_whose_records_were_all_acked_with_one_deferred_version_is_queued` | |
 | S089 | At an expiry limit of 1, a pocket of nacks parks with no records, and its dead letters are created | edge | `crates/libpachinko/tests/queue/lease.rs`, `at_an_expiry_limit_of_one_a_pocket_of_nacks_parks_with_no_records_and_its_dead_letters` | |
 | S090 | The lease read shows every held record with its mark, smallest position first | core | `crates/libpachinko/tests/queue/settle.rs`, `the_lease_read_shows_every_held_record_with_its_mark_smallest_position_first` | |
-| S091 | The entries one lease end creates come out smallest held position first, the implementation's pinned order | edge | `crates/libpachinko/tests/queue/lease.rs`, `the_entries_one_lease_end_creates_come_out_smallest_held_position_first` | |
+| S091 | The entries one lease end creates come out smallest held position first | edge | `crates/libpachinko/tests/queue/lease.rs`, `the_entries_one_lease_end_creates_come_out_smallest_held_position_first` | |
 | S092 | A stale publish into a parked pocket leaves it parked with its count, and records the arrival as stale | edge | `crates/libpachinko/tests/queue/expiry.rs`, `a_stale_publish_into_a_parked_pocket_leaves_it_parked_with_its_count` | |
 | S093 | At an expiry limit of 1, a pocket whose held version was acked or nacked with a newer version deferred behind it parks with that version queued at its arrival position | edge | `crates/libpachinko/tests/queue/lease.rs`, `at_an_expiry_limit_of_one_a_marked_version_with_a_deferred_one_parks_with_it_queued` | |
 

@@ -457,6 +457,7 @@ fn a_repeat_nack_keeps_the_first_nacks_time() {
 }
 
 // scenario: S090
+// obligation: guarantee.HeldRecordsOldestFirst
 // obligation: surface-exposure.Consuming
 // obligation: projection.Pocket.held_records
 // obligation: when-presence.Record.mark
