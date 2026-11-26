@@ -1,0 +1,6 @@
+# smolvm, the microVM that runs Quint Studio (decision 0022). Moved by hand, never
+# by Renovate: docs/how-to/maintain-dependencies.md, "smolvm". Read with sed, never
+# sourced; scripts/check-smolvm-pin.sh checks its form in gate 2.
+version=1.37.4
+asset=smolvm-1.37.4-darwin-arm64.tar.gz
+sha256=631be08a4e2cd557a1d47963b2d134e7d65a4b15966751730f0553df16f515e0

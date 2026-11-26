@@ -48,6 +48,16 @@ just install-quint
 # `install-quint` because it refuses a pin the installed CLI disagrees with.
 just install-apalache
 
+# The fourth: smolvm, the microVM that runs Quint Studio, from the release
+# tarball tools/smolvm/smolvm.txt pins by SHA-256, into the gitignored
+# .tools/smolvm/ (decision 0022). It runs on macOS on arm64 alone, so any other
+# host skips it, and Quint Studio with it, and the first run goes on.
+if [ "$(/usr/bin/uname -s) $(/usr/bin/uname -m)" = 'Darwin arm64' ]; then
+    just install-smolvm
+else
+    printf '%s\n' 'Untested host: skipping install-smolvm; smolvm and Quint Studio run on macOS on arm64 only (decision 0022).' >&2
+fi
+
 # `Cargo.lock` is committed and every gate passes `--locked`; this line exists
 # for a clone whose lockfile was deleted by hand.
 test -f Cargo.lock || cargo generate-lockfile

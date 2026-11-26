@@ -64,7 +64,7 @@ Renovate's `separateMajorMinor` is on and takes precedence over a group. A branc
 moves a pixi pin carries its own `pixi.lock` relock, which `just lock-check` and CI's
 setup verify like anyone's.
 
-Three moves stay with you:
+Four moves stay with you:
 
 - **lychee.** `LYCHEE_VERSION` in both of its argument lists must match its rev comment,
   and its tags are prefixed `lychee-v`, so `renovate.json` disables it. Move all three
@@ -73,6 +73,8 @@ Three moves stay with you:
   they move when that tag moves ([Moving the Allium binary](#moving-the-allium-binary)).
 - **`requires-python`.** pixi owns Python, so `renovate.json` disables the `pep621`
   manager's reading of this floor in `pyproject.toml`; move it with the `python` pin.
+- **smolvm.** No manager reads `tools/smolvm/smolvm.txt`, and its machine state has to
+  be purged around the move ([Moving the smolvm pin](#moving-the-smolvm-pin)).
 
 A toolchain pull request is a prompt, not a finished change. clippy's lint set moves with
 the release, so a red `rust` job on that branch is often new lints, but the job runs
@@ -95,7 +97,10 @@ each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.t
 `npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock, and
 `scripts/check-apalache-pin.sh`, which fails unless the `quint=` line of
 `tools/quint/apalache.txt` is the Quint CLI version both npm files pin
-([Moving the Apalache pin](#moving-the-apalache-pin)). None
+([Moving the Apalache pin](#moving-the-apalache-pin)), and
+`scripts/check-smolvm-pin.sh`, which fails unless `tools/smolvm/smolvm.txt` holds
+exactly its three keys in their form, reading that file alone
+([Moving the smolvm pin](#moving-the-smolvm-pin)). None
 rewrites a lockfile, installs a package or fetches anything; npm creates its cache and
 log directories if they are missing and writes its log there, wherever its configuration
 puts them (by default `~/.npm`, outside the worktree). It is gate 2 of
@@ -355,6 +360,63 @@ Apalache pin is reviewed. Approve it on the dashboard and check the branch out. 
 `just install-quint` first, so the tag you read is the new CLI's and not the one installed
 before; then read the tag and edit the pin as above, run `just install-apalache` and
 `just lock-check`, and run the Quint commands you use before merging.
+
+## smolvm
+
+`tools/smolvm/smolvm.txt` pins smolvm, the microVM that runs Quint Studio
+([decision 0022](../decisions/0022-quint-studio-machine.md)): `version=`, `asset=`, the
+release's darwin-arm64 tarball, and `sha256=`, its SHA-256. Renovate does not track it,
+and `just lock-check` checks only its form.
+
+### Moving the smolvm pin
+
+To read a new release's hash, download
+`https://github.com/smol-machines/smolvm/releases/download/v<version>/smolvm-<version>-darwin-arm64.tar.gz`
+and the same release's `checksums.sha256` into an empty directory under `ai_tmp/`, hash
+the tarball with `shasum -a 256`, and compare it with the tarball's line in
+`checksums.sha256`; never copy a hash from a page or a chat. Read the release's notes
+for any new variable or option that moves smolvm's state or changes what it loads,
+which `scripts/smolvm.sh` must refuse as it refuses the others.
+
+A machine's state, kept outside the worktree, can supply a new release with the old
+one's expanded templates and its database, as smolvm's source reads, so purge it before
+the first boot under a new pin. The purge needs a stamped install that matches the pin in the checkout, which
+sets the order. In the worktree that moves the pin, purge first, with the old pin and
+its install still in place:
+
+```console
+just smolvm machine ls
+just smolvm machine delete -f --name <machine>
+just smolvm-purge
+```
+
+Then edit `version=`, `asset=` and `sha256=` together, and check and install:
+
+```console
+just lock-check
+just install-smolvm
+just smolvm --version
+```
+
+`just install-smolvm` unpacks the new release into a new, empty directory before it
+replaces the old tree, so no template from the old install survives.
+
+Every other worktree that receives the moved pin with state already made installs
+first, then deletes its machines and purges, before any other smolvm command:
+
+```console
+just install-smolvm
+just smolvm machine ls
+just smolvm machine delete -f --name <machine>
+just smolvm-purge
+```
+
+Under a state made with another pin, `just smolvm` runs only `machine ls`,
+`machine stop` and `machine delete`, and the purge accepts that state, so those are
+the commands that work there until it is purged. If the new release cannot read the
+old state, so that its listing or its delete fails, put the old pin back in
+`tools/smolvm/smolvm.txt`, run `just install-smolvm`, delete the machines and purge,
+then restore the new pin and run `just install-smolvm` again.
 
 ## Actions in the workflows
 

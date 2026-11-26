@@ -92,6 +92,20 @@ install-quint:
 install-apalache:
     sh scripts/install-apalache.sh
 
+# The four smolvm script lines (here, lock-check's, smolvm, smolvm-purge) clear
+# SHELLOPTS, BASH_ENV, ENV and PS4 so none can make the script's /bin/sh skip or
+# trace it; the recipe's own sh has read them already, which this cannot undo.
+# smolvm, the microVM that runs Quint Studio, from the release tarball
+# tools/smolvm/smolvm.txt pins by SHA-256, into the gitignored .tools/smolvm/
+# (network, unless the stamped install is already in place, when it skips).
+# macOS on arm64 only. Replaces a tree its stamp does not match, after checking
+# the download's hash, its members, its own checksums.txt and the binary's
+# signature and Hypervisor entitlement; a symlink or non-directory at .tools or
+# .tools/smolvm is refused, not replaced, and so is a run while another holds
+# the install lock, .tools/smolvm.lock (decision 0022). It never runs smolvm.
+install-smolvm:
+    /usr/bin/env -u SHELLOPTS -u BASH_ENV -u ENV -u PS4 /bin/sh scripts/install-smolvm.sh
+
 # The four Cargo and pixi lockfiles, exactly as committed. Never rewrites any.
 # The fifth, tools/quint/package-lock.json, is `install-quint`'s.
 sync:
@@ -128,7 +142,9 @@ lock-upgrade:
 # node_modules/: its quint= must be the Quint CLI version both
 # npm files pin, so a move of that pin fails here until the Apalache pin is
 # reviewed against the new CLI. It checks that quint= was edited, not that
-# apalache= is the new CLI's; `install-apalache` checks that.
+# apalache= is the new CLI's; `install-apalache` checks that. The line after it
+# checks the form of tools/smolvm/smolvm.txt, the smolvm pin, from the file alone
+# (decision 0022); `install-smolvm` checks the download against it.
 lock-check:
     cargo update --workspace --locked --offline
     cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
@@ -136,6 +152,7 @@ lock-check:
     pixi lock --check --offline --dry-run
     npm ci --dry-run --offline --prefix tools/quint
     sh scripts/check-apalache-pin.sh
+    /usr/bin/env -u SHELLOPTS -u BASH_ENV -u ENV -u PS4 /bin/sh scripts/check-smolvm-pin.sh
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
 # the ripsecrets build with the machine's rustup and the pinned toolchain), so
@@ -498,6 +515,26 @@ plan-spec module:
 quint *args:
     sh scripts/install-apalache.sh --check -- "$@"
     env -u APALACHE_JAR -u BASH_ENV -u CDPATH -u JVM_ARGS -u JVM_GC_ARGS -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u _JAVA_OPTIONS TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/@informalsystems/quint/dist/src/cli.js "$@"
+
+# The stamped smolvm, run by path in a cleared environment with its machine
+# state outside the worktree (decision 0022): the state directory
+# ~/Library/Caches/pachinko/smolvm/<worktree>-<hash>/, reached through the state
+# link /tmp/pachinko-smolvm-<hash>, which is made again after a restart. One
+# process checks the install under .tools/smolvm.lock, refuses a caller's
+# SMOLVM_*, DYLD_*, XDG_*_HOME or DOCKER_CONFIG and --state-dir, takes the state
+# lock beside the state directory, checks the state, then runs smolvm, holding
+# both locks until smolvm ends; a second smolvm command for this worktree is
+# refused meanwhile. Network: smolvm pulls images and its guests reach out.
+smolvm *args:
+    /usr/bin/env -u SHELLOPTS -u BASH_ENV -u ENV -u PS4 /bin/sh scripts/smolvm.sh run "$@"
+
+# Removes this worktree's smolvm state, the state link and the state directory,
+# and nothing else; it refuses while smolvm lists any machine there, or when the
+# listing fails. The lock entry, the parents and .tools/smolvm-state-id stay.
+# `--orphan <name>` does the same for the state of a worktree that is gone, and
+# `--orphan <name> --delete <machine>` deletes one machine left in it.
+smolvm-purge *args:
+    /usr/bin/env -u SHELLOPTS -u BASH_ENV -u ENV -u PS4 /bin/sh scripts/smolvm.sh purge "$@"
 
 # Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
 # which owns their layout and words: edit the script, never an SVG. It writes

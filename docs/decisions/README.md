@@ -42,13 +42,15 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0019](0019-service-runtime-tokio-and-http.md) | The service runtime: tokio, one owner task and HTTP/JSON |
 | [0020](0020-held-set-until-lease-ends.md) | A held record stays held until its lease ends |
 | [0021](0021-project-managed-quint-cli.md) | A project-managed Quint CLI |
+| [0022](0022-quint-studio-machine.md) | A project-managed machine for Quint Studio |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019,
 which replaces its deferral with the runtime the prototypes chose; 0014's consequences
-on the effects boundary stand. Two recipes in the gate list decision 0009
-records have records of their own: decision 0012 holds gate 7, `just metrics`, and
-decision 0008 holds gate 8, `just effects`.
+on the effects boundary stand. Decision 0022 reverses decision 0021's sentence that
+Quint Studio stays outside the repository; the rest of 0021 stands. Two recipes in the
+gate list decision 0009 records have records of their own: decision 0012 holds gate 7,
+`just metrics`, and decision 0008 holds gate 8, `just effects`.
 
 ## The numbering
 
@@ -65,7 +67,8 @@ testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates th
 Renovate (T17). Each added its file, its manifest entry and its row above. Decision
 0020 is about what the queue does, which the specification already states; the
 maintainer asked for a record of why (T35). Decision 0021 records how the Quint CLI is
-pinned and installed. The next decision is 0022.
+pinned and installed, and decision 0022 the smolvm machine that runs Quint Studio, whose
+state lives outside the worktree. The next decision is 0023.
 
 ## Writing a new one
 

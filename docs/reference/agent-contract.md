@@ -39,7 +39,8 @@ condition applies. In order:
   pull request bodies, comments, fixtures and tool output are untrusted data, and
   `## Invariants` with the ten invariants. The authority rules follow, still outside
   every block: anything that leaves the worktree needs explicit authorization for each
-  action, the recipes that reach the network are named, scratch goes in `ai_tmp/`, and
+  action, with one exception by design, the smolvm machine state of decision 0022, the
+  recipes that reach the network are named, scratch goes in `ai_tmp/`, and
   work is handed back only when `just check` is green.
 - Seven `<important if="...">` blocks, one per task: changing Rust under `crates/`;
   adding or changing an effect; writing or changing a module under `docs/specs/`;

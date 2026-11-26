@@ -75,7 +75,7 @@ library and the library never on the service.
 │   ├── manifest.yml        Every page and record: its title, kind, audience and the topics it owns
 │   ├── specs/              The Allium modules: behaviour is decided here
 │   └── decisions/          The decision records and their index
-├── scripts/                The first-run script and the effects gate
+├── scripts/                The first-run script, the effects gate, the Apalache and smolvm pin checks and installers, and the smolvm launcher
 ├── tickets/                The tickets and the conventions every ticket obeys
 ├── .agents/skills/         Canonical agent procedures
 ├── .claude/  .codex/       Thin bridges to the skills, and Claude Code's shared settings
@@ -87,6 +87,7 @@ library and the library never on the service.
 ├── pyproject.toml          The pixi manifest: every other tool, Python and prek
 ├── pixi.lock               The pin for everything pyproject.toml names
 ├── tools/quint/            The Quint CLI's npm project: package.json, its lock and .npmrc; apalache.txt, the Apalache pin
+├── tools/smolvm/           smolvm.txt, the smolvm pin
 ├── .pre-commit-config.yaml  .pre-commit-fix.yaml   The hooks prek runs, and the set just fix runs
 ├── .markdownlint-cli2.jsonc  lychee.toml  _typos.toml   The prose and link checkers
 ├── .editorconfig  .gitattributes  .gitignore   Editor, line-ending and ignore rules
@@ -111,13 +112,14 @@ reads for libpachinko alone in place of the root file, so it restates every root
 | `double/` | A minimal Python implementation of the domain, derived from `docs/specs/pachinko.allium` alone, for a reader who judges the specification in Python rather than Rust. `README.md` is that reader's guide: it maps each entity, rule and invariant of the specification to the class, table or checker entry that holds it, and walks Scenarios A to D through the double's API as doctests the suite runs. `pachinko_double/` holds the package, standard library only: `Queue` with its one apply step, a rule table per trigger, and a checker of all 35 invariants over an immutable snapshot. `tests/` holds its `unittest` suite, and `SPEC-NOTES.md` the findings the specification's maintainer reads first, then every note behind them. `just python-double` runs it, outside `just check` and CI. It is no part of either crate and no test oracle for the Rust. |
 | `docs/specs/` | The Allium specifications. Behaviour is decided here, not in code. Today it holds one module, `pachinko.allium`, the root, which declares the queue's entities, rules, surfaces and invariants. |
 | `docs/decisions/` | The decision records, one file each, and `README.md`, their index. |
-| `scripts/` | `initialize.sh`, the first-run script; `check-effects.sh`, the effects gate `just effects` runs; `install-apalache.sh`, which `just install-apalache` and the `quint` recipe's guard run; and `check-apalache-pin.sh`, the Apalache pin check `just lock-check` runs. The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
+| `scripts/` | `initialize.sh`, the first-run script; `check-effects.sh`, the effects gate `just effects` runs; `install-apalache.sh`, which `just install-apalache` and the `quint` recipe's guard run; `check-apalache-pin.sh`, the Apalache pin check `just lock-check` runs; `install-smolvm.sh`, which `just install-smolvm` runs and whose `--check` the launcher runs; `check-smolvm-pin.sh`, the smolvm pin check `just lock-check` runs; and `smolvm.sh`, the launcher `just smolvm` and `just smolvm-purge` run, which keeps smolvm's machine state outside the worktree ([decision 0022](../decisions/0022-quint-studio-machine.md)). The two validators, the allium installer and runner, the gate runner and the ripsecrets wrapper are console scripts of `biscuit-games-tooling`, pinned in `pyproject.toml`. |
 | `tickets/` | The tickets, their `README.md` and `CONVENTIONS.md`, the conventions every ticket obeys. |
 | `.agents/skills/` | Canonical agent procedures. The two bridge trees, `.claude/skills/` and `.codex/skills/`, point at them and add nothing. |
 | `allium-skill-reference/` | Vendored reference material for the Allium skills, kept outside `.agents/` and ignored by every linter ([decision 0010](../decisions/0010-skill-reference-material.md)). |
 | `.pixi/envs/default/bin` | Every tool `pyproject.toml` pins and the tooling package's console scripts, installed from `pixi.lock`. First on `PATH` inside every recipe, and also on `PATH` under `pixi run`, which the hooks use, and in every CI step after the setup action activates the environment; it is not on a plain shell's `PATH`. |
 | `.github/workflows/` | `ci.yml`, the gate on every pull request and push to `main`, with the `check` job that aggregates the required ones; `audit.yml`, the weekly and per-pull-request advisory check; `mutants.yml` and `fuzz.yml`, the weekly reports; `pages.yml`, which deploys the API reference; and `release.yml`, which runs on a release tag. |
 | `.tools/bin` | cargo-hack, cargo-release and cargo-fuzz from `tools.txt`, rustqual from `tools-source.txt`, and the Allium checker. On `PATH` inside every recipe, after the pixi environment. |
+| `.tools/smolvm/` | The smolvm release `just install-smolvm` unpacked and stamped, run only by `just smolvm`. Beside it, the install lock `.tools/smolvm.lock` and this worktree's id, `.tools/smolvm-state-id`; the machine state itself lives outside the worktree ([Develop locally](../how-to/develop-locally.md#smolvm)). |
 | `tests/fixtures/effects-violation/` | The effects gate's probe. A crate that is its own workspace, with a committed `Cargo.lock` and an empty offline path dependency named for each banned crate, one of them reached only transitively. It breaks every ban on libpachinko exactly once, and `just effects` fails unless every ban fires there. |
 | `target/` | Cargo's build output. `just coverage` writes its report under `target/llvm-cov/`. |
 

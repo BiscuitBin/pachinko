@@ -18,18 +18,19 @@ requires: []
 | `gh` | Only for the pin-bump commands in [Maintain dependencies](maintain-dependencies.md). |
 | `npx`, from Node.js | Only for the Renovate configuration check in [Maintain dependencies](maintain-dependencies.md). |
 | A C++ compiler | libfuzzer-sys compiles C++ when `just clippy`, and so `just check`, builds the fuzz crate: the Xcode command-line tools on macOS, `g++` (from `build-essential`) on Ubuntu. [Testing](../reference/testing.md#fuzzing) has the detail. |
-| Rosetta 2, on Apple silicon only | Only for `just fuzz`: the pinned cargo-fuzz ships an x86 macOS binary alone. See [Testing](../reference/testing.md#fuzzing). |
+| Rosetta 2, on Apple silicon only | Only for `just fuzz`, whose pinned cargo-fuzz ships an x86 macOS binary alone ([Testing](../reference/testing.md#fuzzing)), and for a smolvm machine made with `--rosetta`, which, by smolvm's source, it makes without Rosetta all the same ([smolvm](#smolvm)). |
 
 No other installer: not uv, not cargo-binstall. `rust-toolchain.toml` names the exact
 toolchain and its components, and rustup installs them the first time cargo runs here.
 `pyproject.toml` names every other tool and `pixi.lock` pins it, with `tools.txt` and
 `tools-source.txt`, one `name@version` per line, the exceptions for what conda-forge
-lacks, and `tools/quint/`, an npm project whose lock pins the Quint CLI
-([Quint](#quint)).
+lacks, `tools/quint/`, an npm project whose lock pins the Quint CLI
+([Quint](#quint)), and `tools/smolvm/smolvm.txt`, the smolvm release
+([smolvm](#smolvm)).
 [Configuration](../reference/configuration.md) has each figure; this page states none.
 The page covers Ubuntu and macOS on Apple silicon, the two platforms `pyproject.toml`
-solves for. Windows is not supported: the `Justfile` and the Allium installer are
-POSIX-only.
+solves for; smolvm, and Quint Studio with it, run on macOS on Apple silicon alone.
+Windows is not supported: the `Justfile` and the Allium installer are POSIX-only.
 
 ## First run
 
@@ -86,11 +87,12 @@ just initialize
 This installs the pixi environment from `pixi.lock`, installs the pinned toolchain,
 refuses a cargo that is not rustup's, installs cargo-hack, cargo-release and cargo-fuzz
 from `tools.txt` and rustqual from `tools-source.txt` into `.tools/bin`, then the Allium
-checker, the Quint CLI and the Apalache it runs, syncs the four Cargo and pixi lockfiles, and installs the
-pre-commit hook with every hook environment. Run it once per clone. It needs the network for the pixi environment, the
+checker, the Quint CLI and the Apalache it runs, and, on macOS on Apple silicon alone,
+smolvm (any other host says it skips it), syncs the four Cargo and pixi lockfiles, and
+installs the pre-commit hook with every hook environment. Run it once per clone. It needs the network for the pixi environment, the
 toolchain, the `tools.txt` binaries, rustqual (a signed build if one exists, otherwise a
 build from its crates.io source),
-the Allium checker, the Quint CLI's npm packages, Apalache, `cargo fetch` and the hook clones. It never formats, stages,
+the Allium checker, the Quint CLI's npm packages, Apalache, smolvm, `cargo fetch` and the hook clones. It never formats, stages,
 commits, tags or pushes.
 
 The hook is installed from the primary checkout only, because every worktree shares one
@@ -149,7 +151,9 @@ It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.loc
 `fuzz/Cargo.lock` and `loadgen/Cargo.lock` name.
 After `tools.txt` or `tools-source.txt` has moved, run `just install-tools` as well; it
 skips a version that is already there. After `tools/quint/package-lock.json` has moved,
-run `just install-quint`, then `just install-apalache`.
+run `just install-quint`, then `just install-apalache`. After `tools/smolvm/smolvm.txt`
+has moved, follow [Moving the smolvm pin](maintain-dependencies.md#moving-the-smolvm-pin)
+before any other smolvm command: install, delete this worktree's machines, purge.
 
 ## Quint
 
@@ -183,13 +187,134 @@ from your shell is not this one, or is nothing at all.
 
 ### Optional: Quint Studio
 
-Quint Studio is Informal Systems' desktop application for Quint. Its installer,
+Quint Studio is Informal Systems' desktop application for Quint. Its own installer,
 `https://studio.quint.sh/install.sh`, is a curl-pipe that downloads the latest release,
 unpinned and with no checksum, installs it system-wide, into `/Applications` on macOS or
 `~/.local/bin` on Linux, puts `quint-studio` on your `PATH`, and asks you to sign in with
-an account. That is a per-machine choice, made outside this repository: no recipe, gate or
-CI job depends on Studio, and the CLI the recipes run is the pinned one above, whatever
-Studio installs.
+an account. [Decision 0022](../decisions/0022-quint-studio-machine.md) brings Studio under
+this repository instead, run headless inside the smolvm machine below, on macOS on Apple
+silicon; no recipe installs or runs it yet. Until one does, that installer is a
+per-machine choice made outside this repository: no recipe, gate or CI job depends on
+Studio, and the CLI the recipes run is the pinned one above, whatever Studio installs.
+
+## smolvm
+
+smolvm runs the Linux machine that Quint Studio is to run in
+([decision 0022](../decisions/0022-quint-studio-machine.md)). `tools/smolvm/smolvm.txt`
+pins its release, and `just initialize` installs it into the gitignored `.tools/smolvm/`
+on macOS on Apple silicon, or `just install-smolvm` on its own, which reaches the network
+unless the stamped install is already in place. Any other host is untested: the
+installer refuses it and `just initialize` skips it. Run it through its recipe:
+
+```console
+just smolvm --version
+just smolvm machine ls
+```
+
+`just smolvm` runs the stamped install by path, never a `smolvm` on your `PATH`, in a
+cleared environment that keeps its state where the table below says, and refuses a
+caller's setting that would move that state; [Commands](../reference/commands.md#documents)
+lists them. It prints only on standard error, so smolvm's standard output is smolvm's
+alone. It holds its worktree's locks until smolvm ends, so meanwhile another smolvm
+command for the same worktree and `just smolvm-purge` are refused, naming the process
+that holds them, and so is `just install-smolvm`; a machine left running after its
+command has returned holds nothing. Pulling an image, and every guest, reach the
+network. By its source, smolvm does not refuse to make a machine with `--rosetta` on a host without
+Rosetta, so test for it first:
+
+```console
+test -e /Library/Apple/usr/libexec/oah/RosettaLinux/rosetta
+```
+
+What a machine may read and write is the configuration you give it. The read-only
+worktree with a few writable subdirectories that decision 0022 describes is the one the
+Studio recipes will run; `just smolvm` passes its arguments through, and a directory you
+mount with `-v` is open to the guest as you mount it.
+
+### Where the machine's state lives
+
+The state is outside the worktree, one for each worktree, named as
+[decision 0022](../decisions/0022-quint-studio-machine.md) forms `<worktree>-<hash>`:
+
+| Path | What it is |
+| --- | --- |
+| `~/Library/Caches/pachinko/smolvm/<worktree>-<hash>/` | The state directory: smolvm's database, usage journal, image caches, cached registry tokens and every machine's disks, beside the marker `.pachinko-state`, which names this worktree, and the `tmp/` and empty `docker-config/` the recipe gives smolvm. |
+| `/tmp/pachinko-smolvm-<hash>` | The state link, a symbolic link to the state directory that smolvm is given as its root, because smolvm limits the length of the root. macOS empties `/tmp` on a restart, and the next command makes the link again. |
+| `~/Library/Caches/pachinko/smolvm/<worktree>-<hash>.lock` | The state lock. |
+| `.tools/smolvm.lock` | The install lock, inside the worktree and ignored. |
+| `.tools/smolvm-state-id` | This worktree's id, inside the worktree and ignored, which the marker must match. |
+
+The first `just smolvm` command makes the state, `--version` included, with the
+directories above it where they are missing. `~/Library/Caches/pachinko` and its
+`smolvm/` must have mode 0700 exactly, since smolvm opens the state directory to 0755
+and they alone keep other accounts out; any other mode is refused, naming the
+`chmod 700 <path>` that mends it.
+
+smolvm expands two templates beside its binary on first use,
+`.tools/smolvm/overlay-default.ext4` and `storage-template.ext4`, which the install's
+stamp leaves out. If one is damaged, remove both: smolvm expands them again on its next
+use, and `just smolvm` still accepts the install.
+
+### Removing the state
+
+```console
+just smolvm machine ls
+just smolvm machine delete -f --name <machine>
+just smolvm-purge
+```
+
+`just smolvm-purge` removes the state link and the state directory, with every image,
+cache and machine disk in it, and nothing else. It refuses, removing nothing, while
+smolvm lists any machine there, naming each and the command that deletes it; when the
+listing fails; without the stamped install, so run `just install-smolvm` first; and
+while another smolvm command for this worktree holds the lock. With no state it says so
+and exits 0, removing a state link left pointing at the absent directory. It leaves the
+state lock, the directories above the state directory and
+`.tools/smolvm-state-id`, so a new state takes the same id. Run it before you delete a
+worktree: once the worktree is gone, only the orphan's form below removes its state.
+Quint Studio's own data is kept apart from this state, and the purge does not touch it.
+
+The purge renames the state directory to
+`~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>` before it removes it. If the
+removal fails part way, that `.purging-*` directory is all that is left, and nothing
+uses it. If the purge instead refused because what it renamed was not the directory it
+checked, it says so and leaves both paths alone: look at each, and put back by hand
+what belongs where. Before removing a `.purging-*` directory by hand, while no pachinko
+smolvm command is running, check that its marker names the worktree you purged:
+
+```console
+grep '^path=' ~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>/.pachinko-state
+rm -rf ~/Library/Caches/pachinko/smolvm/.purging-<hash>-<pid>
+```
+
+### The state of a worktree that is gone
+
+Each marker records its worktree's path on its `path=` line:
+
+```console
+grep -H '^path=' ~/Library/Caches/pachinko/smolvm/*/.pachinko-state
+```
+
+A state directory whose recorded path no longer exists, or no longer holds that state's
+id, is an orphan. Remove it from any surviving checkout, naming the directory by its
+`<worktree>-<hash>` name, not its path:
+
+```console
+just smolvm-purge --orphan <worktree>-<hash>
+just smolvm-purge --orphan <worktree>-<hash> --delete <machine>
+```
+
+The first removes the orphan's state link and state directory under the purge's rules.
+While the orphan's listing holds a machine, it refuses and names the second, which
+deletes one machine that listing holds. It refuses a state whose worktree still exists
+and holds that state's id, naming `just smolvm-purge` from there, and a state whose
+recorded path lies behind a directory you cannot search, until that directory is
+searchable again.
+
+No tool removes a lock entry, this worktree's or an orphan's, since two commands that
+found and missed a removed entry would hold two locks. A stale one, such as an orphan's
+after its purge, may be deleted by hand while no pachinko smolvm command is running, at
+your own risk.
 
 ## Related pages
 
@@ -197,3 +322,4 @@ Studio installs.
 - [Test and debug](test-and-debug.md)
 - [Troubleshooting](../operations/troubleshooting.md)
 - [Configuration](../reference/configuration.md)
+- [Decision 0022: A project-managed machine for Quint Studio](../decisions/0022-quint-studio-machine.md)
