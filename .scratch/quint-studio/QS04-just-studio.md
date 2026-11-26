@@ -5,7 +5,7 @@ status: todo
 depends_on: [QS02, QS03]
 parallel_with: []
 branch: ticket/qs04-just-studio
-estimated_size: M
+estimated_size: L
 ---
 
 # QS04: `just studio`: Quint Studio running in the project's machine
@@ -302,10 +302,12 @@ hand.
     Neither the extracted tree nor the completion record ever lives in the data
     directory, which outlives the machine.
 
-    Only then does `up` start `serve`, by the one guest command, wait for the UI,
-    failing closed on a timeout with the guest's last log lines, any token in them
-    replaced, confirm the port (below), record it, and print the host URL and the port
-    line. Every refusal exits 1 with nothing of this worktree's served when it returns,
+    Only then does `up` start `serve`, by the one guest command, which returns and
+    leaves `serve` running, since QS02's launcher holds its lock until the smolvm
+    command it ran ends and a command that stayed would block every other operation
+    on this worktree. Then it waits for the UI, failing closed on a timeout with the
+    guest's last log lines, any token in them replaced, confirms the port (below),
+    records it, and prints the host URL and the port line. Every refusal exits 1 with nothing of this worktree's served when it returns,
     and a message naming what to run. The refusals over the host, the stamps, the
     layout, the data directory's identity and a port set by hand that is malformed or
     already taken come before anything boots.

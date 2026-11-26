@@ -5,7 +5,7 @@ status: todo
 depends_on: [QS04]
 parallel_with: []
 branch: ticket/qs05-studio-mcp
-estimated_size: S
+estimated_size: M
 ---
 
 # QS05: Agents connected to Quint Studio's MCP endpoint

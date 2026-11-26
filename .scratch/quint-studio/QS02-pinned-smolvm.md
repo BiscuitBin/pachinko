@@ -5,7 +5,7 @@ status: todo
 depends_on: [QS01]
 parallel_with: [QS03]
 branch: ticket/qs02-pinned-smolvm
-estimated_size: M
+estimated_size: L
 ---
 
 # QS02: Decision 0022, a pinned smolvm, and a project-managed machine that boots
@@ -40,8 +40,8 @@ ticket. Rulings 1 to 4 were taken on 2026-11-24. On 2026-11-25, after QS01's han
 ruling 2 was amended and rulings 5 to 10 were taken. Studio is pinned by its observed
 SHA-256 (ruling 1). The worktree is mounted read-only, with a few writable
 subdirectories, and the guest has open egress with host loopback and private ranges
-blocked (ruling 2, as amended); mounting it at its own path is how QS01 ran it and what
-this ticket proposes, not part of the ruling. Agents are wired to Studio's MCP endpoint in QS05
+blocked (ruling 2, as amended); mounting it at its own path is how QS01 ran it and
+what this ticket proposes, not part of the ruling. Agents are wired to Studio's MCP endpoint in QS05
 (ruling 3). The only supported host is macOS on arm64, with Linux recorded as untested
 (ruling 4). smolvm's machine state lives outside the worktree, in a durable directory of
 its own for each worktree, and smolvm is given a short symbolic link to it in `/tmp`,
@@ -899,13 +899,19 @@ output is quoted there.
     environment with it: in the `smolvm` recipe's own body, written so that it is
     still one invocation, or in a script of its own, which would join Files touched.
     QS04's script runs smolvm through it, and from a recipe's body a script reaches
-    it only through `just`, whose own lines then come out on standard error. Wherever
-    it lives, `scripts/install-smolvm.sh` still never runs the binary;
+    it only through `just`, whose own lines then come out on standard error. QS05's
+    design calls it directly, without `just`, and needs nothing but the protocol on
+    its standard output, so a ruling for the recipe's body alone sends QS04 and QS05
+    back to their own rulings. Wherever it lives, `scripts/install-smolvm.sh` still
+    never runs the binary;
   - the path of the worktree's id file. It must be ignored, and it must lie outside
     `.tools/smolvm/`, which the installer replaces and the stamp certifies. A path
     that `.gitignore` does not already cover needs the conditional `.gitignore` row
     of Files touched. Also whether the purge removes it, and whether a new state
-    directory takes an id that is already there or a new one;
+    directory takes an id that is already there or a new one. QS04 ties the directory
+    that holds Studio's sign-in to this id, so an id that the purge removes, or that
+    is made anew, cuts that data off from its worktree: the hand-back says which
+    happens;
   - the lock: its path and its mechanism, which must give what "One lock" asks:
     release however the holder ends, nothing kept by a machine that goes on running,
     and an entry that the orphan's entry point can find from the orphan's state
@@ -939,7 +945,12 @@ output is quoted there.
     tree in the worktree, as QS01 had it, or the state directory;
   - after the pin moves, whether the guard refuses a state directory made under
     another pin, which needs the pin recorded in the marker, or whether the how-to's
-    purge is the whole rule.
+    purge is the whole rule;
+  - `AGENTS.md` says that authority stops at the worktree, and after this ticket
+    `just smolvm` writes outside it, where decision 0022 says. Files touched gives
+    `AGENTS.md` only the two recipes in its list of those that reach the network.
+    Whether that sentence of the agent contract is amended to name decision 0022's
+    paths, and by which ticket, is the maintainer's.
 
 ## Hand-back notes
 
