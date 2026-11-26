@@ -116,10 +116,10 @@ branch local.
   maintainer.
 - **The base must hold QS01's hand-back and these tickets as amended.** QS02 onwards run
   on a base that holds both QS01's hand-back, with its "Rulings after the hand-back"
-  section, and these tickets as amended on 2026-11-25. QS01's hand-back is on
-  `ticket/qs01-studio-spike`, which the maintainer keeps local for now, so the
-  maintainer names that base before any of them starts, and step 1 of each checks that
-  both are there.
+  section, and these tickets as amended on 2026-11-25. `quint-studio-smolmachine` has
+  held both since `ticket/qs01-studio-spike` was merged into it on 2026-11-25, with
+  the maintainer's leave, locally and unpushed. Step 1 of each ticket still checks
+  that both are there on the base it starts from.
 - **The facts in QS01's Context were read from upstream documentation, not run.** No
   later ticket treats one as settled until QS01's hand-back records it. Every name,
   flag, digest and hash a later ticket uses comes from that hand-back, not from the
