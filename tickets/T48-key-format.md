@@ -343,8 +343,9 @@ passes one by mistake fails. Where it lives at the service edge only, the librar
 the doubles' suites have no such backstop, and step 2 extends the searches to every
 helper shape it finds.
 
-A test that pins the refusal must hold keys outside the format. Each such literal sits
-on a line that carries the marker `key-format: refused` in the file's comment syntax,
+A test that pins the refusal, or the answer point 5 states for an ack or a nack it
+leaves unchecked, must hold keys outside the format. Each such literal sits on a line
+that carries the marker `key-format: refused` in the file's comment syntax,
 and the searches skip those lines. No page shows a request with a refused key; a page
 states the format in words.
 
@@ -393,8 +394,8 @@ states the format in words.
   the library refuses, the walk's domain gains one key outside the format, on a marked
   line, so that the refusal is a label the walk must reach.
 - **Half a ruling.** The library, the service and both doubles land together. A library
-  that refuses and a service that maps the refusal to `unmapped`'s 503, or a double that
-  still accepts, is a defect.
+  that refuses and a service that maps the refusal to `unmapped`'s 503, or, where point
+  6 puts the check in the library, a double that still accepts, is a defect.
 - **A public surface changes.** A constructor that refuses changes `PocketKey::new` and
   `RecordKey::new` and every caller; a new `PublishError` or `LeaseActionError` variant
   is additive on `#[non_exhaustive]` enums. `just semver` reports either; the report is
@@ -410,12 +411,16 @@ states the format in words.
 ## Goal
 
 A pocket key and a record key outside the format, empty or holding any character other
-than ASCII `a-z`, `0-9` and `-`, are refused in the specification, the library, the
-service, the Python double and the Gleam double, at the triggers, under the name, in
-the order and with the wire form step 1 fixed, and the refusal changes nothing. A key in
-the format behaves exactly as before. No implementation folds case or normalises a key.
-No test, fixture, catalog row, example or page uses a key outside the format except on
-a line marked `key-format: refused` in a test that pins the refusal.
+than ASCII `a-z`, `0-9` and `-`, are refused by the service, and in the specification,
+the library, the Python double and the Gleam double where step 1's points 3 and 6 put
+the check, at the triggers, under the name, in the order and with the wire form step 1
+fixed, and the refusal changes nothing. If point 6 puts the check at the service edge
+alone, the module states the format as step 1 answered and the library and the doubles
+keep accepting any text. A key in the format behaves exactly as before. No
+implementation folds case or normalises a key. No test, fixture, catalog row, example
+or page uses a key outside the format except on a line marked `key-format: refused` in
+a test that pins the refusal, or the answer point 5 states for an unchecked ack or
+nack.
 
 ## Non-goals
 
@@ -499,39 +504,56 @@ a line marked `key-format: refused` in a test that pins the refusal.
    added; each scenario changed or added; each public item changed; each page to change.
 3. **The specification.** Use the `spec-change` skill. Land the format in the form step
    1 fixed, with a comment that spells the set as the ruling does, `a-z`, `0-9` and
-   `-`, and dates it 2026-11-25; the `requires` on each trigger step 1 named; the
-   refusal in T43's form; and the Vocabulary's Pocket and Record, which say a key has
+   `-`, and dates it 2026-11-25; the `requires` on each trigger step 1 named and the
+   refusal in T43's form, where the form step 1 fixed has the rules check the format;
+   and the Vocabulary's Pocket and Record, which say a key has
    that format. Run `just check-specs` and `just analyse-specs`, then
    `just plan-spec pachinko`, and list the obligations that appeared or changed id; a
    new `requires` renumbers `rule-failure.<Rule>.N`, and the tags in `crates/` and in the
    doubles follow.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the specification diff against the
-   ruling and step 1's answers. Can a publish with a key outside the format reach any
-   rule that creates or changes an entity? Is a key in the format answered by exactly
+   ruling and step 1's answers. Where the form step 1 fixed has the rules check the
+   format, can a publish with a key outside the format reach any rule that creates or
+   changes an entity? Where it does not, does the module say so as step 1 answered? Is a
+   key in the format answered by exactly
    the rule it was before? Does any text fold, trim or normalise a key?
-4. **The library.** Use the `rust-change` skill. Tests first, red: S020 as step 1 fixed
-   it; for each key a refusal test over the empty key, an uppercase letter, `_`, `.`,
-   `/`, `:`, a space, a tab, a non-ASCII letter and a NUL, each on a marked line, each
-   showing the whole snapshot equal before and after and no lease id or clock read, and
-   the refusal step 1 named; a key of every character in the set accepted; the hyphen
+4. **The library.** Use the `rust-change` skill. Tests first: S020 as step 1 fixed it;
+   every character of the set accepted, in one key where points 1 and 2 allow it, or
+   else across keys each within point 1's cap and with `-` where point 2 allows it; and,
+   where point 6 puts the check in the library, for each key a refusal test over the
+   empty key, an uppercase letter, `_`, `.`, `/`, `:`, a space, a tab, a non-ASCII
+   letter and a NUL, each on a marked line, each showing the whole snapshot equal before
+   and after and no lease id or clock read, and the refusal step 1 named; the hyphen
    cases of point 2 and the length cap of point 1, as answered; an ack and a nack as
-   point 5 says. Show each failing against the unchanged code and quote the failures.
-   Then the code, where step 1 put the check, before anything is written or read from
-   the clock. Update the walk's domain, model and labels as the Risks say. Run
+   point 5 says, each key outside the format on a marked line. If point 6 puts the
+   check at the service edge alone, the library gains no refusal test and its key types
+   and rules stay as they are; the refusal tests are step 5's. Show each test of a
+   behaviour the unchanged code lacks failing against it and quote the failures; a test
+   of a behaviour that already holds, such as S020 with keys in the format, passes
+   before and after, and its passing run is quoted as its positive control. Then the
+   code, where step 1 put the check, before anything is
+   written or read from the clock. Update the walk's domain, model and labels as the
+   Risks say. Run
    `just fmt-check`, `just clippy`, `just test`, `just coverage`, `just doc`,
    `just effects` and `just semver` as the change needs them.
 5. **The service.** The refusal's status and code as step 1 fixed them, in the single
    publish, each batch row as point 4 says, and the ack and nack bodies if point 5 says
-   so; never `unmapped`'s 503. S020 over the wire with keys in the format, and a wire
-   test for the refusal on each route that takes a key, red first. The envelope in
+   so; never `unmapped`'s 503. S020 over the wire with keys in the format, which passes
+   before and after; a wire test for the refusal on each route point 5 checks, red
+   first; and, for an ack or a nack point 5 leaves unchecked, a wire test that a key
+   outside the format, on a marked line, gets the answer point 5 states, never 503. The
+   envelope in
    `src/config.rs` as point 9 says; whichever way, no comment or page shows a JSON row
    with an empty key as a row the service takes. `just test-loadgen` runs.
-6. **The Python double**, if the base holds it: the same check, refusal and tests in its
-   own terms, S020's port, and its README, with `just python-double` green. In the
+6. **The Python double**, if the base holds it: the check, refusal and tests in its own
+   terms where point 6 puts the check in the library (none if it puts it at the service
+   edge alone), S020's port, and its README, with `just python-double` green. In the
    notes, say only what is now true; cite notes by id.
 7. **The Gleam double**, if the base holds it: the key types or the guard as step 1
-   fixed, the refusal in `refusals.gleam`, S020's port, the new tests, the interface pin
+   fixed and the refusal in `refusals.gleam`, where point 6 puts the check in the
+   library (neither if it puts it at the service edge alone), S020's port, the new
+   tests, the interface pin
    in `test/interface_test.gleam`, the module comment of `ids.gleam` and the README's
    sentence (each says what the key types check, and still says of the three ids
    whatever is true of them when this ticket lands), with `just gleam-double` green.
@@ -542,8 +564,9 @@ a line marked `key-format: refused` in a test that pins the refusal.
    counts match. Each new id is tagged once per suite. Land each row with the first
    suite that tags it, if step 2 found that a tag ahead of its row fails.
 9. **The handbook.** Use the `review-docs` skill for every page in Files touched:
-   `docs/reference/http-api.md` states the format, the refusal on each route that takes a
-   key and its code, and replaces "keys travel in the path, percent-encoded" with what
+   `docs/reference/http-api.md` states the format, the refusal on each route point 5
+   checks and its code, what an unchecked ack or nack answers if point 5 leaves one, and
+   replaces "keys travel in the path, percent-encoded" with what
    point 7 decided; `docs/reference/configuration.md` derives the envelope as point 9
    says; `docs/reference/api.md` and `docs/project/terminology.md` state the format
    where they name a key; `docs/explanation/security-model.md` says what bounds a key's
@@ -553,9 +576,10 @@ a line marked `key-format: refused` in a test that pins the refusal.
     hand-back notes, each quoted output headed by its commit.
 
     **Adversarial review** (`CONVENTIONS.md` §14): the whole diff, both lenses. Can the
-    gate pass while a key outside the format is still accepted, in the library, over
-    HTTP or in either double? Is any unmarked key outside the format left, or a marked
-    line outside a test that pins the refusal? Then run `just check`.
+    gate pass while a key outside the format is still accepted over HTTP, or in the
+    library or either double where point 6 put the check there? Is any unmarked key
+    outside the format left, or a marked line outside a test that pins the refusal or
+    point 5's answer for an unchecked ack or nack? Then run `just check`.
 
     **Authorisation required:** pushing the branch and opening the pull request are each
     asked for separately.
@@ -564,23 +588,28 @@ a line marked `key-format: refused` in a test that pins the refusal.
 
 - T43's decision and the maintainer's answers at step 1 are quoted in the hand-back
   with their dates, and nothing before them chose a form or an answer.
-- The module states the format once, spelt `a-z`, `0-9` and `-`, dated 2026-11-25; every
-  trigger step 1 named requires it of each key it carries; the refusal has the name and
-  the place step 1 fixed. `just check-specs` and `just analyse-specs` pass, and every
-  `// obligation:` id in `crates/` is in `just plan-spec pachinko`'s output or names a
-  `@guarantee`.
-- In the library, the service and both doubles, a key outside the format (each of the
-  cases of step 4) is refused with that name, the snapshot is equal before and after,
-  and no lease id or clock is read; each case is pinned by a test that was red before
-  the code changed, and the red output is quoted.
-- A key holding every character of the set is accepted and round-trips unchanged, in
-  the library, over HTTP and in both doubles.
-- Over HTTP, each route that takes a key answers the status and code step 1 fixed, and
-  never 503 `not_ready`, for a key outside the format; a batch with one such row lands
+- The module states the format once, spelt `a-z`, `0-9` and `-`, dated 2026-11-25, in
+  the form step 1 fixed; where that form has the rules check it, every trigger step 1
+  named requires it of each key it carries and the refusal has the name and the place
+  step 1 fixed; where point 6 put the check at the service edge alone, the module says
+  what step 1 answered of its scope. `just check-specs` and `just analyse-specs` pass,
+  and every `// obligation:` id in `crates/` is in `just plan-spec pachinko`'s output or
+  names a `@guarantee`.
+- Over HTTP, and in the library and both doubles where point 6 put the check there, a
+  key outside the format (each of the cases of step 4) is refused with that name, the
+  snapshot is equal before and after, and no lease id or clock is read; each case is
+  pinned by a test that was red before the code changed, and the red output is quoted.
+- Every character of the set is accepted and round-trips unchanged, in the library,
+  over HTTP and in both doubles: in one key where points 1 and 2 allow it, or else
+  across keys each within point 1's cap and with `-` where point 2 allows it.
+- Over HTTP, each route point 5 checks answers the status and code step 1 fixed, and
+  never 503 `not_ready`, for a key outside the format; an ack or a nack point 5 leaves
+  unchecked answers what point 5 states, never 503; a batch with one such row lands
   what point 4 says.
 - The inventory searches matched at step 2, with their output quoted, and print nothing
   at the close; their positive controls pass; every line marked `key-format: refused`
-  is in a test that pins the refusal, and the hand-back lists them.
+  is in a test that pins the refusal, or the answer point 5 states for an unchecked ack
+  or nack, and the hand-back lists them.
 - The invariant walk reaches the key refusal and is required to, if the library refuses.
 - Row S020 and the new rows of `docs/reference/testing.md` name tests that exist, and
   the page's counts match the suites.
@@ -618,11 +647,13 @@ bad='"([^"]*[^a-z0-9"-][^"]*)?"'
 keep='^(?!.*key-format: refused)'
 s1="(PocketKey|RecordKey)(::new)?\\($bad"
 s2="\"(pocket_key|record_key)\" *: *$bad"
-s3="/pockets/[a-z0-9-]*[^a-z0-9{/ \"\`-]|/records/[a-z0-9-]*[^a-z0-9{/ \"\`\\\\?-]"
+# a path segment that holds a character outside the set, or is empty
+s3="/pockets/[a-z0-9-]*[^a-z0-9{/ \"\`-]|/records/[a-z0-9-]*[^a-z0-9{/ \"\`\\\\?-]|/pockets/(?=[/ \"\`]|\$)|/records/(?=[ \"\`\\\\?]|\$)"
 s4="\\.(publish|pocket|record)\\((\"[a-z0-9-]+\", *){0,2}$bad|\\.(ack|nack)\\([^)]*, *$bad *\\)"
 s5="(pocket|key)[a-z_0-9]*(\\) *= *\\(\"[^\"]*\", *$bad|\\)? *= *\\(?$bad)"
 keys="$keep.*($s1|$s2|$s3|$s4|$s5)"
-# hand-made control: prints lines 1 to 9 and neither 10 (marked) nor 11 (in the format)
+# hand-made control: prints lines 1 to 12 and none of 13 (marked), 14 (in the format)
+# and 15 (a route template)
 ctl=$(mktemp)
 printf '%s\n' \
   'PocketKey::new("Tenant_A")' \
@@ -634,8 +665,12 @@ printf '%s\n' \
   'queue.ack(&c, lease, "k/1")' \
   'let (pocket, key) = ("a", "key-\u{e9}")' \
   'let key = "";' \
+  'client.put("/pockets//records/k", b"v")' \
+  'client.put("/pockets/a/records/", b"v")' \
+  'PUT /pockets/a/records/' \
   'RecordKey::new("UPPER") // key-format: refused' \
-  'PocketKey::new("tenant-a"), RecordKey("k-1"), "/pockets/tenant-a/records/k1"' >| "$ctl"
+  'PocketKey::new("tenant-a"), RecordKey("k-1"), "/pockets/tenant-a/records/k1"' \
+  'PUT /pockets/{pocket_key}/records/{record_key}' >| "$ctl"
 rg -n --pcre2 "$keys" "$ctl"; echo "exit $?"
 rm -f "$ctl"
 # positive controls: each form is found in the trees (each exit 0)
@@ -665,9 +700,11 @@ git status --short; echo "exit $?"
 
 When this ticket was written, at commit `e92abc1` and over the trees its writer could
 read (without `crates/libpachinko/src`, `double/pachinko_double` and `double/tests`),
-the control printed lines 1 to 9 and exited 0, each positive control exited 0, the
+the control printed lines 1 to 12 and exited 0, each positive control exited 0, the
 marker search exited 1, and the key search exited 0 with the six lines of "The keys the
-change must rewrite".
+change must rewrite". The empty-segment alternatives of `s3` also match a path built by
+joining, such as `"/pockets/" + key`; none was in those trees, and step 2 narrows the
+pattern, with a control line, if the trees it reads hold one.
 
 ## Hand-back notes
 

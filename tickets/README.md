@@ -97,8 +97,9 @@ T22 ─ T23 ─ T24 ─┬─ T25 ─ T26 ─┬─ T28 ─┬─ T31 ─┬─ 
                  └─ T29 ───────────────┘       └─ T34
 ```
 
-The tickets from the rulings of 2026-11-24 on the Python double's findings. T40 hangs
-from T35 above, and T39 and T47 wait on it; T44 and T45 depend on no ticket:
+The tickets from the rulings of 2026-11-24 on the Python double's findings, and T48 and
+T49 from those of 2026-11-25 on the ids' format. T40 hangs from T35 above, and T39 and
+T47 wait on it; T44 and T45 depend on no ticket:
 
 ```text
 T41 ── T42
@@ -238,11 +239,12 @@ the MVP wave.
   and keys a caller names have a format, and the maintainer ruled on 2026-11-25. Pocket
   keys and record keys have one: non-empty, only ASCII `a-z`, `0-9` and `-`. T48 lands
   it. The consumer, lease and publisher ids are UUIDs of the RFC 9562 variant, any
-  version, written in the 36-character form and held as their 16 bytes, with version 7
-  recommended. T49 lands that for the consumer id, and for the publisher id if T45 keeps
-  one; the lease id's text form is an amendment to T43, dated the same day, and T45
-  carries a short amendment for a kept publisher id. T48 waits on T43, and T49 on T43
-  and T45.
+  version, written in the 36-character form and held as their 16 bytes. Version 7 is
+  recommended for a consumer id and a publisher id, not required; the service always
+  mints a version-7 lease id and checks no version on one a caller presents. T49 lands
+  that for the consumer id, and for the publisher id if T45 keeps one; the lease id's
+  text form is an amendment to T43, dated the same day, and T45 carries a short
+  amendment for a kept publisher id. T48 waits on T43, and T49 on T43 and T45.
 - **Review of the follow-up set.** The four tickets were reviewed on 2026-11-07 before
   they were committed, on the same §14 procedure, from a baseline `just check` ending
   `All checks passed and the worktree is unchanged.` at `4daf9df`: two Codex

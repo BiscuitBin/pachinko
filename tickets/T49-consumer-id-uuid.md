@@ -158,8 +158,9 @@ client's or the implementation's parser accepts":
   is an annotation unless assertion is turned on
   (`https://json-schema.org/draft/2020-12/json-schema-validation`).
 
-So the service, the Python double and the Gleam double each need their own check of the
-36-character 8-4-4-4-12 form and of the variant, before or after any library parse.
+So each place that parses the text (the service, and the library and the doubles where
+point 4 gives them a parse) needs its own check of the 36-character 8-4-4-4-12 form and
+of the variant, before or after any library parse.
 
 **Binary carriage.** CBOR carries a UUID as tag 37, a 16-byte byte string
 (`https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml`). Protobuf has no
@@ -176,8 +177,13 @@ Step 1 puts each of these to the maintainer. None is assumed, and no step before
 answers chooses one.
 
 1. **The refusal.** Its name; what it carries (the text as sent, or nothing); and its
-   place in the check order T43 decides. For a pull and the lease read: first, since
-   nothing else is checked before the consumer. For an ack, a nack, a renew and a
+   place in the check order T43 decides. For a pull: against the body's refusals and
+   anything T43 orders on the limit; today the pull handler's body extractor refuses a
+   malformed body before the handler reads the path's consumer id
+   (`crates/pachinko/src/http.rs` lines 556 to 563), so "first" is one option, not
+   today's order. For the lease read: today nothing else is checked, since it carries
+   only the consumer id; its place is still asked against whatever T43's order adds. For
+   an ack, a nack, a renew and a
    release: against the path's lease id parse (today 400 `bad_request` before anything
    reaches the owner) and the lease refusals; whether a malformed lease id in the path
    or a malformed consumer id in the body is reported first, when both are.
@@ -488,14 +494,14 @@ the rule in words.
 - **A raw-text comparison left behind.** A map keyed by the text, an equality on
   `as_str()`, or a test that compares an id with a string literal keeps the old meaning
   under a new type. A test that pulls with one spelling of a UUID and acks with another,
-  differing only in case, shows one consumer with one lease, in the library, over HTTP
-  and in both doubles.
+  differing only in case, shows one consumer with one lease over HTTP, and in the
+  library and both doubles where point 4 gives them a parse from text.
 - **Order by bytes.** Any listing ordered by consumer id (a snapshot's consumers, the
   walk's model) changes order when the id becomes 16 bytes; step 2 finds each and says
   whether anything observable depends on it.
 - **Half a ruling.** The library, the service and both doubles land together. A library
   that refuses and a service that maps the refusal to `unmapped`'s 503 `not_ready`, or a
-  double that still accepts, is a defect.
+  double that still accepts what point 4 has it refuse, is a defect.
 - **A public surface changes.** `ConsumerId::new(&str)` and `as_str()` change shape or
   go, and every caller with them; a new error type or variant is additive on a
   `#[non_exhaustive]` enum. `just semver` reports it; the report is quoted and each change
@@ -517,15 +523,18 @@ the rule in words.
 
 A consumer id that is not a valid UUID under the ruling, whatever else it is (empty, a
 name, the nil or the max UUID, braced, a URN, 32 digits without hyphens, with whitespace
-or a stray hyphen), is refused in the specification, the library, the service, the Python
-double and the Gleam double, under the name, in the order and with the wire form step 1
-fixed, and the refusal changes nothing. A valid UUID of any version is accepted, held as
-its 16 bytes, compared by value, and rendered lowercase; two spellings that differ only
-in case are one consumer. The publisher id, if T45 kept one, follows the same rule as
-step 1 answered. The handbook recommends version 7 and gives each client language's
-generator. No test, fixture, catalog row, example or page uses a consumer id that is not
-a valid UUID except on a line marked `id-format: refused` in a test that pins the
-refusal.
+or a stray hyphen), is refused by the service, and in the specification, the library, the
+Python double and the Gleam double as step 1's form and point 4 place the check, under
+the name, in the order and with the wire form step 1 fixed, and the refusal changes
+nothing. If point 4 builds the library's `ConsumerId` from 16 bytes only, the text is
+refused at the edge, the library's constructor refuses what point 4 answered, and under
+Form C the module states the rule without a refusal. A valid UUID of any version is
+accepted, held as its 16 bytes, compared by value, and rendered lowercase; two spellings
+that differ only in case are one consumer. The publisher id, if T45 kept one, follows
+the same rule as step 1 answered. The handbook recommends version 7 and gives each
+client language's generator. No test, fixture, catalog row, example or page uses a
+consumer id that is not a valid UUID except on a line marked `id-format: refused` in a
+test that pins the refusal.
 
 ## Non-goals
 
@@ -617,24 +626,32 @@ refusal.
 3. **The specification.** Use the `spec-change` skill. Land the rule in the form step 1
    fixed, with a comment that holds the words "consumer id is a UUID" on one line, states
    the variant, any version, the 36-character form and the 16-byte value, and dates the
-   ruling 2026-11-25; the refusal in T43's form; and the Vocabulary's Consumer, which says
+   ruling 2026-11-25; the refusal in T43's form, unless step 1 fixed Form C; and the
+   Vocabulary's Consumer, which says
    what names a consumer. Run `just check-specs` and `just analyse-specs`, then
    `just plan-spec pachinko`, and list the obligations that appeared or changed id; the
    tags in `crates/` and in the doubles follow.
 
    **Adversarial review** (`CONVENTIONS.md` §14): the specification diff against the
-   ruling and step 1's answers. Can a trigger with a consumer id that is not a valid UUID
-   reach any rule that creates or changes an entity? Does a valid UUID of version 0, 4,
+   ruling and step 1's answers. Unless step 1 fixed Form C, can a trigger with a
+   consumer id that is not a valid UUID reach any rule that creates or changes an
+   entity? Under Form C, do the Vocabulary and the Excludes state the whole rule? Does a
+   valid UUID of version 0, 4,
    7 or 15 reach exactly the rule it did before? Does any text require version 7, or
    compare the id as text?
-4. **The library.** Use the `rust-change` skill. Tests first, red: the refusal for each
-   form the Goal lists, each on a marked line, each showing the whole snapshot equal
-   before and after, no lease id or clock read, and the refusal step 1 named; a valid
-   UUID of versions 0, 4, 7 and 15 accepted; the nil and max refused; one consumer under
-   two spellings that differ only in case; rendering lowercase; the constructor from 16
-   bytes as point 4 answered. Show each failing against the unchanged code and quote the
-   failures. Then the code: the 16-byte `ConsumerId`, the parse where step 1 put it, and
-   every caller in the library's tests, bench and README with UUID ids. Update the walk's
+4. **The library.** Use the `rust-change` skill. Tests first. Where point 4 gives the
+   library a parse from text: the refusal for each form the Goal lists, each on a marked
+   line, each showing the whole snapshot equal before and after, no lease id or clock
+   read, and the refusal step 1 named; a valid UUID of versions 0, 4, 7 and 15 accepted;
+   the nil and max refused; one consumer under two spellings that differ only in case;
+   rendering lowercase. In every case: the constructor from 16 bytes as point 4
+   answered. If point 4 builds `ConsumerId` from 16 bytes only, the text forms are
+   step 5's, and the library's tests pin the byte constructor and the rendering. Show
+   each test of a behaviour the unchanged code lacks failing against it and quote the
+   failures; a test of a behaviour that already holds passes before and after, and its
+   passing run is quoted as its positive control. Then the code: the 16-byte
+   `ConsumerId`, the parse where step 1 put it, and every caller in the library's tests,
+   bench and README with UUID ids. Update the walk's
    domain and model, and give it a refusal label only if the refusal is inside the
    queue's rules. Run `just fmt-check`, `just clippy`, `just test`, `just coverage`,
    `just doc`, `just effects` and `just semver` as the change needs them, and, if a
@@ -647,16 +664,18 @@ refusal.
    answered. The load generator makes UUIDs as point 7 answered; `just test-loadgen`
    runs, and one `just loadgen` run against a local `pachinko serve` completes with no
    error (`docs/reference/commands.md` gives its arguments; its timings are no gate).
-6. **The Python double**, if the base holds it: the same parse, with its own 36-character
-   and variant check before `uuid.UUID`, the refusal, the ids and the tests in its own
-   terms, and its README, with `just python-double` green. In the notes, say only what is
-   now true; cite notes by id.
+6. **The Python double**, if the base holds it: what point 4 answered, in its own terms
+   (where it gives the double a parse from text, the parse, with its own 36-character and
+   variant check before `uuid.UUID`, and the refusal), the ids and the tests, and its
+   README, with `just python-double` green. In the notes, say only what is now true;
+   cite notes by id.
 7. **The Gleam double**, if the base holds it: the 16-byte id or the guard as step 1
-   fixed, its own 36-character and variant check, the refusal in `refusals.gleam`, the
-   ids, the new tests, the interface pin in `test/interface_test.gleam`, the module
-   comment of `ids.gleam` and the README's sentence (each says what the consumer id
-   checks, and still says of the keys and the lease id whatever is true of them when this
-   ticket lands), with `just gleam-double` green. If step 1 took `youid`, amend decision
+   fixed, and, where point 4 gives the double a parse from text, its own 36-character
+   and variant check and the refusal in `refusals.gleam`; the ids, the new tests, the
+   interface pin in `test/interface_test.gleam`, the module comment of `ids.gleam` and
+   the README's sentence (each says what the consumer id checks, and still says of the
+   keys and the lease id whatever is true of them when this ticket lands), with
+   `just gleam-double` green. If step 1 took `youid`, amend decision
    0021 and run `just gleam-double-deps` (network, authorised by step 1's answer). In
    `gleam-double/SPEC-NOTES.md`, item 9 and G68 say the consumer id's half is ruled and
    landed, and the rulings table gains a row for it.
@@ -677,10 +696,10 @@ refusal.
     hand-back notes, each quoted output headed by its commit.
 
     **Adversarial review** (`CONVENTIONS.md` §14): the whole diff, both lenses. Can the
-    gate pass while a consumer id that is not a valid UUID is still accepted, in the
-    library, over HTTP or in either double, or while two spellings of one UUID name two
-    consumers? Is any unmarked non-UUID id left, or a marked line outside a test that
-    pins the refusal? Then run `just check`.
+    gate pass while a consumer id that is not a valid UUID is still accepted over HTTP,
+    or in the library or either double where point 4 gave it a parse from text, or while
+    two spellings of one UUID name two consumers? Is any unmarked non-UUID id left, or a
+    marked line outside a test that pins the refusal? Then run `just check`.
 
     **Authorisation required:** pushing the branch and opening the pull request are each
     asked for separately.
@@ -690,17 +709,21 @@ refusal.
 - T43's decision, T45's answers and the maintainer's answers at step 1 are quoted in the
   hand-back with their dates, and nothing before them chose a form or an answer. Each
   source re-read at step 1 is quoted with its URL.
-- The module states the rule once, dated 2026-11-25, in the form step 1 fixed; every
-  trigger step 1 named requires it; the refusal has the name and the place step 1 fixed.
-  `just check-specs` and `just analyse-specs` pass, and every `// obligation:` id in
-  `crates/` is in `just plan-spec pachinko`'s output or names a `@guarantee`.
-- In the library, the service and both doubles, each refused form of the Goal is
-  refused with that name, the snapshot is equal before and after, and no lease id or
-  clock is read; each case is pinned by a test that was red before the code changed, and
-  the red output is quoted.
+- The module states the rule once, dated 2026-11-25, in the form step 1 fixed; where
+  that form has the rules check it, every trigger step 1 named requires it and the
+  refusal has the name and the place step 1 fixed; under Form C, the Vocabulary and the
+  Excludes state it and no rule changes. `just check-specs` and `just analyse-specs`
+  pass, and every `// obligation:` id in `crates/` is in `just plan-spec pachinko`'s
+  output or names a `@guarantee`.
+- Over HTTP, and in the library and both doubles where point 4 gave them a parse from
+  text, each refused form of the Goal is refused with that name, the snapshot is equal
+  before and after, and no lease id or clock is read; each case is pinned by a test that
+  was red before the code changed, and the red output is quoted. The library's
+  constructor from 16 bytes refuses what point 4 answered, and a test pins it.
 - A valid UUID of versions 0, 4, 7 and 15 is accepted; it is held as 16 bytes, renders
   lowercase, and a pull under one spelling and an ack under another that differs only in
-  case act on one lease, in the library, over HTTP and in both doubles.
+  case act on one lease, over HTTP, and in the library and both doubles where point 4
+  gave them a parse from text.
 - Over HTTP, each route that carries a consumer id answers the status and code step 1
   fixed, and never 503 `not_ready`, for a malformed one. The publisher id behaves as
   step 1 answered, or the hand-back says T45 left none.
@@ -756,7 +779,7 @@ bad="\"(?!$uuid\")[^\"]*\""
 keep='^(?!.*id-format: refused)'
 s1="($ids)(::new|::parse)?\\(&?$bad"
 s2="\"($fields)\" *: *$bad"
-s3="/($paths)/(?![{\$]|$uuid([/ \"\`?]|\$))[^/ \"\`)'{]+"
+s3="/($paths)/(?![{\$]|$uuid([/ \"\`?]|\$))[^/ \"\`)'{]+|/($paths)/(?=[/ \"\`?]|\$)"
 s4="\\.(pull|try_pull|lease|lease_view|ack|nack|renew|release)\\(&?$bad"
 s5="(?i:$binds)[a-z_0-9]*\\b[^=]*= *[\\[(&]*(\"[^\"]*\", *)*$bad"
 # the Python double's printed lease and dead letter, not a keyword argument
@@ -764,7 +787,7 @@ s6="^(lease|dead letter): .*\\b($names)=(?!$uuid\\b)[^,\\s)]+"
 # today's other helpers: the id first, or after one plain argument; a free pull takes no JSON body
 s7="\\b(consumer|marks|wait_for_lapse|until_no_lease)\\(([a-z_&]+, *)?$bad|(?<![.\\w])pull\\(\"(?![{])(?!$uuid\")[^\"]*\""
 idre="$keep.*($s1|$s2|$s3|$s4|$s5|$s6|$s7)"
-# hand-made control: prints lines 1 to 18 and none of 19 to 23
+# hand-made control: prints lines 1 to 20 and none of 21 to 25
 ctl=$(mktemp)
 printf '%s\n' \
   'ConsumerId::new("c1")' \
@@ -785,6 +808,8 @@ printf '%s\n' \
   'ConsumerId("ffffffff-ffff-ffff-ffff-ffffffffffff")' \
   'ConsumerId("0192d6c8000070008000000000000001")' \
   'ConsumerId("urn:uuid:0192d6c8-0000-7000-8000-000000000001")' \
+  'POST /consumers//pull' \
+  'GET /consumers/' \
   'ConsumerId::new("c") // id-format: refused' \
   'assert_eq!(refused(pull("{}"), 400), "bad_request"); Lease(id=lease_id, consumer=consumer, status=status)' \
   'ConsumerId("0192d6c8-0000-7000-8000-000000000001"), ConsumerId::new("4B1C5F0E-2A7D-4C3E-BF10-6D2E8A7B9C01")' \
@@ -826,7 +851,7 @@ git status --short; echo "exit $?"
 When this ticket was written, at commit `e92abc1` and over the trees its writer could
 read (`crates` without `crates/libpachinko/src`, and without `double/pachinko_double`
 and `double/tests`), the block above ran under `sh`: the module search exited 1, the
-control printed lines 1 to 18 and exited 0, each positive control exited 0, the id
+control printed lines 1 to 20 and exited 0, each positive control exited 0, the id
 search exited 0 with the 1,062 lines of "The ids the change must rewrite" and its test
 printed "exit 1", and the marker search exited 1.
 
