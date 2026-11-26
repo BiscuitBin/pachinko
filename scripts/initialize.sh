@@ -36,10 +36,9 @@ just install-allium
 
 # The Quint CLI from tools/quint/package-lock.json into the gitignored
 # tools/quint/node_modules, through the environment's npm (decision 0021). Its
-# lock holds every package's integrity hash. Apalache comes from the next line;
-# the Rust evaluator Quint downloads on first use (`run`, `test`, the REPL, and
-# `verify` when it reports a violation) is
-# pinned by version only and checked by nothing.
+# lock holds every package's integrity hash. Apalache and the Rust evaluator,
+# which the CLI would otherwise download on first use, unchecked, come from the
+# next two recipes, each from an archive pinned by SHA-256.
 just install-quint
 
 # The third download no lockfile accounts for: Apalache, for `just quint verify`
@@ -47,6 +46,12 @@ just install-quint
 # by SHA-256, into the gitignored .quint/ where Quint looks for it. It follows
 # `install-quint` because it refuses a pin the installed CLI disagrees with.
 just install-apalache
+
+# The fourth: the Rust evaluator Quint runs for `run`, `test`, the REPL and a
+# `verify` that reports a violation or an observation, from the archive
+# tools/quint/evaluator.txt pins by SHA-256 for this platform, into .quint/
+# where Quint looks for it. It follows `install-quint` for the same reason.
+just install-quint-evaluator
 
 # `Cargo.lock` is committed and every gate passes `--locked`; this line exists
 # for a clone whose lockfile was deleted by hand.

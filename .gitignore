@@ -68,10 +68,11 @@ mutants.out*/
 /loadgen/target/
 
 # The Quint CLI `just install-quint` puts under tools/quint (its lock is
-# committed), the evaluator it downloads into QUINT_HOME, which the Justfile
-# points at .quint/, and the Apalache `just install-apalache` installs there
-# from the archive tools/quint/apalache.txt pins. Ignored for the same reason as
-# target/: files Git can see abort the snapshot.
+# committed), and the evaluator `just install-quint-evaluator` and the Apalache
+# `just install-apalache` install into QUINT_HOME, which the Justfile points at
+# .quint/, from the archives tools/quint/evaluator.txt and
+# tools/quint/apalache.txt pin. Ignored for the same reason as target/: files
+# Git can see abort the snapshot.
 /tools/quint/node_modules/
 /.quint/
 # The Apalache server Quint starts for `verify` writes a run directory per

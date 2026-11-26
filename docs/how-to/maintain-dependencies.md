@@ -95,7 +95,11 @@ each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.t
 `npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock, and
 `scripts/check-apalache-pin.sh`, which fails unless the `quint=` line of
 `tools/quint/apalache.txt` is the Quint CLI version both npm files pin
-([Moving the Apalache pin](#moving-the-apalache-pin)). None
+([Moving the Apalache pin](#moving-the-apalache-pin)), and
+`scripts/check-quint-evaluator-pin.sh`, which fails unless the `quint=` line of
+`tools/quint/evaluator.txt` is that version too and the file holds one hash for each
+platform `pyproject.toml` lists ([Moving the evaluator pin](#moving-the-evaluator-pin));
+a platform added to pixi also needs its asset mapped in `scripts/install-quint-evaluator.sh`. None
 rewrites a lockfile, installs a package or fetches anything; npm creates its cache and
 log directories if they are missing and writes its log there, wherever its configuration
 puts them (by default `~/.npm`, outside the worktree). It is gate 2 of
@@ -310,13 +314,71 @@ just install-quint
 just quint --version
 ```
 
-`just lock-check` now fails until the Apalache pin has been reviewed against the new CLI,
-as [Moving the Apalache pin](#moving-the-apalache-pin) describes. Read the
-`package-lock.json` diff before committing it with the manifest and the pin file.
-`just lock` uses the pixi environment's npm, so no global Node is needed. A Quint release
-can move the version of the Rust evaluator it downloads on first use; read its release
-notes, then run `just quint run` on a module once, so the new evaluator lands in
-`.quint/`. That download is pinned by the CLI's version and checked by nothing else.
+`just lock-check` now fails until the Apalache pin and the evaluator pin have been
+reviewed against the new CLI, as [Moving the Apalache pin](#moving-the-apalache-pin) and
+[Moving the evaluator pin](#moving-the-evaluator-pin) describe. Read the
+`package-lock.json` diff before committing it with the manifest and both pin files.
+`just lock` uses the pixi environment's npm, so no global Node is needed.
+
+### Moving the evaluator pin
+
+`tools/quint/evaluator.txt` pins the Rust evaluator that `run`, `test`, the REPL and a
+`verify` that reports a violation or an observation run: `quint=` names the Quint CLI version it was
+reviewed against, `evaluator=` the CLI's `QUINT_EVALUATOR_VERSION`, `v` included, and
+each `sha256.<platform>=` the SHA-256 of that pixi platform's release archive. Renovate
+does not track it. After `just install-quint` has installed the new CLI, read the
+evaluator version it runs:
+
+```console
+grep QUINT_EVALUATOR_VERSION tools/quint/node_modules/@informalsystems/quint/dist/src/rust/binaryManager.js
+```
+
+If it is the `evaluator=` version, only `quint=` changes, provided the new CLI still looks
+for the executable where this one does: the installer and the `quint` recipe's guard
+compare the lines of `binaryManager.js` that name the constant, and the lines of
+`config.js` and `binaryManager.js` that build `.quint/rust-evaluator-<version>/quint_evaluator`,
+with the ones Quint 0.34.0 has, and refuse a CLI whose lines differ. When they refuse, read
+those lines in the new CLI; if it still looks in that directory for that file, update the
+lines `scripts/install-quint-evaluator.sh` expects in the same change, and if it looks
+elsewhere the installer needs more than a pin edit. Those lines are text, and a release
+can change where the CLI looks without changing them, so read `getRustEvaluatorPath`
+and `inferAssetAndExecutableNames` in `binaryManager.js`, and `rustEvaluatorDir` and
+`quintConfigDir` in `config.js`, on every bump, even when the guard accepts the new
+CLI. If the evaluator version moved, read the release's
+assets from
+`https://api.github.com/repos/quint-co/quint/releases/tags/evaluator/<version>` and
+find, in the new `binaryManager.js`, the asset the CLI names for each platform
+`pyproject.toml` lists (`quint_evaluator-x86_64-unknown-linux-gnu.tar.gz` for `linux-64`,
+`quint_evaluator-aarch64-apple-darwin.tar.gz` for `osx-arm64` at `v0.8.0`). Download each
+from `https://github.com/quint-co/quint/releases/download/evaluator/<version>/<asset>`
+into an empty directory under `ai_tmp/`, hash it with both `sha256sum` and
+`shasum -a 256`, and compare both with the asset's `digest` in the API's answer. Upstream
+publishes no checksum file, and that digest comes from the same host as the download, so
+agreement rules out a damaged download, not a replaced release. List each archive with
+`tar -tvzf`, whose first column gives each member's type: it must hold one regular file
+(`-`), `quint_evaluator`, and nothing else, or the installer refuses it. Then run the
+installer's own member check on each, which also refuses what `tar` lists without
+complaint, such as a trailing metadata record:
+
+```console
+just check-quint-evaluator-archive ai_tmp/<dir>/<asset>
+```
+
+Only when all of that agrees, edit `evaluator=` and every
+`sha256.<platform>=`, then `quint=`, and install; once the Apalache pin has been
+reviewed too, check both:
+
+```console
+just install-quint-evaluator
+just lock-check
+```
+
+`just install-quint-evaluator` refuses a pin the installed CLI's constant disagrees with,
+or a CLI that names another asset or release, and replaces the old directory.
+`just lock-check` checks only that `quint=` was edited and that every platform has a hash,
+not that the constant was read, so the review is the maintainer's. The installer runs
+only on the machine's own platform; the other platform's hash is checked the first time
+someone installs there.
 
 ### Moving the Apalache pin
 
@@ -351,10 +413,11 @@ and `just sync`. A Quint release whose Apalache needs a newer Java needs this pi
 with it; run `just quint verify` on a module once to confirm.
 
 Renovate's `quint` group proposes the same move, and gate 2 fails on its branch until the
-Apalache pin is reviewed. Approve it on the dashboard and check the branch out. Run
-`just install-quint` first, so the tag you read is the new CLI's and not the one installed
-before; then read the tag and edit the pin as above, run `just install-apalache` and
-`just lock-check`, and run the Quint commands you use before merging.
+Apalache pin and the evaluator pin are reviewed. Approve it on the dashboard and check the
+branch out. Run `just install-quint` first, so the tag and the constant you read are the
+new CLI's and not the ones installed before; then read both and edit both pin files as
+above, run `just install-apalache`, `just install-quint-evaluator` and `just lock-check`,
+and run the Quint commands you use before merging.
 
 ## Actions in the workflows
 

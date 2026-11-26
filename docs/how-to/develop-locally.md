@@ -86,11 +86,11 @@ just initialize
 This installs the pixi environment from `pixi.lock`, installs the pinned toolchain,
 refuses a cargo that is not rustup's, installs cargo-hack, cargo-release and cargo-fuzz
 from `tools.txt` and rustqual from `tools-source.txt` into `.tools/bin`, then the Allium
-checker, the Quint CLI and the Apalache it runs, syncs the four Cargo and pixi lockfiles, and installs the
+checker, the Quint CLI and the Apalache and Rust evaluator it runs, syncs the four Cargo and pixi lockfiles, and installs the
 pre-commit hook with every hook environment. Run it once per clone. It needs the network for the pixi environment, the
 toolchain, the `tools.txt` binaries, rustqual (a signed build if one exists, otherwise a
 build from its crates.io source),
-the Allium checker, the Quint CLI's npm packages, Apalache, `cargo fetch` and the hook clones. It never formats, stages,
+the Allium checker, the Quint CLI's npm packages, Apalache, the Rust evaluator, `cargo fetch` and the hook clones. It never formats, stages,
 commits, tags or pushes.
 
 The hook is installed from the primary checkout only, because every worktree shares one
@@ -149,7 +149,7 @@ It installs a moved `pixi.lock` exactly as committed and fetches what `Cargo.loc
 `fuzz/Cargo.lock` and `loadgen/Cargo.lock` name.
 After `tools.txt` or `tools-source.txt` has moved, run `just install-tools` as well; it
 skips a version that is already there. After `tools/quint/package-lock.json` has moved,
-run `just install-quint`, then `just install-apalache`.
+run `just install-quint`, then `just install-apalache` and `just install-quint-evaluator`.
 
 ## Quint
 
@@ -164,8 +164,17 @@ just quint typecheck path/to/module.qnt
 just quint run path/to/module.qnt
 ```
 
-`typecheck` works offline. `run`, `test` and the REPL download Quint's Rust evaluator
-the first time, unchecked, and so does a `verify` that reports a violation. `verify` and
+`typecheck` works offline. `run`, `test`, the REPL and a `verify` that reports a
+violation or an observation run Quint's Rust evaluator, which `just install-quint-evaluator` installs into
+`.quint/` from the archive `tools/quint/evaluator.txt` pins by SHA-256 for this
+platform. The recipe refuses `run`, `test`, the REPL and `verify`, whatever `--backend`
+they name, until that install is in place and matches its stamp, so Quint never
+downloads the evaluator itself through it, unless `just install-quint-evaluator` is
+replacing the directory while a run starts, or the installed CLI looks for it elsewhere
+through a change the guard's text check does not see. The stamp detects a local change, not a
+rewrite of the directory and the stamp together, and gate 2 checks that the pin was
+reviewed against the CLI, not that the review was right
+([decision 0021](../decisions/0021-project-managed-quint-cli.md)). `verify` and
 `compile --target tlaplus` run Apalache, which
 `just install-apalache` installs from the archive `tools/quint/apalache.txt` pins by
 SHA-256, and which runs on the `openjdk` pixi pins; the `quint` recipe alone puts that
@@ -175,7 +184,7 @@ place and matches its stamp, and refuses any option naming Apalache except
 `just install-apalache` is replacing the tree while a run starts.
 `verify` and `compile --target tlaplus` use any Apalache server already listening on
 `localhost:8822`, or the one `--server-endpoint` names, whatever Java it runs on, and
-start their own only when none answers. Reporting a violation also needs the evaluator, which `verify` downloads then on first use.
+start their own only when none answers.
 Every recipe sets `QUINT_HOME` to `.quint`, the gitignored `.quint/` directory, and it
 must stay exactly that value,
 so both land in the worktree and `~/.quint` is never written. A bare `quint`

@@ -883,7 +883,13 @@ the line numbers below are as at commit `cf1f3f3`.
 
 ## Verification
 
-Run from a file as one `sh` script, from the repository's root, after the commit, with
+Corrected at step 4 under the maintainer's rulings (hand-back §9, item 6): each
+refusal checks its own reason, an absent marker needs `grep`'s status 1, each `verify`
+log shows Quint started its own Apalache and downloaded nothing, the port control
+names its listener's PID, the `curl` controls check exit codes after positive runs
+outside the denial, and every `verify` runs under a denial that allows loopback only.
+The loopback profile is macOS's, probed at step 7, so the script runs on Darwin only;
+Linux's `unshare -rn` starts with `lo` down and was not probed. Run from a file as one `sh` script, from the repository's root, after the commit, with
 the stamped installs of Apalache and the evaluator in place and nothing listening on
 port 8822. `set -eu` stops it at the first command that fails, the trap puts back
 whatever a stopped run had moved, and a signal leaves through the same trap. A backup is
@@ -893,6 +899,11 @@ interrupted run's, and it is put back by hand, not by a rerun.
 
 ```sh
 set -eu
+# QM01's Verification, corrected under the maintainer's rulings at step 4 (Q6
+# to Q8): case-specific refusal reasons, `absent` requiring grep's status 1,
+# Apalache launch and download markers, the lsof -t PID control, curl exit
+# codes checked and their positive controls outside the denial, and every
+# verify under a denial that allows loopback only. Run with sh from the root.
 git rev-parse HEAD
 
 v=ai_tmp/qm01/v
@@ -902,7 +913,8 @@ dir=.quint/rust-evaluator-v0.8.0
 stamp=$dir/.pachinko-stamp
 smoke=ai_tmp/qm01/smoke.qnt
 why='install-quint-evaluator --check: refused:'
-src=tools/quint/node_modules/@informalsystems/quint/dist/src/rust
+src=tools/quint/node_modules/@informalsystems/quint/dist/src
+py=$PWD/.pixi/envs/default/bin/python
 
 # A leftover is an interrupted run's backup. Put it back by hand before a rerun.
 for f in pin.saved stamp.saved binary.saved; do
@@ -923,7 +935,15 @@ guard() {
         sh scripts/install-quint-evaluator.sh --check -- "$@"
 }
 
-# refused <name> <diagnostic> <command>: exit 1 exactly, its own message, no download.
+# absent <fixed string> <file>: grep must exit exactly 1.
+absent() {
+    status=0
+    grep -F -- "$1" "$2" || status=$?
+    test "$status" -eq 1
+}
+
+# refused <name> <case's own reason> <command>: exit 1 exactly, the guard's or
+# the gate's own message with this case's reason, no download.
 refused() {
     name=$1
     want=$2
@@ -933,45 +953,62 @@ refused() {
     echo "refused $name: exit $status"
     test "$status" -eq 1
     grep -F -- "$want" "$v/$name.log"
-    if grep -F 'Fetching Rust evaluator' "$v/$name.log"; then exit 1; fi
+    absent 'Fetching Rust evaluator' "$v/$name.log"
+    absent 'Downloading Apalache distribution' "$v/$name.log"
 }
 
-case $(uname -s) in
-    Darwin) deny() { sandbox-exec -p '(version 1)(allow default)(deny network*)' "$@"; } ;;
-    Linux) deny() { unshare -rn "$@"; } ;;
-    *) exit 1 ;;
-esac
+[ "$(uname -s)" = Darwin ] || exit 1
+deny() { sandbox-exec -p '(version 1)(allow default)(deny network*)' "$@"; }
+loop='(version 1)(allow default)(deny network*)(allow network-bind network-inbound (local ip "localhost:*"))(allow network-outbound (remote ip "localhost:*"))'
+deny_loop() { sandbox-exec -p "$loop" "$@"; }
 
-# The two markers the silent probes look for, as the CLI's source spells them.
-grep -F 'Fetching Rust evaluator' "$src/binaryManager.js"
-grep -F 'Starting Rust evaluator with command:' "$src/commandWrapper.js"
+# curl_denied <denier>: launches, finds curl, and both controls fail with a
+# network error, not a missing or refused command.
+curl_denied() {
+    "$1" true
+    "$1" sh -c 'command -v curl' > /dev/null
+    status=0
+    "$1" curl -fsS --max-time 10 https://static.rust-lang.org -o /dev/null || status=$?
+    echo "$1 control 1 curl exit $status"
+    case $status in 0 | 2 | 126 | 127) exit 1 ;; esac
+    status=0
+    "$1" curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1 -o /dev/null || status=$?
+    echo "$1 control 2 curl exit $status"
+    case $status in 0 | 2 | 126 | 127) exit 1 ;; esac
+}
+
+# The markers the silent probes look for, as the CLI's source spells them.
+grep -F 'Fetching Rust evaluator' "$src/rust/binaryManager.js"
+grep -F 'Starting Rust evaluator with command:' "$src/rust/commandWrapper.js"
+grep -F 'Downloading Apalache distribution' "$src/apalache.js"
+grep -F 'No running Apalache server found, launching...' "$src/apalache.js"
 
 # Gate 2: green, then red on a stale quint=.
 just lock-check
 cp "$pin" "$v/pin.tmp"
 mv "$v/pin.tmp" "$v/pin.saved"
 sed 's/^quint=.*/quint=0.33.0/' "$v/pin.saved" >| "$pin"
-refused lock 'check-quint-evaluator-pin:' just lock-check
+refused lock "check-quint-evaluator-pin: $pin says quint=0.33.0, but" just lock-check
 mv "$v/pin.saved" "$pin"
 git diff --exit-code "$pin"
 
-# Read-only first: the run stops here unless the stamped install is in place, so the
-# installer below should only skip. It runs under the denial all the same, so that an
-# installer that disagrees with the guard fails here and downloads nothing. The
-# denial's own controls come later; nothing is claimed from it on this line.
+# Read-only first: the run stops here unless the stamped install is in place,
+# so the installer below should only skip. It runs under the denial, so that an
+# installer that disagrees with the guard fails and downloads nothing.
 guard run
 deny just install-quint-evaluator >| "$v/install.log" 2>&1
-grep -F 'nothing to do' "$v/install.log"
+grep -F 'nothing to do.' "$v/install.log"
 
-# The guard without the stamp.
+# The guard without the stamp. The just quint refusals run under the full
+# denial, so a guard that regressed could reach neither the network nor 8822.
 mv "$stamp" "$v/stamp.saved"
-refused nostamp-run "$why" just quint run --max-steps=3 "$smoke"
-refused nostamp-test "$why" just quint test "$smoke"
-refused nostamp-verify "$why" just quint verify --invariant=inRange --max-steps=5 "$smoke"
-refused nostamp-typescript "$why" just quint run --backend typescript --max-steps=3 "$smoke"
-refused nostamp-default "$why" guard
-refused nostamp-repl "$why" guard repl
-refused nostamp-option "$why" guard --verbosity=4
+refused nostamp-run 'no stamp at' deny just quint run --max-steps=3 "$smoke"
+refused nostamp-test 'no stamp at' deny just quint test "$smoke"
+refused nostamp-verify 'no stamp at' deny just quint verify --invariant=inRange --max-steps=5 "$smoke"
+refused nostamp-typescript 'does not read --backend' deny just quint run --backend typescript --max-steps=3 "$smoke"
+refused nostamp-default 'there are no arguments' guard
+refused nostamp-repl "the first argument is 'repl'" guard repl
+refused nostamp-option "the first argument '--verbosity=4'" guard --verbosity=4
 just quint typecheck "$smoke"
 just quint compile --target json "$smoke" > /dev/null
 mv "$v/stamp.saved" "$stamp"
@@ -985,67 +1022,84 @@ status=0
 test "$status" -eq 3
 test -f "$v/sentinel-ran"
 rm -f "${v:?}/sentinel-ran"
-refused changed-run "$why" just quint run --max-steps=3 "$smoke"
+refused changed-run 'tree digest mismatch' deny just quint run --max-steps=3 "$smoke"
 test ! -e "$v/sentinel-ran"
 mv "$v/binary.saved" "$dir/quint_evaluator"
 guard run
 
-# Green, with the network denied. The sandbox launches, and both controls fail in it.
-deny true
-status=0
-deny curl -fsS --max-time 10 https://static.rust-lang.org || status=$?
-echo "control 1 curl exit $status"
-test "$status" -ne 0
-status=0
-deny curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1 || status=$?
-echo "control 2 curl exit $status"
-test "$status" -ne 0
+# Green, with the network denied. Positive controls outside the denial first.
+curl -fsS --max-time 10 https://static.rust-lang.org -o /dev/null
+curl --noproxy '*' -fsS --max-time 10 https://1.1.1.1 -o /dev/null
+curl_denied deny
 deny just quint run --verbosity=4 --max-steps=3 "$smoke" >| "$v/run.log" 2>&1
 grep -F 'Starting Rust evaluator with command:' "$v/run.log"
-if grep -F 'Fetching Rust evaluator' "$v/run.log"; then exit 1; fi
+absent 'Fetching Rust evaluator' "$v/run.log"
 deny just quint run --backend typescript --verbosity=4 --max-steps=3 "$smoke" >| "$v/typescript.log" 2>&1
 grep -F '[ok] No violation found' "$v/typescript.log"
-if grep -F 'Starting Rust evaluator with command:' "$v/typescript.log"; then exit 1; fi
+absent 'Starting Rust evaluator with command:' "$v/typescript.log"
 
-# Claim 1. The port probe's positive control first; lsof exits 1 when nothing matches.
+# Claim 1, under the loopback-only denial, after its controls. The port probe's
+# positive control: lsof -t finds the listener this script started, by PID.
+curl_denied deny_loop
+deny_loop "$py" -I -B -c '
+import socket, threading
+srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(); port = srv.getsockname()[1]
+def serve():
+    c, _ = srv.accept(); c.sendall(b"ok"); c.close()
+threading.Thread(target=serve, daemon=True).start()
+cl = socket.create_connection(("127.0.0.1", port), timeout=5); assert cl.recv(2) == b"ok"
+'
 port_free() {
-    if lsof -nP -iTCP:8822 -sTCP:LISTEN; then exit 1; else test "$?" -eq 1; fi
+    status=0
+    lsof -nP -iTCP:8822 -sTCP:LISTEN || status=$?
+    test "$status" -eq 1
 }
-.pixi/envs/default/bin/python -c 'import socket,time; s=socket.socket(); s.bind(("127.0.0.1",8822)); s.listen(); time.sleep(5)' &
+"$py" -I -B -c 'import socket,time; s=socket.socket(); s.bind(("127.0.0.1",8822)); s.listen(); time.sleep(5)' &
 listener=$!
 sleep 1
-lsof -nP -iTCP:8822 -sTCP:LISTEN
+test "$(lsof -nP -t -iTCP:8822 -sTCP:LISTEN)" = "$listener"
 kill "$listener"
 wait "$listener" || true
 sleep 1
 
+# A verify log: Quint started its own Apalache, and nothing was downloaded.
+own_server() {
+    grep -F 'No running Apalache server found, launching...' "$1"
+    grep -F 'Started Apalache server on pid=' "$1"
+    absent 'Connecting with existing Apalache server' "$1"
+    absent 'Downloading Apalache distribution' "$1"
+    absent 'Apalache server exited with code' "$1"
+    absent 'Fetching Rust evaluator' "$1"
+}
+
 port_free
-just quint verify --verbosity=4 --invariant=inRange --max-steps=5 "$smoke" >| "$v/verify-ok.log" 2>&1
+deny_loop just quint verify --verbosity=4 --invariant=inRange --max-steps=5 "$smoke" >| "$v/verify-ok.log" 2>&1
 grep -F '[ok] No violation found' "$v/verify-ok.log"
-if grep -F 'Starting Rust evaluator with command:' "$v/verify-ok.log"; then exit 1; fi
+absent 'Starting Rust evaluator with command:' "$v/verify-ok.log"
+own_server "$v/verify-ok.log"
 port_free
 # The recipe unsets the proxy variables: a proxy that is not there changes nothing.
 env -u no_grpc_proxy -u no_proxy \
     grpc_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 \
-    just quint verify --verbosity=4 --invariant=inRange --max-steps=5 "$smoke" >| "$v/verify-proxy.log" 2>&1
+    sandbox-exec -p "$loop" just quint verify --verbosity=4 --invariant=inRange --max-steps=5 "$smoke" >| "$v/verify-proxy.log" 2>&1
 grep -F '[ok] No violation found' "$v/verify-proxy.log"
+own_server "$v/verify-proxy.log"
 port_free
 status=0
-just quint verify --verbosity=4 --invariant=belowTwo --max-steps=5 "$smoke" >| "$v/verify-violation.log" 2>&1 || status=$?
+deny_loop just quint verify --verbosity=4 --invariant=belowTwo --max-steps=5 "$smoke" >| "$v/verify-violation.log" 2>&1 || status=$?
 test "$status" -eq 1
 grep -F '[violation] Found an issue' "$v/verify-violation.log"
 grep -F 'Starting Rust evaluator with command: evaluate-at-state-from-stdin' "$v/verify-violation.log"
-# The start line is printed before the child is spawned. The evaluator's answer is the
-# line that names the violated invariant under the cross mark, U+274C.
 grep -Fx "  $(printf '\342\235\214') belowTwo" "$v/verify-violation.log"
+own_server "$v/verify-violation.log"
 port_free
 status=0
-just quint verify --verbosity=4 --observation=reachedTwo --max-steps=5 "$smoke" >| "$v/verify-observed.log" 2>&1 || status=$?
+deny_loop just quint verify --verbosity=4 --observation=reachedTwo --max-steps=5 "$smoke" >| "$v/verify-observed.log" 2>&1 || status=$?
 echo "verify --observation exit $status"
 test "$status" -eq 0
 grep -F 'Starting Rust evaluator with command: evaluate-at-state-from-stdin' "$v/verify-observed.log"
 grep -F '[observed] Observed reachedTwo, which stopped the run' "$v/verify-observed.log"
-if grep -F 'Fetching Rust evaluator' "$v"/verify-*.log; then exit 1; fi
+own_server "$v/verify-observed.log"
 port_free
 guard run
 
@@ -1054,6 +1108,7 @@ just check-agents
 just check
 status=$(git status --short)
 test -z "$status"
+echo "VERIFICATION PASSED"
 ```
 
 The `refused` lines are the red tests: the gate on a stale `quint=`, the guard without
@@ -1121,9 +1176,9 @@ there.
   the first run on `linux-64` if this ticket ran on `osx-arm64`; the maintainer's
   machine is the first the other way round. Settled by whoever first runs
   `just install-quint-evaluator` on the second platform.
-- **`--backend typescript`.** The recommended answer refuses a run that needs no
-  evaluator. The maintainer rules at step 4. If the alternative is chosen, its spelling
-  rule needs the probes of step 6 before it is trusted.
+- **`--backend typescript`.** The guard refuses a run that needs no evaluator, as the
+  maintainer ruled at step 4 (hand-back §4). It costs one install command in a worktree
+  that skipped `just initialize`.
 - **Checking the constant in CI.** Gate 2 checks that the review was recorded, not that
   `evaluator=` equals the CLI's `QUINT_EVALUATOR_VERSION`: the constant lives only in
   the installed package. QM03's `quint` job installs the CLI and runs the installer,
@@ -1141,13 +1196,12 @@ there.
 - **Whether upstream publishes a checksum.** Claim 3 is open until step 2. If the
   release has neither a checksum asset nor asset digests, each hash rests on one
   download over TLS, and the pages say so.
-- **The platform test.** `uname` under Rosetta reports `x86_64` on Apple silicon, where
-  pixi's `node` is `arm64`; the installer then refuses a machine it could serve. That
-  fails closed. Asking pixi's `node` instead would agree with the CLI by construction
-  and costs a process start in every guarded run. The maintainer rules with the design.
-- **The proxy variables.** The recommended answer changes the `quint` recipe for every
-  command, and costs a remote `--server-endpoint` behind a proxy. The maintainer rules
-  at step 4. QM02's by-hand runs and QM03's script are written for either answer.
+- **The platform test.** The maintainer ruled at step 4 for pixi's `node`, not `uname`,
+  so the platform agrees with the CLI's by construction, Rosetta included, at the cost
+  of a `node` start in every guarded run. The branch for a platform the pin does not
+  list was not run: it needs pixi's `node` replaced.
+- **The proxy variables.** The recipe unsets them for every command, as ruled at step 4,
+  so a remote `--server-endpoint` behind a proxy no longer works through it.
 - **The loader's variables.** The recipe does not unset `LD_PRELOAD`, `LD_LIBRARY_PATH`
   or the `DYLD_` variables, which reach the evaluator as they reach `node` itself. Not
   probed.
@@ -1158,3 +1212,30 @@ there.
 - **Pages outside Files touched.** `.scratch/apalache/README.md`, "Out of scope for
   both", says the evaluator "could be pinned the same way in a later ticket". It is
   another series' record and is left as written.
+- **Where a later CLI looks.** The guard compares the lines of `config.js` and
+  `binaryManager.js` that name the evaluator's version, asset, release and directory
+  with 0.34.0's. A release that changes the lookup through other lines passes: a
+  normalisation inside `rustEvaluatorDir`, or a return value of
+  `inferAssetAndExecutableNames` that names another executable, leaves every checked
+  line as it is (checkpoint 2, round 2, run on byte copies; both reached the stamp
+  check). The guard then approves a stamped directory the CLI never reads, and Quint
+  downloads the evaluator itself. The bump how-to has the lookup functions read by hand
+  on every bump. Asking `node` for the path would close it but reverses "text, not what
+  `node` loads"; comparing the whole of both files would close it for those files but
+  makes every bump edit the installer. The maintainer ruled on 2026-11-25: keep the line
+  check and the by-hand read, and leave this open.
+- **An in-place edit of the CLI.** The same text check sees a local edit only on the
+  lines it compares; an edit elsewhere in the installed CLI, or a module shadowed
+  beside one other than `config.js` and `binaryManager.js`, is not detected. The pages
+  say so. Asking `node` would close this too.
+- **A mount under the old directory.** The installer moves an evaluator directory it
+  does not accept into its temporary directory and removes that with `rm -rf`, on
+  success and in the exit trap. On Linux, a bind mount inside the old directory would
+  be descended and its files removed. Refusing a directory that holds another device
+  changes the ruled "any other directory is replaced", and
+  `scripts/install-apalache.sh` has the same pattern. The maintainer ruled on
+  2026-11-25: record it here and change neither installer. Found by reading, not run.
+- **The Apalache bump order.** "Moving the Apalache pin" in
+  `docs/how-to/maintain-dependencies.md` runs `just lock-check` before the evaluator pin
+  is reviewed, which then fails on `evaluator.txt`'s `quint=`. Those lines are the
+  Apalache series', outside Files touched.

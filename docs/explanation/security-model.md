@@ -68,16 +68,26 @@ for tests are never a source to use where unpredictability matters.
   ([decision 0012](../decisions/0012-metrics-gate.md)). It also runs with the GitHub
   token unset, so the build scripts it compiles cannot read the token. The Quint CLI is
   the third exception: npm installs it from a lock that holds every package's integrity
-  hash, but on first use it downloads its Rust evaluator from GitHub releases at a version
-  it pins and checks against no checksum
-  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). Apalache, for
-  `verify` and TLA+ compilation, is checked: `just install-apalache` installs the
-  archive whose SHA-256 `tools/quint/apalache.txt` pins, and the `quint` recipe refuses
-  those commands without that install. The check holds for non-concurrent use, since a
-  run that starts while the installer is replacing the tree can make Quint download
-  Apalache unchecked; its stamp detects a local change, not a rewrite of tree and stamp
-  together; and it cannot see which Apalache a server already on `localhost:8822`, or
-  one `--server-endpoint` names, runs. The Java Apalache runs on comes from conda-forge
+  hash, and the CLI would download its Rust evaluator and Apalache itself on first use,
+  checked against no checksum
+  ([decision 0021](../decisions/0021-project-managed-quint-cli.md)). Both are checked
+  instead. `just install-quint-evaluator` installs the evaluator, for `run`, `test`, the
+  REPL and a `verify` that reports a violation or an observation, from the archive whose SHA-256
+  `tools/quint/evaluator.txt` pins for the machine's platform; upstream publishes no
+  checksum for it, so each hash rests on one download over TLS. `just install-apalache`
+  installs Apalache, for `verify` and TLA+ compilation, from the archive whose SHA-256
+  `tools/quint/apalache.txt` pins. The `quint` recipe refuses those commands without the
+  install each needs, deciding before Quint starts and so failing closed: every
+  `verify` needs both installs, a passing one included, and `run`, `test` and the REPL
+  need the evaluator's whatever `--backend` says. Gate 2 fails a move of the CLI until both pins record a review
+  against it, which shows that the review was recorded, not that it was right. Each
+  check holds for non-concurrent use, since a run that starts while an installer is
+  replacing its directory can make Quint download that tool unchecked; the evaluator's
+  check reads the lines of the CLI's text that say where it looks, so a change to the
+  lookup elsewhere in the CLI is not seen; each stamp
+  detects a local change, not a rewrite of directory and stamp together; and the
+  Apalache check cannot see which Apalache a server already on `localhost:8822`, or one
+  `--server-endpoint` names, runs. The Java Apalache runs on comes from conda-forge
   through `pixi.lock`, like pixi's other tools. No gate runs those commands.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
   app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
