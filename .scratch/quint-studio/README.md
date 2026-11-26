@@ -51,7 +51,7 @@ snapshot.
 
 | Id | Title | File | Blocked by | Status |
 | --- | --- | --- | --- | --- |
-| QS01 | Spike: Quint Studio `serve` in a smolvm guest, by hand | `QS01-studio-spike.md` | none | todo |
+| QS01 | Spike: Quint Studio `serve` in a smolvm guest, by hand | `QS01-studio-spike.md` | none | done |
 | QS02 | Decision 0022, a pinned smolvm, and a project-managed machine that boots | `QS02-pinned-smolvm.md` | QS01 | todo |
 | QS03 | Quint Studio's AppImage pinned by its observed SHA-256 | `QS03-pinned-studio.md` | QS01 | todo |
 | QS04 | `just studio`: Quint Studio running in the project's machine | `QS04-just-studio.md` | QS02, QS03 | todo |
