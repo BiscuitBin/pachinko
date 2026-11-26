@@ -1128,12 +1128,14 @@ not rerun.
 | 2 | **Holds.** Under `sandbox-exec -p '(version 1)(allow default)(deny network*)'`, `just install-smolvm` exit 0, printing `install-smolvm: smolvm 1.37.4 is installed and matches its stamp; nothing to do.` The `curl` controls exited 6 (`Could not resolve host: static.rust-lang.org`) and 7 (`Failed to connect to 1.1.1.1 port 443`). |
 | 3 | **Holds, for what the probe could read.** Section 10. The probe sees only what was present when it ran, not a file made and removed before then. |
 | 4 | **Holds in the narrower form the maintainer accepted (Q1):** the state link, within the limit, made no fatal alias attempt, and the machine was found again after the link was made again. "Needs no alias at all" is not shown; the kernel's log did not report smolvm-bin's refusals here. |
-| 5 | **Holds.** By hand at step 3 (3b) and through `just smolvm` in step 7's demo, run twice: section 8. |
-| 6 | **Holds.** Sections 8 and 10: the purge refuses, removing nothing, with a machine left, without the stamp, while another command holds the lock, and when the listing fails with the install intact. Otherwise it removes the link and the directory (`test ! -L`, `test ! -e`), and the parent's names are unchanged apart from them. |
+| 5 | **Holds.** By hand at step 3 (3b) and through `just smolvm` in step 7's demo, run three times: section 9. |
+| 6 | **Holds.** Sections 9 and 10: the purge refuses, removing nothing, with a machine left, without the stamp, while another command holds the lock, and when the listing fails with the install intact. Otherwise it removes the link and the directory (`test ! -L`, `test ! -e`), and the parent's names are unchanged apart from them. |
 
 ### 7. What landed
 
-Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
+Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`, and
+`366ef2164b7624d83f8228972c12bf3b16c240f9` with checkpoint 2's second-round fixes
+(section 12):
 
 - **New files:**
   - `tools/smolvm/smolvm.txt`;
@@ -1153,10 +1155,46 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
   `docs/reference/agent-contract.md` and `docs/operations/maintenance.md`, one stale
   sentence each.
 
-### 8. The recipes and the state, red and green
+### 8. The gate and the installer, red and green
 
-`ai_tmp/qs02/logs/final/`, from the rerun after checkpoint 2's fixes (2026-11-26
-12:09 to 12:14, every part asserted, all passed):
+- **Pin check** (`logs/final2/pin.txt` and `pin-lock-check.txt`, failures 0, at
+  12:26 on the code of `366ef21`). Through
+  `just lock-check`:
+  - green on the pin as committed;
+  - each mutation fails with its own `tools/smolvm/smolvm.txt: <key>:` message:
+    `version=1.37`, `sha256=` removed, 63 digits, `asset=` naming 1.37.3, a fourth key,
+    a repeated key, uppercase hex;
+  - a whitespace-only line passes, and a symlink at `tools/smolvm` or the pin is
+    refused;
+  - `cmp` with the saved pin exits 0.
+  - Under `/bin/dash`, CI's `/bin/sh` on Linux (`logs/final/dash-pin.txt`): the check
+    exits 0 on the pin and every mutation fails with the same message. The one
+    difference is the exported-function case, which passes there: dash imports no
+    function and drops a variable named `BASH_FUNC_cd%%` from what it passes on, so
+    nothing is replaced and nothing is seen.
+- **Installer** (`logs/final2/install.txt`, 19 cases, failures 0; red runs in
+  `step6-red*.txt`):
+  - installs and stamps; skips a stamped tree;
+  - replaces the tree after an appended byte, a removed stamp, `chmod a-x` on either
+    file, a changed mode or a changed link target;
+  - a changed `sha256=` fails, printing both hashes, and leaves no tree and no
+    temporary directory;
+  - `TAR_OPTIONS` excluding a file still gives the full tree (macOS's bsdtar ignores
+    it);
+  - the templates' exclusion is exact;
+  - refuses a symlinked `.tools/smolvm` and a symlinked `.tools`, with each target
+    unchanged and `.tools` restored exactly;
+  - the host check (Q12 (a)), on a fake root with a one-line `diff`: `Linux`/`x86_64`
+    is refused, naming ruling 4 and decision 0022; `Darwin`/`arm64` passes;
+  - refuses an exported function, and a busy install lock;
+  - checksums are computed by the pixi Python, and `curl` gets `-q`;
+  - `--check` exits 0 at the end.
+
+### 9. The recipes and the state, red and green
+
+`ai_tmp/qs02/logs/final2/`, from the rerun after both rounds of checkpoint 2's fixes,
+on the code of `366ef21` (2026-11-26 12:28 to 12:33, every part asserted, all passed;
+`logs/final3-chain.txt`):
 
 - **The launcher's refusals** (`launcher.txt`, 46 cases, failures 0):
   - Before any state, a symlink or a regular file at the state directory's name is
@@ -1181,6 +1219,21 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
   - An absent state link is made again. A `smolvm` stub first on `PATH` is not run. An
     empty state directory is made again, and a missing `tmp/` is repaired.
   - Case 43 is a recorded limit, not a pass (Open points).
+- **Signals, ACLs and identity** (`extra.txt`, all passed):
+  - `TERM` sent to the launcher's shell while its `machine exec -- sleep 10` ran: the
+    launcher kept running, a contender was refused for the lock, and the launcher ended
+    after smolvm (exit 0), after which the contender ran.
+  - `kill -9` of the launcher's shell alone: its smolvm client still ran (`pgrep` exit
+    0) and a contender ran, the one early release decision 0022 states.
+  - `everyone allow add_file` on `~/Library/Caches/pachinko/smolvm`: refused, naming
+    `chmod -N`; the ACL then removed, `ls -lde` equal to before.
+  - An orphan whose recorded worktree lies behind a parent of mode 0400: refused,
+    "cannot tell whether …"; `test ! -e` on that live worktree exits 0, which is why
+    it is not used. Searchable again: refused as live. With the worktree removed: purged.
+  - A state directory holding only an unlinked `.pachinko-state.new`: removed and made
+    again, with a whole marker.
+  - An orphan whose recorded worktree has a symlinked `.tools`: refused, nothing
+    removed.
 - **The demo** (`demo.txt`). It ran from a new install, which held neither template.
   `just smolvm` created and started `qs02-demo` with the worktree read-only, `rw-demo`
   read-write and `-p 7120:8080`.
@@ -1188,7 +1241,7 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
     `[::1]:7120` only.
   - The guest listed a file the host had just made, and its write in `rw-demo` reached
     the host.
-  - Writes to `Justfile`, `.git` and `.tools`, and renames of `rw-demo`, its parent
+  - Writes to `Justfile`, `.git`, `.tools` and `target`, and renames of `rw-demo`, its parent
     `ai_tmp/qs02` and `ai_tmp`, were refused with `Read-only file system`.
     `Justfile` and `.git` were unchanged (`cmp`).
   - With the machine running, `--check` exited 0 with both templates now present, and
@@ -1233,35 +1286,6 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
   line right after the sentinel; the inventory; and the orphan's delete. None is in
   `scripts/install-smolvm.sh`, which only tests files and reads `codesign`.
 
-### 9. The gate and the installer, red and green
-
-- **Pin check** (`cp2-pin.txt` and `cp2-pin-lock-check.txt`, failures 0). Through
-  `just lock-check`:
-  - green on the pin as committed;
-  - each mutation fails with its own `tools/smolvm/smolvm.txt: <key>:` message:
-    `version=1.37`, `sha256=` removed, 63 digits, `asset=` naming 1.37.3, a fourth key,
-    a repeated key, uppercase hex;
-  - a whitespace-only line passes, and a symlink at `tools/smolvm` or the pin is
-    refused;
-  - `cmp` with the saved pin exits 0.
-- **Installer** (`cp2-install.txt`, 19 cases, failures 0; red runs in
-  `step6-red*.txt`):
-  - installs and stamps; skips a stamped tree;
-  - replaces the tree after an appended byte, a removed stamp, `chmod a-x` on either
-    file, a changed mode or a changed link target;
-  - a changed `sha256=` fails, printing both hashes, and leaves no tree and no
-    temporary directory;
-  - `TAR_OPTIONS` excluding a file still gives the full tree (macOS's bsdtar ignores
-    it);
-  - the templates' exclusion is exact;
-  - refuses a symlinked `.tools/smolvm` and a symlinked `.tools`, with each target
-    unchanged and `.tools` restored exactly;
-  - the host check (Q12 (a)), on a fake root with a one-line `diff`: `Linux`/`x86_64`
-    is refused, naming ruling 4 and decision 0022; `Darwin`/`arm64` passes;
-  - refuses an exported function, and a busy install lock;
-  - checksums are computed by the pixi Python, and `curl` gets `-q`;
-  - `--check` exits 0 at the end.
-
 ### 10. What was written outside the worktree, and its removal
 
 - **Step 3.** It made `~/Library/Caches/pachinko/`, `…/pachinko/smolvm/` (both 0700),
@@ -1272,10 +1296,10 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
   - the lock entry `~/Library/Caches/pachinko/smolvm/qs02-e906b65b.lock`;
   - the orphan fixture's directory, link and lock (all removed).
 
-  The probe in step 8 (`logs/final/step8-probe.txt`) ran over `$HOME`, the user's
+  The probe in step 8 (`logs/final2/step8-probe.txt`, 12:30 to 12:33) ran over `$HOME`, the user's
   `T/` and `C/`, `/private/tmp`, `/Library`, `/usr/local`, `/Users/Shared`, `/opt` and
   `/private/var/tmp`. Each root was listed with its own exit status and errors in
-  files. It found 77 paths outside the worktree:
+  files. It found 78 paths outside the worktree:
   - **What decision 0022 names:** the state directory's tree (52 paths) and the state
     link, and the parent's and `/private/tmp`'s entries, which changed when those were
     made.
@@ -1284,7 +1308,8 @@ Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
     running as pid 40635, and the launcher gives smolvm only the state link as its
     data root.
   - **Ordinary activity:** this session's harness and Codex logs, Docker Desktop,
-    Zellij, Supacode, Chrome's updater and macOS temporary items.
+    Zellij, Chrome, Tailscale's logs under `/Library/Tailscale/` and macOS temporary
+    items.
 
   455 directories could not be read, so they are **unprobed**: `~/Library/Containers`
   and `Group Containers`, parts of `T/` and `C/`, and others. None of them names
@@ -1350,11 +1375,45 @@ C01 to C13) and the skill 10 (R1 to R10). The lead triaged them all in
 - C07, C11: wording in decision 0022.
 - R4: the template repair, documented.
 
-Not changed: B11, B12 and C08 were answered by the tightened Verification in section
-13; C09 and C10 in the scratch drivers; C12 is recorded as Departure 6. Every rerun the
-fixes touched was repeated afterwards (section 8, 9 and 10's logs under
-`logs/final/` and `cp2-*`). No second round ran, because no high-severity finding
-reached the final diff unfixed.
+Not changed in round 1: B11, B12 and C08 were narrowed by the tightened Verification
+in section 14 (it cannot observe a silent invocation before the sentinel, which Q14's
+ruling accepts); C09 and C10 concern the scratch drivers; C12 is Departure 6.
+
+**Round 2.** B01 was high and valid, so §14 requires a second round over the fix diff.
+The first record of this ticket (`ef511c9`) said no second round was needed, giving a
+reason that is not §14's test; that was wrong, and this round corrects it. Codex Sol's
+two lenses read `ai_tmp/review/QS02-2/fix.diff`: the exact diff of the three scripts
+from their pre-fix versions, which were rebuilt from `diff.patch` (the launcher's
+rebuilt copy equals the saved draft byte for byte), and the Justfile's and the pages'
+diff from the base. 20 findings (B2-01 to B2-08, C2-01 to C2-12); the lead triaged them
+and fixed, in `366ef21`:
+
+- B2-03/C2-07: the marker and the id file are written whole to `<path>.new`, fsynced
+  and linked into place; a state directory holding only an unlinked marker is an
+  interrupted creation, made again.
+- B2-04: a symlinked `.tools` in an orphan's recorded worktree is refused.
+- B2-05/C2-05: the purge's listing runs in the foreground, so the trap keeps the locks
+  until it ends.
+- B2-07: the directory renamed for removal is `.purging-<hash>-<pid>`.
+- B2-08: the installer's `checksums.txt` reader refuses a path that is absolute, holds
+  `..`, or resolves outside the tree.
+- C2-04: the orphan form repairs `tmp/` only after its worktree is shown gone.
+- C2-06: the how-to checks a `.purging-*` directory's marker before its removal by hand.
+- C2-11: section 14's wording.
+- C2-12: the demo also writes under `target`.
+
+Not fixed, by the ruling or as stated limits: B2-01/C2-01 and B2-02 (a process of the
+same user that swaps or mounts something in the state between a check and the
+removal; the trusted writers are the user and root, Q8; decision 0022 says so);
+B2-06/C2-02 (`SHELLOPTS`, Open points); C2-08 (Departure 6 stands); C2-09 and C2-10
+(the scratch drivers: the probe's `getconf` and some listings' statuses are not
+asserted; the probe's per-root statuses and the listing files are what section 10
+quotes). §14 allows two rounds, so what remains is in Open points.
+
+**Evidence promised at checkpoint 1 and run only after round 1** (`extra.txt`): the
+launcher under `TERM` and `kill -9`, an allowing ACL, and an orphan behind an
+unsearchable parent (section 9). Every rerun the fixes touched was repeated on the code
+of `366ef21` (sections 8 to 10, `logs/final2/`).
 
 ### 13. Departures
 
@@ -1380,21 +1439,22 @@ reached the final diff unfixed.
    not a `cmp` of the stamp.
 9. **Verification is stricter than the ticket's script.** Stdout and stderr are apart,
    stdout is `cmp`-equal to the version line, and the parent's listing and the lock's
-   entry are checked (B11, B12).
+   entry are checked (B11, B12). It still cannot show that no smolvm ran silently
+   before a refusal (Q14).
 
 ### 14. Verification
 
-`ai_tmp/qs02/verify.sh`, the ticket's script with section 13's Departure 9 applied
-(stdout and stderr kept apart, the version line `cmp`-equal, the parent's names and
-the lock's entry checked), run as one `sh -x` file on the work commit; full output in
-`ai_tmp/qs02/logs/final/verify.txt`. Values: `version_line='smolvm 1.37.4'`,
+`ai_tmp/qs02/verify.sh`, the ticket's script with Departure 9 applied (stdout and
+stderr kept apart, the version line `cmp`-equal, the parent's names and the lock's
+entry checked), run as one `sh -x` file; full output in
+`ai_tmp/qs02/logs/final2/verify.txt`. Values: `version_line='smolvm 1.37.4'`,
 `reached_line='smolvm launcher: running the stamped smolvm'`,
 `state_dir="$HOME/Library/Caches/pachinko/smolvm/qs02-e906b65b"`,
 `state_link='/tmp/pachinko-smolvm-e906b65b'`. At
-`58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
+`366ef2164b7624d83f8228972c12bf3b16c240f9`:
 
 ```text
-58a0f1bf6fce8fdf67cfac8866055a6700db8e54
+366ef2164b7624d83f8228972c12bf3b16c240f9
 install-smolvm: smolvm 1.37.4 is installed and matches its stamp; nothing to do.
 smolvm launcher: running the stamped smolvm
 tools/smolvm/smolvm.txt: sha256: '0' is not 64 lowercase hex digits
@@ -1409,7 +1469,7 @@ verify exit 0
 The refusal's standard output was empty and its standard error held no sentinel; the
 purge left no state link and no state directory, the lock's entry stayed, and the
 parent's names equalled those before the run (`cmp` exit 0); `git status --short` was
-empty.
+empty. The same script passed earlier on `58a0f1b` (`logs/final/verify.txt`).
 
 ### 15. Open points
 
@@ -1424,10 +1484,15 @@ empty.
 - **smolvm on PyPI.** It also ships as `smolmachines` (QS01 Open point 10). No ruling
   weighed it, and decision 0022 says so.
 - **CI's pin check.** It runs on `ubuntu-latest` with `/usr/bin` helpers, expected
-  under merged `/usr` but not run there.
-- **Fix 3 under a real signal.** It was not tested. The inventory runs smolvm inside
-  `$(...)`, where a signal to the whole process group can still end the listing early.
-  The purge then refuses and removes nothing.
+  under merged `/usr`, and was run here under `/bin/dash` (section 8) but not on a
+  Linux runner.
+- **A same-user swap between a check and the removal** (B2-01, B2-02): a process of
+  the same user that moves the renamed `.purging-*` directory, or mounts something in
+  the state, after the last check and before `rm -rf`, is not stopped. The trusted
+  writers of the state are the user and root (Q8).
+- **The purge's listing under a signal** was not run; `TERM` was run against the
+  launcher's `run` mode only (section 9). The listing now runs in the foreground under
+  the same trap.
 - **Fix 4's inode-mismatch branch and fix 5's mount refusal** were not run on a real
   state directory. The helpers were tested on scratch directories, and on
   `/System/Volumes` for fix 5.
