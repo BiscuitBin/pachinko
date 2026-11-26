@@ -55,8 +55,9 @@ than a `Justfile` recipe, and outside `just check`.
 | `pixi bootstrap` | `requires-pixi` in `pyproject.toml` and `pixi-version` in the `setup` action, together |
 | `cargo-nextest` | the pin in `pyproject.toml` and `nextest-version` in `.config/nextest.toml`, together |
 | `hook revs` | every hook SHA and comment in both prek configurations, but lychee's |
+| `quint` | the `@informalsystems/quint` pin in `tools/quint/package.json`, with `tools/quint/package-lock.json` relocked on the same branch |
 | one per pin | the other tool pins in `pyproject.toml`, each line of `tools.txt` and `tools-source.txt`, and the `biscuit-games-tooling` tag |
-| lock-file maintenance | the transitive closure of the lockfiles, in two pull requests: `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` together under the `crates` group, and `pixi.lock` |
+| lock-file maintenance | the transitive closure of the lockfiles, in three pull requests: `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock` together under the `crates` group, `pixi.lock`, and `tools/quint/package-lock.json` under the `quint` group |
 
 Major updates open in a pull request of their own beside their group's, because
 Renovate's `separateMajorMinor` is on and takes precedence over a group. A branch that
@@ -90,11 +91,23 @@ just lock-check
 ```
 
 This runs `cargo update --workspace --locked --offline`, once for the workspace and once
-each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, and `pixi lock --check --offline --dry-run`,
-none of which writes. It is gate 2 of
+each with `--manifest-path fuzz/Cargo.toml` and `--manifest-path loadgen/Cargo.toml`, `pixi lock --check --offline --dry-run`,
+`npm ci --dry-run --offline --prefix tools/quint` for the Quint CLI's lock, and
+`scripts/check-apalache-pin.sh`, which fails unless the `quint=` line of
+`tools/quint/apalache.txt` is the Quint CLI version both npm files pin
+([Moving the Apalache pin](#moving-the-apalache-pin)), and
+`scripts/check-quint-evaluator-pin.sh`, which fails unless the `quint=` line of
+`tools/quint/evaluator.txt` is that version too and the file holds one hash for each
+platform `pyproject.toml` lists ([Moving the evaluator pin](#moving-the-evaluator-pin));
+a platform added to pixi also needs its asset mapped in `scripts/install-quint-evaluator.sh`. None
+rewrites a lockfile, installs a package or fetches anything; npm creates its cache and
+log directories if they are missing and writes its log there, wherever its configuration
+puts them (by default `~/.npm`, outside the worktree). It is gate 2 of
 `just check`, so a manifest edited without relocking fails the gate rather than
 drifting. Being offline, it fails on a cold Cargo cache rather than fetching the
-registry index; `just sync` fills the cache.
+registry index; `just sync` fills the cache. The npm check needs no cache: a lock that
+satisfies `tools/quint/package.json` passes cold, and one that does not fails, as out of
+sync on a warm cache and as not cached on a cold one.
 
 ## Fetch what the lockfiles name
 
@@ -104,7 +117,8 @@ just sync
 
 This runs `cargo fetch --locked` for the workspace, for `fuzz/Cargo.toml` and for
 `loadgen/Cargo.toml`, and `pixi install --frozen`: all four lockfiles, exactly as committed, and it never rewrites
-any. It reaches the network, so run it while the
+any. The fifth lockfile, `tools/quint/package-lock.json`, is `just install-quint`'s
+([The Quint CLI](#the-quint-cli)). It reaches the network, so run it while the
 network is there, before the offline gates need the sources.
 
 ## Update deliberately
@@ -115,12 +129,14 @@ just lock-upgrade    # move every crate to the newest version its range admits
 ```
 
 `just lock` relocks the workspace and the excluded `fuzz/` and `loadgen/` crates against what the
-manifests state, then runs `pixi lock`. It is not a no-op: a dependency whose range was
+manifests state, then runs `pixi lock` and relocks `tools/quint/package-lock.json` with
+`npm install --package-lock-only`. It is not a no-op: a dependency whose range was
 edited, or that is new, resolves to the newest version its range admits, not to the
 version the range names.
 `just lock-upgrade` moves every crate in `Cargo.lock`, `fuzz/Cargo.lock` and `loadgen/Cargo.lock`,
 transitive ones included, to the newest version its range admits, which under caret
-ranges changes plenty, and runs `pixi update`. Every tool pin is exact, so that moves
+ranges changes plenty, runs `pixi update`, and runs `npm update --package-lock-only` over
+the Quint CLI's transitive packages. Every tool pin is exact, so that moves
 transitive packages and one direct one: Python, pinned `3.14.*`, whose patch release can
 move. Both recipes reach the network. Read every lockfile diff before accepting them.
 
@@ -279,6 +295,129 @@ updated in [Work with the specifications](work-with-the-specs.md) in that same c
 Moving the package pin in `pyproject.toml` is itself a trigger for both specification
 hooks, so the gate re-reads the modules against the new version on the commit that moves
 the pin, but only after `just install-allium` has actually installed it.
+
+## The Quint CLI
+
+`@informalsystems/quint` is an npm package, so neither pixi nor cargo-binstall can hold it
+([decision 0021](../decisions/0021-project-managed-quint-cli.md)). pixi pins Node, and
+`tools/quint/` is a private npm project of its own: `package.json` names the CLI at an
+exact version, and `package-lock.json`, which is committed, holds every package's
+integrity hash. `just install-quint` installs it into `tools/quint/node_modules/`, which
+Git ignores, through the environment's npm. It reaches the network.
+
+To move the pin, edit the version in `tools/quint/package.json`, keeping it exact, then
+relock, reinstall and confirm:
+
+```console
+just lock
+just install-quint
+just quint --version
+```
+
+`just lock-check` now fails until the Apalache pin and the evaluator pin have been
+reviewed against the new CLI, as [Moving the Apalache pin](#moving-the-apalache-pin) and
+[Moving the evaluator pin](#moving-the-evaluator-pin) describe. Read the
+`package-lock.json` diff before committing it with the manifest and both pin files.
+`just lock` uses the pixi environment's npm, so no global Node is needed.
+
+### Moving the evaluator pin
+
+`tools/quint/evaluator.txt` pins the Rust evaluator that `run`, `test`, the REPL and a
+`verify` that reports a violation or an observation run: `quint=` names the Quint CLI version it was
+reviewed against, `evaluator=` the CLI's `QUINT_EVALUATOR_VERSION`, `v` included, and
+each `sha256.<platform>=` the SHA-256 of that pixi platform's release archive. Renovate
+does not track it. After `just install-quint` has installed the new CLI, read the
+evaluator version it runs:
+
+```console
+grep QUINT_EVALUATOR_VERSION tools/quint/node_modules/@informalsystems/quint/dist/src/rust/binaryManager.js
+```
+
+If it is the `evaluator=` version, only `quint=` changes, provided the new CLI still looks
+for the executable where this one does: the installer and the `quint` recipe's guard
+compare the lines of `binaryManager.js` that name the constant, and the lines of
+`config.js` and `binaryManager.js` that build `.quint/rust-evaluator-<version>/quint_evaluator`,
+with the ones Quint 0.34.0 has, and refuse a CLI whose lines differ. When they refuse, read
+those lines in the new CLI; if it still looks in that directory for that file, update the
+lines `scripts/install-quint-evaluator.sh` expects in the same change, and if it looks
+elsewhere the installer needs more than a pin edit. Those lines are text, and a release
+can change where the CLI looks without changing them, so read `getRustEvaluatorPath`
+and `inferAssetAndExecutableNames` in `binaryManager.js`, and `rustEvaluatorDir` and
+`quintConfigDir` in `config.js`, on every bump, even when the guard accepts the new
+CLI. If the evaluator version moved, read the release's
+assets from
+`https://api.github.com/repos/quint-co/quint/releases/tags/evaluator/<version>` and
+find, in the new `binaryManager.js`, the asset the CLI names for each platform
+`pyproject.toml` lists (`quint_evaluator-x86_64-unknown-linux-gnu.tar.gz` for `linux-64`,
+`quint_evaluator-aarch64-apple-darwin.tar.gz` for `osx-arm64` at `v0.8.0`). Download each
+from `https://github.com/quint-co/quint/releases/download/evaluator/<version>/<asset>`
+into an empty directory under `ai_tmp/`, hash it with both `sha256sum` and
+`shasum -a 256`, and compare both with the asset's `digest` in the API's answer. Upstream
+publishes no checksum file, and that digest comes from the same host as the download, so
+agreement rules out a damaged download, not a replaced release. List each archive with
+`tar -tvzf`, whose first column gives each member's type: it must hold one regular file
+(`-`), `quint_evaluator`, and nothing else, or the installer refuses it. Then run the
+installer's own member check on each, which also refuses what `tar` lists without
+complaint, such as a trailing metadata record:
+
+```console
+just check-quint-evaluator-archive ai_tmp/<dir>/<asset>
+```
+
+Only when all of that agrees, edit `evaluator=` and every
+`sha256.<platform>=`, then `quint=`, and install; once the Apalache pin has been
+reviewed too, check both:
+
+```console
+just install-quint-evaluator
+just lock-check
+```
+
+`just install-quint-evaluator` refuses a pin the installed CLI's constant disagrees with,
+or a CLI that names another asset or release, and replaces the old directory.
+`just lock-check` checks only that `quint=` was edited and that every platform has a hash,
+not that the constant was read, so the review is the maintainer's. The installer runs
+only on the machine's own platform; the other platform's hash is checked the first time
+someone installs there.
+
+### Moving the Apalache pin
+
+`tools/quint/apalache.txt` pins the Apalache that `verify` and `compile --target tlaplus`
+run: `quint=` names the Quint CLI version it was reviewed against, `apalache=` the
+Apalache version, and `sha256=` the SHA-256 of that release's `apalache.tgz`. Renovate
+does not track it. After the CLI moves, read the Apalache version the new CLI expects:
+
+```console
+grep DEFAULT_APALACHE_VERSION_TAG tools/quint/node_modules/@informalsystems/quint/dist/src/apalache.js
+```
+
+If it is the `apalache=` version, only `quint=` changes. If it moved, download
+`https://github.com/apalache-mc/apalache/releases/download/v<version>/apalache.tgz` and
+the same release's `sha256sum.txt` into an empty directory under `ai_tmp/`, hash the
+archive with both `sha256sum apalache.tgz` and `shasum -a 256 apalache.tgz`, and compare
+both with the `apalache.tgz` line of `sha256sum.txt`. Only when all three agree, edit
+`quint=`, `apalache=` and `sha256=`, then install and check:
+
+```console
+just install-apalache
+just lock-check
+```
+
+`just install-apalache` refuses a pin the installed CLI's tag disagrees with, and replaces
+the old tree. `just lock-check` checks only that `quint=` was edited, not that the tag was
+read, so the review is the maintainer's.
+
+Apalache runs on the `openjdk` that `pyproject.toml` pins exactly, so `just lock-upgrade`
+never moves it: edit the version by hand, like pixi's other exact pins, then `just lock`
+and `just sync`. A Quint release whose Apalache needs a newer Java needs this pin moved
+with it; run `just quint verify` on a module once to confirm.
+
+Renovate's `quint` group proposes the same move, and gate 2 fails on its branch until the
+Apalache pin and the evaluator pin are reviewed. Approve it on the dashboard and check the
+branch out. Run `just install-quint` first, so the tag and the constant you read are the
+new CLI's and not the ones installed before; then read both and edit both pin files as
+above, run `just install-apalache`, `just install-quint-evaluator` and `just lock-check`,
+and run the Quint commands you use before merging.
 
 ## Actions in the workflows
 

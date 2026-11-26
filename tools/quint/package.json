@@ -1,0 +1,9 @@
+{
+  "name": "pachinko-quint",
+  "private": true,
+  "description": "The Quint CLI, pinned for this repository; installed by `just install-quint` (decision 0021).",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@informalsystems/quint": "0.34.0"
+  }
+}

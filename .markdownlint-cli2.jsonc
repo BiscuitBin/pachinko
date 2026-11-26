@@ -14,5 +14,7 @@
     "MD041": false
   },
   "globs": ["**/*.md"],
-  "ignores": ["target", ".tools", ".pixi", "ai_tmp", "allium-skill-reference"]
+  // The globs walk ignored directories too: tools/quint/node_modules holds the
+  // Quint CLI's npm packages, whose Markdown is not this repository's.
+  "ignores": ["target", ".tools", ".pixi", "ai_tmp", "allium-skill-reference", "tools/quint/node_modules"]
 }

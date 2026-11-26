@@ -29,8 +29,8 @@ just check
 
 `just initialize` installs the pixi environment from `pixi.lock`, installs the toolchain
 `rust-toolchain.toml` pins, refuses a cargo that is not rustup's, installs cargo-hack,
-cargo-release, cargo-fuzz and rustqual into `.tools/bin` and then the Allium checker,
-syncs all four lockfiles and installs
+cargo-release, cargo-fuzz and rustqual into `.tools/bin`, then the Allium checker, the
+Quint CLI and the Apalache and Rust evaluator it runs, syncs the four Cargo and pixi lockfiles and installs
 the pre-commit hook, from the primary worktree only; a secondary worktree says so and
 skips that step. It never formats, stages, commits, tags or pushes. If it complains about
 a missing tool, read [Develop locally](../how-to/develop-locally.md).

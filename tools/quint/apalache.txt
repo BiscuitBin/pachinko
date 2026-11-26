@@ -1,0 +1,10 @@
+# Apalache, which `just quint verify` and `compile --target tlaplus` run, pinned by the
+# SHA-256 of its release archive (decision 0021). `just install-apalache` installs it;
+# `just lock-check` fails unless quint= is the Quint CLI version both npm files in
+# tools/quint pin, so a Quint bump fails gate 2 until quint= is edited; edit it only
+# after reading the new CLI's DEFAULT_APALACHE_VERSION_TAG and moving apalache= and
+# sha256= if it moved: docs/how-to/maintain-dependencies.md, "The Quint CLI". The
+# gate cannot tell whether that was done; the installer refuses a tag that disagrees.
+quint=0.34.0
+apalache=0.62.4
+sha256=8ac8488422c30d552735bae11b92a2d014d8e02e8608702acc08f9a2d8a9abb2

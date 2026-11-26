@@ -41,6 +41,7 @@ as `open question` blocks — see [Specifications](../explanation/specifications
 | [0018](0018-renovate.md) | Dependency updates through Renovate |
 | [0019](0019-service-runtime-tokio-and-http.md) | The service runtime: tokio, one owner task and HTTP/JSON |
 | [0020](0020-held-set-until-lease-ends.md) | A held record stays held until its lease ends |
+| [0021](0021-project-managed-quint-cli.md) | A project-managed Quint CLI |
 
 Decision 0004 is superseded in part by decision 0011, which names the consequences of
 0004 it replaces and the ones that stand. Decision 0014 is superseded by decision 0019,
@@ -63,7 +64,8 @@ for the container image (T13), 0016 for the release process (T14), 0017 for muta
 testing, benchmarks and fuzzing (T15 and T16) and 0018 for dependency updates through
 Renovate (T17). Each added its file, its manifest entry and its row above. Decision
 0020 is about what the queue does, which the specification already states; the
-maintainer asked for a record of why (T35). The next decision is 0021.
+maintainer asked for a record of why (T35). Decision 0021 records how the Quint CLI is
+pinned and installed. The next decision is 0022.
 
 ## Writing a new one
 

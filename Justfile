@@ -10,6 +10,24 @@ set shell := ["sh", "-eu", "-c"]
 # first for the compiler (check-toolchain proves it).
 export PATH := justfile_directory() / ".pixi" / "envs" / "default" / "bin" + ":" + justfile_directory() / ".tools" / "bin" + ":" + env("PATH")
 
+# Quint would download its Rust evaluator (`run`, `test`, the REPL, and
+# `verify` when it reports a violation or an observation) and Apalache (`verify`, `compile
+# --target tlaplus`) on first use, unchecked, into QUINT_HOME, which defaults
+# to ~/.quint. Instead `install-quint-evaluator` and `install-apalache` put the
+# copies tools/quint/evaluator.txt (per platform) and tools/quint/apalache.txt
+# pin by SHA-256 where Quint looks first, and the `quint` recipe refuses those
+# commands without them; only a guarded run racing either installer, or a CLI
+# that looks for the evaluator through lines the guard does not check, can
+# still make Quint download one itself. Every recipe points QUINT_HOME into the
+# gitignored .quint/, so the installs stay in the worktree like every other tool
+# (decision 0021). Relative, because every recipe runs from this directory and
+# Quint 0.34.0 pastes the path unquoted into shell `tar` and `chmod` commands,
+# which a checkout path with a space would break. It must stay `.quint`: the
+# installer and the guard refuse any other value, so `just QUINT_HOME=x ...` is
+# not supported. Apalache runs on the openjdk pyproject.toml pins, which the
+# `quint` recipe alone puts on PATH.
+export QUINT_HOME := ".quint"
+
 # Line-coverage floor over crates/*/src/**. Lower the complexity, not the
 # number.
 coverage_floor := "90"
@@ -58,7 +76,43 @@ install-tools:
 install-allium:
     bg-install-allium
 
-# All four lockfiles, exactly as committed. Never rewrites any.
+# The Quint CLI from tools/quint/package-lock.json into the gitignored
+# tools/quint/node_modules (network), through the environment's npm. Not in
+# `sync`: the setup action runs that in every CI job, and no job needs Quint
+# until a gate does (decision 0021).
+install-quint:
+    npm ci --prefix tools/quint
+
+# Apalache from the archive tools/quint/apalache.txt pins by SHA-256, into
+# .quint/apalache-dist-<v>/, where Quint looks before it downloads one itself
+# (network, unless the stamped install is already in place, when it skips).
+# Refuses a pin the installed CLI's Apalache version disagrees with, so it runs
+# after `install-quint`, and replaces a tree directory its stamp does not
+# match, Quint's own download included; a symlink or non-directory at .quint,
+# the dist directory or the tree is refused, not replaced (decision 0021).
+install-apalache:
+    sh scripts/install-apalache.sh
+
+# The Rust evaluator from the archive tools/quint/evaluator.txt pins by SHA-256
+# for this platform (pixi's node names it, as it names it to the CLI), into
+# .quint/rust-evaluator-<v>/, where Quint looks before it downloads one itself
+# (network, unless the stamped install is already in place, when it skips).
+# Refuses a pin the installed CLI's QUINT_EVALUATOR_VERSION disagrees with, so
+# it runs after `install-quint`, and replaces a directory its stamp does not
+# match, Quint's own download included; a symlink or non-directory at .quint or
+# the evaluator's directory is refused, not replaced (decision 0021).
+install-quint-evaluator:
+    sh scripts/install-quint-evaluator.sh
+
+# The installer's archive member check alone, offline and read-only, on an
+# evaluator archive downloaded by hand when the pin moves: it must hold exactly
+# one regular file, quint_evaluator (docs/how-to/maintain-dependencies.md,
+# "Moving the evaluator pin"). A relative path is read from this directory.
+check-quint-evaluator-archive file:
+    sh scripts/install-quint-evaluator.sh --check-archive "$1"
+
+# The four Cargo and pixi lockfiles, exactly as committed. Never rewrites any.
+# The fifth, tools/quint/package-lock.json, is `install-quint`'s.
 sync:
     cargo fetch --locked
     cargo fetch --locked --manifest-path fuzz/Cargo.toml
@@ -70,6 +124,7 @@ lock:
     cargo update --workspace --manifest-path fuzz/Cargo.toml
     cargo update --workspace --manifest-path loadgen/Cargo.toml
     pixi lock
+    npm install --package-lock-only --prefix tools/quint
 
 # Within the manifest's constraints only; every direct pin is exact, so this
 # moves transitives (openssl, libcxx, the Python patch level). `pixi upgrade`
@@ -79,16 +134,32 @@ lock-upgrade:
     cargo update --manifest-path fuzz/Cargo.toml
     cargo update --manifest-path loadgen/Cargo.toml
     pixi update
+    npm update --package-lock-only --prefix tools/quint
 
 # Offline, like every gate recipe: a cold Cargo cache fails rather than
 # fetching the registry index (`just sync` fills it), and an offline solve on a
 # stale lock still fails, which is the right answer. --dry-run because pixi
-# would otherwise rewrite a stale lock from that restricted solve.
+# would otherwise rewrite a stale lock from that restricted solve. npm's
+# --dry-run installs nothing and --offline fetches nothing: a manifest the lock
+# does not satisfy fails, on a warm cache as out of sync and on a cold one as
+# not cached. The sixth line checks tools/quint/apalache.txt, the Apalache pin,
+# reading it and the two npm files as they are in the checkout, never
+# node_modules/: its quint= must be the Quint CLI version both
+# npm files pin, so a move of that pin fails here until the Apalache pin is
+# reviewed against the new CLI. It checks that quint= was edited, not that
+# apalache= is the new CLI's; `install-apalache` checks that. The last line
+# does the same for tools/quint/evaluator.txt, the Rust evaluator's pin, and
+# also requires one sha256.<platform>= line for each platform pyproject.toml
+# lists, reading pyproject.toml too; `install-quint-evaluator` checks that
+# evaluator= is the new CLI's QUINT_EVALUATOR_VERSION.
 lock-check:
     cargo update --workspace --locked --offline
     cargo update --workspace --locked --offline --manifest-path fuzz/Cargo.toml
     cargo update --workspace --locked --offline --manifest-path loadgen/Cargo.toml
     pixi lock --check --offline --dry-run
+    npm ci --dry-run --offline --prefix tools/quint
+    sh scripts/check-apalache-pin.sh
+    sh scripts/check-quint-evaluator-pin.sh
 
 # The shim, then every hook environment (seven clones; Go under prek's cache;
 # the ripsecrets build with the machine's rustup and the pinned toolchain), so
@@ -416,6 +487,62 @@ analyse-specs:
 # on PATH.
 plan-spec module:
     .tools/bin/allium plan "docs/specs/$1.allium"
+
+# The pinned Quint CLI, by path, so that a worktree without `just
+# install-quint` fails here rather than falling through to a quint on PATH.
+# The path is the package's own entry point, in the package the guard reads,
+# not the node_modules/.bin shim, which could name another CLI.
+# `typecheck` is offline; `run`, `test`, the REPL and a `verify` that reports a
+# violation or an observation run the Rust evaluator, which the CLI would download unchecked
+# when .quint/ lacks it. Not a gate (decision 0021). The first line is the
+# guard, offline and read-only (scripts/install-apalache.sh --check). It
+# refuses any option whose name contains `apalache`, except --apalache-config,
+# since --apalache-version would make Quint download that Apalache unchecked.
+# Unless there are no arguments
+# (the REPL), the first is parse, typecheck, run, test, repl or docs, or the
+# only one is --help or --version, it refuses to go on unless the stamped
+# install `install-apalache` made is in place and matches its stamp, and pixi's
+# java is executable. So `verify` and every `compile`, whatever its target, need
+# both, and Quint never downloads Apalache through this recipe unless
+# `install-apalache` is replacing the tree at the same time.
+# Apalache, which `verify` and `compile --target tlaplus` run, runs the first
+# `java` on PATH and never reads JAVA_HOME. conda-forge's openjdk, which
+# pyproject.toml pins, keeps its `java` in lib/jvm/bin rather than bin/, so this
+# recipe alone puts that directory first; no other recipe sees a Java. Quint
+# uses any Apalache server already listening on localhost:8822, or the one
+# --server-endpoint names, before it starts its own, and the guard cannot see
+# which Apalache that is. APALACHE_JAR is unset, since the launcher would run
+# that jar in place of the one in .quint/; BASH_ENV, since the launcher's
+# bash would source that file and could change PATH; and CDPATH, since the
+# launcher finds its jar with `cd` on the relative path Quint passes it, which
+# CDPATH could send to another checkout's .quint/. JVM_ARGS and JVM_GC_ARGS,
+# which the launcher passes to java, and JAVA_TOOL_OPTIONS, JDK_JAVA_OPTIONS and
+# _JAVA_OPTIONS, which the JVM reads, are unset too, since any of them can load
+# an agent; the guard refuses an exported bash function. TMPDIR defaults to /tmp,
+# since an unset one makes the launcher create tmp/ in this directory.
+# The second line is the evaluator's guard, offline and read-only too
+# (scripts/install-quint-evaluator.sh --check). Unless the first argument is
+# parse, typecheck, compile or docs, or the only one is --help or --version, it
+# refuses to go on unless the stamped install `install-quint-evaluator` made for
+# this platform is in place and matches its stamp. So `run`, `test`, `verify`,
+# the REPL, a leading option and an unknown word need it; the guard never reads
+# --backend, so `run --backend typescript` needs it too, and Quint never
+# downloads the evaluator through this recipe unless `install-quint-evaluator`
+# is replacing the directory at the same time, or the installed CLI looks
+# elsewhere through a change, a release's or an in-place edit, outside the
+# lines of its text the guard checks, which name the evaluator, its asset and
+# its directory; the guard does not check what node loads. NODE_OPTIONS is
+# unset, since a --require preload could change what the CLI reads after both
+# guards passed.
+# The proxy variables are unset as well: the CLI's gRPC client would send even
+# its loopback connection to the Apalache server on localhost:8822 through the
+# proxy grpc_proxy, https_proxy or http_proxy names, and no `just quint`
+# command needs a proxy, since Apalache and the evaluator come from their own
+# recipes; the upper-case forms go too, although that client reads none of them.
+quint *args:
+    sh scripts/install-apalache.sh --check -- "$@"
+    sh scripts/install-quint-evaluator.sh --check -- "$@"
+    env -u APALACHE_JAR -u NODE_OPTIONS -u grpc_proxy -u http_proxy -u https_proxy -u GRPC_PROXY -u HTTP_PROXY -u HTTPS_PROXY -u BASH_ENV -u CDPATH -u JVM_ARGS -u JVM_GC_ARGS -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u _JAVA_OPTIONS TMPDIR="${TMPDIR:-/tmp}" PATH={{ quote(justfile_directory() / ".pixi" / "envs" / "default" / "lib" / "jvm" / "bin") }}:"$PATH" tools/quint/node_modules/@informalsystems/quint/dist/src/cli.js "$@"
 
 # Redraw the SVG diagrams a decision record embeds, from scripts/diagrams.py,
 # which owns their layout and words: edit the script, never an SVG. It writes

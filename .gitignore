@@ -66,3 +66,16 @@ mutants.out*/
 /fuzz/artifacts/
 /fuzz/coverage/
 /loadgen/target/
+
+# The Quint CLI `just install-quint` puts under tools/quint (its lock is
+# committed), and the evaluator `just install-quint-evaluator` and the Apalache
+# `just install-apalache` install into QUINT_HOME, which the Justfile points at
+# .quint/, from the archives tools/quint/evaluator.txt and
+# tools/quint/apalache.txt pin. Ignored for the same reason as target/: files
+# Git can see abort the snapshot.
+/tools/quint/node_modules/
+/.quint/
+# The Apalache server Quint starts for `verify` writes a run directory per
+# check (SMT logs) under _apalache-out/ in its working directory, which is
+# this one when a recipe starts it.
+/_apalache-out/

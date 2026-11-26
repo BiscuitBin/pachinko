@@ -71,13 +71,19 @@
       "enabled": false
     },
     {
-      "description": "Lock-file maintenance rewrites pixi.lock as well as Cargo.lock. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "description": "Lock-file maintenance rewrites pixi.lock and tools/quint/package-lock.json as well as Cargo.lock. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchUpdateTypes": ["lockFileMaintenance"],
       "dependencyDashboardApproval": true
     },
     {
       "description": "Binaries in tools.txt and source builds in tools-source.txt. Each is a download nothing verifies beyond the transport or the registry checksum, and rustqual is a gate. Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
       "matchDepNames": ["cargo-hack", "cargo-release", "cargo-fuzz", "rustqual"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The Quint CLI in tools/quint/package.json, pinned exactly, and package-lock.json relocked with it on the same branch; a stale lock fails lock-check. It also names the Rust evaluator version it runs, which tools/quint/evaluator.txt pins per platform by SHA-256, and the Apalache version it expects, which tools/quint/apalache.txt pins by SHA-256; Renovate tracks neither. lock-check fails until both files' quint= names the new version, set after reading the new CLI's QUINT_EVALUATOR_VERSION and DEFAULT_APALACHE_VERSION_TAG and moving evaluator= and every sha256.<platform>=, or apalache= and sha256=, if they moved (docs/how-to/maintain-dependencies.md, decision 0021). Held for dashboard approval; a vulnerability-fix pull request skips that approval.",
+      "matchManagers": ["npm"],
+      "groupName": "quint",
       "dependencyDashboardApproval": true
     },
     {

@@ -94,7 +94,8 @@ from the workspace too. It names its two dependencies directly, for the same rea
 fuzz crate does: ureq, with no default features and no TLS, since it speaks plain HTTP
 over loopback, and serde_json, to build request bodies and read replies as values
 without a derive. `loadgen/Cargo.lock` pins its separate graph, and `lock-check` proves
-that lock offline beside the other three. It names no workspace crate, so a library
+that lock offline beside the other three Cargo and pixi locks and the Quint CLI's npm
+lock ([decision 0021](0021-project-managed-quint-cli.md)). It names no workspace crate, so a library
 version bump leaves its lock alone.
 
 ## Consequences

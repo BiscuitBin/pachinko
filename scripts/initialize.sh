@@ -23,16 +23,35 @@ just check-toolchain
 
 # What conda-forge lacks, from `tools.txt` and `tools-source.txt` into
 # `.tools/bin` through the environment's cargo-binstall, the second list built
-# from source: one of the two network downloads in the first-run path that no
+# from source: one of the network downloads in the first-run path that no
 # lockfile accounts for.
 just install-tools
 
-# The other one. The Allium checker for docs/specs/, pinned and checksummed in
-# the biscuit-games-tooling package that pyproject.toml pins, landing in the
+# Another. The Allium checker for docs/specs/, pinned and checksummed in the
+# biscuit-games-tooling package that pyproject.toml pins, landing in the
 # gitignored .tools/bin. `just check-specs` and `just analyse-specs` run it, and
 # both the hook gate and `just check` run those, so a worktree without it cannot
 # reach a green gate.
 just install-allium
+
+# The Quint CLI from tools/quint/package-lock.json into the gitignored
+# tools/quint/node_modules, through the environment's npm (decision 0021). Its
+# lock holds every package's integrity hash. Apalache and the Rust evaluator,
+# which the CLI would otherwise download on first use, unchecked, come from the
+# next two recipes, each from an archive pinned by SHA-256.
+just install-quint
+
+# The third download no lockfile accounts for: Apalache, for `just quint verify`
+# and `compile --target tlaplus`, from the archive tools/quint/apalache.txt pins
+# by SHA-256, into the gitignored .quint/ where Quint looks for it. It follows
+# `install-quint` because it refuses a pin the installed CLI disagrees with.
+just install-apalache
+
+# The fourth: the Rust evaluator Quint runs for `run`, `test`, the REPL and a
+# `verify` that reports a violation or an observation, from the archive
+# tools/quint/evaluator.txt pins by SHA-256 for this platform, into .quint/
+# where Quint looks for it. It follows `install-quint` for the same reason.
+just install-quint-evaluator
 
 # `Cargo.lock` is committed and every gate passes `--locked`; this line exists
 # for a clone whose lockfile was deleted by hand.

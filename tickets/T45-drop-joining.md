@@ -477,6 +477,7 @@ sending one id share it. Everything else a caller can observe is unchanged.
 | `docs/explanation/architecture.md`, `security-model.md`, `docs/how-to/test-and-debug.md`, `docs/project/repository-map.md`, `terminology.md` | shared, own lines | The check order, "can join under any id", the transcript, the invariant count, the two terms |
 | `docs/decisions/0019-service-runtime-tokio-and-http.md`, or a new record with `docs/manifest.yml` and `docs/decisions/README.md` | shared, own lines, or new | The revision, in the form step 1 decides |
 | `README.md`, `CHANGELOG.md` | shared, own lines | The diagram and transcript; both Unreleased sections |
+| `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`, `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`, `crates/libpachinko/tests/queue/walk/model/trace.rs`, `double/tests/test_replay.py` | shared, own lines, if the tree this ticket lands on holds `quint/pachinko.qnt`, at the base or after the closing merge or rebase, and each path only where that tree holds it | `PublisherJoins`, `ConsumerJoins`, `UniquePublisherId` and `UniqueConsumerId` removed, the publish and consumer actions without a join, and the start every fixture is generated from; each mutant patch the edit breaks, re-cut, and a patch whose rule or property is gone, as the maintainer rules at this step's stop; the generator's witness list and its start; the trace fixtures, regenerated if they exist; the joins, the two rules and the two steps taken out of each replay |
 | `tickets/README.md` | shared, own lines | T45's Status cell |
 | `tickets/T45-drop-joining.md` | ticket | `status:` and hand-back notes |
 
@@ -533,6 +534,46 @@ sending one id share it. Everything else a caller can observe is unchanged.
    figures and `double/SPEC-NOTES.md`, with `just python-double` green. In the notes,
    mark findings 4 and 5's N12 applied as finding 1 is marked, and update N10, N12, N18
    and N22, their `impl-choice` labels and each figure that draws the join gate.
+
+   **The Quint model**, if the tree this ticket lands on holds `quint/pachinko.qnt`, at
+   the base or after the closing merge or rebase onto `main`: that model is derived
+   from this specification, so the same change updates it wherever it models what this
+   ticket changes. Read the condition again after that merge: if it brought in the
+   model, `quint/traces/` or a replay the base did not hold, or changed
+   `quint/pachinko.qnt` or a patch under `quint/mutants/`, the rest of this step is
+   done then, against the merged tree, before any gate runs, each stop in it
+   included. The rule is the same-change
+   rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
+   the model; both exist wherever the model does.
+   Here the two join rules and the two id invariants go, with their guards,
+   effects, witnesses and the two join actions, and every action that required a join
+   loses the requirement. A mutant patch cannot be re-cut as it stands when the rule
+   it mutates or the property it names is one this ticket removes from the
+   specification. **Stop and ask** before touching such a patch: name it, name the rule
+   or the property that is gone, and put the two choices to the maintainer, to remove
+   the patch or to aim its mutation at a property that remains. Do neither on your
+   own, and never leave it failing.
+
+   If `quint/traces/` exists, more than the fixtures moves, because they were generated
+   from a start that had taken three joins and by a generator that asks for a trace
+   reaching each join rule. In `scripts/quint-traces.py`: the two join rules leave the
+   witness list, the two join steps leave the steps a fixture may hold, and the start
+   becomes the model's `init`, since the joined start, `replayInit`, goes with the joins
+   it was built from. In the Rust replay, `crates/libpachinko/tests/queue/walk/replay.rs`
+   with `walk/model/trace.rs` beside it: the three joins it runs before a trace, the
+   mapping of the two join steps and the two rules in the list its rule test requires
+   all go. In the double's replay,
+   `double/tests/test_replay.py`, if it exists: the joins it makes to reach a fixture's
+   first state and the mapping of the two steps go.
+
+   In this order: edit the model; re-cut each mutant patch under `quint/mutants/` that
+   the edit breaks, keeping its mutation and the property it names, and list each in
+   the hand-back; change the generator and run `just quint-traces`; change the replays
+   until `just test` and, where the double's replay exists, `just python-double` are
+   green; then run `just check-quint`, and `just verify-quint` if the recipe exists. The
+   fixtures come before the two gates because both fail on a model whose hash the
+   fixtures do not record. Where the model's header lists the behaviour under "Not yet
+   modelled", change nothing there and say so in the hand-back.
 7. **The handbook.** Use the `review-docs` skill for every page in Files touched, and
    revise decision 0019 as step 1 decided. Update every invariant count: 33 if the two
    invariants go and none is added, otherwise the count the module has. Run
