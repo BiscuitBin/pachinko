@@ -31,8 +31,10 @@ downloads nothing.
 
 Informal Systems also ships Quint Studio, a desktop application, through a curl-pipe
 installer that fetches the unpinned latest release with no checksum, installs it into
-`/Applications` or `~/.local/bin` and expects an account login. Nothing about it can be
-pinned or kept inside a worktree.
+`/Applications` or `~/.local/bin` and expects an account login. Nothing about that
+installer can be pinned or kept inside a worktree;
+[decision 0022](0022-quint-studio-machine.md) records how the repository holds Studio
+instead.
 
 ## Decision
 
@@ -90,8 +92,11 @@ conda-forge's `openjdk` exactly in `pyproject.toml`, and the `quint` recipe alon
 `java` first on `PATH`, since Apalache's launcher runs the first `java` there and ignores
 `JAVA_HOME`. No gate runs either command yet.
 
-Quint Studio stays outside the repository. [Develop locally](../how-to/develop-locally.md)
-names it as an optional per-machine tool, and no recipe, gate or CI job depends on it.
+Quint Studio is not part of this decision.
+[Decision 0022](0022-quint-studio-machine.md) brings it under the repository, run in a
+smolvm machine that the repository pins and manages, and replaces the sentence that
+stood here, that Studio stays outside the repository. No recipe installs or runs
+Studio yet, and no gate or CI job depends on it.
 
 ## Consequences
 
@@ -145,5 +150,6 @@ start; the pinned Java it also needs is in place.
 
 - [Decision 0005: A project-managed Allium binary](0005-project-managed-allium-cli.md)
 - [Decision 0011: Tool manager](0011-tool-manager.md)
+- [Decision 0022: A project-managed machine for Quint Studio](0022-quint-studio-machine.md)
 - [Develop locally](../how-to/develop-locally.md)
 - [Maintain dependencies](../how-to/maintain-dependencies.md)

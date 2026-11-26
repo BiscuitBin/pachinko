@@ -13,8 +13,10 @@ performs no effect itself, and the service keeps its queue in memory, writes not
 disk and listens on loopback unless told otherwise. That removes much of the attack
 surface software usually has, and it is worth being precise about what remains rather
 than claiming the problem away: the supply chain that builds both crates, the code
-handed to whoever consumes the library, and the service's unauthenticated HTTP surface,
-described under [The network surface](#the-network-surface).
+handed to whoever consumes the library, the service's unauthenticated HTTP surface,
+described under [The network surface](#the-network-surface), and, on a developer's Mac,
+the machine Quint Studio is to run in, described under
+[The development machine](#the-development-machine).
 
 ## What there is to protect
 
@@ -79,6 +81,17 @@ for tests are never a source to use where unpredictability matters.
   together; and it cannot see which Apalache a server already on `localhost:8822`, or
   one `--server-endpoint` names, runs. The Java Apalache runs on comes from conda-forge
   through `pixi.lock`, like pixi's other tools. No gate runs those commands.
+  smolvm, the microVM that runs that machine, is checked the same way:
+  `just install-smolvm` installs the release tarball whose SHA-256
+  `tools/smolvm/smolvm.txt` pins, after checking its members, the release's own
+  checksums and the binary's signature and Hypervisor entitlement, and `just smolvm`
+  runs only that stamped install, by path. The signature is ad hoc, so it shows the
+  binary intact and says nothing of who built it: the release's checksum is the only
+  provenance. The stamp detects drift and damage in a tree the installer wrote, not a
+  stamp rewritten by hand, and does not vouch for the two templates smolvm expands
+  beside its binary on first use
+  ([decision 0022](../decisions/0022-quint-studio-machine.md)). No gate or CI job runs
+  smolvm.
 - **Dependency updates.** Renovate proposes pin moves through the Mend-hosted Renovate
   app, installed on 2026-10-24 for every repository in the `BiscuitBin` organisation, not
   this one alone, and the one party outside the maintainer and GitHub Actions that holds
@@ -120,6 +133,28 @@ for tests are never a source to use where unpredictability matters.
   ([decision 0016](../decisions/0016-release-process.md)).
 - **Credential leakage.** `ripsecrets` scans every commit, and its output is redacted so
   a match never copies the matched value into a log.
+
+## The development machine
+
+Quint Studio is to run in a smolvm machine, a Linux guest on the developer's Mac, which
+[decision 0022](../decisions/0022-quint-studio-machine.md) records in full. In the
+configuration the Studio recipes will run, the guest cannot write the worktree outside a few
+writable subdirectories: not the `Justfile`, the scripts, `.git` or any ignored tree the
+host runs or loads. It can read the whole worktree, except what is hidden from it, and
+the primary checkout's `.git`, and its egress is open, with host loopback and private
+ranges blocked, so what it can read it can send out. `just smolvm` passes its arguments
+through, so a directory a developer mounts by hand is open to the guest as mounted.
+
+The machine's state, its images, disks, database and the registry tokens smolvm caches,
+lives outside the worktree, in a directory of its own for each worktree under
+`~/Library/Caches/pachinko/smolvm/`, reached through a short link in `/tmp`. The recipe
+refuses it unless no one but its owner can write it and every directory above it, and
+`just smolvm-purge` removes it;
+[Develop locally](../how-to/develop-locally.md#where-the-machines-state-lives) lists
+every path. Studio's own pin, which QS03 adds, detects a changed build and covers
+nothing Studio downloads or sends once it runs: it downloads an executable into its data
+directory, checks for updates, has an `upgrade` command, queues telemetry and carries a
+crash-report client.
 
 ## The network surface
 
@@ -173,4 +208,5 @@ See `SECURITY.md` at the repository root.
 - [Quality gates](../reference/quality-gates.md)
 - [Decision 0007](../decisions/0007-dependency-policy.md)
 - [Decision 0019](../decisions/0019-service-runtime-tokio-and-http.md)
+- [Decision 0022](../decisions/0022-quint-studio-machine.md)
 - [HTTP API](../reference/http-api.md)
