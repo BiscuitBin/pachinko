@@ -3116,6 +3116,8 @@ notes. What those fixes leave unchecked or unrun is Open point 16.
    account no machine ran during the third or the fourth. The files do not settle
    that for the fourth: the next machine log, `logs/old-token-after-restart.txt`, was
    last written at 18:44:19 and holds no start time.
+   The session's own record, which is outside the worktree, puts the start of the
+   command that wrote that log at 18:44:08, after both.
 4. **The order of steps.** Claim 13's masks (step 9) were tested before step 6, because
    checkpoint 1's second round found that a guest with the worktree mounted read-write
    could rewrite the spike's own wrapper and profiles. Steps 6, 8, 10's control, 11 and
@@ -3167,10 +3169,59 @@ notes. What those fixes leave unchecked or unrun is Open point 16.
     lists every path and gives the content of the small JSON files. The run was also
     against a stand-in `claude` and did not complete, so the list is not the write
     set of a real connection.
+15. **Step 14 changed more in these notes than it added, and grouped the probe's new
+    lines** (step 14). Step 14 says to add the clean-up's output and change nothing
+    else, and to list every line outside the worktree that the first probe lacked.
+    The rerun gave 8633 such lines, and section 9 groups them by place and reason
+    without the maintainer's leave for that list; the full list is
+    `ai_tmp/qs01/probe-new-outside.txt`, not committed. Beside the output, the lead
+    recorded the maintainer's two answers of 2026-11-25 in section 9, removed the
+    line at the head of these notes that called them a draft in progress, and added
+    this item. None of these changes a claim's outcome or a fact, so checkpoint 4
+    was not run again. No reviewer saw step 14's output, the fixes of checkpoint 4's
+    second round, or section 12. Step 14 also removed five files it does not name,
+    the four token files and one saved page, as section 9 shows.
 
 ### 12. Verification
 
-Pending.
+`ai_tmp/qs01/verify.sh`, the script under Verification with `base=` filled in from
+section 1, ran as `sh ai_tmp/qs01/verify.sh` at
+`de810414c9bb1b6a29a59b09a904dfaba8cb8bd8` on 2026-11-25 and exited 0. Under `set -eu`
+it reaches its last line only when every command before it succeeded: `cmp` on the
+two changed paths, `just check`, and the empty `git status --short`. Its output is
+1127 lines, saved as `ai_tmp/qs01/logs/verify.txt`; `verify exit 0` is the line the
+lead's command added after it. Excerpts, the first line and the last ones:
+
+```text
+de810414c9bb1b6a29a59b09a904dfaba8cb8bd8
+bg-project-check run
+
+==> just check-toolchain
+```
+
+```text
+==> just check-clean
+bg-project-check clean "$1"
+The worktree matches the check baseline.
+
+All checks passed and the worktree is unchanged.
+verify exit 0
+```
+
+`just check` ran 21 recipes, each under a `==> just` line in the log: `check-toolchain`,
+`lock-check`, `lint`, `fmt-check`, `toml-check`, `clippy`, `metrics`, `effects`,
+`features`, `test-doc`, `coverage`, `doc`, `deny`, `deps-unused`, `check-docs`,
+`check-agents`, `check-specs`, `analyse-specs`, `snapshots-check`, `test-doc-default`
+and `check-clean`. The list `git diff --name-only` wrote, which `cmp` found equal to
+the two paths of Files touched, `ai_tmp/qs01/changed.txt`:
+
+```text
+.scratch/quint-studio/QS01-studio-spike.md
+.scratch/quint-studio/README.md
+```
+
+The check on the commit that records this section is step 14's last part, and goes to
+the maintainer with the hand-back, since a commit cannot quote its own check.
 
 ## Open points
 
