@@ -1,0 +1,13 @@
+# The Rust evaluator the Quint CLI runs for `run`, `test`, the REPL and a `verify`
+# that reports a violation or an observation, pinned for each pixi platform by the SHA-256 of its release
+# archive (decision 0021). `just install-quint-evaluator` installs it into
+# .quint/rust-evaluator-<evaluator>/; `just lock-check` fails unless quint= is the
+# Quint CLI version both npm files in tools/quint pin and there is one sha256.<platform>=
+# line for each platform pyproject.toml lists. After a Quint bump, read the new CLI's
+# QUINT_EVALUATOR_VERSION, move evaluator= and every hash if it moved, then set quint=:
+# docs/how-to/maintain-dependencies.md, "Moving the evaluator pin". The gate cannot tell
+# whether that was done; the installer refuses a constant that disagrees.
+quint=0.34.0
+evaluator=v0.8.0
+sha256.linux-64=774020b648a887f511d040fd564a8223c62a996b80f8dc50ea24d8630235be51
+sha256.osx-arm64=cc016a73031f8717f7c7b9f2a54eb21b15d58b2a1f1ee7f1750a225e00a76672

@@ -69,13 +69,46 @@ The `Justfile` owns every use:
   `tools/quint/package.json` and `package-lock.json` pin, so a move of the CLI fails gate 2
   until the Apalache pin has been reviewed against it. It checks that the review was
   recorded, not that it was right; the installer checks the tag.
-- The `quint` recipe guards every run, offline and read-only. It refuses any option whose
-  name contains `apalache` except `--apalache-config`. It checks nothing more when there
-  are no arguments (the REPL), when the first is `parse`, `typecheck`, `run`, `test`,
-  `repl` or `docs`, or when the only one is `--help` or `--version`; every other run,
+- The `quint` recipe guards every run, offline and read-only. Its first guard, Apalache's,
+  refuses any option whose name contains `apalache` except `--apalache-config`. It
+  checks nothing more for Apalache when there are no arguments (the REPL), when the
+  first is `parse`, `typecheck`, `run`, `test`, `repl` or `docs`, or when the only one
+  is `--help` or `--version`; every other run,
   `verify`, `compile` to any target, `verify --help` and a leading option among them,
   needs the stamped install and pixi's Java, and is refused naming `just install-apalache`
   or `just sync`.
+- `tools/quint/evaluator.txt` pins the Rust evaluator: `evaluator=`, the CLI's
+  `QUINT_EVALUATOR_VERSION` (`v0.8.0`), and one `sha256.<platform>=` for each pixi
+  platform, the SHA-256 of that platform's release archive. `just install-quint-evaluator`
+  asks pixi's `node` for `process.platform` and `process.arch`, as the CLI does, downloads
+  that platform's archive, checks it and the one regular file it must hold, and installs
+  it into `.quint/rust-evaluator-v0.8.0/`, where Quint looks before it downloads one
+  itself, with a stamp recording what it installed. It reaches the network unless the
+  stamped install is already in place, refuses a pin the installed CLI's
+  `QUINT_EVALUATOR_VERSION` disagrees with, and `just initialize` runs it after
+  `just install-apalache`.
+- `just lock-check` fails the same way unless `tools/quint/evaluator.txt`'s `quint=` is
+  the version both npm files pin, and unless it holds one hash for each platform
+  `pyproject.toml` lists and no other. It checks that the review was recorded, not that
+  it was right; the installer checks the constant.
+- The `quint` recipe's second guard, offline and read-only too, needs the evaluator's
+  stamped install unless the first argument is `parse`, `typecheck`, `compile` or `docs`,
+  or the only one is `--help` or `--version`, and refuses naming
+  `just install-quint-evaluator`. It never reads `--backend`, so it fails closed:
+
+  | Arguments | Apalache | Evaluator |
+  | --- | --- | --- |
+  | none (the REPL), or first `repl` | not needed | needed |
+  | first `run` or `test` | not needed | needed |
+  | first `parse`, `typecheck` or `docs` | not needed | not needed |
+  | first `compile` | needed | not needed |
+  | only `--help` or only `--version` | not needed | not needed |
+  | anything else: `verify`, a leading option, an unknown word | needed | needed |
+
+  The recipe also unsets `NODE_OPTIONS`, so a preload cannot change what the CLI reads
+  after both guards passed, and the proxy variables (`grpc_proxy`, `http_proxy`,
+  `https_proxy` and their upper-case forms), which the CLI's gRPC client would send even
+  its loopback connection to Apalache through.
 
 `just sync` does not install the CLI. The setup action runs `sync` in every CI job, and
 no job needs Quint until one runs a Quint gate.
@@ -99,8 +132,8 @@ names it as an optional per-machine tool, and no recipe, gate or CI job depends 
 cargo and pixi. Renovate's npm manager reads it, held for dashboard approval like every
 other tool pin; moving the pin by hand is an edit to `package.json` and `just lock`, as
 [Maintain dependencies](../how-to/maintain-dependencies.md) describes. Renovate does not
-track `tools/quint/apalache.txt`, so its `quint` pull request fails gate 2 until someone
-reviews the Apalache pin against the new CLI.
+track `tools/quint/apalache.txt` or `tools/quint/evaluator.txt`, so its `quint` pull
+request fails gate 2 until someone reviews both pins against the new CLI.
 
 Apalache is checked the way [decision 0005](0005-project-managed-allium-cli.md) checks
 allium, by a hand-computed checksum, because the recipe downloads it rather than the CLI.
@@ -110,11 +143,25 @@ non-concurrent use: a guarded `verify` or `compile` that runs while
 `just install-apalache` is replacing the tree finds no launcher, and Quint downloads
 Apalache itself, unchecked; the next guarded run refuses that unstamped tree.
 
-The evaluator is still pinned by version only, because the locked CLI names it, and
-verified by nothing beyond TLS: Quint downloads it inside the CLI, which offers no hook
-for a checksum. The exposure is limited to `run`, `test`, the REPL and a `verify` that reports a
-violation, which evaluates the invariants with it; `typecheck`, the
-only command a gate will run first, downloads nothing.
+On 2026-11-25 the evaluator was pinned by checksum, per platform, the way Apalache
+is. Upstream publishes no checksum file for it; each pinned hash is of one
+download over TLS, hashed with two tools, and agreed with the digest GitHub reports for
+the release asset, which comes from the same host and so is not an independent check.
+The guarantee has the same limits as Apalache's. Gate 2 checks that the evaluator's pin
+was reviewed against a new CLI, not that the review was right: the constant lives only
+in the installed package, which the installer reads. The stamp detects a local change
+to the directory against the installer's record, not a rewrite of the directory and
+stamp together. The installer and the guard read the installed CLI's text, not what
+`node` loads: they check the lines that name the evaluator's version, its asset, its
+release and the directory it is looked up in, so a release that changes any of those
+lines is refused, but a change to the lookup elsewhere in the CLI is not detected,
+whether a release makes it or an in-place edit does, so every bump of the CLI reads
+that lookup by hand. It holds for
+non-concurrent use: a guarded run that starts while
+`just install-quint-evaluator` is replacing the directory can find no executable, and
+Quint downloads the evaluator itself, unchecked; the next guarded run refuses that
+unstamped directory. Only the `osx-arm64` archive was installed and run before this
+landed; the `linux-64` one is first unpacked wherever it is first installed.
 
 `tools/quint/node_modules/` and `.quint/` must stay ignored by Git. `just check`
 snapshots the worktree between recipes, so files Git could see would abort the run.
@@ -137,7 +184,7 @@ answers. The guard cannot see which Apalache such a server runs, and a remote
 
 conda-forge packaging Quint, which would move the pin into `pixi.lock` and retire
 `tools/quint/`. Upstream publishing checksums for the evaluator, or an option to verify
-it, which would close the evaluator's gap above. A gate that needs `quint verify`, which
+it, which would let the evaluator's pin rest on more than one TLS download. A gate that needs `quint verify`, which
 would reopen the question of Apalache's provenance only for a server the recipe did not
 start; the pinned Java it also needs is in place.
 

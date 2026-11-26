@@ -294,6 +294,8 @@ in `double/SPEC-NOTES.md` still calls N04, N09 or N16 open.
 | `CHANGELOG.md`, `crates/libpachinko/README.md` | shared, own lines | The Unreleased entries; any signature shown |
 | `double/pachinko_double/config.py`, `refusals.py`, `queue.py`, `exceptions.py`, `double/tests/test_config.py`, `test_publish.py`, `double/README.md` | shared, own lines, if the base holds it | The refusal's name and report; the first position; the `impl-choice` comments on S005 and the six rows |
 | `double/SPEC-NOTES.md`, `double/diagrams/*` | shared, own lines, if the base holds it | Findings 13 (first position) and 14 marked applied; N04, N09 and N16; N31 and N38 where they cite N04; a figure or alt text only if made false |
+| `quint/pachinko.qnt`, `quint/mutants/*.patch`, `quint/traces/*`, `scripts/quint-traces.py`, `crates/libpachinko/tests/queue/walk/replay.rs`, `crates/libpachinko/tests/queue/walk/model/trace.rs`, `double/tests/test_replay.py` | shared, own lines, if the tree this ticket lands on holds `quint/pachinko.qnt`, at the base or after the closing merge or rebase, and each path only where that tree holds it | `init` as the start rule with the first position step 3 ruled, and the five config-bound invariants as step 3 ruled them; each mutant patch the edit breaks, re-cut, and the config-bound mutants as the maintainer rules at this step's stop; the trace fixtures, regenerated if they exist, with their generator and the first position each of the two replays expects of a fixture's first state |
+| The decision record under `docs/decisions/` that introduced the Quint model; `scripts/verify-quint.sh`, with the helper and the list it reads, `quint/verify.txt` among them | shared, own lines, on the same condition, and only as the maintainer answers at step 7's stop on the config-bound mutants | The record: how the start rule's `requires` is transcribed, and why, if the bounds stay properties over the constants. The recipe and its list: the control that shows a patched model has no start state, if `init` requires the bounds and the maintainer's answer gives this ticket that change; otherwise it is handed back |
 | `tickets/README.md` | shared, own lines | T47's Status cell |
 | `tickets/T47-start-rule-and-config-bounds.md` | ticket | `status:` and hand-back notes |
 
@@ -397,6 +399,84 @@ in `double/SPEC-NOTES.md` still calls N04, N09 or N16 open.
    position, and the `impl-choice` comments on S005 and the six rows, each removed,
    kept or reworded as step 3 decided. Find every one with `rg -n 'impl-choice' double`
    and change only those that cite N04, N09 or N16. Run `just python-double`.
+
+   **The Quint model**, if the tree this ticket lands on holds `quint/pachinko.qnt`, at
+   the base or after the closing merge or rebase onto `main`: that model is derived
+   from this specification, so the same change updates it wherever it models what this
+   ticket changes. Read the condition again after that merge: if it brought in the
+   model, `quint/traces/` or a replay the base did not hold, or changed
+   `quint/pachinko.qnt` or a patch under `quint/mutants/`, the rest of this step is
+   done then, against the merged tree, before any gate runs, each stop in it
+   included. The rule is the same-change
+   rule in `AGENTS.md` and the decision record under `docs/decisions/` that introduced
+   the model; both exist wherever the model does.
+   Here that is `init`, the Queue's first position, and the five
+   config-bound invariants, each as step 3 ruled it. The first position is also in the
+   first state of every trace fixture and in what each replay expects there: where a
+   replay holds the old value as a literal, it takes the ruled one, or reads it from the
+   implementation it drives.
+
+   **Stop and ask** before touching a mutant patch that sets a config value out of its
+   bound (the model's zero pull batch is one). Such a patch is meant to be caught
+   because its property, a config-bound invariant, is false in the first state. Once
+   `init` requires the bounds, the same patch is expected to leave the model with no
+   start state, so that nothing is violated and the patch is no longer caught by the
+   property it names. That is expected and not shown: nobody has run a patched model
+   with such an `init` through the pinned checker. Show it first, on two scratch
+   copies of the model whose `init` requires the bounds, one with the patch applied
+   and a twin without it, with the command the model's verify recipe prints for that
+   mutant. Run it on each copy twice: naming the patch's property, and naming
+   `Canary`, the property the model keeps false on purpose. The twin's `Canary` run
+   must report a violation, which shows the command finds a state where there is
+   one. The patched copy's `Canary` run is the one that answers, three ways: no
+   violation of a property that no state satisfies means there was no state to
+   check; a counterexample to `Canary` means a start state is left and the
+   expectation is wrong; a deadlock or an error is neither, and goes into the
+   question as what it is. The run that names the patch's property cannot tell a
+   missing start state from a property that was not checked. Quote all four
+   outputs with their exit statuses, whatever they show. Then put the choice to
+   the maintainer, with that output and with what step 3 ruled for the five
+   invariants; if step 3 ruled that an invariant goes from the specification, say in
+   the question that the first choice below keeps a property, and a patch that names
+   it, which the specification no longer states as an invariant. Keeping the five as
+   properties does not save the control by itself: where there is no state, no
+   property is violated. The choices are two. The model states the bounds as
+   properties over the constants and `init` does not require them, so the patched
+   model still has a first state and each patch stands with its property; the
+   decision record then says the start rule's `requires` is transcribed that way, and
+   why. Or `init` requires the bounds, and each such patch is replaced by a control
+   that shows the patched model has no start state, in a form the recipe checks,
+   named in the hand-back. Re-cutting a patch as it stands would keep a control that
+   cannot fire, and dropping it would lose one. Do none of these on your own. Each
+   choice needs a file beside the model, and the question names it: the first, the
+   decision record under `docs/decisions/` that introduced the model; the second,
+   the model's verify recipe, `scripts/verify-quint.sh` with whatever helper and
+   list it reads, which has no control of that kind. Ask in the same question
+   whether this ticket changes the recipe or hands that change back, and edit
+   neither file before the answer.
+
+   Where the tree this ticket lands on holds no such patch, at the base and after
+   the closing merge or rebase, because it holds no model or a model with no config
+   value yet, the stop is not reached and no control is ruled here. Add no config
+   value to the model for the sake of a bound, and write in the hand-back, in these
+   words, "the control for a config-bound mutant was not ruled here", with what the
+   tree held. The model ticket that cuts the first such patch then has no control to
+   take from this ticket and puts the same two choices to the maintainer itself.
+
+   In this order: edit the model; re-cut each other mutant patch under
+   `quint/mutants/` that the edit breaks, keeping its mutation and the property it
+   names, and list each in the hand-back; if `quint/traces/` exists, run
+   `just quint-traces` to regenerate it, changing `scripts/quint-traces.py` where the
+   start changes, and keep each replay that exists green, the Rust test under
+   `crates/libpachinko/tests/queue/walk/` in `just test` and
+   `double/tests/test_replay.py` in `just python-double`, where a field or a step the
+   model gained is either mapped or added to that replay's own list of what it does not
+   compare, with the ticket that will map it, and a step only with the maintainer's
+   answer on which ticket that is; then run `just check-quint`, and
+   `just verify-quint` if the recipe exists. The fixtures come before the two gates
+   because both fail on a model whose hash the fixtures do not record. Where the
+   model's header lists the behaviour under "Not yet modelled", change nothing there
+   and say so in the hand-back.
 8. **The notes and the handbook.** In `double/SPEC-NOTES.md`, mark finding 14 and the
    first-position part of finding 13 as applied, in the form the answered findings
    already use; update N04, N09 and N16, the rulings table, and N31 and N38 where they

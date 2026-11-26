@@ -62,8 +62,9 @@
 **/.allium-loop/
 
 # The Quint CLI `just install-quint` puts under tools/quint (its lock is
-# committed), and the evaluator and Apalache it downloads into QUINT_HOME,
-# which the Justfile points at .quint/.
+# committed), and the evaluator and Apalache `just install-quint-evaluator` and
+# `just install-apalache` install into QUINT_HOME, which the Justfile points at
+# .quint/.
 tools/quint/node_modules/
 .quint/
 
