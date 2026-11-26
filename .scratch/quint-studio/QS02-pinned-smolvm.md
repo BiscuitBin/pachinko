@@ -1,7 +1,7 @@
 ---
 id: QS02
 title: "Decision 0022, a pinned smolvm, and a project-managed machine that boots"
-status: todo
+status: done
 depends_on: [QS01]
 parallel_with: [QS03]
 branch: ticket/qs02-pinned-smolvm
@@ -954,8 +954,480 @@ output is quoted there.
 
 ## Hand-back notes
 
-Empty until the ticket runs. Sections, in order: Base and branch; Baseline; QS01's facts
-and the amendments; The state root and the mounts, proved by hand; Ruling; Claims; What
-landed; The gate and the installer, red and green; The recipes and the state, red and
-green; What was written outside the worktree, and its removal; Checkpoint 1 record;
-Checkpoint 2 record; Departures; Verification; Open points.
+Every quote below ran at `2565d3d5a5c1605f835377defcea17340158911a` with uncommitted
+changes (this ticket's work) unless it names another commit. Raw logs are under
+`ai_tmp/qs02/logs/` and the review files under `ai_tmp/review/QS02-1/` and
+`ai_tmp/review/QS02-2/`; none is committed.
+
+### 1. Base and branch
+
+- Base `quint-studio-smolmachine` at `2565d3d5a5c1605f835377defcea17340158911a`, which
+  the maintainer named when QS01 was merged into it on 2026-11-25. Step 1 checked that
+  it holds QS01's hand-back with "Rulings after the hand-back" (line 3306) and the
+  README of these tickets with rulings 5 to 10.
+- Branch `ticket/qs02-pinned-smolvm`, worktree
+  `/Users/scutting/.supacode/repos/pachinko/QS02`, made with
+  `supacode repo worktree-new`. Hooks were not installed from it; the primary
+  checkout's hooks ran at each commit.
+- Decision 0022 was the next free number (`docs/decisions/` ended at 0021).
+
+### 2. Baseline
+
+After `just initialize` (exit 0; network, authorised by step 1), on the untouched
+worktree at `2565d3d5a5c1605f835377defcea17340158911a`:
+
+```text
+$ just check
+All checks passed and the worktree is unchanged.
+check exit 0
+$ git status --short
+status exit 0
+```
+
+### 3. QS01's facts and the amendments
+
+`ai_tmp/qs02/amendments.md`, A1 to A12, holds every point of "Design proposed" that
+QS01's hand-back contradicted, left open or supplied, with its source. These changed
+the design:
+
+- **A1, the file that is run.** It is the release's `smolvm` bash script, as QS01's
+  Facts for QS02 say ("Run the 'smolvm' script (not smolvm-bin directly)"). Both
+  `codesign` reads name `smolvm-bin`. `/bin/sh` here is bash 3.2, which imports an
+  exported function in place of any command, even `cd`. So all three scripts fix
+  `PATH` on their first line and refuse an exported function on the next.
+- **A2, what the guard refuses:**
+  - any `SMOLVM_*` or `DYLD_*` variable, `XDG_CACHE_HOME`, `XDG_DATA_HOME`,
+    `XDG_CONFIG_HOME` and `DOCKER_CONFIG`;
+  - `--state-dir` before `--`;
+  - a `HOME` other than the one in the user database.
+
+  Proxy variables are cleared by `env -i`, not refused.
+- **A3, the environment.** `env -i` with `PATH`, `HOME`, `TERM`, `TMPDIR`,
+  `DOCKER_CONFIG` and `SMOLVM_DATA_DIR`. The last four name the state link as written,
+  or directories inside the state.
+- **A4, the root's limit.** 42 bytes as written. The state link
+  `/tmp/pachinko-smolvm-e906b65b` is 29 bytes, and the state directory's own path 60.
+- **A5, the marker** `.pachinko-state` sits at the state root, where QS01 claim 16
+  showed smolvm leaves a host file alone.
+- **A6, the stamp.** The tarball holds 938 entries: 423 files, 131 directories and 384
+  symbolic links, 266 of them absolute guest paths.
+  - AP02's digest refuses a link, so it could not be reused. This digest covers each
+    entry's type, mode, link target and content, and never follows a link.
+  - It leaves out the stamp, and the two first-use templates by exact name at the top
+    level.
+  - Extraction is `tar -xpzf`. Plain `-xzf` dropped `agent-rootfs/tmp` and
+    `var/tmp` from `1777` to `0755`.
+- **A7, the Rosetta test.** `test -e /Library/Apple/usr/libexec/oah/RosettaLinux/rosetta`.
+  It exited 0 before step 3 and before each demo.
+- **A8, the image and the listener.** The image is `debian:trixie-slim`'s amd64
+  manifest digest. QS01 named no guest listener except Studio, so the demo's listener
+  is a one-line Perl server (`perl-base` is Essential in Debian). Ports came from
+  7101 to 7120, each shown free by `lsof` beforehand, never 7000.
+- **A9, what an old state can supply after the pin moves.** Templates under `.smolvm/`
+  and `Library/Caches/smolvm/`, and the database, machines, image seeds and registry
+  tokens.
+- **A12, the lock.** `lockf(1)` on a read-only descriptor that the launcher's shell
+  holds.
+
+### 4. The state root and the mounts, proved by hand
+
+`ai_tmp/qs02/plan.md`, "Step 3's results" and 3b to 3d. Every smolvm command in it
+ran through `ai_tmp/qs02/bin/smolvm-hand` under `sandbox-exec`. The profiles came from
+QS01's section 9 and named physical paths. Their controls were run before any boot:
+writes under `ai_tmp/qs02/` and through the state link succeeded, and writes to
+`$HOME`, `/private/tmp`, `/tmp/ks-…`, the real `$TMPDIR`, `/Users/Shared` and the
+worktree root were refused. 3d ran them again under `noproof.sb` with every check
+asserted.
+
+- **(a) direct root `/tmp/pq02-a` (11 bytes) and (b) the state link (29 bytes).** Each
+  case was a named machine from the amd64 digest, with `--rosetta --block-private
+  --deny-cidr 127.0.0.0/8 -p <port>:8080`.
+  - Each printed `x86_64`. Each answered `qs02-ok`, compared byte for byte in 3d.
+  - `lsof` showed the published port on `127.0.0.1` and `[::1]` only, owned by the VMM.
+  - `/private/tmp` was listed with its status before, during and after; it held no
+    `ks-` name.
+  - For (b), `machine data-dir` printed
+    `/tmp/pachinko-smolvm-e906b65b/Library/Caches/smolvm/vms/…`, under the link as
+    written, while `find` listed the files under the state directory's physical path.
+- **Claim 4, the relink.** It was shown in step 3 under `deny.sb` and in 3d under
+  `noproof.sb`.
+  - The guest wrote `/root/qs02-sentinel` and the machine was stopped.
+  - The link was removed (`test ! -L` and `test ! -e`, exit 0) and made again.
+  - `machine ls` listed the machine `stopped`, and it started again.
+  - The sentinel read back, `data-dir` named the same directory, and the reply was
+    `cmp`-equal.
+- **(c) the state directory's own path (60 bytes), run last.** It failed at the alias:
+  `cannot address Unix socket …/agent.sock: Operation not permitted (os error 1) at path
+  "/tmp/ks-wVhfwG"`. It failed the same way:
+  - as an ephemeral `machine run`;
+  - as a named machine with `-p` under `deny.sb`, at `/tmp/ks-8BuonM` (pid 77559);
+  - under `noproof.sb` (pid 94212).
+
+  No `ks-` name was left in `/private/tmp` after any of these.
+- **The kernel's log did not record these refusals.** Neither `log show` nor a live
+  `log stream` showed them, inside or outside the Bash tool's sandbox. A control in
+  which a refusal was certain (smolvm's own database `mkdir` under a root the profile
+  forbade) printed only `1 duplicate report for Sandbox: smolvm-bin(65297) deny(1)
+  file-write-create …`. SBPL rejects `(with report)` on a deny. So the proof rests on
+  smolvm's own error, libkrun's `SocketPath::new`, (a) and (b) booting under the same
+  refusal, and the relink. The maintainer ruled on this (Q1; section 5).
+- **Nested mounts, claim 5** (3b, `qs02-m3`): the worktree `-v W:W:ro`, `ai_tmp/qs02/rw`
+  read-write, and the common git dir read-only. `/proc/mounts` showed them `virtiofs ro`,
+  `rw` and `ro`.
+  - The guest's write in `rw` reached the host.
+  - Seven commands were refused with `Read-only file system`: writes to `Justfile`,
+    `.git`, a file in the common git dir, `.tools` and `target`, and the renames of
+    `rw` and of `ai_tmp/qs02`.
+  - After each refusal, the host's state was compared with the snapshot before it
+    (hashes of `Justfile` and `.git`, and six listings, every producer's status
+    checked); `cmp` exited 0 every time.
+  - The profile there allowed the common git dir, so that its refusal had to come
+    from the mount (Departure 3).
+- **The lock** (3c). A contender got `lockf` exit 75 while a holder's
+  `machine exec -- sleep 8` ran, and `lsof` named the holder. A VMM started by
+  `machine start` held no copy of the descriptor. But `kill -9` of the holder freed the
+  lock while its smolvm client still ran: this became Q5.
+- **Removal.** Every machine was deleted and the proof's directory, the state link and
+  the state directory were removed, each shown gone. Only the two parents remained.
+
+### 5. Ruling
+
+`ai_tmp/qs02/ruling.md`, 2026-11-26. It was asked through the question tool after the
+brief `ai_tmp/qs02/ruling-brief.md`, with step 3's results and both rounds of
+checkpoint 1 in hand. The maintainer accepted every proposal, each answer marked
+"(Recommended)":
+
+- Section A, 14 proposals: "Accept all 14". Among them:
+  - `just initialize` installs smolvm;
+  - `scripts/smolvm.sh` is a script of its own;
+  - the id file is `.tools/smolvm-state-id`;
+  - the lock is `lockf`, refuses at once and is never removed;
+  - the purge leaves the parents;
+  - the digest covers type, mode and link target, and `--check` runs `codesign` each
+    call;
+  - callers run the Rosetta test;
+  - `TMPDIR` and `DOCKER_CONFIG` live in the state;
+  - the marker records the pin;
+  - the A2 refusals;
+  - ACLs: Q8;
+  - the extra guard checks: Q12, with fixture (a);
+  - the extra fixtures: Q13;
+  - the refusal evidence: Q14.
+- Q1 "Accept, narrower claim"; Q2 "AP02's model, stated"; Q3 "Exclude, say so"; Q4
+  "Install lock"; Q5 "Trap and wait"; Q6 "Accept, name the holder"; Q7 "State + QS04
+  only"; Q9 "Allow ls/stop/delete"; Q10 "Amend in QS02"; Q11 "--delete argument".
+
+The state directory's place and the state link's name did not change, so step 3 was
+not rerun.
+
+### 6. Claims
+
+| # | Outcome |
+| --- | --- |
+| 1 | **Holds.** `codesign --verify --strict .tools/smolvm/smolvm-bin` exit 0, and the three entitlements, `com.apple.security.hypervisor` among them, after each install. Every demo booted. |
+| 2 | **Holds.** Under `sandbox-exec -p '(version 1)(allow default)(deny network*)'`, `just install-smolvm` exit 0, printing `install-smolvm: smolvm 1.37.4 is installed and matches its stamp; nothing to do.` The `curl` controls exited 6 (`Could not resolve host: static.rust-lang.org`) and 7 (`Failed to connect to 1.1.1.1 port 443`). |
+| 3 | **Holds, for what the probe could read.** Section 10. The probe sees only what was present when it ran, not a file made and removed before then. |
+| 4 | **Holds in the narrower form the maintainer accepted (Q1):** the state link, within the limit, made no fatal alias attempt, and the machine was found again after the link was made again. "Needs no alias at all" is not shown; the kernel's log did not report smolvm-bin's refusals here. |
+| 5 | **Holds.** By hand at step 3 (3b) and through `just smolvm` in step 7's demo, run twice: section 8. |
+| 6 | **Holds.** Sections 8 and 10: the purge refuses, removing nothing, with a machine left, without the stamp, while another command holds the lock, and when the listing fails with the install intact. Otherwise it removes the link and the directory (`test ! -L`, `test ! -e`), and the parent's names are unchanged apart from them. |
+
+### 7. What landed
+
+Work commit `58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
+
+- **New files:**
+  - `tools/smolvm/smolvm.txt`;
+  - `scripts/check-smolvm-pin.sh`, `scripts/install-smolvm.sh` and `scripts/smolvm.sh`,
+    each mode 0755;
+  - `docs/decisions/0022-quint-studio-machine.md`.
+- **The `Justfile`:** `install-smolvm`, `smolvm` and `smolvm-purge`, and the
+  `lock-check` line. Each script is run as `/usr/bin/env -u SHELLOPTS -u BASH_ENV -u
+  ENV -u PS4 /bin/sh scripts/…`.
+- **`scripts/initialize.sh`:** smolvm on macOS arm64; elsewhere a skip message naming
+  decision 0022.
+- **`AGENTS.md`:** `just install-smolvm` and `just smolvm` join the network list, and
+  the authority paragraph names decision 0022's paths as its one exception.
+- **The pages in Files touched,** decision 0021, `docs/manifest.yml` and
+  `docs/decisions/README.md`.
+- **Beyond Files touched** (Departure 6): `docs/reference/testing.md`,
+  `docs/reference/agent-contract.md` and `docs/operations/maintenance.md`, one stale
+  sentence each.
+
+### 8. The recipes and the state, red and green
+
+`ai_tmp/qs02/logs/final/`, from the rerun after checkpoint 2's fixes (2026-11-26
+12:09 to 12:14, every part asserted, all passed):
+
+- **The launcher's refusals** (`launcher.txt`, 46 cases, failures 0):
+  - Before any state, a symlink or a regular file at the state directory's name is
+    refused, and the target stays empty or unchanged.
+  - The first `just smolvm --version` prints exactly `smolvm 1.37.4` on stdout and the
+    sentinel on stderr. It makes the state directory, its marker (path, id, pin),
+    `tmp/`, `docker-config/`, the state link and the lock, and the fresh state holds no
+    symbolic link.
+  - These are refused, each exit 1, with neither the sentinel nor the version line,
+    and with each fixture's target unchanged:
+    - no stamp;
+    - a marker naming another worktree, holding another id, a bad id or a repeated
+      key, missing, or a symlink;
+    - the state link as a directory, or pointing elsewhere;
+    - each of the ten variables, and `--state-dir` and `--state-dir=`;
+    - a foreign `HOME`, or an exported function;
+    - a link inside the state, or a link at the lock's name;
+    - the install lock or the state lock busy, naming the holder's pid;
+    - a non-empty `docker-config/`;
+    - `pachinko/smolvm` at 0755, after which it was restored to 0700;
+    - `--delete` empty, or starting with `-`.
+  - An absent state link is made again. A `smolvm` stub first on `PATH` is not run. An
+    empty state directory is made again, and a missing `tmp/` is repaired.
+  - Case 43 is a recorded limit, not a pass (Open points).
+- **The demo** (`demo.txt`). It ran from a new install, which held neither template.
+  `just smolvm` created and started `qs02-demo` with the worktree read-only, `rw-demo`
+  read-write and `-p 7120:8080`.
+  - Uname `x86_64`; the reply `cmp`-equal; `lsof` showed `127.0.0.1:7120` and
+    `[::1]:7120` only.
+  - The guest listed a file the host had just made, and its write in `rw-demo` reached
+    the host.
+  - Writes to `Justfile`, `.git` and `.tools`, and renames of `rw-demo`, its parent
+    `ai_tmp/qs02` and `ai_tmp`, were refused with `Read-only file system`.
+    `Justfile` and `.git` were unchanged (`cmp`).
+  - With the machine running, `--check` exited 0 with both templates now present, and
+    `just smolvm --version` ran: the running machine kept no lock. No symbolic link
+    was in the state after the boot or while it ran.
+- **The purge's refusals** (`purge-refusals.txt`), each removing nothing:
+  - a stopped machine is named, with how to delete it;
+  - without the stamp, it names `just install-smolvm`; `--check` exited 0 after the
+    stamp was restored;
+  - while a `just smolvm machine exec -- sleep 10` ran, it was refused for the lock,
+    and that command ended with exit 0.
+  
+  `test -L` and `test -d` exited 0 throughout.
+- **The listing that fails** (`listing.txt`), with the install intact:
+  - `just smolvm machine ls --json` printed `[]`;
+  - after `chmod 000` on `…/server/smolvm.db` the same listing exited 1 after the
+    sentinel, with `unable to open database file`;
+  - `just smolvm-purge` exited 1 and removed nothing, with `--check` 0 before and
+    after;
+  - the mode was restored and the listing printed `[]` again.
+- **The pin's move** (`pin.txt`). Six sentinels were planted: four template paths, one
+  under `Library/Application Support/smolvm`, one under `Library/Caches/smolvm/vms`.
+  The marker was changed to record another pin.
+  - `--version` was refused ("another smolvm pin"), while `machine ls` and
+    `machine delete` ran (Q9).
+  - The purge refused while `qs02-old` was left, then accepted the old-pin state: the
+    state directory and the link were gone.
+  - The next `--version` made new state with every planted path absent.
+- **The orphan's entry point** (`orphan.txt`), on a fixture for
+  `/Users/scutting/.supacode/repos/pachinko/QS02-gone-fixture`, a path that does not
+  exist:
+  - refused, removing nothing: with the marker missing; with the link pointing
+    elsewhere; when renamed, where the check before the lock made no lock entry; with
+    a machine left (naming `--delete`); for `--delete` of a name not listed; and when
+    the listing fails;
+  - `--delete qs02-orphan-m` deleted that machine;
+  - this worktree's own state was refused as live, naming `just smolvm-purge`;
+  - with everything right, it removed exactly the fixture's directory and link. The
+    lock entry it left was removed by hand, and this worktree's state listing was
+    unchanged.
+- **The commands that run the binary,** listed by `grep -n`: the launcher's run, on the
+  line right after the sentinel; the inventory; and the orphan's delete. None is in
+  `scripts/install-smolvm.sh`, which only tests files and reads `codesign`.
+
+### 9. The gate and the installer, red and green
+
+- **Pin check** (`cp2-pin.txt` and `cp2-pin-lock-check.txt`, failures 0). Through
+  `just lock-check`:
+  - green on the pin as committed;
+  - each mutation fails with its own `tools/smolvm/smolvm.txt: <key>:` message:
+    `version=1.37`, `sha256=` removed, 63 digits, `asset=` naming 1.37.3, a fourth key,
+    a repeated key, uppercase hex;
+  - a whitespace-only line passes, and a symlink at `tools/smolvm` or the pin is
+    refused;
+  - `cmp` with the saved pin exits 0.
+- **Installer** (`cp2-install.txt`, 19 cases, failures 0; red runs in
+  `step6-red*.txt`):
+  - installs and stamps; skips a stamped tree;
+  - replaces the tree after an appended byte, a removed stamp, `chmod a-x` on either
+    file, a changed mode or a changed link target;
+  - a changed `sha256=` fails, printing both hashes, and leaves no tree and no
+    temporary directory;
+  - `TAR_OPTIONS` excluding a file still gives the full tree (macOS's bsdtar ignores
+    it);
+  - the templates' exclusion is exact;
+  - refuses a symlinked `.tools/smolvm` and a symlinked `.tools`, with each target
+    unchanged and `.tools` restored exactly;
+  - the host check (Q12 (a)), on a fake root with a one-line `diff`: `Linux`/`x86_64`
+    is refused, naming ruling 4 and decision 0022; `Darwin`/`arm64` passes;
+  - refuses an exported function, and a busy install lock;
+  - checksums are computed by the pixi Python, and `curl` gets `-q`;
+  - `--check` exits 0 at the end.
+
+### 10. What was written outside the worktree, and its removal
+
+- **Step 3.** It made `~/Library/Caches/pachinko/`, `…/pachinko/smolvm/` (both 0700),
+  the state directory, the state link and `/tmp/pq02-a`. Each, except the parents, was
+  removed by step 3's end and again by 3b to 3d's.
+- **Steps 7 and 8.** They made:
+  - this worktree's state directory and state link;
+  - the lock entry `~/Library/Caches/pachinko/smolvm/qs02-e906b65b.lock`;
+  - the orphan fixture's directory, link and lock (all removed).
+
+  The probe in step 8 (`logs/final/step8-probe.txt`) ran over `$HOME`, the user's
+  `T/` and `C/`, `/private/tmp`, `/Library`, `/usr/local`, `/Users/Shared`, `/opt` and
+  `/private/var/tmp`. Each root was listed with its own exit status and errors in
+  files. It found 77 paths outside the worktree:
+  - **What decision 0022 names:** the state directory's tree (52 paths) and the state
+    link, and the parent's and `/private/tmp`'s entries, which changed when those were
+    made.
+  - **`~/Library/Caches/smolvm/vms/0d1907069827eaec/{egress,storage.raw}`:** another
+    project's machine, which QS01 saw before its own smolvm ran. Its VMM is still
+    running as pid 40635, and the launcher gives smolvm only the state link as its
+    data root.
+  - **Ordinary activity:** this session's harness and Codex logs, Docker Desktop,
+    Zellij, Supacode, Chrome's updater and macOS temporary items.
+
+  455 directories could not be read, so they are **unprobed**: `~/Library/Containers`
+  and `Group Containers`, parts of `T/` and `C/`, and others. None of them names
+  smolvm (`grep -c -i smolvm` printed 0, exit 1). The control `control-new` appears in
+  the output. `control-old` appears too, because `touch -t` leaves the ctime new and
+  the probe matches `-cnewer`, so it is no negative control.
+- **After the purge:** `test ! -L` and `test ! -e` on the link and `test ! -e` on the
+  directory each exited 0. The parent's names were the same before and after
+  (`diff` exit 0).
+- **What remains by design:**
+  - `~/Library/Caches/pachinko/` and `…/smolvm/`, both 0700;
+  - the lock entry `…/qs02-e906b65b.lock`, which no tool removes;
+  - this session's own files under `~/.claude`, `~/.codex` and `/private/tmp/claude-501`;
+  - the shared git metadata.
+
+### 11. Checkpoint 1 record
+
+The reviewer was Codex Sol, `codex exec -m gpt-6.2-sol -s read-only`, using AP01's
+command form, over `plan.md` and `amendments.md` before any tracked change.
+
+- **Round 1:** 34 findings (C01 to C19, B01 to B15). Triage, by a fresh subagent:
+  - 15 valid, 4 valid in part, 11 duplicates;
+  - invalid parts: B02's partial template, B04's short-lived children, B03's AP02 gap.
+
+  Twelve questions went to the ruling. The evidence findings (C02, C04, C05, B11, B12,
+  B14) were rerun as 3b and 3c.
+- **Round 2,** over the fix diff: 22 findings, of which 17 were valid and 5
+  duplicates. Two went to the ruling, as Q13 and Q14. The lead's directions:
+  - no tool removes a lock entry;
+  - the orphan delete becomes `--delete`;
+  - `PATH` is fixed on the first line;
+  - no symbolic link anywhere under the state.
+
+The verdicts are in `verdicts.md` and `verdicts-2.md`.
+
+### 12. Checkpoint 2 record
+
+The reviewers were Codex Sol, over the full diff from the base with the untracked
+files, and the `code-review` skill at high effort. Sol raised 27 findings (B01 to B14,
+C01 to C13) and the skill 10 (R1 to R10). The lead triaged them all in
+`ai_tmp/review/QS02-2/fixes.md`, and a fresh subagent applied fixes 1 to 24
+(`applied.md`):
+
+- R1: the scripts made 0755, which prek's `check-shebang-scripts-are-executable`
+  requires.
+- B03/C01, C13, R6: `--delete` empty, a leading `-`, or a word-split name.
+- B04/C02, R5: the marker's fields and the id file, validated exactly.
+- B05/C03: signal traps in every mode.
+- B01/C04, R3: removal by renaming to `.purging-<name>-<pid>`, checked by inode.
+- B02: a mount under the state is refused.
+- B13, R2: the marker is written straight after the `mkdir`; an empty state is made
+  again.
+- B10/C05: the parents must be exactly 0700.
+- R7, R8: the function guards made three-way; absolute helpers in the pin check.
+- B07: symlinks refused in the pin check.
+- R10: whitespace-only lines.
+- B09, R9: `curl -q`; hashing with Python.
+- B08: the stamp written with `O_EXCL|O_NOFOLLOW`, and a member named
+  `.pachinko-stamp` refused.
+- C06: the install lock's ACL.
+- B06: `env -u SHELLOPTS …` on the recipe lines, which narrows the problem but does
+  not close it (Open points).
+- C07, C11: wording in decision 0022.
+- R4: the template repair, documented.
+
+Not changed: B11, B12 and C08 were answered by the tightened Verification in section
+13; C09 and C10 in the scratch drivers; C12 is recorded as Departure 6. Every rerun the
+fixes touched was repeated afterwards (section 8, 9 and 10's logs under
+`logs/final/` and `cp2-*`). No second round ran, because no high-severity finding
+reached the final diff unfixed.
+
+### 13. Departures
+
+1. **Claim 4's evidence.** It is not the kernel's log, which did not record
+   smolvm-bin's refusals (section 4); the maintainer accepted the narrower claim (Q1).
+2. **The state directory's mode.** It is not 0700: smolvm sets its data root to 0755
+   on first use. It is held to "not writable by group or others", and its parents
+   must be exactly 0700.
+3. **Profiles.** `wt-3b.sb` allowed the common git directory, so that refusal came
+   from the mount. The `cmp` and `test ! -e` checks show nothing was written there.
+4. **ACLs (Q8).** macOS sets deny-only entries (`group:everyone deny delete`) on `~`,
+   `~/Library` and `~/Library/Caches`, so the guard refuses only an entry that
+   allows access.
+5. **Step 6's host check.** It ran on a copy of the installer at a fake root with a
+   stubbed `/usr/bin/uname`, not with a `uname` stub on `PATH`, which the fixed `PATH`
+   makes impossible (Q12 (a)).
+6. **Three pages beyond Files touched,** one stale sentence each:
+   `docs/reference/testing.md`, `docs/reference/agent-contract.md` (the authority
+   rule's exception) and `docs/operations/maintenance.md` (the pin routine).
+7. **Step 7's demo** renamed `ai_tmp` as well as the direct parent `ai_tmp/qs02` (both
+   refused).
+8. **The purge's stamp case.** It shows `--check` exit 0 after the stamp was restored,
+   not a `cmp` of the stamp.
+9. **Verification is stricter than the ticket's script.** Stdout and stderr are apart,
+   stdout is `cmp`-equal to the version line, and the parent's listing and the lock's
+   entry are checked (B11, B12).
+
+### 14. Verification
+
+`ai_tmp/qs02/verify.sh`, the ticket's script with section 13's Departure 9 applied
+(stdout and stderr kept apart, the version line `cmp`-equal, the parent's names and
+the lock's entry checked), run as one `sh -x` file on the work commit; full output in
+`ai_tmp/qs02/logs/final/verify.txt`. Values: `version_line='smolvm 1.37.4'`,
+`reached_line='smolvm launcher: running the stamped smolvm'`,
+`state_dir="$HOME/Library/Caches/pachinko/smolvm/qs02-e906b65b"`,
+`state_link='/tmp/pachinko-smolvm-e906b65b'`. At
+`58a0f1bf6fce8fdf67cfac8866055a6700db8e54`:
+
+```text
+58a0f1bf6fce8fdf67cfac8866055a6700db8e54
+install-smolvm: smolvm 1.37.4 is installed and matches its stamp; nothing to do.
+smolvm launcher: running the stamped smolvm
+tools/smolvm/smolvm.txt: sha256: '0' is not 64 lowercase hex digits
+install-smolvm --check: refused: smolvm 1.37.4 is not installed as tools/smolvm/smolvm.txt pins it (no stamp at .tools/smolvm/.pachinko-stamp); run just install-smolvm
+smolvm launcher: refused: smolvm is not installed as tools/smolvm/smolvm.txt pins it; run just install-smolvm
+Validated 50 pages and 51 canonical topics.
+Validated AGENTS.md, 2 adapters, and 14 skills.
+All checks passed and the worktree is unchanged.
+verify exit 0
+```
+
+The refusal's standard output was empty and its standard error held no sentinel; the
+purge left no state link and no state directory, the lock's entry stayed, and the
+parent's names equalled those before the run (`cmp` exit 0); `git status --short` was
+empty.
+
+### 15. Open points
+
+- **`SHELLOPTS=noexec` silently skips every recipe.** `just`'s own recipe shell
+  (`Justfile` line 2, `set shell := ["sh", "-eu", "-c"]`) reads an exported
+  `SHELLOPTS` before any recipe line runs. With `SHELLOPTS=noexec` exported,
+  `just smolvm --version` exits 0 without running the script (launcher test case 43),
+  and the same holds for every recipe, `just check` included. This is pre-existing
+  and not this ticket's. A fix would change `set shell`, for example to
+  `["/usr/bin/env", "-u", "SHELLOPTS", "-u", "BASH_ENV", "sh", "-eu", "-c"]`, which
+  touches every gate: the maintainer's to rule on.
+- **smolvm on PyPI.** It also ships as `smolmachines` (QS01 Open point 10). No ruling
+  weighed it, and decision 0022 says so.
+- **CI's pin check.** It runs on `ubuntu-latest` with `/usr/bin` helpers, expected
+  under merged `/usr` but not run there.
+- **Fix 3 under a real signal.** It was not tested. The inventory runs smolvm inside
+  `$(...)`, where a signal to the whole process group can still end the listing early.
+  The purge then refuses and removes nothing.
+- **Fix 4's inode-mismatch branch and fix 5's mount refusal** were not run on a real
+  state directory. The helpers were tested on scratch directories, and on
+  `/System/Volumes` for fix 5.
